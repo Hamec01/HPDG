@@ -1,6 +1,7 @@
 #include "BoomBapEngine.h"
 
 #include <algorithm>
+#include <functional>
 #include <unordered_map>
 
 #include "GrooveEngine.h"
@@ -27,6 +28,111 @@ const TrackState* findTrack(const PatternProject& project, TrackType type)
 bool containsStep(const std::vector<NoteEvent>& notes, int step)
 {
     return std::any_of(notes.begin(), notes.end(), [step](const NoteEvent& n) { return n.step == step; });
+}
+
+const BoomBapBarBlueprint* blueprintBarAt(const BoomBapGrooveBlueprint& blueprint, int bar)
+{
+    if (bar < 0 || bar >= static_cast<int>(blueprint.bars.size()))
+        return nullptr;
+
+    return &blueprint.bars[static_cast<size_t>(bar)];
+}
+
+const BoomBapLaneActivation* laneBarAt(const BoomBapLaneActivationPlan& plan, int bar)
+{
+    if (bar < 0 || bar >= static_cast<int>(plan.bars.size()))
+        return nullptr;
+
+    return &plan.bars[static_cast<size_t>(bar)];
+}
+
+void filterLaneNotesByBarActivation(TrackState& track,
+                                    const BoomBapLaneActivationPlan& lanePlan,
+                                    std::function<bool(const BoomBapLaneActivation&)> selector)
+{
+    track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& n)
+    {
+        const int bar = n.step / 16;
+        const auto* lane = laneBarAt(lanePlan, bar);
+        return lane != nullptr && !selector(*lane);
+    }), track.notes.end());
+}
+
+const StepFeature* featureAtStep(const AudioFeatureMap& map, int step)
+{
+    if (map.steps.empty() || map.stepsPerBar <= 0)
+        return nullptr;
+
+    const int normalized = std::max(0, step);
+    const size_t idx = static_cast<size_t>(normalized) % map.steps.size();
+    return &map.steps[idx];
+}
+
+bool isHatLikeTrack(TrackType type)
+{
+    return type == TrackType::HiHat
+        || type == TrackType::OpenHat
+        || type == TrackType::Ride
+        || type == TrackType::Cymbal
+        || type == TrackType::Perc;
+}
+
+void applySampleAwareBoomBapFlavor(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks)
+{
+    const auto& ctx = project.sampleContext;
+    if (!ctx.enabled || ctx.featureMap.steps.empty())
+        return;
+
+    const float react = std::clamp(ctx.reactivity, 0.0f, 1.0f);
+    const float contrast = std::clamp(ctx.supportVsContrast, 0.0f, 1.0f);
+    const float support = 1.0f - contrast;
+
+    for (auto& track : project.tracks)
+    {
+        if (mutableTracks.count(track.type) == 0)
+            continue;
+
+        for (auto& note : track.notes)
+        {
+            const auto* f = featureAtStep(ctx.featureMap, note.step);
+            if (f == nullptr)
+                continue;
+
+            float guide = 0.45f * f->accent + 0.30f * f->onset + 0.25f * f->energy;
+            if (track.type == TrackType::Kick || track.type == TrackType::GhostKick)
+                guide = 0.42f * f->low + 0.33f * f->accent + 0.25f * f->onset;
+            else if (isHatLikeTrack(track.type))
+                guide = 0.46f * f->high + 0.34f * f->energy + 0.20f * f->onset;
+
+            const float gain = std::clamp(1.0f
+                                              + 0.22f * react * support * (guide - 0.5f)
+                                              + 0.16f * react * contrast * (0.5f - guide),
+                                          0.72f,
+                                          1.38f);
+            note.velocity = std::clamp(static_cast<int>(static_cast<float>(note.velocity) * gain), 1, 127);
+
+            if ((track.type == TrackType::Snare || track.type == TrackType::ClapGhostSnare)
+                && f->nearPhraseBoundary
+                && contrast > 0.15f)
+            {
+                const int nudge = static_cast<int>(2.0f + 3.0f * contrast * react);
+                note.microOffset = std::clamp(note.microOffset + nudge, -120, 120);
+            }
+        }
+
+        if (isHatLikeTrack(track.type) && support * react > 0.45f)
+        {
+            track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+            {
+                const auto* f = featureAtStep(ctx.featureMap, note.step);
+                if (f == nullptr)
+                    return false;
+
+                const int phase = (note.step + note.velocity + static_cast<int>(track.type)) % 7;
+                return phase == 0 && f->high > 0.82f && f->onset < 0.30f && !f->isStrongBeat;
+            }), track.notes.end());
+        }
+    }
 }
 
 float carrierDensityForMode(CarrierMode mode)
@@ -135,6 +241,134 @@ std::vector<NoteEvent> mergeVariationNotes(TrackType type,
     dedupeAndSortNotes(out);
     return out;
 }
+
+int laneBarBudget(TrackType type,
+                  const BoomBapBarBlueprint& bar,
+                  BoomBapSubstyle substyle,
+                  float density)
+{
+    const float den = std::clamp(density, 0.0f, 1.0f);
+
+    switch (type)
+    {
+        case TrackType::HiHat:
+        {
+            int budget = static_cast<int>(5.0f + bar.hatActivity * 9.0f + den * 2.0f);
+            if (bar.stripToCore)
+                budget = std::min(budget, 6);
+            if (substyle == BoomBapSubstyle::LofiRap)
+                budget = std::min(budget, 8);
+            return std::clamp(budget, 3, 16);
+        }
+        case TrackType::OpenHat:
+        {
+            int budget = static_cast<int>(bar.endLiftAmount > 0.6f ? 2 : 1);
+            if (substyle == BoomBapSubstyle::BoomBapGold && bar.role == PhraseRole::Ending)
+                budget += 1;
+            if (bar.stripToCore)
+                budget = 0;
+            return std::clamp(budget, 0, 3);
+        }
+        case TrackType::Perc:
+        {
+            int budget = static_cast<int>(bar.hatSyncopation * 4.0f + den * 2.0f);
+            if (bar.role == PhraseRole::Ending)
+                budget += 1;
+            if (substyle == BoomBapSubstyle::LofiRap)
+                budget = std::min(budget, 1);
+            if (bar.stripToCore)
+                budget = 0;
+            return std::clamp(budget, 0, 5);
+        }
+        case TrackType::Ride:
+        {
+            int budget = static_cast<int>(2.0f + bar.hatActivity * 5.0f);
+            if (bar.role == PhraseRole::Ending)
+                budget += 1;
+            if (substyle == BoomBapSubstyle::LofiRap || substyle == BoomBapSubstyle::RussianUnderground)
+                budget = 0;
+            if (bar.stripToCore)
+                budget = 0;
+            return std::clamp(budget, 0, 8);
+        }
+        case TrackType::GhostKick:
+        {
+            int budget = static_cast<int>(bar.kickSupportAmount * 4.0f + den * 2.0f);
+            if (substyle == BoomBapSubstyle::LofiRap)
+                budget = std::min(budget, 1);
+            if (bar.stripToCore)
+                budget = 0;
+            return std::clamp(budget, 0, 4);
+        }
+        case TrackType::ClapGhostSnare:
+        {
+            int budget = bar.strongBackbeat ? 2 : 1;
+            if (bar.role == PhraseRole::Ending)
+                budget += 1;
+            if (substyle == BoomBapSubstyle::LofiRap || substyle == BoomBapSubstyle::RussianUnderground)
+                budget = std::min(budget, 1);
+            if (bar.stripToCore)
+                budget = 0;
+            return std::clamp(budget, 0, 3);
+        }
+        case TrackType::Cymbal:
+            return bar.role == PhraseRole::Ending && !bar.stripToCore ? 1 : 0;
+        default:
+            return 16;
+    }
+}
+
+void trimTrackToBarBudgets(TrackState& track,
+                           const BoomBapGrooveBlueprint& blueprint,
+                           BoomBapSubstyle substyle,
+                           float density)
+{
+    if (track.notes.empty())
+        return;
+
+    std::unordered_map<int, std::vector<NoteEvent>> byBar;
+    byBar.reserve(blueprint.bars.size());
+    for (const auto& note : track.notes)
+        byBar[note.step / 16].push_back(note);
+
+    std::vector<NoteEvent> trimmed;
+    trimmed.reserve(track.notes.size());
+
+    for (const auto& [barIndex, notes] : byBar)
+    {
+        const auto* bar = blueprintBarAt(blueprint, barIndex);
+        if (bar == nullptr)
+        {
+            trimmed.insert(trimmed.end(), notes.begin(), notes.end());
+            continue;
+        }
+
+        const int budget = laneBarBudget(track.type, *bar, substyle, density);
+        if (budget <= 0)
+            continue;
+
+        std::vector<NoteEvent> sorted = notes;
+        std::stable_sort(sorted.begin(), sorted.end(), [](const NoteEvent& a, const NoteEvent& b)
+        {
+            const int aStrong = ((a.step % 4) == 0) ? 1 : 0;
+            const int bStrong = ((b.step % 4) == 0) ? 1 : 0;
+            if (aStrong != bStrong)
+                return aStrong > bStrong;
+
+            if (a.isGhost != b.isGhost)
+                return !a.isGhost;
+
+            return a.velocity > b.velocity;
+        });
+
+        const int keep = std::min(budget, static_cast<int>(sorted.size()));
+        for (int i = 0; i < keep; ++i)
+            trimmed.push_back(sorted[static_cast<size_t>(i)]);
+    }
+
+    track.notes = std::move(trimmed);
+    dedupeAndSortNotes(track.notes);
+}
 } // namespace
 
 BoomBapEngine::BoomBapEngine() = default;
@@ -144,7 +378,13 @@ void BoomBapEngine::generate(PatternProject& project)
     const auto& style = getBoomBapProfile(project.params.boombapSubstyle);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed));
     const auto grooveContext = buildGrooveContext(project, style, rng);
-    const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars), grooveContext.phraseVariationAmount, rng);
+    const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
+                                                              grooveContext.phraseVariationAmount,
+                                                              style.substyle,
+                                                              project.params.densityAmount,
+                                                              rng);
+    const auto blueprint = buildBoomBapGrooveBlueprint(project.params, style, phrasePlan, grooveContext.halfTimeReference, rng);
+    const auto lanePlan = buildBoomBapLaneActivation(project.params, style, blueprint, rng);
 
     project.phraseLengthBars = std::max(1, project.params.bars);
     project.phraseRoleSummary = phraseSummaryString(phrasePlan);
@@ -159,7 +399,7 @@ void BoomBapEngine::generate(PatternProject& project)
         mutableTracks.insert(track.type);
 
         if (track.type == TrackType::Snare || track.type == TrackType::Kick || track.type == TrackType::HiHat)
-            regenerateTrackInternal(project, track, style, phrasePlan, rng);
+            regenerateTrackInternal(project, track, style, phrasePlan, blueprint, rng);
         else
             track.notes.clear();
 
@@ -170,11 +410,11 @@ void BoomBapEngine::generate(PatternProject& project)
         track.laneRole = roleForTrack(track.type);
     }
 
-    generateDependentTracks(project, style, phrasePlan, rng, mutableTracks);
-    applyCarrierMode(project, style, phrasePlan, grooveContext, rng, mutableTracks);
+    generateDependentTracks(project, style, phrasePlan, lanePlan, rng, mutableTracks);
+    applyCarrierMode(project, style, phrasePlan, lanePlan, grooveContext, rng, mutableTracks);
     applyPhraseEndingAccents(project, style, rng, phrasePlan, mutableTracks);
-    postProcess(project, style, rng, mutableTracks);
-    validatePattern(project, mutableTracks);
+    postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
+    validatePattern(project, blueprint, lanePlan, mutableTracks);
 }
 
 void BoomBapEngine::regenerateTrack(PatternProject& project, TrackType trackType)
@@ -191,12 +431,18 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
     const auto& style = getBoomBapProfile(project.params.boombapSubstyle);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + static_cast<int>(trackType) * 131 + project.generationCounter * 17));
     const auto grooveContext = buildGrooveContext(project, style, rng);
-    const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars), grooveContext.phraseVariationAmount, rng);
+    const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
+                                                              grooveContext.phraseVariationAmount,
+                                                              style.substyle,
+                                                              project.params.densityAmount,
+                                                              rng);
+    const auto blueprint = buildBoomBapGrooveBlueprint(project.params, style, phrasePlan, grooveContext.halfTimeReference, rng);
+    const auto lanePlan = buildBoomBapLaneActivation(project.params, style, blueprint, rng);
 
     project.phraseLengthBars = std::max(1, project.params.bars);
     project.phraseRoleSummary = phraseSummaryString(phrasePlan);
 
-    regenerateTrackInternal(project, *track, style, phrasePlan, rng);
+    regenerateTrackInternal(project, *track, style, phrasePlan, blueprint, rng);
     track->variationId = 0;
     track->mutationDepth = 0.0f;
     track->templateId = static_cast<int>(style.substyle) * 100 + static_cast<int>(track->type) * 7;
@@ -210,6 +456,7 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
         if (auto* ghostKick = findTrack(project, TrackType::GhostKick); ghostKick != nullptr && !ghostKick->locked && ghostKick->enabled)
         {
             ghostGenerator.generateGhostKick(*ghostKick, *track, style, project.params.densityAmount, phrasePlan, rng);
+            filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
 
             if (grooveContext.halfTimeReference)
             {
@@ -224,6 +471,7 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
         if (auto* clap = findTrack(project, TrackType::ClapGhostSnare); clap != nullptr && !clap->locked && clap->enabled)
         {
             ghostGenerator.generateClapLayer(*clap, *track, style, phrasePlan, rng);
+            filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
             mutableTracks.insert(clap->type);
         }
     }
@@ -232,14 +480,15 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
         if (auto* openHat = findTrack(project, TrackType::OpenHat); openHat != nullptr && !openHat->locked && openHat->enabled)
         {
             openHatGenerator.generate(*openHat, *track, project.params, style, phrasePlan, rng);
+            filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
             mutableTracks.insert(openHat->type);
         }
     }
 
     applyPhraseEndingAccents(project, style, rng, phrasePlan, mutableTracks);
-    applyCarrierMode(project, style, phrasePlan, grooveContext, rng, mutableTracks);
-    postProcess(project, style, rng, mutableTracks);
-    validatePattern(project, mutableTracks);
+    applyCarrierMode(project, style, phrasePlan, lanePlan, grooveContext, rng, mutableTracks);
+    postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
+    validatePattern(project, blueprint, lanePlan, mutableTracks);
 }
 
 void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType trackType)
@@ -261,6 +510,13 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
     const auto& laneDefaults = getLaneStyleDefaults(styleDefaults, trackType);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + static_cast<int>(trackType) * 199 + project.generationCounter * 29));
     const auto grooveContext = buildGrooveContext(project, style, rng);
+    const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
+                                                              grooveContext.phraseVariationAmount,
+                                                              style.substyle,
+                                                              project.params.densityAmount,
+                                                              rng);
+    const auto blueprint = buildBoomBapGrooveBlueprint(project.params, style, phrasePlan, grooveContext.halfTimeReference, rng);
+    const auto lanePlan = buildBoomBapLaneActivation(project.params, style, blueprint, rng);
 
     target->notes = mergeVariationNotes(trackType, previous, target->notes, laneDefaults.rgVariationIntensity, rng);
     target->variationId += 1;
@@ -275,8 +531,8 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
         if (auto* clap = findTrack(project, TrackType::ClapGhostSnare); clap != nullptr && !clap->locked && clap->enabled)
         {
             const auto oldClap = clap->notes;
-            const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars), grooveContext.phraseVariationAmount, rng);
             ghostGenerator.generateClapLayer(*clap, *target, style, phrasePlan, rng);
+            filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
             const auto& clapDefaults = getLaneStyleDefaults(styleDefaults, clap->type);
             clap->notes = mergeVariationNotes(clap->type, oldClap, clap->notes, clapDefaults.rgVariationIntensity, rng);
             clap->variationId += 1;
@@ -289,8 +545,8 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
         if (auto* ghostKick = findTrack(project, TrackType::GhostKick); ghostKick != nullptr && !ghostKick->locked && ghostKick->enabled)
         {
             const auto oldGhost = ghostKick->notes;
-            const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars), grooveContext.phraseVariationAmount, rng);
             ghostGenerator.generateGhostKick(*ghostKick, *target, style, project.params.densityAmount, phrasePlan, rng);
+            filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
             const auto& ghostDefaults = getLaneStyleDefaults(styleDefaults, ghostKick->type);
             ghostKick->notes = mergeVariationNotes(ghostKick->type, oldGhost, ghostKick->notes, ghostDefaults.rgVariationIntensity, rng);
             ghostKick->variationId += 1;
@@ -303,8 +559,8 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
         if (auto* openHat = findTrack(project, TrackType::OpenHat); openHat != nullptr && !openHat->locked && openHat->enabled)
         {
             const auto oldOpen = openHat->notes;
-            const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars), grooveContext.phraseVariationAmount, rng);
             openHatGenerator.generate(*openHat, *target, project.params, style, phrasePlan, rng);
+            filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
             const auto& openDefaults = getLaneStyleDefaults(styleDefaults, openHat->type);
             openHat->notes = mergeVariationNotes(openHat->type, oldOpen, openHat->notes, openDefaults.rgVariationIntensity, rng);
             openHat->variationId += 1;
@@ -312,8 +568,8 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
         }
     }
 
-    postProcess(project, style, rng, mutableTracks);
-    validatePattern(project, mutableTracks);
+    postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
+    validatePattern(project, blueprint, lanePlan, mutableTracks);
 }
 
 void BoomBapEngine::mutatePattern(PatternProject& project)
@@ -341,7 +597,11 @@ void BoomBapEngine::mutatePattern(PatternProject& project)
 
     project.mutationCounter += 1;
     project.phraseLengthBars = std::max(1, project.params.bars);
-    project.phraseRoleSummary = phraseSummaryString(BoomBapPhrasePlanner::createPlan(project.phraseLengthBars, style.barVariationAmount, rng));
+    project.phraseRoleSummary = phraseSummaryString(BoomBapPhrasePlanner::createPlan(project.phraseLengthBars,
+                                                                                      style.barVariationAmount,
+                                                                                      style.substyle,
+                                                                                      project.params.densityAmount,
+                                                                                      rng));
 }
 
 void BoomBapEngine::mutateTrack(PatternProject& project, TrackType trackType)
@@ -360,6 +620,14 @@ void BoomBapEngine::mutateTrack(PatternProject& project, TrackType trackType)
     const auto& styleDefaults = getGenreStyleDefaults(GenreType::BoomBap, project.params.boombapSubstyle);
     const auto& laneDefaults = getLaneStyleDefaults(styleDefaults, trackType);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.mutationCounter * 101 + static_cast<int>(trackType) * 43));
+    const auto grooveContext = buildGrooveContext(project, style, rng);
+    const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
+                                                              grooveContext.phraseVariationAmount,
+                                                              style.substyle,
+                                                              project.params.densityAmount,
+                                                              rng);
+    const auto blueprint = buildBoomBapGrooveBlueprint(project.params, style, phrasePlan, grooveContext.halfTimeReference, rng);
+    const auto lanePlan = buildBoomBapLaneActivation(project.params, style, blueprint, rng);
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
 
     const bool skeletonLane = trackType == TrackType::Kick || trackType == TrackType::Snare;
@@ -422,8 +690,13 @@ void BoomBapEngine::mutateTrack(PatternProject& project, TrackType trackType)
         TrackState candidate = *track;
         const auto& candidateStyle = getBoomBapProfile(project.params.boombapSubstyle);
         const auto grooveContext = buildGrooveContext(project, candidateStyle, rng);
-        const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars), grooveContext.phraseVariationAmount, rng);
-        regenerateTrackInternal(project, candidate, candidateStyle, phrasePlan, rng);
+        const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
+                                      grooveContext.phraseVariationAmount,
+                                      style.substyle,
+                                      project.params.densityAmount,
+                                      rng);
+        const auto blueprint = buildBoomBapGrooveBlueprint(project.params, candidateStyle, phrasePlan, grooveContext.halfTimeReference, rng);
+        regenerateTrackInternal(project, candidate, candidateStyle, phrasePlan, blueprint, rng);
 
         for (const auto& note : candidate.notes)
         {
@@ -441,14 +714,15 @@ void BoomBapEngine::mutateTrack(PatternProject& project, TrackType trackType)
     project.mutationCounter += 1;
 
     std::unordered_set<TrackType> mutableTracks { trackType };
-    postProcess(project, style, rng, mutableTracks);
-    validatePattern(project, mutableTracks);
+    postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
+    validatePattern(project, blueprint, lanePlan, mutableTracks);
 }
 
 void BoomBapEngine::regenerateTrackInternal(PatternProject& project,
                                             TrackState& track,
                                             const BoomBapStyleProfile& style,
                                             const std::vector<PhraseRole>& phrasePlan,
+                                            const BoomBapGrooveBlueprint& blueprint,
                                             std::mt19937& rng)
 {
     if (!track.enabled)
@@ -466,10 +740,47 @@ void BoomBapEngine::regenerateTrackInternal(PatternProject& project,
             snareGenerator.generate(track, project.params, style, phrasePlan, rng);
             break;
         case TrackType::HiHat:
-            hatGenerator.generate(track, project.params, style, phrasePlan, rng);
+            hatGenerator.generate(track, project.params, style, phrasePlan, blueprint, rng);
             break;
         default:
             break;
+    }
+
+    if (track.type == TrackType::Kick)
+    {
+        for (const auto& bar : blueprint.bars)
+        {
+            if (bar.kickSupportAmount < 0.42f)
+                continue;
+
+            const int anchorStep = bar.barIndex * 16;
+            if (!containsStep(track.notes, anchorStep))
+                track.notes.push_back({ 36, anchorStep, 1, style.kickVelocityMin + 6, 0, false });
+        }
+    }
+    else if (track.type == TrackType::Snare)
+    {
+        for (const auto& bar : blueprint.bars)
+        {
+            if (!bar.strongBackbeat)
+                continue;
+
+            const int beat2 = bar.barIndex * 16 + 4;
+            const int beat4 = bar.barIndex * 16 + 12;
+            if (!containsStep(track.notes, beat2))
+                track.notes.push_back({ 38, beat2, 1, style.snareVelocityMin + 4, 0, false });
+            if (!containsStep(track.notes, beat4))
+                track.notes.push_back({ 38, beat4, 1, style.snareVelocityMin + 8, 0, false });
+        }
+    }
+    else if (track.type == TrackType::HiHat)
+    {
+        track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& n)
+        {
+            const int barIndex = n.step / 16;
+            const auto* bar = blueprintBarAt(blueprint, barIndex);
+            return bar != nullptr && bar->hatActivity < 0.42f && (n.step % 2) == 1;
+        }), track.notes.end());
     }
 
     track.subProfile = style.name;
@@ -479,6 +790,7 @@ void BoomBapEngine::regenerateTrackInternal(PatternProject& project,
 void BoomBapEngine::generateDependentTracks(PatternProject& project,
                                             const BoomBapStyleProfile& style,
                                             const std::vector<PhraseRole>& phrasePlan,
+                                            const BoomBapLaneActivationPlan& lanePlan,
                                             std::mt19937& rng,
                                             const std::unordered_set<TrackType>& mutableTracks)
 {
@@ -490,24 +802,28 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
         clap != nullptr && snare != nullptr && mutableTracks.find(clap->type) != mutableTracks.end() && !clap->locked && clap->enabled)
     {
         ghostGenerator.generateClapLayer(*clap, *snare, style, phrasePlan, rng);
+        filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
     }
 
     if (auto* ghostKick = findTrack(project, TrackType::GhostKick);
         ghostKick != nullptr && kick != nullptr && mutableTracks.find(ghostKick->type) != mutableTracks.end() && !ghostKick->locked && ghostKick->enabled)
     {
         ghostGenerator.generateGhostKick(*ghostKick, *kick, style, project.params.densityAmount, phrasePlan, rng);
+        filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
     }
 
     if (auto* openHat = findTrack(project, TrackType::OpenHat);
         openHat != nullptr && hat != nullptr && mutableTracks.find(openHat->type) != mutableTracks.end() && !openHat->locked && openHat->enabled)
     {
         openHatGenerator.generate(*openHat, *hat, project.params, style, phrasePlan, rng);
+        filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
     }
 
     if (auto* perc = findTrack(project, TrackType::Perc);
         perc != nullptr && mutableTracks.find(perc->type) != mutableTracks.end() && !perc->locked && perc->enabled)
     {
         percGenerator.generate(*perc, project.params, style, phrasePlan, rng);
+        filterLaneNotesByBarActivation(*perc, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.usePerc; });
     }
 
     if (auto* ride = findTrack(project, TrackType::Ride);
@@ -520,6 +836,19 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
         cymbal != nullptr && mutableTracks.find(cymbal->type) != mutableTracks.end() && !cymbal->locked)
     {
         cymbal->notes.clear();
+
+        if (cymbal->enabled)
+        {
+            for (int bar = 0; bar < std::max(1, project.params.bars); ++bar)
+            {
+                const auto* lane = laneBarAt(lanePlan, bar);
+                if (lane == nullptr || !lane->useCymbal)
+                    continue;
+
+                const int step = bar * 16 + 15;
+                cymbal->notes.push_back({ 49, step, 2, std::min(120, style.openHatVelocityMax + 6), 0, false });
+            }
+        }
     }
 
     if (style.substyle == BoomBapSubstyle::LofiRap)
@@ -562,6 +891,8 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
 
 void BoomBapEngine::postProcess(PatternProject& project,
                                 const BoomBapStyleProfile& style,
+                                const BoomBapGrooveBlueprint& blueprint,
+                                const BoomBapLaneActivationPlan& lanePlan,
                                 std::mt19937& rng,
                                 const std::unordered_set<TrackType>& mutableTracks)
 {
@@ -620,7 +951,45 @@ void BoomBapEngine::postProcess(PatternProject& project,
             }
         }
 
+        applySampleAwareBoomBapFlavor(project, mutableTracks);
+
         return;
+    }
+
+    for (auto& track : project.tracks)
+    {
+        if (mutableTracks.find(track.type) == mutableTracks.end())
+            continue;
+
+        for (auto& note : track.notes)
+        {
+            const int barIndex = note.step / 16;
+            const auto* bar = blueprintBarAt(blueprint, barIndex);
+            if (bar == nullptr)
+                continue;
+
+            if (track.type == TrackType::Snare && !note.isGhost)
+            {
+                const int stepInBar = note.step % 16;
+                if (stepInBar == 4 || stepInBar == 12)
+                {
+                    const int latePush = static_cast<int>(bar->lateBackbeatAmount * 7.0f);
+                    note.microOffset = std::clamp(note.microOffset + latePush, -120, 120);
+                }
+            }
+            else if (track.type == TrackType::HiHat)
+            {
+                const float velScale = std::clamp(0.78f + bar->hatActivity * 0.34f + bar->grit * 0.08f, 0.6f, 1.24f);
+                note.velocity = std::clamp(static_cast<int>(static_cast<float>(note.velocity) * velScale), style.hatVelocityMin, style.hatVelocityMax);
+                if (bar->stripToCore && (note.step % 2) == 1)
+                    note.velocity = std::max(style.hatVelocityMin, note.velocity - 10);
+            }
+            else if (track.type == TrackType::Kick && !note.isGhost)
+            {
+                if ((note.step % 16) != 0 && bar->kickSupportAmount < 0.34f)
+                    note.velocity = std::max(style.kickVelocityMin, note.velocity - 12);
+            }
+        }
     }
 
     for (auto& track : project.tracks)
@@ -646,7 +1015,48 @@ void BoomBapEngine::postProcess(PatternProject& project,
 
         if (!filtered.empty())
             track.notes = std::move(filtered);
+
+        if (track.type == TrackType::HiHat
+            || track.type == TrackType::OpenHat
+            || track.type == TrackType::Perc
+            || track.type == TrackType::Ride
+            || track.type == TrackType::GhostKick
+            || track.type == TrackType::ClapGhostSnare
+            || track.type == TrackType::Cymbal)
+        {
+            trimTrackToBarBudgets(track, blueprint, style.substyle, project.params.densityAmount);
+        }
     }
+
+    if (auto* snare = findTrack(project, TrackType::Snare); snare != nullptr)
+    {
+        for (const auto& bar : blueprint.bars)
+        {
+            const int beat2 = bar.barIndex * 16 + 4;
+            const int beat4 = bar.barIndex * 16 + 12;
+            if (bar.strongBackbeat)
+            {
+                if (!containsStep(snare->notes, beat2))
+                    snare->notes.push_back({ 38, beat2, 1, style.snareVelocityMin + 4, 0, false });
+                if (!containsStep(snare->notes, beat4))
+                    snare->notes.push_back({ 38, beat4, 1, style.snareVelocityMin + 8, 0, false });
+            }
+        }
+        dedupeAndSortNotes(snare->notes);
+    }
+
+    if (auto* kick = findTrack(project, TrackType::Kick); kick != nullptr)
+    {
+        for (const auto& bar : blueprint.bars)
+        {
+            const int anchor = bar.barIndex * 16;
+            if (bar.kickSupportAmount > 0.42f && !containsStep(kick->notes, anchor))
+                kick->notes.push_back({ 36, anchor, 1, style.kickVelocityMin + 6, 0, false });
+        }
+        dedupeAndSortNotes(kick->notes);
+    }
+
+    applySampleAwareBoomBapFlavor(project, mutableTracks);
 }
 
 void BoomBapEngine::applyPhraseEndingAccents(PatternProject& project,
@@ -764,6 +1174,7 @@ BoomBapEngine::GrooveContext BoomBapEngine::buildGrooveContext(const PatternProj
 void BoomBapEngine::applyCarrierMode(PatternProject& project,
                                      const BoomBapStyleProfile& style,
                                      const std::vector<PhraseRole>& phrasePlan,
+                                     const BoomBapLaneActivationPlan& lanePlan,
                                      const GrooveContext& grooveContext,
                                      std::mt19937& rng,
                                      const std::unordered_set<TrackType>& mutableTracks) const
@@ -812,6 +1223,9 @@ void BoomBapEngine::applyCarrierMode(PatternProject& project,
         const int stepInBar = n.step % 16;
         const int bar = n.step / 16;
         const auto role = bar < static_cast<int>(phrasePlan.size()) ? phrasePlan[static_cast<size_t>(bar)] : PhraseRole::Base;
+        const auto* lane = laneBarAt(lanePlan, bar);
+        if (lane != nullptr && !lane->useRide)
+            continue;
 
         float gate = (grooveContext.carrierMode == CarrierMode::Ride) ? 0.72f : 0.34f;
         if (stepInBar % 4 == 0)
@@ -845,8 +1259,29 @@ void BoomBapEngine::applyCarrierMode(PatternProject& project,
     }
 }
 
-void BoomBapEngine::validatePattern(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks) const
+void BoomBapEngine::validatePattern(PatternProject& project,
+                                    const BoomBapGrooveBlueprint& blueprint,
+                                    const BoomBapLaneActivationPlan& lanePlan,
+                                    const std::unordered_set<TrackType>& mutableTracks) const
 {
+    if (auto* openHat = findTrack(project, TrackType::OpenHat); openHat != nullptr)
+        filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
+
+    if (auto* ride = findTrack(project, TrackType::Ride); ride != nullptr)
+        filterLaneNotesByBarActivation(*ride, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useRide; });
+
+    if (auto* perc = findTrack(project, TrackType::Perc); perc != nullptr)
+        filterLaneNotesByBarActivation(*perc, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.usePerc; });
+
+    if (auto* ghostKick = findTrack(project, TrackType::GhostKick); ghostKick != nullptr)
+        filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
+
+    if (auto* clap = findTrack(project, TrackType::ClapGhostSnare); clap != nullptr)
+        filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
+
+    if (auto* cymbal = findTrack(project, TrackType::Cymbal); cymbal != nullptr)
+        filterLaneNotesByBarActivation(*cymbal, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useCymbal; });
+
     const auto* snare = findTrack(project, TrackType::Snare);
     const auto* clap = findTrack(project, TrackType::ClapGhostSnare);
     const auto* hat = findTrack(project, TrackType::HiHat);
@@ -876,6 +1311,25 @@ void BoomBapEngine::validatePattern(PatternProject& project, const std::unordere
         for (auto& note : track.notes)
         {
             note.length = std::max(1, note.length);
+
+            const int barIndex = note.step / 16;
+            const auto* bar = blueprintBarAt(blueprint, barIndex);
+            if (bar != nullptr && bar->stripToCore)
+            {
+                if (track.type == TrackType::HiHat && (note.step % 2) == 1)
+                    note.velocity = std::max(style.hatVelocityMin, note.velocity - 12);
+
+                if (track.type == TrackType::GhostKick
+                    || track.type == TrackType::OpenHat
+                    || track.type == TrackType::Perc
+                    || track.type == TrackType::Ride
+                    || track.type == TrackType::Cymbal
+                    || track.type == TrackType::ClapGhostSnare)
+                {
+                    note.step = -1;
+                    continue;
+                }
+            }
 
             int minVel = note.isGhost ? style.ghostVelocityMin : style.snareVelocityMin;
             int maxVel = note.isGhost ? style.ghostVelocityMax : style.snareVelocityMax;
@@ -928,6 +1382,11 @@ void BoomBapEngine::validatePattern(PatternProject& project, const std::unordere
             note.velocity = std::clamp(note.velocity, minVel, maxVel);
         }
 
+        track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [](const NoteEvent& n)
+        {
+            return n.step < 0;
+        }), track.notes.end());
+
         const int bars = std::max(1, project.params.bars);
         int maxHits = bars * 12;
         if (track.type == TrackType::GhostKick)
@@ -953,6 +1412,17 @@ void BoomBapEngine::validatePattern(PatternProject& project, const std::unordere
 
         if (static_cast<int>(track.notes.size()) > maxHits)
             track.notes.resize(static_cast<size_t>(maxHits));
+
+        if (track.type == TrackType::HiHat
+            || track.type == TrackType::OpenHat
+            || track.type == TrackType::Perc
+            || track.type == TrackType::Ride
+            || track.type == TrackType::GhostKick
+            || track.type == TrackType::ClapGhostSnare
+            || track.type == TrackType::Cymbal)
+        {
+            trimTrackToBarBudgets(track, blueprint, style.substyle, project.params.densityAmount);
+        }
 
         if (track.type == TrackType::GhostKick)
         {
@@ -1004,6 +1474,35 @@ void BoomBapEngine::validatePattern(PatternProject& project, const std::unordere
                 for (int bar = 0; bar < bars && static_cast<int>(mutableHat->notes.size()) < minHatHits; ++bar)
                     mutableHat->notes.push_back({ 42, bar * 16, 1, style.hatVelocityMin + 6, 0, false });
             }
+        }
+    }
+
+    if (auto* mutableSnare = findTrack(project, TrackType::Snare); mutableSnare != nullptr)
+    {
+        for (const auto& bar : blueprint.bars)
+        {
+            if (!bar.strongBackbeat)
+                continue;
+
+            const int beat2 = bar.barIndex * 16 + 4;
+            const int beat4 = bar.barIndex * 16 + 12;
+            if (!containsStep(mutableSnare->notes, beat2))
+                mutableSnare->notes.push_back({ 38, beat2, 1, style.snareVelocityMin + 4, 0, false });
+            if (!containsStep(mutableSnare->notes, beat4))
+                mutableSnare->notes.push_back({ 38, beat4, 1, style.snareVelocityMin + 8, 0, false });
+        }
+    }
+
+    if (auto* mutableKick = findTrack(project, TrackType::Kick); mutableKick != nullptr)
+    {
+        for (const auto& bar : blueprint.bars)
+        {
+            if (bar.kickSupportAmount < 0.50f)
+                continue;
+
+            const int step = bar.barIndex * 16;
+            if (!containsStep(mutableKick->notes, step))
+                mutableKick->notes.push_back({ 36, step, 1, style.kickVelocityMin + 6, 0, false });
         }
     }
 

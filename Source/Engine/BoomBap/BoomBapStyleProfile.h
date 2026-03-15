@@ -73,6 +73,16 @@ struct BoomBapStyleProfile
     int percVelocityMax = 85;
     int ghostVelocityMin = 34;
     int ghostVelocityMax = 58;
+
+    float blueprintEnergyBias = 0.0f;
+    float blueprintSwingBias = 0.0f;
+
+    float laneGhostKickActivity = 0.56f;
+    float laneOpenHatActivity = 0.48f;
+    float lanePercActivity = 0.50f;
+    float laneRideActivity = 0.26f;
+    float laneClapActivity = 0.92f;
+    float laneCymbalActivity = 0.24f;
 };
 
 const std::array<BoomBapStyleProfile, 8>& getBoomBapProfiles();

@@ -81,12 +81,18 @@ const std::vector<KickTemplateDefinition>& getBoomBapKickTemplates()
 const std::vector<SnareFeelProfile>& getBoomBapSnareFeelProfiles()
 {
     static const std::vector<SnareFeelProfile> profiles = {
-        { "Straight", 10, 10, 1.00f, 0.00f },
-        { "Lazy", 22, 16, 1.00f, 0.00f },
-        { "Beat2HeavierDelay", 24, 10, 0.95f, 0.04f },
-        { "Beat4HeavierDelay", 12, 22, 0.95f, 0.04f },
-        { "LightGhostBefore2", 16, 11, 0.92f, 0.12f },
-        { "LightGhostBefore4", 14, 14, 0.92f, 0.12f }
+        { "Straight", 10, 10, 5, 5, 1.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.04f, false, false },
+        { "Lazy", 22, 16, 7, 6, 0.96f, 0.04f, 0.04f, 0.05f, 0.04f, 0.08f, false, false },
+        { "Beat2Pocket", 24, 11, 8, 5, 0.92f, 0.08f, 0.12f, 0.05f, 0.08f, 0.10f, true, false },
+        { "Beat4Pocket", 12, 22, 5, 8, 0.92f, 0.08f, 0.05f, 0.12f, 0.08f, 0.10f, true, false },
+        { "GhostBefore2", 16, 11, 7, 5, 0.86f, 0.14f, 0.26f, 0.10f, 0.10f, 0.08f, true, false },
+        { "GhostBefore4", 14, 14, 6, 7, 0.86f, 0.14f, 0.10f, 0.26f, 0.10f, 0.08f, true, false },
+        { "DryUnderground", 18, 14, 5, 5, 0.58f, 0.04f, 0.02f, 0.04f, 0.02f, 0.05f, true, true },
+        { "DustySoft", 20, 18, 6, 6, 0.72f, 0.08f, 0.10f, 0.10f, 0.04f, 0.06f, true, false },
+        { "LofiMellow", 26, 20, 8, 7, 0.48f, 0.06f, 0.06f, 0.08f, 0.04f, 0.04f, true, true },
+        { "GoldCrisp", 11, 13, 5, 5, 0.98f, 0.12f, 0.08f, 0.14f, 0.12f, 0.14f, false, false },
+        { "AggressiveTight", 8, 10, 4, 4, 0.90f, 0.05f, 0.04f, 0.06f, 0.02f, 0.18f, false, false },
+        { "JazzyPushPull", 17, 23, 7, 8, 0.80f, 0.16f, 0.16f, 0.20f, 0.16f, 0.10f, true, false }
     };
 
     return profiles;
@@ -208,16 +214,47 @@ std::vector<const KickTemplateDefinition*> findMatchingKickTemplates(BoomBapSubs
 const SnareFeelProfile& chooseSnareFeelProfile(BoomBapSubstyle substyle, float density, std::mt19937& rng)
 {
     const auto& all = getBoomBapSnareFeelProfiles();
-    std::uniform_int_distribution<int> pick(0, static_cast<int>(all.size() - 1));
+    std::vector<int> candidates;
 
-    if (substyle == BoomBapSubstyle::LaidBack)
-        return density < 0.6f ? all[1] : all[2];
-    if (substyle == BoomBapSubstyle::Aggressive)
-        return density > 0.6f ? all[3] : all[0];
-    if (substyle == BoomBapSubstyle::Dusty)
-        return density < 0.45f ? all[4] : all[1];
+    switch (substyle)
+    {
+        case BoomBapSubstyle::Classic:
+            candidates = density > 0.55f ? std::vector<int> { 0, 2, 3, 9 } : std::vector<int> { 0, 1, 4, 5 };
+            break;
+        case BoomBapSubstyle::Dusty:
+            candidates = density < 0.5f ? std::vector<int> { 7, 4, 5, 1 } : std::vector<int> { 7, 1, 2 };
+            break;
+        case BoomBapSubstyle::Jazzy:
+            candidates = density > 0.45f ? std::vector<int> { 11, 2, 3, 5 } : std::vector<int> { 11, 4, 5, 7 };
+            break;
+        case BoomBapSubstyle::Aggressive:
+            candidates = density > 0.55f ? std::vector<int> { 10, 9, 3 } : std::vector<int> { 10, 0, 2 };
+            break;
+        case BoomBapSubstyle::LaidBack:
+            candidates = density < 0.5f ? std::vector<int> { 1, 7, 8 } : std::vector<int> { 1, 2, 5 };
+            break;
+        case BoomBapSubstyle::BoomBapGold:
+            candidates = density > 0.55f ? std::vector<int> { 9, 3, 10 } : std::vector<int> { 9, 0, 2 };
+            break;
+        case BoomBapSubstyle::RussianUnderground:
+            candidates = density > 0.5f ? std::vector<int> { 6, 2, 3 } : std::vector<int> { 6, 7, 8 };
+            break;
+        case BoomBapSubstyle::LofiRap:
+            candidates = density > 0.5f ? std::vector<int> { 8, 7, 1 } : std::vector<int> { 8, 7, 6 };
+            break;
+        default:
+            break;
+    }
 
-    return all[static_cast<size_t>(pick(rng))];
+    if (candidates.empty())
+    {
+        candidates.reserve(all.size());
+        for (int i = 0; i < static_cast<int>(all.size()); ++i)
+            candidates.push_back(i);
+    }
+
+    std::uniform_int_distribution<int> pick(0, static_cast<int>(candidates.size() - 1));
+    return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
 }
 
 const HatPatternProfile& chooseHatPatternProfile(BoomBapSubstyle substyle, float density, std::mt19937& rng)

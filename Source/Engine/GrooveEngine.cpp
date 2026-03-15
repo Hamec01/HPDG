@@ -64,6 +64,10 @@ void GrooveEngine::applySwing(PatternProject& project,
             trackWeight = 1.25f;
         else if (track.type == TrackType::GhostKick || track.type == TrackType::Perc)
             trackWeight = 1.10f;
+        else if (track.type == TrackType::HiHat)
+            trackWeight = 0.38f;
+        else if (track.type == TrackType::OpenHat)
+            trackWeight = 0.55f;
 
         for (auto& note : track.notes)
         {
@@ -97,6 +101,8 @@ void GrooveEngine::applySwing(PatternProject& project,
 
             if (track.type == TrackType::HiHat)
             {
+                if ((note.step % 2) == 1 && note.microOffset > 4)
+                    note.microOffset += static_cast<int>(maxSwingTicks * 0.18f);
                 if (stepInBar >= 14)
                     note.microOffset += 2;
                 note.microOffset = std::clamp(note.microOffset, -10, 14);

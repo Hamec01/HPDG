@@ -31,8 +31,16 @@ struct SnareFeelProfile
     const char* name = "Straight";
     int beat2LateTicks = 10;
     int beat4LateTicks = 8;
+    int beat2LateSpread = 6;
+    int beat4LateSpread = 6;
     float clapLayerProbability = 1.0f;
     float ghostSnareProbability = 0.0f;
+    float ghostBefore2Probability = 0.0f;
+    float ghostBefore4Probability = 0.0f;
+    float dragProbability = 0.0f;
+    float fillHitProbability = 0.0f;
+    bool avoidStraightBackbeat = false;
+    bool dryBackbeat = false;
 };
 
 struct HatPatternProfile

@@ -8,8 +8,10 @@
 
 #include "GenreEngine.h"
 #include "BoomBap/BoomBapGhostGenerator.h"
+#include "BoomBap/BoomBapGrooveBlueprint.h"
 #include "BoomBap/BoomBapHatGenerator.h"
 #include "BoomBap/BoomBapKickGenerator.h"
+#include "BoomBap/BoomBapLaneActivation.h"
 #include "BoomBap/BoomBapOpenHatGenerator.h"
 #include "BoomBap/BoomBapPercGenerator.h"
 #include "BoomBap/BoomBapPhrasePlanner.h"
@@ -44,6 +46,7 @@ private:
     void applyCarrierMode(PatternProject& project,
                           const BoomBapStyleProfile& style,
                           const std::vector<PhraseRole>& phrasePlan,
+                          const BoomBapLaneActivationPlan& lanePlan,
                           const GrooveContext& grooveContext,
                           std::mt19937& rng,
                           const std::unordered_set<TrackType>& mutableTracks) const;
@@ -52,14 +55,18 @@ private:
                                  TrackState& track,
                                  const BoomBapStyleProfile& style,
                                  const std::vector<PhraseRole>& phrasePlan,
+                                 const BoomBapGrooveBlueprint& blueprint,
                                  std::mt19937& rng);
     void generateDependentTracks(PatternProject& project,
                                  const BoomBapStyleProfile& style,
                                  const std::vector<PhraseRole>& phrasePlan,
+                                 const BoomBapLaneActivationPlan& lanePlan,
                                  std::mt19937& rng,
                                  const std::unordered_set<TrackType>& mutableTracks);
     void postProcess(PatternProject& project,
                      const BoomBapStyleProfile& style,
+                     const BoomBapGrooveBlueprint& blueprint,
+                     const BoomBapLaneActivationPlan& lanePlan,
                      std::mt19937& rng,
                      const std::unordered_set<TrackType>& mutableTracks);
     void applyPhraseEndingAccents(PatternProject& project,
@@ -67,7 +74,10 @@ private:
                                   std::mt19937& rng,
                                   const std::vector<PhraseRole>& phrasePlan,
                                   const std::unordered_set<TrackType>& mutableTracks);
-    void validatePattern(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks) const;
+    void validatePattern(PatternProject& project,
+                         const BoomBapGrooveBlueprint& blueprint,
+                         const BoomBapLaneActivationPlan& lanePlan,
+                         const std::unordered_set<TrackType>& mutableTracks) const;
     static juce::String phraseSummaryString(const std::vector<PhraseRole>& roles);
     static bool isKickAnchorStep(int stepInBar);
     static bool isSnareAnchorStep(int stepInBar);

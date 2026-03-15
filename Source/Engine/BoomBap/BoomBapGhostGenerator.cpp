@@ -73,14 +73,20 @@ void BoomBapGhostGenerator::generateClapLayer(TrackState& clapTrack,
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     std::uniform_int_distribution<int> vel(style.clapVelocityMin, style.clapVelocityMax);
     std::uniform_int_distribution<int> late(std::max(2, style.clapLateTicks / 2), std::max(4, style.clapLateTicks));
+    const auto& feel = chooseSnareFeelProfile(style.substyle, 0.5f, rng);
 
     for (const auto& snare : snareTrack.notes)
     {
         const int bar = snare.step / 16;
         const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : PhraseRole::Base;
-        float gate = std::clamp(style.clapLayerChance + BoomBapPhrasePlanner::roleVariationStrength(role) * 0.12f, 0.5f, 1.0f);
+        float gate = std::clamp(style.clapLayerChance * feel.clapLayerProbability
+                                    + BoomBapPhrasePlanner::roleVariationStrength(role) * 0.12f,
+                                0.25f,
+                                1.0f);
         if (style.substyle == BoomBapSubstyle::RussianUnderground)
             gate = std::max(0.45f, gate - 0.14f);
+        else if (style.substyle == BoomBapSubstyle::LofiRap)
+            gate = std::min(gate, 0.58f);
 
         if (chance(rng) > gate)
             continue;
