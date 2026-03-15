@@ -1,0 +1,817 @@
+15 Mar 2026 12:03:31am | dragTrackTempMidi click type=0
+15 Mar 2026 12:04:06am | dragTrackTempMidi click type=0
+15 Mar 2026 12:12:17am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:12:26am | dragTrackTempMidi click type=0
+15 Mar 2026 12:12:32am | dragFullPatternTempMidi click
+15 Mar 2026 12:19:04am | dragTrackTempMidi click type=0
+15 Mar 2026 12:19:04am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:19:04am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:19:10am | dragFullPatternTempMidi click
+15 Mar 2026 12:19:10am | PROCESSOR | createTemporaryFullPatternMidiFile begin
+15 Mar 2026 12:19:10am | PROCESSOR | createTemporaryFullPatternMidiFile snapshot tracks=11
+15 Mar 2026 12:22:56am | dragTrackTempMidi click type=0
+15 Mar 2026 12:22:56am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:22:56am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:22:56am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:22:56am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773526976851_0.mid
+15 Mar 2026 12:22:56am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:22:56am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773526976851_0.mid
+15 Mar 2026 12:22:56am | dragTrackTempMidi reveal C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773526976851_0.mid
+15 Mar 2026 12:23:00am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:23:00am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:23:00am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:23:00am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:23:00am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773526980827_1.mid
+15 Mar 2026 12:23:00am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:23:00am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773526980827_1.mid
+15 Mar 2026 12:23:00am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:23:04am | dragTrackExternal callback end
+15 Mar 2026 12:23:06am | dragFullPatternExternal gesture start
+15 Mar 2026 12:23:06am | PROCESSOR | createTemporaryFullPatternMidiFile begin
+15 Mar 2026 12:23:06am | PROCESSOR | createTemporaryFullPatternMidiFile snapshot tracks=11
+15 Mar 2026 12:23:06am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapPattern
+15 Mar 2026 12:23:06am | SERVICE | exportTemp post-createTempFile prefix=BoomBapPattern file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapPattern_1773526986362_2.mid
+15 Mar 2026 12:23:06am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:23:06am | PROCESSOR | createTemporaryFullPatternMidiFile done exists=1 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapPattern_1773526986362_2.mid
+15 Mar 2026 12:23:06am | dragFullPatternExternal performExternalDragDropOfFiles started=1
+15 Mar 2026 12:23:11am | dragFullPatternExternal callback end
+15 Mar 2026 12:24:09am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:24:09am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:24:09am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:24:09am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:24:09am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527049202_0.mid
+15 Mar 2026 12:24:09am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:24:09am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527049202_0.mid
+15 Mar 2026 12:24:09am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:24:10am | dragTrackExternal callback end
+15 Mar 2026 12:24:13am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:24:13am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:24:13am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:24:13am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:24:13am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527053571_1.mid
+15 Mar 2026 12:24:13am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:24:13am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527053571_1.mid
+15 Mar 2026 12:24:13am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:24:14am | dragTrackExternal callback end
+15 Mar 2026 12:24:18am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:24:18am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:24:18am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:24:18am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:24:18am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527058178_2.mid
+15 Mar 2026 12:24:18am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:24:18am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527058178_2.mid
+15 Mar 2026 12:24:18am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:24:20am | dragTrackExternal callback end
+15 Mar 2026 12:24:22am | dragFullPatternExternal gesture start
+15 Mar 2026 12:24:22am | PROCESSOR | createTemporaryFullPatternMidiFile begin
+15 Mar 2026 12:24:22am | PROCESSOR | createTemporaryFullPatternMidiFile snapshot tracks=11
+15 Mar 2026 12:24:22am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapPattern
+15 Mar 2026 12:24:22am | SERVICE | exportTemp post-createTempFile prefix=BoomBapPattern file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapPattern_1773527062035_3.mid
+15 Mar 2026 12:24:22am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:24:22am | PROCESSOR | createTemporaryFullPatternMidiFile done exists=1 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapPattern_1773527062035_3.mid
+15 Mar 2026 12:24:22am | dragFullPatternExternal performExternalDragDropOfFiles started=1
+15 Mar 2026 12:24:23am | dragFullPatternExternal callback end
+15 Mar 2026 12:25:24am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:25:24am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:25:24am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:25:24am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:25:24am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527124378_4.mid
+15 Mar 2026 12:25:24am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:25:24am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527124378_4.mid
+15 Mar 2026 12:25:24am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:25:25am | dragTrackExternal callback end
+15 Mar 2026 12:25:42am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:25:42am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:25:42am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:25:42am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:25:42am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527142858_5.mid
+15 Mar 2026 12:25:42am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:25:42am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527142858_5.mid
+15 Mar 2026 12:25:42am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:25:43am | dragTrackExternal callback end
+15 Mar 2026 12:26:09am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:26:09am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:26:09am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:26:09am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:26:09am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527169410_6.mid
+15 Mar 2026 12:26:09am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:26:09am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527169410_6.mid
+15 Mar 2026 12:26:09am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:26:10am | dragTrackExternal callback end
+15 Mar 2026 12:27:44am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:27:44am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:27:44am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:27:44am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:27:44am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527264075_7.mid
+15 Mar 2026 12:27:44am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:27:44am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527264075_7.mid
+15 Mar 2026 12:27:44am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:27:45am | dragTrackExternal callback end
+15 Mar 2026 12:30:00am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:30:00am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:30:00am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:30:00am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:30:00am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527400986_8.mid
+15 Mar 2026 12:30:00am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:30:00am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527400986_8.mid
+15 Mar 2026 12:30:00am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:30:03am | dragTrackExternal callback end
+15 Mar 2026 12:31:13am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:31:13am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:31:13am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:31:13am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:31:13am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527473122_0.mid
+15 Mar 2026 12:31:13am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:31:13am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527473122_0.mid
+15 Mar 2026 12:31:13am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:31:13am | dragTrackExternal callback end
+15 Mar 2026 12:31:54am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:31:54am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:31:54am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:31:54am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:31:54am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527514178_1.mid
+15 Mar 2026 12:31:54am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:31:54am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527514178_1.mid
+15 Mar 2026 12:31:54am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:31:55am | dragTrackExternal callback end
+15 Mar 2026 12:31:57am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:31:57am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:31:57am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:31:57am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:31:57am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527517562_2.mid
+15 Mar 2026 12:31:57am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:31:57am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527517562_2.mid
+15 Mar 2026 12:31:57am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:31:58am | dragTrackExternal callback end
+15 Mar 2026 12:32:30am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:32:30am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:32:30am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:32:30am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:32:30am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527550635_3.mid
+15 Mar 2026 12:32:30am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:32:30am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527550635_3.mid
+15 Mar 2026 12:32:30am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:32:31am | dragTrackExternal callback end
+15 Mar 2026 12:32:38am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:32:38am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:32:38am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:32:38am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:32:38am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527558882_4.mid
+15 Mar 2026 12:32:38am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:32:38am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527558882_4.mid
+15 Mar 2026 12:32:38am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:32:40am | dragTrackExternal callback end
+15 Mar 2026 12:32:48am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:32:48am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:32:48am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:32:48am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:32:48am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527568667_5.mid
+15 Mar 2026 12:32:48am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:32:48am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527568667_5.mid
+15 Mar 2026 12:32:48am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:32:49am | dragTrackExternal callback end
+15 Mar 2026 12:37:35am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:37:35am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:37:35am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:37:35am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:37:35am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527855875_0.mid
+15 Mar 2026 12:37:35am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:37:35am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527855875_0.mid
+15 Mar 2026 12:37:35am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:37:37am | dragTrackExternal callback end
+15 Mar 2026 12:37:52am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:37:52am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:37:52am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:37:52am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:37:52am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527872803_1.mid
+15 Mar 2026 12:37:52am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:37:52am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527872803_1.mid
+15 Mar 2026 12:37:52am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:37:54am | dragTrackExternal callback end
+15 Mar 2026 12:38:28am | dragTrackTempMidi click type=0
+15 Mar 2026 12:38:28am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:38:28am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:38:28am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:38:28am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527908107_2.mid
+15 Mar 2026 12:38:28am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:38:28am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527908107_2.mid
+15 Mar 2026 12:38:28am | dragTrackTempMidi reveal C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527908107_2.mid
+15 Mar 2026 12:38:35am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:38:35am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:38:35am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:38:35am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:38:35am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527915402_3.mid
+15 Mar 2026 12:38:35am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:38:35am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527915402_3.mid
+15 Mar 2026 12:38:35am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:38:36am | dragTrackExternal callback end
+15 Mar 2026 12:38:48am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:38:48am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:38:48am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:38:48am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:38:48am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527928354_4.mid
+15 Mar 2026 12:38:48am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:38:48am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527928354_4.mid
+15 Mar 2026 12:38:48am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:38:49am | dragTrackExternal callback end
+15 Mar 2026 12:39:11am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:39:11am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:39:11am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:39:11am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:39:11am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527951371_5.mid
+15 Mar 2026 12:39:11am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:39:11am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773527951371_5.mid
+15 Mar 2026 12:39:11am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:39:12am | dragTrackExternal callback end
+15 Mar 2026 12:40:45am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:40:45am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:40:45am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:40:45am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:40:45am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528045771_6.mid
+15 Mar 2026 12:40:45am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:40:45am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528045771_6.mid
+15 Mar 2026 12:40:45am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:40:46am | dragTrackExternal callback end
+15 Mar 2026 12:41:07am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:41:07am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:41:07am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:41:07am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:41:07am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528067522_7.mid
+15 Mar 2026 12:41:07am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:41:07am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528067522_7.mid
+15 Mar 2026 12:41:07am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:41:08am | dragTrackExternal callback end
+15 Mar 2026 12:41:15am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:41:15am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:41:15am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:41:15am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:41:15am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528075226_8.mid
+15 Mar 2026 12:41:15am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:41:15am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528075226_8.mid
+15 Mar 2026 12:41:15am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:41:16am | dragTrackExternal callback end
+15 Mar 2026 12:41:25am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:41:25am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:41:25am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:41:25am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:41:25am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528085450_9.mid
+15 Mar 2026 12:41:25am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:41:25am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528085450_9.mid
+15 Mar 2026 12:41:25am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:41:26am | dragTrackExternal callback end
+15 Mar 2026 12:41:42am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:41:42am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:41:42am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:41:42am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:41:42am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528102666_10.mid
+15 Mar 2026 12:41:42am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:41:42am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528102666_10.mid
+15 Mar 2026 12:41:42am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:41:43am | dragTrackExternal callback end
+15 Mar 2026 12:42:10am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:42:10am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:42:10am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:42:10am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:42:10am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528130114_11.mid
+15 Mar 2026 12:42:10am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:42:10am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528130114_11.mid
+15 Mar 2026 12:42:10am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:42:11am | dragTrackExternal callback end
+15 Mar 2026 12:44:10am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:44:10am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:44:10am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:44:10am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:44:10am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528250754_12.mid
+15 Mar 2026 12:44:10am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:44:10am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528250754_12.mid
+15 Mar 2026 12:44:10am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:44:11am | dragTrackExternal callback end
+15 Mar 2026 12:44:26am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:44:26am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:44:26am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:44:26am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:44:26am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528266338_13.mid
+15 Mar 2026 12:44:26am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:44:26am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528266338_13.mid
+15 Mar 2026 12:44:26am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:44:30am | dragTrackExternal callback end
+15 Mar 2026 12:44:39am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:44:39am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:44:39am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:44:39am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:44:39am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528279338_14.mid
+15 Mar 2026 12:44:39am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:44:39am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528279338_14.mid
+15 Mar 2026 12:44:39am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:44:42am | dragTrackExternal callback end
+15 Mar 2026 12:44:46am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:44:46am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:44:46am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:44:46am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:44:46am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528286882_15.mid
+15 Mar 2026 12:44:46am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:44:46am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528286882_15.mid
+15 Mar 2026 12:44:46am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:44:48am | dragTrackExternal callback end
+15 Mar 2026 12:45:00am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:45:00am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:45:00am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:45:00am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:45:00am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528300210_16.mid
+15 Mar 2026 12:45:00am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:45:00am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528300210_16.mid
+15 Mar 2026 12:45:00am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:45:01am | dragTrackExternal callback end
+15 Mar 2026 12:45:18am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:45:18am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:45:18am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:45:18am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:45:18am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528318946_17.mid
+15 Mar 2026 12:45:18am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:45:18am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528318946_17.mid
+15 Mar 2026 12:45:18am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:45:20am | dragTrackExternal callback end
+15 Mar 2026 12:45:35am | dragFullPatternExternal gesture start
+15 Mar 2026 12:45:35am | PROCESSOR | createTemporaryFullPatternMidiFile begin
+15 Mar 2026 12:45:35am | PROCESSOR | createTemporaryFullPatternMidiFile snapshot tracks=11
+15 Mar 2026 12:45:35am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapPattern
+15 Mar 2026 12:45:35am | SERVICE | exportTemp post-createTempFile prefix=BoomBapPattern file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapPattern_1773528335474_18.mid
+15 Mar 2026 12:45:35am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:45:35am | PROCESSOR | createTemporaryFullPatternMidiFile done exists=1 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapPattern_1773528335474_18.mid
+15 Mar 2026 12:45:35am | dragFullPatternExternal performExternalDragDropOfFiles started=1
+15 Mar 2026 12:45:37am | dragFullPatternExternal callback end
+15 Mar 2026 12:46:00am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:46:00am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:46:00am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:46:00am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:46:00am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528360898_19.mid
+15 Mar 2026 12:46:00am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:46:00am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528360898_19.mid
+15 Mar 2026 12:46:00am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:46:02am | dragTrackExternal callback end
+15 Mar 2026 12:46:06am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:46:06am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:46:06am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:46:06am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:46:06am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528366026_20.mid
+15 Mar 2026 12:46:06am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:46:06am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528366026_20.mid
+15 Mar 2026 12:46:06am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:46:08am | dragTrackExternal callback end
+15 Mar 2026 12:46:14am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:46:14am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:46:14am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:46:14am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:46:14am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528374346_21.mid
+15 Mar 2026 12:46:14am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:46:14am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528374346_21.mid
+15 Mar 2026 12:46:14am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:46:15am | dragTrackExternal callback end
+15 Mar 2026 12:46:30am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:46:30am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:46:30am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:46:30am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:46:30am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528390546_22.mid
+15 Mar 2026 12:46:30am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:46:30am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528390546_22.mid
+15 Mar 2026 12:46:30am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:46:32am | dragTrackExternal callback end
+15 Mar 2026 12:46:36am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:46:36am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:46:36am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:46:36am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:46:36am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528396266_23.mid
+15 Mar 2026 12:46:36am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:46:36am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528396266_23.mid
+15 Mar 2026 12:46:36am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:46:37am | dragTrackExternal callback end
+15 Mar 2026 12:46:41am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:46:41am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:46:41am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:46:41am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:46:41am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528401714_24.mid
+15 Mar 2026 12:46:41am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:46:41am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528401714_24.mid
+15 Mar 2026 12:46:41am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:46:42am | dragTrackExternal callback end
+15 Mar 2026 12:46:47am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:46:47am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:46:47am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:46:47am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:46:47am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528407394_25.mid
+15 Mar 2026 12:46:47am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:46:47am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528407394_25.mid
+15 Mar 2026 12:46:47am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:46:49am | dragTrackExternal callback end
+15 Mar 2026 12:47:05am | dragTrackExternal gesture start type=5
+15 Mar 2026 12:47:05am | PROCESSOR | createTemporaryTrackMidiFile begin track=5
+15 Mar 2026 12:47:05am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=5
+15 Mar 2026 12:47:05am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:47:05am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528425444_26.mid
+15 Mar 2026 12:47:05am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:47:05am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=5 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528425444_26.mid
+15 Mar 2026 12:47:05am | dragTrackExternal performExternalDragDropOfFiles started=1 type=5
+15 Mar 2026 12:47:06am | dragTrackExternal callback end
+15 Mar 2026 12:47:25am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:47:25am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:47:25am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:47:25am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:47:25am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528445378_27.mid
+15 Mar 2026 12:47:25am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:47:25am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528445378_27.mid
+15 Mar 2026 12:47:25am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:47:27am | dragTrackExternal callback end
+15 Mar 2026 12:47:28am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:47:28am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:47:28am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:47:28am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:47:28am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528448618_28.mid
+15 Mar 2026 12:47:28am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:47:28am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528448618_28.mid
+15 Mar 2026 12:47:28am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:47:29am | dragTrackExternal callback end
+15 Mar 2026 12:47:35am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:47:35am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:47:35am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:47:35am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:47:35am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528455314_29.mid
+15 Mar 2026 12:47:35am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:47:35am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528455314_29.mid
+15 Mar 2026 12:47:35am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:47:38am | dragTrackExternal callback end
+15 Mar 2026 12:47:50am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:47:50am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:47:50am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:47:50am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:47:50am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528470386_30.mid
+15 Mar 2026 12:47:50am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:47:50am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528470386_30.mid
+15 Mar 2026 12:47:50am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:47:52am | dragTrackExternal callback end
+15 Mar 2026 12:48:52am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:48:52am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:48:52am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:48:52am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:48:52am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528532410_31.mid
+15 Mar 2026 12:48:52am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:48:52am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528532410_31.mid
+15 Mar 2026 12:48:52am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:48:55am | dragTrackExternal callback end
+15 Mar 2026 12:48:56am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:48:56am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:48:56am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:48:56am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:48:56am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528536930_32.mid
+15 Mar 2026 12:48:56am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:48:56am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528536930_32.mid
+15 Mar 2026 12:48:56am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:48:58am | dragTrackExternal callback end
+15 Mar 2026 12:49:01am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:49:01am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:49:01am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:49:01am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:49:01am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528541418_33.mid
+15 Mar 2026 12:49:01am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:49:01am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528541418_33.mid
+15 Mar 2026 12:49:01am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:49:03am | dragTrackExternal callback end
+15 Mar 2026 12:49:08am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:49:08am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:49:08am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:49:08am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:49:08am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528548770_34.mid
+15 Mar 2026 12:49:08am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:49:08am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528548770_34.mid
+15 Mar 2026 12:49:08am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:49:12am | dragTrackExternal callback end
+15 Mar 2026 12:49:43am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:49:43am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:49:43am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:49:43am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:49:43am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528583834_35.mid
+15 Mar 2026 12:49:43am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:49:43am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528583834_35.mid
+15 Mar 2026 12:49:43am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:49:45am | dragTrackExternal callback end
+15 Mar 2026 12:49:51am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:49:51am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:49:51am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:49:51am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:49:51am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528591114_36.mid
+15 Mar 2026 12:49:51am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:49:51am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528591114_36.mid
+15 Mar 2026 12:49:51am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:49:52am | dragTrackExternal callback end
+15 Mar 2026 12:50:05am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:50:05am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:50:05am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:50:05am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:50:05am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528605915_37.mid
+15 Mar 2026 12:50:05am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:50:05am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528605915_37.mid
+15 Mar 2026 12:50:05am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:50:08am | dragTrackExternal callback end
+15 Mar 2026 12:50:32am | dragTrackExternal gesture start type=10
+15 Mar 2026 12:50:32am | PROCESSOR | createTemporaryTrackMidiFile begin track=10
+15 Mar 2026 12:50:32am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=10
+15 Mar 2026 12:50:32am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:50:32am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528632898_38.mid
+15 Mar 2026 12:50:32am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:50:32am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=10 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528632898_38.mid
+15 Mar 2026 12:50:32am | dragTrackExternal performExternalDragDropOfFiles started=1 type=10
+15 Mar 2026 12:50:33am | dragTrackExternal callback end
+15 Mar 2026 12:53:18am | dragTrackTempMidi click type=3
+15 Mar 2026 12:53:18am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:53:18am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:53:18am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:53:18am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528798058_39.mid
+15 Mar 2026 12:53:18am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:53:18am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528798058_39.mid
+15 Mar 2026 12:53:18am | dragTrackTempMidi reveal C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528798058_39.mid
+15 Mar 2026 12:54:47am | dragTrackExternal gesture start type=0
+15 Mar 2026 12:54:47am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 12:54:47am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 12:54:47am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:54:47am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528887562_40.mid
+15 Mar 2026 12:54:47am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:54:47am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528887562_40.mid
+15 Mar 2026 12:54:47am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 12:54:49am | dragTrackExternal callback end
+15 Mar 2026 12:55:07am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:55:07am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:55:07am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:55:07am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:55:07am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528907226_41.mid
+15 Mar 2026 12:55:07am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:55:07am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528907226_41.mid
+15 Mar 2026 12:55:07am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:55:08am | dragTrackExternal callback end
+15 Mar 2026 12:55:17am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:55:17am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:55:17am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:55:17am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:55:17am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528917442_42.mid
+15 Mar 2026 12:55:17am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:55:17am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528917442_42.mid
+15 Mar 2026 12:55:17am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:55:18am | dragTrackExternal callback end
+15 Mar 2026 12:55:23am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:55:23am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:55:23am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:55:23am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:55:23am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528923242_43.mid
+15 Mar 2026 12:55:23am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:55:23am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528923242_43.mid
+15 Mar 2026 12:55:23am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:55:24am | dragTrackExternal callback end
+15 Mar 2026 12:55:32am | dragTrackExternal gesture start type=9
+15 Mar 2026 12:55:32am | PROCESSOR | createTemporaryTrackMidiFile begin track=9
+15 Mar 2026 12:55:32am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=9
+15 Mar 2026 12:55:32am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:55:32am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528932754_44.mid
+15 Mar 2026 12:55:32am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:55:32am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=9 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528932754_44.mid
+15 Mar 2026 12:55:32am | dragTrackExternal performExternalDragDropOfFiles started=1 type=9
+15 Mar 2026 12:55:33am | dragTrackExternal callback end
+15 Mar 2026 12:55:36am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:55:36am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:55:36am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:55:36am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:55:36am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528936530_45.mid
+15 Mar 2026 12:55:36am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:55:36am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528936530_45.mid
+15 Mar 2026 12:55:36am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:55:39am | dragTrackExternal callback end
+15 Mar 2026 12:56:00am | dragTrackExternal gesture start type=3
+15 Mar 2026 12:56:00am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 12:56:00am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 12:56:00am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:56:00am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528960458_46.mid
+15 Mar 2026 12:56:00am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:56:00am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528960458_46.mid
+15 Mar 2026 12:56:00am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 12:56:04am | dragTrackExternal callback end
+15 Mar 2026 12:56:15am | dragTrackExternal gesture start type=4
+15 Mar 2026 12:56:15am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 12:56:15am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 12:56:15am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:56:15am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528975410_47.mid
+15 Mar 2026 12:56:15am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:56:15am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528975410_47.mid
+15 Mar 2026 12:56:15am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 12:56:16am | dragTrackExternal callback end
+15 Mar 2026 12:56:20am | dragTrackExternal gesture start type=2
+15 Mar 2026 12:56:20am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 12:56:20am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 12:56:20am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 12:56:20am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528980922_48.mid
+15 Mar 2026 12:56:20am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 12:56:20am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773528980922_48.mid
+15 Mar 2026 12:56:20am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 12:56:22am | dragTrackExternal callback end
+15 Mar 2026 1:14:49am | dragTrackExternal gesture start type=0
+15 Mar 2026 1:14:49am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:14:49am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:14:49am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:14:49am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530089796_0.mid
+15 Mar 2026 1:14:49am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:14:49am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530089796_0.mid
+15 Mar 2026 1:14:49am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 1:14:54am | dragTrackExternal callback end
+15 Mar 2026 1:14:58am | dragTrackExternal gesture start type=0
+15 Mar 2026 1:14:58am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:14:58am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:14:58am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:14:58am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530098940_1.mid
+15 Mar 2026 1:14:58am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:14:58am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530098940_1.mid
+15 Mar 2026 1:14:58am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 1:14:59am | dragTrackExternal callback end
+15 Mar 2026 1:15:03am | dragTrackExternal gesture start type=2
+15 Mar 2026 1:15:03am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 1:15:03am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 1:15:03am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:15:03am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530103076_2.mid
+15 Mar 2026 1:15:03am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:15:03am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530103076_2.mid
+15 Mar 2026 1:15:03am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 1:15:05am | dragTrackExternal callback end
+15 Mar 2026 1:15:09am | dragTrackExternal gesture start type=4
+15 Mar 2026 1:15:09am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 1:15:09am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 1:15:09am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:15:09am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530109588_3.mid
+15 Mar 2026 1:15:09am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:15:09am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530109588_3.mid
+15 Mar 2026 1:15:09am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 1:15:10am | dragTrackExternal callback end
+15 Mar 2026 1:15:20am | dragTrackExternal gesture start type=0
+15 Mar 2026 1:15:20am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:15:20am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:15:20am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:15:20am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530120188_4.mid
+15 Mar 2026 1:15:20am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:15:20am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530120188_4.mid
+15 Mar 2026 1:15:20am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 1:15:21am | dragTrackExternal callback end
+15 Mar 2026 1:15:26am | dragTrackExternal gesture start type=2
+15 Mar 2026 1:15:26am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 1:15:26am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 1:15:26am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:15:26am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530126716_5.mid
+15 Mar 2026 1:15:26am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:15:26am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530126716_5.mid
+15 Mar 2026 1:15:26am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 1:15:30am | dragTrackExternal callback end
+15 Mar 2026 1:15:33am | dragTrackExternal gesture start type=4
+15 Mar 2026 1:15:33am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 1:15:33am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 1:15:33am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:15:33am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530133268_6.mid
+15 Mar 2026 1:15:33am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:15:33am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530133268_6.mid
+15 Mar 2026 1:15:33am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 1:15:34am | dragTrackExternal callback end
+15 Mar 2026 1:16:03am | dragTrackTempMidi click type=0
+15 Mar 2026 1:16:03am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:16:03am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:16:03am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:16:03am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530163188_7.mid
+15 Mar 2026 1:16:03am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:16:03am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530163188_7.mid
+15 Mar 2026 1:16:03am | dragTrackTempMidi reveal C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530163188_7.mid
+15 Mar 2026 1:16:10am | dragTrackExternal gesture start type=0
+15 Mar 2026 1:16:10am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:16:10am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:16:10am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:16:10am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530170076_8.mid
+15 Mar 2026 1:16:10am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:16:10am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530170076_8.mid
+15 Mar 2026 1:16:10am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 1:16:10am | dragTrackExternal callback end
+15 Mar 2026 1:16:14am | dragTrackExternal gesture start type=2
+15 Mar 2026 1:16:14am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 1:16:14am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 1:16:14am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:16:14am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530174220_9.mid
+15 Mar 2026 1:16:14am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:16:14am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530174220_9.mid
+15 Mar 2026 1:16:14am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 1:16:15am | dragTrackExternal callback end
+15 Mar 2026 1:16:22am | dragTrackExternal gesture start type=4
+15 Mar 2026 1:16:22am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 1:16:22am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 1:16:22am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:16:22am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530182397_10.mid
+15 Mar 2026 1:16:22am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:16:22am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530182397_10.mid
+15 Mar 2026 1:16:22am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 1:16:23am | dragTrackExternal callback end
+15 Mar 2026 1:21:05am | dragTrackExternal gesture start type=0
+15 Mar 2026 1:21:05am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:21:05am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:21:05am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:21:05am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530465060_11.mid
+15 Mar 2026 1:21:05am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:21:05am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530465060_11.mid
+15 Mar 2026 1:21:05am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 1:21:05am | dragTrackExternal callback end
+15 Mar 2026 1:21:09am | dragTrackExternal gesture start type=2
+15 Mar 2026 1:21:09am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 1:21:09am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 1:21:09am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:21:09am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530469116_12.mid
+15 Mar 2026 1:21:09am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:21:09am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530469116_12.mid
+15 Mar 2026 1:21:09am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 1:21:10am | dragTrackExternal callback end
+15 Mar 2026 1:21:13am | dragTrackExternal gesture start type=4
+15 Mar 2026 1:21:13am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 1:21:13am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 1:21:13am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:21:13am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530473012_13.mid
+15 Mar 2026 1:21:13am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:21:13am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530473012_13.mid
+15 Mar 2026 1:21:13am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 1:21:14am | dragTrackExternal callback end
+15 Mar 2026 1:21:43am | dragTrackExternal gesture start type=0
+15 Mar 2026 1:21:43am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:21:43am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:21:43am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:21:43am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530503806_14.mid
+15 Mar 2026 1:21:43am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:21:43am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773530503806_14.mid
+15 Mar 2026 1:21:43am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 1:21:44am | dragTrackExternal callback end
+15 Mar 2026 1:52:37am | dragTrackExternal gesture start type=5
+15 Mar 2026 1:52:37am | PROCESSOR | createTemporaryTrackMidiFile begin track=5
+15 Mar 2026 1:52:37am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=5
+15 Mar 2026 1:52:37am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:52:37am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532357812_15.mid
+15 Mar 2026 1:52:37am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:52:37am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=5 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532357812_15.mid
+15 Mar 2026 1:52:37am | dragTrackExternal performExternalDragDropOfFiles started=1 type=5
+15 Mar 2026 1:52:39am | dragTrackExternal callback end
+15 Mar 2026 1:53:03am | dragTrackExternal gesture start type=4
+15 Mar 2026 1:53:03am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 1:53:03am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 1:53:03am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:53:03am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532383092_16.mid
+15 Mar 2026 1:53:03am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:53:03am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532383092_16.mid
+15 Mar 2026 1:53:03am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 1:53:04am | dragTrackExternal callback end
+15 Mar 2026 1:53:23am | dragTrackExternal gesture start type=2
+15 Mar 2026 1:53:23am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 1:53:23am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 1:53:23am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:53:23am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532403956_17.mid
+15 Mar 2026 1:53:23am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:53:23am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532403956_17.mid
+15 Mar 2026 1:53:23am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 1:53:25am | dragTrackExternal callback end
+15 Mar 2026 1:53:54am | dragTrackExternal gesture start type=0
+15 Mar 2026 1:53:54am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+15 Mar 2026 1:53:54am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+15 Mar 2026 1:53:54am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:53:54am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532434916_18.mid
+15 Mar 2026 1:53:54am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:53:54am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532434916_18.mid
+15 Mar 2026 1:53:54am | dragTrackExternal performExternalDragDropOfFiles started=1 type=0
+15 Mar 2026 1:53:55am | dragTrackExternal callback end
+15 Mar 2026 1:54:00am | dragTrackExternal gesture start type=4
+15 Mar 2026 1:54:00am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+15 Mar 2026 1:54:00am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+15 Mar 2026 1:54:00am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:54:00am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532440180_19.mid
+15 Mar 2026 1:54:00am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:54:00am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532440180_19.mid
+15 Mar 2026 1:54:00am | dragTrackExternal performExternalDragDropOfFiles started=1 type=4
+15 Mar 2026 1:54:01am | dragTrackExternal callback end
+15 Mar 2026 1:54:05am | dragTrackExternal gesture start type=5
+15 Mar 2026 1:54:05am | PROCESSOR | createTemporaryTrackMidiFile begin track=5
+15 Mar 2026 1:54:05am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=5
+15 Mar 2026 1:54:05am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:54:05am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532445960_20.mid
+15 Mar 2026 1:54:05am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:54:05am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=5 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532445960_20.mid
+15 Mar 2026 1:54:05am | dragTrackExternal performExternalDragDropOfFiles started=1 type=5
+15 Mar 2026 1:54:07am | dragTrackExternal callback end
+15 Mar 2026 1:54:10am | dragTrackExternal gesture start type=2
+15 Mar 2026 1:54:10am | PROCESSOR | createTemporaryTrackMidiFile begin track=2
+15 Mar 2026 1:54:10am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=2
+15 Mar 2026 1:54:10am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:54:10am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532450132_21.mid
+15 Mar 2026 1:54:10am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:54:10am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=2 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532450132_21.mid
+15 Mar 2026 1:54:10am | dragTrackExternal performExternalDragDropOfFiles started=1 type=2
+15 Mar 2026 1:54:11am | dragTrackExternal callback end
+15 Mar 2026 1:54:21am | dragTrackExternal gesture start type=3
+15 Mar 2026 1:54:21am | PROCESSOR | createTemporaryTrackMidiFile begin track=3
+15 Mar 2026 1:54:21am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=3
+15 Mar 2026 1:54:21am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+15 Mar 2026 1:54:21am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532461932_22.mid
+15 Mar 2026 1:54:21am | SERVICE | exportTemp done ok=1 fileExists=1
+15 Mar 2026 1:54:21am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=3 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1773532461932_22.mid
+15 Mar 2026 1:54:21am | dragTrackExternal performExternalDragDropOfFiles started=1 type=3
+15 Mar 2026 1:54:24am | dragTrackExternal callback end

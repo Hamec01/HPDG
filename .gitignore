@@ -1,0 +1,22 @@
+# Build outputs
+build/
+**/build/
+Binaries/
+
+# IDE
+.vs/
+.vscode/
+*.VC.db
+*.VC.opendb
+
+# CMake intermediates
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# JUCE generated binaries
+**/*_artefacts/
+
+# OS
+Thumbs.db
+.DS_Store
