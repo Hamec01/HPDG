@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../../Core/PatternProject.h"
 #include "../../Core/TrackRegistry.h"
 #include "RapStyleSpec.h"
 #include "../TempoInterpretation.h"
@@ -48,11 +49,17 @@ std::vector<KickZone> kickZonesForStyle(RapSubstyle substyle)
             return { { 0, 1.0f, true }, { 6, 0.56f, false }, { 8, 0.90f, true }, { 10, 0.58f, false }, { 14, 0.50f, false }, { 3, 0.32f, false }, { 7, 0.28f, false }, { 15, 0.34f, false } };
     }
 }
+
+float supportAccentWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(styleInfluence.supportAccentWeight, 0.65f, 1.45f);
+}
 }
 
 void RapKickGenerator::generate(TrackState& track,
                                 const GeneratorParams& params,
                                 const RapStyleProfile& style,
+                                const StyleInfluenceState& styleInfluence,
                                 const std::vector<RapPhraseRole>& phraseRoles,
                                 std::mt19937& rng) const
 {
@@ -72,6 +79,7 @@ void RapKickGenerator::generate(TrackState& track,
     const float density = std::clamp(rapMix(spec.kickDensityMin, spec.kickDensityMax, params.densityAmount) * tempoScale,
                                      0.10f,
                                      1.0f);
+    const float supportAccent = supportAccentWeight(styleInfluence);
 
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     std::uniform_int_distribution<int> vel(style.kickVelocityMin, style.kickVelocityMax);
@@ -90,7 +98,7 @@ void RapKickGenerator::generate(TrackState& track,
         {
             float gate = zone.gate;
             if (!zone.anchor)
-                gate = std::clamp(gate * (0.52f + density * 0.72f + roleBoost * 0.16f), 0.06f, 0.94f);
+                gate = std::clamp(gate * (0.52f + density * 0.72f + roleBoost * 0.16f) * supportAccent, 0.06f, 0.94f);
 
             if (tempoBand != TempoBand::Base && !zone.anchor)
                 gate = std::clamp(gate * (tempoBand == TempoBand::Fast ? 0.70f : 0.84f), 0.05f, 0.9f);
@@ -103,7 +111,7 @@ void RapKickGenerator::generate(TrackState& track,
             track.notes.push_back({ pitch, bar * 16 + zone.step, 1, v, 0, false });
         }
 
-        if (chance(rng) < std::clamp(rapMix(spec.ghostKickDensityMin, spec.ghostKickDensityMax, params.densityAmount), 0.02f, 0.22f))
+        if (chance(rng) < std::clamp(rapMix(spec.ghostKickDensityMin, spec.ghostKickDensityMax, params.densityAmount) * supportAccent, 0.02f, 0.30f))
             track.notes.push_back({ pitch, bar * 16 + (style.substyle == RapSubstyle::DirtySouthClassic ? 12 : 7), 1, ghostVel(rng), 0, true });
 
         if (role == RapPhraseRole::Ending && chance(rng) < (style.substyle == RapSubstyle::GermanStreetRap ? 0.18f : 0.32f))

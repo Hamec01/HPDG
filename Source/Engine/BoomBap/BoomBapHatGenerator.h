@@ -11,12 +11,15 @@
 
 namespace bbg
 {
+struct StyleInfluenceState;
+
 class BoomBapHatGenerator
 {
 public:
     void generate(TrackState& track,
                   const GeneratorParams& params,
                   const BoomBapStyleProfile& style,
+                  const StyleInfluenceState& styleInfluence,
                   const std::vector<PhraseRole>& phraseRoles,
                   const BoomBapGrooveBlueprint& blueprint,
                   std::mt19937& rng) const;

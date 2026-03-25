@@ -109,13 +109,13 @@ const std::array<GenreStyleDefaults, 8>& boomBapStyles()
     {
         std::array<GenreStyleDefaults, 8> styles;
 
-        { auto lanes = makeBaseBoomBapLanes(); styles[0] = { GenreType::BoomBap, "Classic", 57.0f, 0.52f, 0.42f, 0.34f, 0.50f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 0.86f; lanes[5].densityBias = 0.82f; lanes[10].enabledByDefault = false; lanes[10].noteProbability = 0.32f; styles[1] = { GenreType::BoomBap, "Dusty", 58.0f, 0.50f, 0.38f, 0.30f, 0.44f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 1.06f; lanes[8].enabledByDefault = true; lanes[8].noteProbability = 0.58f; lanes[8].volumeDefault = 0.70f; lanes[10].noteProbability = 0.58f; styles[2] = { GenreType::BoomBap, "Jazzy", 62.0f, 0.48f, 0.46f, 0.38f, 0.56f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[5].densityBias = 1.2f; lanes[0].densityBias = 1.08f; lanes[4].noteProbability = 0.48f; styles[3] = { GenreType::BoomBap, "Aggressive", 55.0f, 0.58f, 0.34f, 0.24f, 0.62f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[5].densityBias = 0.84f; lanes[0].densityBias = 0.88f; lanes[2].noteProbability = 0.48f; lanes[9].enabledByDefault = false; styles[4] = { GenreType::BoomBap, "LaidBack", 60.0f, 0.50f, 0.48f, 0.40f, 0.46f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[2].noteProbability = 0.62f; lanes[8].enabledByDefault = true; lanes[8].noteProbability = 0.52f; lanes[10].noteProbability = 0.64f; styles[5] = { GenreType::BoomBap, "BoomBapGold", 59.0f, 0.56f, 0.44f, 0.36f, 0.57f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 0.74f; lanes[0].noteProbability = 0.78f; lanes[5].densityBias = 0.78f; lanes[2].noteProbability = 0.28f; lanes[8].enabledByDefault = false; lanes[10].noteProbability = 0.26f; lanes[3].volumeDefault = 0.94f; styles[6] = { GenreType::BoomBap, "RussianUnderground", 56.0f, 0.54f, 0.32f, 0.26f, 0.38f, lanes }; }
+        { auto lanes = makeBaseBoomBapLanes(); styles[0] = { GenreType::BoomBap, "Classic", 90.0f, 57.0f, 0.52f, 0.42f, 0.34f, 0.50f, lanes }; }
+        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 0.86f; lanes[5].densityBias = 0.82f; lanes[10].enabledByDefault = false; lanes[10].noteProbability = 0.32f; styles[1] = { GenreType::BoomBap, "Dusty", 88.0f, 58.0f, 0.50f, 0.38f, 0.30f, 0.44f, lanes }; }
+        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 1.06f; lanes[8].enabledByDefault = true; lanes[8].noteProbability = 0.58f; lanes[8].volumeDefault = 0.70f; lanes[10].noteProbability = 0.58f; styles[2] = { GenreType::BoomBap, "Jazzy", 94.0f, 62.0f, 0.48f, 0.46f, 0.38f, 0.56f, lanes }; }
+        { auto lanes = makeBaseBoomBapLanes(); lanes[5].densityBias = 1.2f; lanes[0].densityBias = 1.08f; lanes[4].noteProbability = 0.48f; styles[3] = { GenreType::BoomBap, "Aggressive", 92.0f, 55.0f, 0.58f, 0.34f, 0.24f, 0.62f, lanes }; }
+        { auto lanes = makeBaseBoomBapLanes(); lanes[5].densityBias = 0.84f; lanes[0].densityBias = 0.88f; lanes[2].noteProbability = 0.48f; lanes[9].enabledByDefault = false; styles[4] = { GenreType::BoomBap, "LaidBack", 86.0f, 60.0f, 0.50f, 0.48f, 0.40f, 0.46f, lanes }; }
+        { auto lanes = makeBaseBoomBapLanes(); lanes[2].noteProbability = 0.62f; lanes[8].enabledByDefault = true; lanes[8].noteProbability = 0.52f; lanes[10].noteProbability = 0.64f; styles[5] = { GenreType::BoomBap, "BoomBapGold", 91.0f, 59.0f, 0.56f, 0.44f, 0.36f, 0.57f, lanes }; }
+        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 0.74f; lanes[0].noteProbability = 0.78f; lanes[5].densityBias = 0.78f; lanes[2].noteProbability = 0.28f; lanes[8].enabledByDefault = false; lanes[10].noteProbability = 0.26f; lanes[3].volumeDefault = 0.94f; styles[6] = { GenreType::BoomBap, "RussianUnderground", 87.0f, 56.0f, 0.54f, 0.32f, 0.26f, 0.38f, lanes }; }
         {
             auto lanes = makeBaseBoomBapLanes();
             lanes[0].densityBias = 0.82f;
@@ -138,7 +138,7 @@ const std::array<GenreStyleDefaults, 8>& boomBapStyles()
             lanes[9].enabledByDefault = false;
             lanes[10].noteProbability = 0.18f;
             lanes[10].volumeDefault = 0.58f;
-            styles[7] = { GenreType::BoomBap, "LofiRap", 56.0f, 0.38f, 0.36f, 0.44f, 0.34f, lanes };
+            styles[7] = { GenreType::BoomBap, "LofiRap", 82.0f, 56.0f, 0.38f, 0.36f, 0.44f, 0.34f, lanes };
         }
         return styles;
     }();
@@ -160,7 +160,7 @@ const std::array<GenreStyleDefaults, 7>& rapStyles()
             lanes[8].enabledByDefault = false;
             lanes[9].enabledByDefault = false;
             lanes[10].noteProbability = 0.10f;
-            styles[0] = { GenreType::Rap, "EastCoast", 53.0f, 0.54f, 0.32f, 0.26f, 0.48f, lanes };
+            styles[0] = { GenreType::Rap, "EastCoast", 92.0f, 53.0f, 0.54f, 0.32f, 0.26f, 0.48f, lanes };
         }
         {
             auto lanes = makeBaseRapLanes();
@@ -172,7 +172,7 @@ const std::array<GenreStyleDefaults, 7>& rapStyles()
             lanes[8].enabledByDefault = false;
             lanes[9].enabledByDefault = false;
             lanes[10].noteProbability = 0.14f;
-            styles[1] = { GenreType::Rap, "WestCoast", 54.0f, 0.50f, 0.36f, 0.32f, 0.46f, lanes };
+            styles[1] = { GenreType::Rap, "WestCoast", 94.0f, 54.0f, 0.50f, 0.36f, 0.32f, 0.46f, lanes };
         }
         {
             auto lanes = makeBaseRapLanes();
@@ -184,7 +184,7 @@ const std::array<GenreStyleDefaults, 7>& rapStyles()
             lanes[8].enabledByDefault = false;
             lanes[9].enabledByDefault = true; lanes[9].noteProbability = 0.08f;
             lanes[10].noteProbability = 0.18f;
-            styles[2] = { GenreType::Rap, "DirtySouthClassic", 52.0f, 0.54f, 0.30f, 0.26f, 0.58f, lanes };
+            styles[2] = { GenreType::Rap, "DirtySouthClassic", 80.0f, 52.0f, 0.54f, 0.30f, 0.26f, 0.58f, lanes };
         }
         {
             auto lanes = makeBaseRapLanes();
@@ -196,7 +196,7 @@ const std::array<GenreStyleDefaults, 7>& rapStyles()
             lanes[8].enabledByDefault = false;
             lanes[9].enabledByDefault = false;
             lanes[10].enabledByDefault = false; lanes[10].noteProbability = 0.04f;
-            styles[3] = { GenreType::Rap, "GermanStreetRap", 51.0f, 0.52f, 0.24f, 0.20f, 0.44f, lanes };
+            styles[3] = { GenreType::Rap, "GermanStreetRap", 88.0f, 51.0f, 0.52f, 0.24f, 0.20f, 0.44f, lanes };
         }
         {
             auto lanes = makeBaseRapLanes();
@@ -208,7 +208,7 @@ const std::array<GenreStyleDefaults, 7>& rapStyles()
             lanes[8].enabledByDefault = false;
             lanes[9].enabledByDefault = false;
             lanes[10].noteProbability = 0.10f;
-            styles[4] = { GenreType::Rap, "RussianRap", 51.0f, 0.50f, 0.26f, 0.24f, 0.40f, lanes };
+            styles[4] = { GenreType::Rap, "RussianRap", 90.0f, 51.0f, 0.50f, 0.26f, 0.24f, 0.40f, lanes };
         }
         {
             auto lanes = makeBaseRapLanes();
@@ -220,7 +220,7 @@ const std::array<GenreStyleDefaults, 7>& rapStyles()
             lanes[8].enabledByDefault = false; lanes[8].noteProbability = 0.06f;
             lanes[9].enabledByDefault = true; lanes[9].noteProbability = 0.10f;
             lanes[10].noteProbability = 0.22f;
-            styles[5] = { GenreType::Rap, "RnBRap", 54.0f, 0.46f, 0.38f, 0.36f, 0.42f, lanes };
+            styles[5] = { GenreType::Rap, "RnBRap", 96.0f, 54.0f, 0.46f, 0.38f, 0.36f, 0.42f, lanes };
         }
         {
             auto lanes = makeBaseRapLanes();
@@ -237,7 +237,7 @@ const std::array<GenreStyleDefaults, 7>& rapStyles()
             lanes[9].enabledByDefault = false; lanes[9].noteProbability = 0.02f;
             lanes[10].enabledByDefault = false; lanes[10].noteProbability = 0.06f;
             lanes[7].enabledByDefault = false; lanes[7].noteProbability = 0.10f; lanes[7].sub808Activity = 0.18f;
-            styles[6] = { GenreType::Rap, "HardcoreRap", 52.0f, 0.60f, 0.30f, 0.24f, 0.62f, lanes };
+            styles[6] = { GenreType::Rap, "HardcoreRap", 90.0f, 52.0f, 0.60f, 0.30f, 0.24f, 0.62f, lanes };
         }
         return styles;
     }();
@@ -249,12 +249,12 @@ const std::array<GenreStyleDefaults, 6>& trapStyles()
     static const std::array<GenreStyleDefaults, 6> table = []
     {
         std::array<GenreStyleDefaults, 6> styles;
-        { auto lanes = makeBaseTrapLanes(); lanes[1].hatFxIntensity = 0.76f; lanes[1].noteProbability = 0.82f; lanes[7].sub808Activity = 0.88f; styles[0] = { GenreType::Trap, "ATLClassic", 52.0f, 0.58f, 0.30f, 0.28f, 0.58f, lanes }; }
-        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.62f; lanes[1].hatFxIntensity = 0.58f; lanes[7].sub808Activity = 0.94f; lanes[10].noteProbability = 0.16f; styles[1] = { GenreType::Trap, "DarkTrap", 51.0f, 0.60f, 0.24f, 0.22f, 0.40f, lanes }; }
-        { auto lanes = makeBaseTrapLanes(); lanes[0].volumeDefault = 0.78f; lanes[2].noteProbability = 0.58f; lanes[7].sub808Activity = 0.74f; styles[2] = { GenreType::Trap, "CloudTrap", 53.0f, 0.48f, 0.36f, 0.34f, 0.48f, lanes }; }
-        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.98f; lanes[1].hatFxIntensity = 1.0f; lanes[0].densityBias = 1.2f; lanes[7].sub808Activity = 0.92f; styles[3] = { GenreType::Trap, "RageTrap", 52.5f, 0.64f, 0.32f, 0.30f, 0.74f, lanes }; }
-        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.38f; lanes[1].hatFxIntensity = 0.36f; lanes[5].densityBias = 0.88f; lanes[7].sub808Activity = 0.82f; lanes[10].noteProbability = 0.22f; styles[4] = { GenreType::Trap, "MemphisTrap", 51.5f, 0.56f, 0.30f, 0.28f, 0.44f, lanes }; }
-        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.74f; lanes[1].hatFxIntensity = 0.7f; lanes[2].noteProbability = 0.52f; lanes[10].noteProbability = 0.22f; styles[5] = { GenreType::Trap, "LuxuryTrap", 52.0f, 0.54f, 0.30f, 0.30f, 0.52f, lanes }; }
+        { auto lanes = makeBaseTrapLanes(); lanes[1].hatFxIntensity = 0.76f; lanes[1].noteProbability = 0.82f; lanes[7].sub808Activity = 0.88f; styles[0] = { GenreType::Trap, "ATLClassic", 140.0f, 52.0f, 0.58f, 0.30f, 0.28f, 0.58f, lanes }; }
+        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.62f; lanes[1].hatFxIntensity = 0.58f; lanes[7].sub808Activity = 0.94f; lanes[10].noteProbability = 0.16f; styles[1] = { GenreType::Trap, "DarkTrap", 138.0f, 51.0f, 0.60f, 0.24f, 0.22f, 0.40f, lanes }; }
+        { auto lanes = makeBaseTrapLanes(); lanes[0].volumeDefault = 0.78f; lanes[2].noteProbability = 0.58f; lanes[7].sub808Activity = 0.74f; styles[2] = { GenreType::Trap, "CloudTrap", 135.0f, 53.0f, 0.48f, 0.36f, 0.34f, 0.48f, lanes }; }
+        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.98f; lanes[1].hatFxIntensity = 1.0f; lanes[0].densityBias = 1.2f; lanes[7].sub808Activity = 0.92f; styles[3] = { GenreType::Trap, "RageTrap", 150.0f, 52.5f, 0.64f, 0.32f, 0.30f, 0.74f, lanes }; }
+        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.38f; lanes[1].hatFxIntensity = 0.36f; lanes[5].densityBias = 0.88f; lanes[7].sub808Activity = 0.82f; lanes[10].noteProbability = 0.22f; styles[4] = { GenreType::Trap, "MemphisTrap", 142.0f, 51.5f, 0.56f, 0.30f, 0.28f, 0.44f, lanes }; }
+        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.74f; lanes[1].hatFxIntensity = 0.7f; lanes[2].noteProbability = 0.52f; lanes[10].noteProbability = 0.22f; styles[5] = { GenreType::Trap, "LuxuryTrap", 146.0f, 52.0f, 0.54f, 0.30f, 0.30f, 0.52f, lanes }; }
         return styles;
     }();
     return table;
@@ -265,10 +265,10 @@ const std::array<GenreStyleDefaults, 4>& drillStyles()
     static const std::array<GenreStyleDefaults, 4> table = []
     {
         std::array<GenreStyleDefaults, 4> styles;
-        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.84f; lanes[1].noteProbability = 0.74f; lanes[7].sub808Activity = 0.9f; lanes[5].densityBias = 1.08f; styles[0] = { GenreType::Drill, "UKDrill", 51.0f, 0.60f, 0.26f, 0.22f, 0.58f, lanes }; }
-        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.9f; lanes[1].noteProbability = 0.78f; lanes[3].volumeDefault = 0.98f; lanes[5].densityBias = 1.12f; lanes[7].sub808Activity = 0.92f; styles[1] = { GenreType::Drill, "BrooklynDrill", 51.0f, 0.64f, 0.26f, 0.22f, 0.62f, lanes }; }
-        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.68f; lanes[1].noteProbability = 0.62f; lanes[5].densityBias = 0.92f; lanes[7].sub808Activity = 0.84f; styles[2] = { GenreType::Drill, "NYDrill", 50.8f, 0.58f, 0.24f, 0.22f, 0.50f, lanes }; }
-        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.82f; lanes[1].noteProbability = 0.68f; lanes[5].densityBias = 0.84f; lanes[7].sub808Activity = 0.9f; lanes[10].noteProbability = 0.12f; styles[3] = { GenreType::Drill, "DarkDrill", 50.5f, 0.56f, 0.22f, 0.20f, 0.36f, lanes }; }
+        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.84f; lanes[1].noteProbability = 0.74f; lanes[7].sub808Activity = 0.9f; lanes[5].densityBias = 1.08f; styles[0] = { GenreType::Drill, "UKDrill", 142.0f, 51.0f, 0.60f, 0.26f, 0.22f, 0.58f, lanes }; }
+        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.9f; lanes[1].noteProbability = 0.78f; lanes[3].volumeDefault = 0.98f; lanes[5].densityBias = 1.12f; lanes[7].sub808Activity = 0.92f; styles[1] = { GenreType::Drill, "BrooklynDrill", 145.0f, 51.0f, 0.64f, 0.26f, 0.22f, 0.62f, lanes }; }
+        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.68f; lanes[1].noteProbability = 0.62f; lanes[5].densityBias = 0.92f; lanes[7].sub808Activity = 0.84f; styles[2] = { GenreType::Drill, "NYDrill", 143.0f, 50.8f, 0.58f, 0.24f, 0.22f, 0.50f, lanes }; }
+        { auto lanes = makeBaseDrillLanes(); lanes[1].hatFxIntensity = 0.82f; lanes[1].noteProbability = 0.68f; lanes[5].densityBias = 0.84f; lanes[7].sub808Activity = 0.9f; lanes[10].noteProbability = 0.12f; styles[3] = { GenreType::Drill, "DarkDrill", 140.0f, 50.5f, 0.56f, 0.22f, 0.20f, 0.36f, lanes }; }
         return styles;
     }();
     return table;

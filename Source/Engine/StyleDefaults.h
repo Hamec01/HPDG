@@ -32,6 +32,7 @@ struct GenreStyleDefaults
 {
     GenreType genre = GenreType::BoomBap;
     juce::String substyleName;
+    float bpmDefault = 90.0f;
 
     float swingDefault = 56.0f;
     float velocityDefault = 0.50f;

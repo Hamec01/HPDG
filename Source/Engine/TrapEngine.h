@@ -62,6 +62,7 @@ private:
                                  std::mt19937& rng,
                                  const std::unordered_set<TrackType>& mutableTracks) const;
     void applyTrapSub808Slides(PatternProject& project,
+                               const TrapStyleProfile& style,
                                const TrapStyleSpec& spec,
                                const std::vector<TrapPhraseRole>& phrase,
                                std::mt19937& rng,

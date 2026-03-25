@@ -1,0 +1,1 @@
+HPDG runtime metadata contract: OK

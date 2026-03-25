@@ -7,6 +7,7 @@
 #include "../Core/TrackRegistry.h"
 #include "Rap/LofiRapStyleSpec.h"
 #include "Rap/RapStyleSpec.h"
+#include "StyleInfluence.h"
 #include "StyleDefaults.h"
 
 namespace bbg
@@ -24,12 +25,103 @@ TrackState* findTrack(PatternProject& project, TrackType type)
     return nullptr;
 }
 
+void applyResolvedStyleInfluence(PatternProject& project)
+{
+    juce::String applyError;
+    RapStyleInfluence::apply(project, &applyError);
+    juce::ignoreUnused(applyError);
+}
+
+float laneActivityWeight(const PatternProject& project, TrackType type)
+{
+    return std::clamp(laneBiasFor(project.styleInfluence, type).activityWeight, 0.55f, 1.5f);
+}
+
+float laneBalanceWeight(const PatternProject& project, TrackType type)
+{
+    return std::clamp(laneBiasFor(project.styleInfluence, type).balanceWeight, 0.55f, 1.5f);
+}
+
+float supportAccentWeight(const PatternProject& project)
+{
+    return std::clamp(project.styleInfluence.supportAccentWeight, 0.65f, 1.5f);
+}
+
 bool containsStep(const std::vector<NoteEvent>& notes, int step)
 {
     return std::any_of(notes.begin(), notes.end(), [step](const NoteEvent& n)
     {
         return n.step == step;
     });
+}
+
+const StepFeature* featureAtStep(const AudioFeatureMap& map, int step)
+{
+    if (map.steps.empty() || map.stepsPerBar <= 0)
+        return nullptr;
+
+    const int normalized = std::max(0, step);
+    const size_t idx = static_cast<size_t>(normalized) % map.steps.size();
+    return &map.steps[idx];
+}
+
+bool isRapHatFamily(TrackType type)
+{
+    return type == TrackType::HiHat
+        || type == TrackType::OpenHat
+        || type == TrackType::Perc
+        || type == TrackType::Ride
+        || type == TrackType::Cymbal;
+}
+
+void applySampleAwareRapFlavor(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks)
+{
+    const auto& ctx = project.sampleContext;
+    if (!ctx.enabled || ctx.featureMap.steps.empty())
+        return;
+
+    const float react = std::clamp(ctx.reactivity, 0.0f, 1.0f);
+    const float contrast = std::clamp(ctx.supportVsContrast, 0.0f, 1.0f);
+    const float support = 1.0f - contrast;
+
+    for (auto& track : project.tracks)
+    {
+        if (mutableTracks.count(track.type) == 0)
+            continue;
+
+        for (auto& note : track.notes)
+        {
+            const auto* f = featureAtStep(ctx.featureMap, note.step);
+            if (f == nullptr)
+                continue;
+
+            float guide = 0.45f * f->accent + 0.35f * f->onset + 0.20f * f->energy;
+            if (track.type == TrackType::Kick || track.type == TrackType::GhostKick || track.type == TrackType::Sub808)
+                guide = 0.42f * f->low + 0.33f * f->accent + 0.25f * f->onset;
+            else if (isRapHatFamily(track.type))
+                guide = 0.44f * f->high + 0.34f * f->energy + 0.22f * f->onset;
+
+            const float gain = std::clamp(1.0f
+                                              + 0.24f * react * support * (guide - 0.5f)
+                                              + 0.14f * react * contrast * (0.5f - guide),
+                                          0.70f,
+                                          1.40f);
+            note.velocity = std::clamp(static_cast<int>(static_cast<float>(note.velocity) * gain), 1, 127);
+        }
+
+        if (isRapHatFamily(track.type) && support * react > 0.40f)
+        {
+            track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+            {
+                const auto* f = featureAtStep(ctx.featureMap, note.step);
+                if (f == nullptr)
+                    return false;
+
+                const int phase = (note.step + note.velocity + static_cast<int>(track.type)) % 8;
+                return phase == 0 && f->high > 0.80f && f->onset < 0.28f && !f->isStrongBeat;
+            }), track.notes.end());
+        }
+    }
 }
 
 bool isAnchorStep(TrackType type, int stepInBar)
@@ -301,6 +393,7 @@ RapEngine::RapEngine() = default;
 
 void RapEngine::generate(PatternProject& project)
 {
+    applyResolvedStyleInfluence(project);
     const auto& style = getRapProfile(project.params.rapSubstyle);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.generationCounter * 19 + 101));
 
@@ -317,7 +410,8 @@ void RapEngine::generate(PatternProject& project)
         track.variationId = 0;
         track.mutationDepth = 0.0f;
         track.subProfile = style.name;
-        track.laneRole = roleForTrack(track.type);
+        if (track.laneRole.isEmpty())
+            track.laneRole = roleForTrack(track.type);
         mutableTracks.insert(track.type);
     }
 
@@ -328,11 +422,13 @@ void RapEngine::generate(PatternProject& project)
 
 void RapEngine::regenerateTrack(PatternProject& project, TrackType trackType)
 {
+    applyResolvedStyleInfluence(project);
     regenerateTrackVariation(project, trackType);
 }
 
 void RapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
 {
+    applyResolvedStyleInfluence(project);
     auto* track = findTrack(project, trackType);
     if (track == nullptr || track->locked)
         return;
@@ -380,6 +476,7 @@ void RapEngine::regenerateTrackVariation(PatternProject& project, TrackType trac
 
 void RapEngine::mutatePattern(PatternProject& project)
 {
+    applyResolvedStyleInfluence(project);
     std::vector<TrackType> candidates;
     for (const auto& track : project.tracks)
     {
@@ -406,6 +503,7 @@ void RapEngine::mutatePattern(PatternProject& project)
 
 void RapEngine::mutateTrack(PatternProject& project, TrackType trackType)
 {
+    applyResolvedStyleInfluence(project);
     auto* track = findTrack(project, trackType);
     if (track == nullptr || track->locked || !track->enabled)
         return;
@@ -491,13 +589,13 @@ void RapEngine::regenerateTrackInternal(PatternProject& project,
     switch (track.type)
     {
         case TrackType::Kick:
-            kickGenerator.generate(track, project.params, style, phrasePlan, rng);
+            kickGenerator.generate(track, project.params, style, project.styleInfluence, phrasePlan, rng);
             break;
         case TrackType::Snare:
             snareGenerator.generate(track, project.params, style, phrasePlan, rng);
             break;
         case TrackType::HiHat:
-            hatGenerator.generate(track, project.params, style, phrasePlan, rng);
+            hatGenerator.generate(track, project.params, style, project.styleInfluence, phrasePlan, rng);
             break;
         case TrackType::OpenHat:
         case TrackType::ClapGhostSnare:
@@ -512,7 +610,8 @@ void RapEngine::regenerateTrackInternal(PatternProject& project,
     }
 
     track.subProfile = style.name;
-    track.laneRole = roleForTrack(track.type);
+    if (track.laneRole.isEmpty())
+        track.laneRole = roleForTrack(track.type);
 }
 
 void RapEngine::generateDependentTracks(PatternProject& project,
@@ -535,7 +634,8 @@ void RapEngine::generateDependentTracks(PatternProject& project,
         clap->notes.clear();
         std::uniform_int_distribution<int> clapVel(style.snareVelocityMin - 6, style.snareVelocityMax - 2);
         std::uniform_int_distribution<int> ghostVel(style.ghostVelocityMin, style.ghostVelocityMax);
-        const float clapDensity = std::clamp(rapMix(spec.clapGhostDensityMin, spec.clapGhostDensityMax, project.params.densityAmount),
+        const float clapDensity = std::clamp(rapMix(spec.clapGhostDensityMin, spec.clapGhostDensityMax, project.params.densityAmount)
+                                                 * laneBalanceWeight(project, TrackType::ClapGhostSnare),
                                              spec.clapGhostDensityMin,
                                              spec.clapGhostDensityMax);
 
@@ -561,7 +661,8 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                 continue;
 
             const auto& ghostDefaults = getLaneStyleDefaults(styleDefaults, ghostKick->type);
-            const float baseGhost = rapMix(spec.ghostKickDensityMin, spec.ghostKickDensityMax, project.params.densityAmount);
+            const float baseGhost = rapMix(spec.ghostKickDensityMin, spec.ghostKickDensityMax, project.params.densityAmount)
+                * supportAccentWeight(project);
             const float gate = std::clamp(baseGhost * ghostDefaults.noteProbability, 0.01f, 0.28f);
             if (chance(rng) < gate)
                 ghostKick->notes.push_back({ 35, std::max(0, n.step - 1), 1, vel(rng), 2, true });
@@ -575,7 +676,8 @@ void RapEngine::generateDependentTracks(PatternProject& project,
         if (spec.openHatUseful)
         {
             std::uniform_int_distribution<int> vel(style.hatVelocityMin + 6, style.hatVelocityMax + 2);
-            const float openDensity = std::clamp(rapMix(spec.openHatDensityMin, spec.openHatDensityMax, project.params.densityAmount),
+            const float openDensity = std::clamp(rapMix(spec.openHatDensityMin, spec.openHatDensityMax, project.params.densityAmount)
+                                                     * laneActivityWeight(project, TrackType::OpenHat),
                                                  spec.openHatDensityMin,
                                                  spec.openHatDensityMax);
 
@@ -613,7 +715,7 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                 {
                     for (int step : { 2, 6, 10, 14 })
                     {
-                        if (chance(rng) < std::clamp(style.rideChance * rideDefaults.noteProbability, 0.01f, 0.55f))
+                        if (chance(rng) < std::clamp(style.rideChance * rideDefaults.noteProbability * laneActivityWeight(project, TrackType::Ride), 0.01f, 0.55f))
                             ride->notes.push_back({ 51, bar * 16 + step, 1, vel(rng), 2, false });
                     }
                 }
@@ -647,7 +749,10 @@ void RapEngine::generateDependentTracks(PatternProject& project,
 
         if (spec.percUseful)
         {
-            const float percDensity = std::clamp(rapMix(spec.percDensityMin, spec.percDensityMax, project.params.densityAmount), spec.percDensityMin, spec.percDensityMax);
+            const float percDensity = std::clamp(rapMix(spec.percDensityMin, spec.percDensityMax, project.params.densityAmount)
+                                                     * laneActivityWeight(project, TrackType::Perc),
+                                                 spec.percDensityMin,
+                                                 spec.percDensityMax);
             for (int bar = 0; bar < bars; ++bar)
             {
                 for (int step : { 5, 9, 13 })
@@ -755,6 +860,8 @@ void RapEngine::postProcess(PatternProject& project,
             }
         }
 
+        applySampleAwareRapFlavor(project, mutableTracks);
+
         return;
     }
 
@@ -784,6 +891,8 @@ void RapEngine::postProcess(PatternProject& project,
                 note.velocity = std::clamp(sampleRapVelocity(style.substyle, track.type, note, rng), 1, 127);
         }
     }
+
+    applySampleAwareRapFlavor(project, mutableTracks);
 }
 
 void RapEngine::validatePattern(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks) const

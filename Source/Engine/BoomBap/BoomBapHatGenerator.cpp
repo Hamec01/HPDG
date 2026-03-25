@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "BoomBapPatternLibrary.h"
+#include "../../Core/PatternProject.h"
 #include "../../Core/TrackRegistry.h"
 #include "../TempoInterpretation.h"
 
@@ -50,11 +51,22 @@ float syncopationGateScale(const BoomBapBarBlueprint* bar, int step)
 
     return std::clamp(0.48f + bar->hatSyncopation * 0.96f, 0.26f, 1.34f);
 }
+
+float hiHatActivityWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(laneBiasFor(styleInfluence, TrackType::HiHat).activityWeight, 0.5f, 1.5f);
+}
+
+float supportAccentWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(styleInfluence.supportAccentWeight, 0.6f, 1.5f);
+}
 }
 
 void BoomBapHatGenerator::generate(TrackState& track,
                                    const GeneratorParams& params,
                                    const BoomBapStyleProfile& style,
+                                   const StyleInfluenceState& styleInfluence,
                                    const std::vector<PhraseRole>& phraseRoles,
                                    const BoomBapGrooveBlueprint& blueprint,
                                    std::mt19937& rng) const
@@ -77,7 +89,8 @@ void BoomBapHatGenerator::generate(TrackState& track,
         tempoScale = 0.78f;
     else if (tempoBand == TempoBand::Fast)
         tempoScale = 0.62f;
-    const float baseDensity = std::clamp(params.densityAmount * style.hatDensityBias * tempoScale, 0.0f, 1.0f);
+    const float baseDensity = std::clamp(params.densityAmount * style.hatDensityBias * tempoScale * hiHatActivityWeight(styleInfluence), 0.0f, 1.0f);
+    const float supportAccent = supportAccentWeight(styleInfluence);
 
     for (int bar = 0; bar < bars; ++bar)
     {
@@ -117,7 +130,7 @@ void BoomBapHatGenerator::generate(TrackState& track,
             float gate = std::clamp(0.24f + baseDensity * 0.52f + roleVar * 0.2f, 0.14f, 1.0f);
             gate *= std::clamp(0.55f + barHatActivity * 0.9f, 0.3f, 1.32f);
             gate *= syncopationGateScale(barBlueprint, step);
-            gate = std::clamp(gate * carrierGateScale(style.substyle), 0.12f, 1.0f);
+            gate = std::clamp(gate * carrierGateScale(style.substyle) * (0.9f + supportAccent * 0.1f), 0.12f, 1.0f);
 
             if (style.substyle == BoomBapSubstyle::LofiRap)
             {

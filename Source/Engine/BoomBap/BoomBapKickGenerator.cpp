@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "BoomBapPatternLibrary.h"
+#include "../../Core/PatternProject.h"
 #include "../../Core/TrackRegistry.h"
 #include "../TempoInterpretation.h"
 
@@ -55,11 +56,22 @@ float identityRetention(PhraseRole role)
         default: return 0.78f;
     }
 }
+
+float kickActivityWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(laneBiasFor(styleInfluence, TrackType::Kick).activityWeight, 0.45f, 1.6f);
+}
+
+float supportAccentWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(styleInfluence.supportAccentWeight, 0.6f, 1.5f);
+}
 } // namespace
 
 void BoomBapKickGenerator::generate(TrackState& track,
                                     const GeneratorParams& params,
                                     const BoomBapStyleProfile& style,
+                                    const StyleInfluenceState& styleInfluence,
                                     const std::vector<PhraseRole>& phraseRoles,
                                     std::mt19937& rng) const
 {
@@ -79,7 +91,8 @@ void BoomBapKickGenerator::generate(TrackState& track,
         tempoScale = 0.8f;
     else if (tempoBand == TempoBand::Fast)
         tempoScale = 0.64f;
-    const float density = std::clamp(params.densityAmount * style.kickDensityBias * tempoScale, 0.0f, 1.0f);
+    const float density = std::clamp(params.densityAmount * style.kickDensityBias * tempoScale * kickActivityWeight(styleInfluence), 0.0f, 1.0f);
+    const float supportAccent = supportAccentWeight(styleInfluence);
 
     const auto* identityTemplate = pickTemplate(style.substyle, density, PhraseRole::Base, rng);
     if (identityTemplate == nullptr)
@@ -157,7 +170,7 @@ void BoomBapKickGenerator::generate(TrackState& track,
             const float profileScale = substyleSupportScale(style.substyle);
             float keepChance = probabilityForRole(hitRole, density, roleVar, style.kickDensityBias);
             if (hitRole != KickHitRole::Anchor)
-                keepChance = std::clamp(keepChance * profileScale * retainIdentity, 0.05f, 1.0f);
+                keepChance = std::clamp(keepChance * profileScale * retainIdentity * supportAccent, 0.05f, 1.0f);
             if (tempoBand != TempoBand::Base && hitRole != KickHitRole::Anchor)
                 keepChance = std::clamp(keepChance * (tempoBand == TempoBand::Fast ? 0.58f : 0.72f), 0.03f, 1.0f);
 

@@ -10,12 +10,15 @@
 
 namespace bbg
 {
+struct StyleInfluenceState;
+
 class RapHatGenerator
 {
 public:
     void generate(TrackState& track,
                   const GeneratorParams& params,
                   const RapStyleProfile& style,
+                  const StyleInfluenceState& styleInfluence,
                   const std::vector<RapPhraseRole>& phraseRoles,
                   std::mt19937& rng) const;
 };

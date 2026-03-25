@@ -83,6 +83,17 @@ bool shouldIncludeTrackForPlayback(const PatternProject& project, const TrackSta
     return true;
 }
 
+std::optional<juce::Range<int>> activePreviewLoopTicks(const PatternProject& project)
+{
+    if (project.previewPlaybackMode != PreviewPlaybackMode::LoopRange || !project.previewLoopTicks.has_value())
+        return std::nullopt;
+
+    if (project.previewLoopTicks->getLength() <= 0)
+        return std::nullopt;
+
+    return project.previewLoopTicks;
+}
+
 juce::File dragLogFile()
 {
     return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
@@ -105,6 +116,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::bpm, "BPM", juce::NormalisableRange<float>(60.0f, 180.0f, 0.1f), 90.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::bpmLock, "BPM Lock", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::syncDawTempo, "Sync DAW Tempo", false));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::swingPercent, "Swing %", juce::NormalisableRange<float>(50.0f, 75.0f, 0.1f), 56.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::velocityAmount, "Velocity Amount", juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.5f));
@@ -254,23 +266,76 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 
     if (previewPlaying)
     {
-        const int previewStart = previewSamplePosition;
-        const int previewBlockStartInPattern = ((previewStart % patternLength) + patternLength) % patternLength;
-
-        for (const auto& event : previewEvents)
+        const auto schedulePreviewSegment = [this](int segmentStart,
+                                                   int segmentLength,
+                                                   int bufferOffset,
+                                                   const std::optional<juce::Range<int>>& allowedSampleRange)
         {
-            const int eventSample = event.sample;
-            int rel = eventSample - previewBlockStartInPattern;
-            if (rel < 0)
-                rel += patternLength;
+            for (const auto& event : previewEvents)
+            {
+                const int eventSample = event.sample;
+                if (allowedSampleRange.has_value() && !allowedSampleRange->contains(eventSample))
+                    continue;
 
-            if (rel >= 0 && rel < numSamples)
-                previewEngine.noteOnAtSample(event.track, event.gain, rel, laneSampleBank);
+                const int rel = eventSample - segmentStart;
+                if (rel >= 0 && rel < segmentLength)
+                    previewEngine.noteOnAtSample(event.track, event.gain, bufferOffset + rel, laneSampleBank);
+            }
+        };
+
+        if (const auto loopTicks = activePreviewLoopTicks(project); loopTicks.has_value())
+        {
+            const int loopStartSample = ticksToSamples(loopTicks->getStart(), currentSampleRate, project.params.bpm);
+            const int loopEndSample = ticksToSamples(loopTicks->getEnd(), currentSampleRate, project.params.bpm);
+
+            if (loopEndSample > loopStartSample)
+            {
+                int localPreviewPosition = previewSamplePosition;
+                if (localPreviewPosition < loopStartSample || localPreviewPosition >= loopEndSample)
+                    localPreviewPosition = loopStartSample;
+
+                int remainingSamples = numSamples;
+                int bufferOffset = 0;
+                const auto loopSampleRange = juce::Range<int>(loopStartSample, loopEndSample);
+
+                while (remainingSamples > 0)
+                {
+                    const int segmentStart = juce::jlimit(loopStartSample, loopEndSample - 1, localPreviewPosition);
+                    const int segmentLength = juce::jmin(remainingSamples, loopEndSample - segmentStart);
+                    schedulePreviewSegment(segmentStart, segmentLength, bufferOffset, loopSampleRange);
+
+                    remainingSamples -= segmentLength;
+                    bufferOffset += segmentLength;
+                    localPreviewPosition = segmentStart + segmentLength;
+                    if (localPreviewPosition >= loopEndSample)
+                        localPreviewPosition = loopStartSample;
+                }
+
+                previewEngine.render(buffer, 0, numSamples);
+                applyMasterFx(buffer);
+                previewSamplePosition = localPreviewPosition;
+            }
         }
+        else
+        {
+            const int previewStart = previewSamplePosition;
+            const int previewBlockStartInPattern = ((previewStart % patternLength) + patternLength) % patternLength;
 
-        previewEngine.render(buffer, 0, numSamples);
-        applyMasterFx(buffer);
-        previewSamplePosition = previewStart + numSamples;
+            for (const auto& event : previewEvents)
+            {
+                const int eventSample = event.sample;
+                int rel = eventSample - previewBlockStartInPattern;
+                if (rel < 0)
+                    rel += patternLength;
+
+                if (rel >= 0 && rel < numSamples)
+                    previewEngine.noteOnAtSample(event.track, event.gain, rel, laneSampleBank);
+            }
+
+            previewEngine.render(buffer, 0, numSamples);
+            applyMasterFx(buffer);
+            previewSamplePosition = previewStart + numSamples;
+        }
     }
 
     transportSamplePosition = startSample + numSamples;
@@ -444,8 +509,7 @@ void BoomBapGeneratorAudioProcessor::startPreview()
         rescanLaneSamplesLocked();
     rebuildMidiCache();
     previewPlaying = true;
-    const int startStep = std::max(0, project.previewStartStep);
-    previewSamplePosition = stepToSamples(startStep, currentSampleRate, project.params.bpm);
+    startPreviewFromCurrentStartStepLocked();
     previewEngine.reset();
 }
 
@@ -480,7 +544,93 @@ float BoomBapGeneratorAudioProcessor::getPreviewPlayheadStep() const
 void BoomBapGeneratorAudioProcessor::setPreviewStartStep(int step)
 {
     std::scoped_lock lock(projectMutex);
-    project.previewStartStep = std::max(0, step);
+    const int maxStep = juce::jmax(0, project.params.bars * 16 - 1);
+    project.previewStartStep = juce::jlimit(0, maxStep, step);
+}
+
+void BoomBapGeneratorAudioProcessor::setPreviewPlaybackMode(PreviewPlaybackMode mode)
+{
+    std::scoped_lock lock(projectMutex);
+    project.previewPlaybackMode = mode;
+    if (previewPlaying)
+    {
+        startPreviewFromCurrentStartStepLocked();
+        previewEngine.reset();
+    }
+}
+
+PreviewPlaybackMode BoomBapGeneratorAudioProcessor::getPreviewPlaybackMode() const
+{
+    std::scoped_lock lock(projectMutex);
+    return project.previewPlaybackMode;
+}
+
+void BoomBapGeneratorAudioProcessor::restoreEditorProjectSnapshot(const PatternProject& snapshot)
+{
+    std::scoped_lock lock(projectMutex);
+    project = snapshot;
+    project.params = buildParamsFromState(lastTransport);
+    PatternProjectSerialization::validate(project);
+    rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::setPreviewLoopRegion(const std::optional<juce::Range<int>>& tickRange)
+{
+    std::scoped_lock lock(projectMutex);
+    if (tickRange.has_value() && tickRange->getLength() > 0)
+    {
+        const int totalTicks = juce::jmax(1, project.params.bars * 16 * ticksPerStep());
+        const int startTick = juce::jlimit(0, totalTicks - 1, tickRange->getStart());
+        const int endTick = juce::jlimit(startTick + 1, totalTicks, tickRange->getEnd());
+        if (endTick > startTick)
+            project.previewLoopTicks = juce::Range<int>(startTick, endTick);
+        else
+            project.previewLoopTicks.reset();
+    }
+    else
+    {
+        project.previewLoopTicks.reset();
+    }
+
+    if (previewPlaying && project.previewPlaybackMode == PreviewPlaybackMode::LoopRange)
+    {
+        startPreviewFromCurrentStartStepLocked();
+        previewEngine.reset();
+    }
+}
+
+std::optional<juce::Range<int>> BoomBapGeneratorAudioProcessor::getPreviewLoopRegion() const
+{
+    std::scoped_lock lock(projectMutex);
+    if (!project.previewLoopTicks.has_value() || project.previewLoopTicks->getLength() <= 0)
+        return std::nullopt;
+
+    return project.previewLoopTicks;
+}
+
+void BoomBapGeneratorAudioProcessor::startPreviewFromCurrentStartStepLocked()
+{
+    if (const auto loopTicks = activePreviewLoopTicks(project); loopTicks.has_value())
+    {
+        previewSamplePosition = ticksToSamples(loopTicks->getStart(), currentSampleRate, project.params.bpm);
+        return;
+    }
+
+    const int maxStep = juce::jmax(0, project.params.bars * 16 - 1);
+    const int startStep = juce::jlimit(0, maxStep, project.previewStartStep);
+    previewSamplePosition = stepToSamples(startStep, currentSampleRate, project.params.bpm);
+}
+
+void BoomBapGeneratorAudioProcessor::setStartPlayWithDawEnabled(bool enabled)
+{
+    std::scoped_lock lock(projectMutex);
+    startPlayWithDawEnabled = enabled;
+}
+
+bool BoomBapGeneratorAudioProcessor::isStartPlayWithDawEnabled() const
+{
+    std::scoped_lock lock(projectMutex);
+    return startPlayWithDawEnabled;
 }
 
 void BoomBapGeneratorAudioProcessor::rescanLaneSamples()
@@ -540,6 +690,18 @@ juce::String BoomBapGeneratorAudioProcessor::getSelectedLaneSampleName(TrackType
     return laneSampleBank.getSelectedName(track);
 }
 
+bool BoomBapGeneratorAudioProcessor::selectNextLaneSample(const RuntimeLaneId& laneId)
+{
+    const auto type = resolveTrackTypeForLaneId(laneId);
+    return type.has_value() ? selectNextLaneSample(*type) : false;
+}
+
+bool BoomBapGeneratorAudioProcessor::selectPreviousLaneSample(const RuntimeLaneId& laneId)
+{
+    const auto type = resolveTrackTypeForLaneId(laneId);
+    return type.has_value() ? selectPreviousLaneSample(*type) : false;
+}
+
 int BoomBapGeneratorAudioProcessor::getBassKeyRootChoice() const
 {
     const auto* value = apvts.getRawParameterValue(ParamIds::keyRoot);
@@ -583,6 +745,12 @@ void BoomBapGeneratorAudioProcessor::setTrackSolo(TrackType track, bool value)
     rebuildMidiCache();
 }
 
+void BoomBapGeneratorAudioProcessor::setTrackSolo(const RuntimeLaneId& laneId, bool value)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setTrackSolo(*type, value);
+}
+
 void BoomBapGeneratorAudioProcessor::setTrackMuted(TrackType track, bool value)
 {
     std::scoped_lock lock(projectMutex);
@@ -592,11 +760,23 @@ void BoomBapGeneratorAudioProcessor::setTrackMuted(TrackType track, bool value)
     rebuildMidiCache();
 }
 
+void BoomBapGeneratorAudioProcessor::setTrackMuted(const RuntimeLaneId& laneId, bool value)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setTrackMuted(*type, value);
+}
+
 void BoomBapGeneratorAudioProcessor::setTrackLocked(TrackType track, bool value)
 {
     std::scoped_lock lock(projectMutex);
     if (auto* state = findTrackState(track))
         state->locked = value;
+}
+
+void BoomBapGeneratorAudioProcessor::setTrackLocked(const RuntimeLaneId& laneId, bool value)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setTrackLocked(*type, value);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackEnabled(TrackType track, bool value)
@@ -608,6 +788,12 @@ void BoomBapGeneratorAudioProcessor::setTrackEnabled(TrackType track, bool value
     rebuildMidiCache();
 }
 
+void BoomBapGeneratorAudioProcessor::setTrackEnabled(const RuntimeLaneId& laneId, bool value)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setTrackEnabled(*type, value);
+}
+
 void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(TrackType track, float volume)
 {
     std::scoped_lock lock(projectMutex);
@@ -615,6 +801,12 @@ void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(TrackType track, float v
         state->laneVolume = juce::jlimit(0.0f, 1.5f, volume);
 
     rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(const RuntimeLaneId& laneId, float volume)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setTrackLaneVolume(*type, volume);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackNotes(TrackType track, const std::vector<NoteEvent>& notes)
@@ -659,6 +851,99 @@ void BoomBapGeneratorAudioProcessor::setTrackNotes(TrackType track, const std::v
     rebuildMidiCache();
 }
 
+void BoomBapGeneratorAudioProcessor::setTrackNotes(const RuntimeLaneId& laneId, const std::vector<NoteEvent>& notes)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setTrackNotes(*type, notes);
+}
+
+void BoomBapGeneratorAudioProcessor::setSelectedTrack(TrackType track)
+{
+    std::scoped_lock lock(projectMutex);
+    for (size_t i = 0; i < project.tracks.size(); ++i)
+    {
+        if (project.tracks[i].type == track)
+        {
+            project.selectedTrackIndex = static_cast<int>(i);
+            return;
+        }
+    }
+}
+
+void BoomBapGeneratorAudioProcessor::setSelectedTrack(const RuntimeLaneId& laneId)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setSelectedTrack(*type);
+}
+
+void BoomBapGeneratorAudioProcessor::setSoundModuleTrack(const std::optional<TrackType>& track)
+{
+    std::scoped_lock lock(projectMutex);
+    if (!track.has_value())
+    {
+        project.soundModuleTrackIndex = -1;
+        return;
+    }
+
+    for (size_t i = 0; i < project.tracks.size(); ++i)
+    {
+        if (project.tracks[i].type == *track)
+        {
+            project.soundModuleTrackIndex = static_cast<int>(i);
+            return;
+        }
+    }
+
+    project.soundModuleTrackIndex = -1;
+}
+
+std::optional<TrackType> BoomBapGeneratorAudioProcessor::getSoundModuleTrack() const
+{
+    std::scoped_lock lock(projectMutex);
+    if (project.soundModuleTrackIndex < 0 || project.soundModuleTrackIndex >= static_cast<int>(project.tracks.size()))
+        return std::nullopt;
+
+    return project.tracks[static_cast<size_t>(project.soundModuleTrackIndex)].type;
+}
+
+void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(TrackType track, const SoundLayerState& state)
+{
+    std::scoped_lock lock(projectMutex);
+    if (auto* trackState = findTrackState(track))
+        trackState->sound = state;
+}
+
+void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(const RuntimeLaneId& laneId, const SoundLayerState& state)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setTrackSoundLayer(*type, state);
+}
+
+void BoomBapGeneratorAudioProcessor::setGlobalSoundLayer(const SoundLayerState& state)
+{
+    std::scoped_lock lock(projectMutex);
+    project.globalSound = state;
+}
+
+void BoomBapGeneratorAudioProcessor::setHatFxDragDensity(float density, bool lockDragDensity)
+{
+    std::scoped_lock lock(projectMutex);
+    hatFxDragDensity = juce::jlimit(0.0f, 2.0f, density);
+    hatFxDragDensityLocked = lockDragDensity;
+}
+
+float BoomBapGeneratorAudioProcessor::getHatFxDragDensity() const
+{
+    std::scoped_lock lock(projectMutex);
+    return hatFxDragDensity;
+}
+
+bool BoomBapGeneratorAudioProcessor::isHatFxDragDensityLocked() const
+{
+    std::scoped_lock lock(projectMutex);
+    return hatFxDragDensityLocked;
+}
+
 void BoomBapGeneratorAudioProcessor::clearTrack(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
@@ -666,6 +951,90 @@ void BoomBapGeneratorAudioProcessor::clearTrack(TrackType track)
         state->notes.clear();
 
     rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::clearTrack(const RuntimeLaneId& laneId)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        clearTrack(*type);
+}
+
+juce::File BoomBapGeneratorAudioProcessor::getLaneSampleDirectory(TrackType track) const
+{
+    std::scoped_lock lock(projectMutex);
+    return sampleLibraryManager.getResolvedRootDirectory()
+        .getChildFile(SampleLibraryManager::folderNameForGenre(project.params.genre))
+        .getChildFile(SampleLibraryManager::folderNameForTrack(track));
+}
+
+bool BoomBapGeneratorAudioProcessor::importLaneSample(TrackType track, const juce::File& sourceFile, juce::String* errorMessage)
+{
+    if (!sourceFile.existsAsFile())
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Sample file not found.";
+        return false;
+    }
+
+    std::scoped_lock lock(projectMutex);
+    auto targetDirectory = sampleLibraryManager.getResolvedRootDirectory()
+        .getChildFile(SampleLibraryManager::folderNameForGenre(project.params.genre))
+        .getChildFile(SampleLibraryManager::folderNameForTrack(track));
+    if (!targetDirectory.createDirectory())
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Failed to create lane sample directory.";
+        return false;
+    }
+
+    const auto targetFile = targetDirectory.getNonexistentChildFile(sourceFile.getFileNameWithoutExtension(),
+                                                                    sourceFile.getFileExtension(),
+                                                                    false);
+    if (!sourceFile.copyFileTo(targetFile))
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Failed to copy sample into lane directory.";
+        return false;
+    }
+
+    rescanLaneSamplesLocked();
+    if (auto* state = findTrackState(track))
+    {
+        state->selectedSampleIndex = laneSampleBank.getSelectedIndex(track);
+        state->selectedSampleName = laneSampleBank.getSelectedName(track);
+    }
+
+    return true;
+}
+
+bool BoomBapGeneratorAudioProcessor::deleteSelectedLaneSample(TrackType track, juce::String* errorMessage)
+{
+    std::scoped_lock lock(projectMutex);
+    const auto& samples = sampleLibraryManager.getSamples(track);
+    const int selectedIndex = laneSampleBank.getSelectedIndex(track);
+    if (selectedIndex < 0 || selectedIndex >= static_cast<int>(samples.size()))
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "No selected sample to delete.";
+        return false;
+    }
+
+    const auto targetFile = samples[static_cast<size_t>(selectedIndex)].file;
+    if (!targetFile.existsAsFile() || !targetFile.deleteFile())
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Failed to delete selected sample.";
+        return false;
+    }
+
+    rescanLaneSamplesLocked();
+    if (auto* state = findTrackState(track))
+    {
+        state->selectedSampleIndex = laneSampleBank.getSelectedIndex(track);
+        state->selectedSampleName = laneSampleBank.getSelectedName(track);
+    }
+
+    return true;
 }
 
 bool BoomBapGeneratorAudioProcessor::exportFullPatternToFile(const juce::File& targetFile) const
@@ -694,6 +1063,12 @@ bool BoomBapGeneratorAudioProcessor::exportTrackToFile(TrackType track, const ju
     const bool ok = MidiExportEngine::saveMidiFile(snapshot, targetFile, track, 960, false, false);
     logDrag("exportTrackToFile done ok=" + juce::String(ok ? "1" : "0") + " track=" + juce::String(static_cast<int>(track)));
     return ok;
+}
+
+bool BoomBapGeneratorAudioProcessor::exportLoopWavToFile(const juce::File& targetFile) const
+{
+    juce::ignoreUnused(targetFile);
+    return false;
 }
 
 juce::File BoomBapGeneratorAudioProcessor::createTemporaryFullPatternMidiFile() const
@@ -756,6 +1131,143 @@ TransportSnapshot BoomBapGeneratorAudioProcessor::getLastTransportSnapshot() con
 {
     std::scoped_lock lock(projectMutex);
     return lastTransport;
+}
+
+void BoomBapGeneratorAudioProcessor::setSampleAnalysisRequest(const SampleAnalysisRequest& request)
+{
+    std::scoped_lock lock(projectMutex);
+    currentAnalysisRequest = request;
+}
+
+SampleAnalysisRequest BoomBapGeneratorAudioProcessor::getSampleAnalysisRequest() const
+{
+    std::scoped_lock lock(projectMutex);
+    return currentAnalysisRequest;
+}
+
+bool BoomBapGeneratorAudioProcessor::analyzeCurrentSampleSource(juce::String* errorMessage)
+{
+    SampleAnalysisRequest request;
+    {
+        std::scoped_lock lock(projectMutex);
+        request = currentAnalysisRequest;
+    }
+
+    if (request.source == SampleAnalysisRequest::SourceType::AudioFile)
+        return analyzeAudioFile(request.audioFile, errorMessage);
+
+    if (errorMessage != nullptr)
+        *errorMessage = "Live input analysis is not available yet.";
+    return false;
+}
+
+bool BoomBapGeneratorAudioProcessor::analyzeAudioFile(const juce::File& file, juce::String* errorMessage)
+{
+    SampleAnalysisRequest request;
+    double hostBpm = 0.0;
+    {
+        std::scoped_lock lock(projectMutex);
+        request = currentAnalysisRequest;
+        request.source = SampleAnalysisRequest::SourceType::AudioFile;
+        request.audioFile = file;
+        hostBpm = lastTransport.hasHostTempo && lastTransport.bpm > 0.0 ? lastTransport.bpm : static_cast<double>(project.params.bpm);
+    }
+
+    const auto result = sampleAnalyzer.analyzeAudioFile(file, request, hostBpm, errorMessage);
+
+    std::scoped_lock lock(projectMutex);
+    currentAnalysisRequest = request;
+    currentAnalysisResult = result;
+    currentFeatureMap = result.valid ? sampleAnalyzer.buildFeatureMap(result) : AudioFeatureMap{};
+    analysisReady = result.valid;
+    currentSampleContext.enabled = sampleAwareModeEnabled && analysisReady;
+    currentSampleContext.featureMap = currentFeatureMap;
+    return result.valid;
+}
+
+void BoomBapGeneratorAudioProcessor::clearSampleAnalysis()
+{
+    std::scoped_lock lock(projectMutex);
+    currentAnalysisResult = {};
+    currentFeatureMap = {};
+    analysisReady = false;
+    currentSampleContext.featureMap = {};
+    currentSampleContext.enabled = false;
+}
+
+void BoomBapGeneratorAudioProcessor::setAnalysisMode(AnalysisMode mode)
+{
+    std::scoped_lock lock(projectMutex);
+    analysisMode = mode;
+}
+
+AnalysisMode BoomBapGeneratorAudioProcessor::getAnalysisMode() const
+{
+    std::scoped_lock lock(projectMutex);
+    return analysisMode;
+}
+
+void BoomBapGeneratorAudioProcessor::setSampleAwareModeEnabled(bool enabled)
+{
+    std::scoped_lock lock(projectMutex);
+    sampleAwareModeEnabled = enabled;
+    currentSampleContext.enabled = enabled && analysisReady;
+}
+
+bool BoomBapGeneratorAudioProcessor::isSampleAwareModeEnabled() const
+{
+    std::scoped_lock lock(projectMutex);
+    return sampleAwareModeEnabled;
+}
+
+bool BoomBapGeneratorAudioProcessor::isSampleAnalysisReady() const
+{
+    std::scoped_lock lock(projectMutex);
+    return analysisReady;
+}
+
+void BoomBapGeneratorAudioProcessor::setSampleReactivity(float value)
+{
+    std::scoped_lock lock(projectMutex);
+    currentSampleContext.reactivity = juce::jlimit(0.0f, 1.0f, value);
+}
+
+void BoomBapGeneratorAudioProcessor::setSupportVsContrast(float value)
+{
+    std::scoped_lock lock(projectMutex);
+    currentSampleContext.supportVsContrast = juce::jlimit(0.0f, 1.0f, value);
+}
+
+SampleAnalysisResult BoomBapGeneratorAudioProcessor::getSampleAnalysisResult() const
+{
+    std::scoped_lock lock(projectMutex);
+    return currentAnalysisResult;
+}
+
+AudioFeatureMap BoomBapGeneratorAudioProcessor::getAudioFeatureMap() const
+{
+    std::scoped_lock lock(projectMutex);
+    return currentFeatureMap;
+}
+
+SampleAwareGenerationContext BoomBapGeneratorAudioProcessor::getSampleAwareGenerationContext() const
+{
+    std::scoped_lock lock(projectMutex);
+    return currentSampleContext;
+}
+
+juce::String BoomBapGeneratorAudioProcessor::getGenerationDebugSummary() const
+{
+    std::scoped_lock lock(projectMutex);
+    juce::StringArray lines;
+    lines.add("Analysis mode: " + juce::String(static_cast<int>(analysisMode)));
+    lines.add("Sample-aware: " + juce::String(sampleAwareModeEnabled ? "on" : "off"));
+    lines.add("Analysis ready: " + juce::String(analysisReady ? "yes" : "no"));
+    lines.add("Detected BPM: " + juce::String(currentAnalysisResult.detectedBpm, 2));
+    lines.add("Bars: " + juce::String(currentAnalysisResult.analyzedBars));
+    lines.add("Support vs Contrast: " + juce::String(currentSampleContext.supportVsContrast, 2));
+    lines.add("Reactivity: " + juce::String(currentSampleContext.reactivity, 2));
+    return lines.joinIntoString("\n");
 }
 
 void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
@@ -1070,6 +1582,43 @@ const TrackState* BoomBapGeneratorAudioProcessor::findTrackState(TrackType track
     }
 
     return nullptr;
+}
+
+TrackState* BoomBapGeneratorAudioProcessor::findTrackState(const RuntimeLaneId& laneId)
+{
+    for (auto& state : project.tracks)
+    {
+        if (state.laneId.isNotEmpty() && state.laneId == laneId)
+            return &state;
+    }
+
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        return findTrackState(*type);
+
+    return nullptr;
+}
+
+const TrackState* BoomBapGeneratorAudioProcessor::findTrackState(const RuntimeLaneId& laneId) const
+{
+    for (const auto& state : project.tracks)
+    {
+        if (state.laneId.isNotEmpty() && state.laneId == laneId)
+            return &state;
+    }
+
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        return findTrackState(*type);
+
+    return nullptr;
+}
+
+std::optional<TrackType> BoomBapGeneratorAudioProcessor::resolveTrackTypeForLaneId(const RuntimeLaneId& laneId) const
+{
+    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+    if (lane == nullptr || !lane->runtimeTrackType.has_value())
+        return std::nullopt;
+
+    return lane->runtimeTrackType;
 }
 
 void BoomBapGeneratorAudioProcessor::serializePatternProjectToState(juce::ValueTree& state) const

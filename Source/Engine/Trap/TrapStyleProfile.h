@@ -39,10 +39,45 @@ enum class TrapSlideMode
     Aggressive
 };
 
+enum class TrapHatDensityMode
+{
+    Sparse = 0,
+    Medium,
+    Dense
+};
+
+enum class TrapHatFxMode
+{
+    VeryLow = 0,
+    Low,
+    Medium,
+    High
+};
+
+enum class TrapRollPreference
+{
+    Mostly32 = 0,
+    Balanced32and64,
+    Smooth32Triplet,
+    Aggressive32and64
+};
+
+enum class TrapVelocityContourPreference
+{
+    MostlyRampUp = 0,
+    MostlyRampDown,
+    BalancedContours,
+    SharpAlternating,
+    CleanCurated
+};
+
 struct TrapStyleSpec
 {
     float kickDensityMin = 0.25f;
     float kickDensityMax = 0.72f;
+
+    float hatDensityMin = 0.22f;
+    float hatDensityMax = 0.82f;
 
     float subDensityMin = 0.18f;
     float subDensityMax = 0.66f;
@@ -58,9 +93,14 @@ struct TrapStyleSpec
     float counterGapProbability = 0.2f;
     float phraseEdgeAnchorProbability = 0.58f;
     float skipIfDenseHatFxProbability = 0.12f;
+    float majorBurstPerBarMax = 2.2f;
+    float burstWindowPrimaryBias = 1.0f;
+    float burstWindowSecondaryBias = 0.62f;
 
     bool preferTriplets = true;
     bool preferFastBursts = true;
+    bool preferPhraseEdgeBursts = true;
+    bool preferKickReactionBursts = true;
     bool allowOpenHatFrequently = true;
     bool allowCymbalTransitions = false;
     bool preferSparseSpace = false;
@@ -68,6 +108,10 @@ struct TrapStyleSpec
     Trap808Mode rhythmMode = Trap808Mode::SelectiveFollow;
     TrapPitchMotion pitchMotion = TrapPitchMotion::StaticWithAccentMoves;
     TrapSlideMode slideMode = TrapSlideMode::Moderate;
+    TrapHatDensityMode hatDensityMode = TrapHatDensityMode::Medium;
+    TrapHatFxMode hatFxMode = TrapHatFxMode::Medium;
+    TrapRollPreference rollPreference = TrapRollPreference::Balanced32and64;
+    TrapVelocityContourPreference velocityContourPreference = TrapVelocityContourPreference::BalancedContours;
 };
 
 struct TrapStyleProfile

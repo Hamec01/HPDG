@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../../Core/PatternProject.h"
 #include "../../Core/TrackRegistry.h"
 #include "RapStyleSpec.h"
 #include "../TempoInterpretation.h"
@@ -24,11 +25,22 @@ float oddStepGateForStyle(RapSubstyle substyle)
         default: return 0.22f;
     }
 }
+
+float supportAccentWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(styleInfluence.supportAccentWeight, 0.65f, 1.45f);
+}
+
+float supportLaneActivityWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(laneBiasFor(styleInfluence, TrackType::OpenHat).activityWeight, 0.6f, 1.4f);
+}
 }
 
 void RapHatGenerator::generate(TrackState& track,
                                const GeneratorParams& params,
                                const RapStyleProfile& style,
+                               const StyleInfluenceState& styleInfluence,
                                const std::vector<RapPhraseRole>& phraseRoles,
                                std::mt19937& rng) const
 {
@@ -47,6 +59,8 @@ void RapHatGenerator::generate(TrackState& track,
         tempoScale = 0.62f;
     const float density = std::clamp(rapMix(spec.hatDensityMin, spec.hatDensityMax, params.densityAmount) * tempoScale, 0.08f, 1.0f);
     const float oddGateBase = oddStepGateForStyle(style.substyle);
+    const float supportAccent = supportAccentWeight(styleInfluence);
+    const float supportLaneActivity = supportLaneActivityWeight(styleInfluence);
 
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     std::uniform_int_distribution<int> vel(style.hatVelocityMin, style.hatVelocityMax);
@@ -61,9 +75,9 @@ void RapHatGenerator::generate(TrackState& track,
         {
             bool place = false;
             if ((step % 2) == 0)
-                place = chance(rng) < std::clamp((tempoBand == TempoBand::Base ? 0.78f : 0.68f) + density * 0.22f, 0.50f, 0.98f);
+                place = chance(rng) < std::clamp(((tempoBand == TempoBand::Base ? 0.78f : 0.68f) + density * 0.22f) * (0.92f + supportLaneActivity * 0.08f), 0.50f, 0.995f);
             else
-                place = chance(rng) < std::clamp(oddGateBase * density + roleBoost * 0.10f, 0.02f, 0.42f);
+                place = chance(rng) < std::clamp((oddGateBase * density + roleBoost * 0.10f) * supportAccent * supportLaneActivity, 0.02f, 0.68f);
 
             if (!place)
                 continue;

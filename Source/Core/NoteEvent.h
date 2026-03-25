@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 namespace bbg
 {
 struct NoteEvent
@@ -10,5 +12,6 @@ struct NoteEvent
     int velocity = 100;    // 1-127
     int microOffset = 0;   // Signed tick offset at PPQ=960 from step-quantized position.
     bool isGhost = false;
+    juce::String semanticRole;
 };
 } // namespace bbg

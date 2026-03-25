@@ -6,6 +6,7 @@
 
 #include "GrooveEngine.h"
 #include "HumanizeEngine.h"
+#include "StyleInfluence.h"
 #include "StyleDefaults.h"
 #include "VelocityEngine.h"
 
@@ -44,6 +45,28 @@ const BoomBapLaneActivation* laneBarAt(const BoomBapLaneActivationPlan& plan, in
         return nullptr;
 
     return &plan.bars[static_cast<size_t>(bar)];
+}
+
+void applyBoomBapStyleInfluence(PatternProject& project)
+{
+    juce::String applyError;
+    BoomBapStyleInfluence::apply(project, &applyError);
+    juce::ignoreUnused(applyError);
+}
+
+float laneActivityWeight(const PatternProject& project, TrackType type)
+{
+    return std::clamp(laneBiasFor(project.styleInfluence, type).activityWeight, 0.5f, 1.6f);
+}
+
+float laneBalanceWeight(const PatternProject& project, TrackType type)
+{
+    return std::clamp(laneBiasFor(project.styleInfluence, type).balanceWeight, 0.5f, 1.6f);
+}
+
+float supportAccentWeight(const PatternProject& project)
+{
+    return std::clamp(project.styleInfluence.supportAccentWeight, 0.65f, 1.5f);
 }
 
 void filterLaneNotesByBarActivation(TrackState& track,
@@ -375,6 +398,7 @@ BoomBapEngine::BoomBapEngine() = default;
 
 void BoomBapEngine::generate(PatternProject& project)
 {
+    applyBoomBapStyleInfluence(project);
     const auto& style = getBoomBapProfile(project.params.boombapSubstyle);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed));
     const auto grooveContext = buildGrooveContext(project, style, rng);
@@ -419,11 +443,13 @@ void BoomBapEngine::generate(PatternProject& project)
 
 void BoomBapEngine::regenerateTrack(PatternProject& project, TrackType trackType)
 {
+    applyBoomBapStyleInfluence(project);
     regenerateTrackVariation(project, trackType);
 }
 
 void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
 {
+    applyBoomBapStyleInfluence(project);
     auto* track = findTrack(project, trackType);
     if (track == nullptr || track->locked)
         return;
@@ -574,6 +600,7 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
 
 void BoomBapEngine::mutatePattern(PatternProject& project)
 {
+    applyBoomBapStyleInfluence(project);
     const auto& style = getBoomBapProfile(project.params.boombapSubstyle);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.mutationCounter * 911 + 17));
 
@@ -606,6 +633,7 @@ void BoomBapEngine::mutatePattern(PatternProject& project)
 
 void BoomBapEngine::mutateTrack(PatternProject& project, TrackType trackType)
 {
+    applyBoomBapStyleInfluence(project);
     auto* track = findTrack(project, trackType);
     if (track == nullptr || track->locked || !track->enabled)
         return;
@@ -734,13 +762,13 @@ void BoomBapEngine::regenerateTrackInternal(PatternProject& project,
     switch (track.type)
     {
         case TrackType::Kick:
-            kickGenerator.generate(track, project.params, style, phrasePlan, rng);
+            kickGenerator.generate(track, project.params, style, project.styleInfluence, phrasePlan, rng);
             break;
         case TrackType::Snare:
             snareGenerator.generate(track, project.params, style, phrasePlan, rng);
             break;
         case TrackType::HiHat:
-            hatGenerator.generate(track, project.params, style, phrasePlan, blueprint, rng);
+            hatGenerator.generate(track, project.params, style, project.styleInfluence, phrasePlan, blueprint, rng);
             break;
         default:
             break;
@@ -803,12 +831,18 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
     {
         ghostGenerator.generateClapLayer(*clap, *snare, style, phrasePlan, rng);
         filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
+        std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+        const float clapKeep = std::clamp(laneBalanceWeight(project, TrackType::ClapGhostSnare) * supportAccentWeight(project) * 0.78f, 0.2f, 1.0f);
+        clap->notes.erase(std::remove_if(clap->notes.begin(), clap->notes.end(), [&](const NoteEvent& note)
+        {
+            return !note.isGhost && chance(rng) > clapKeep;
+        }), clap->notes.end());
     }
 
     if (auto* ghostKick = findTrack(project, TrackType::GhostKick);
         ghostKick != nullptr && kick != nullptr && mutableTracks.find(ghostKick->type) != mutableTracks.end() && !ghostKick->locked && ghostKick->enabled)
     {
-        ghostGenerator.generateGhostKick(*ghostKick, *kick, style, project.params.densityAmount, phrasePlan, rng);
+        ghostGenerator.generateGhostKick(*ghostKick, *kick, style, project.params.densityAmount * laneActivityWeight(project, TrackType::Kick), phrasePlan, rng);
         filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
     }
 
@@ -817,6 +851,12 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
     {
         openHatGenerator.generate(*openHat, *hat, project.params, style, phrasePlan, rng);
         filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
+        std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+        const float openKeep = std::clamp(laneActivityWeight(project, TrackType::OpenHat), 0.2f, 1.0f);
+        openHat->notes.erase(std::remove_if(openHat->notes.begin(), openHat->notes.end(), [&](const NoteEvent&)
+        {
+            return chance(rng) > openKeep;
+        }), openHat->notes.end());
     }
 
     if (auto* perc = findTrack(project, TrackType::Perc);
@@ -824,6 +864,12 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
     {
         percGenerator.generate(*perc, project.params, style, phrasePlan, rng);
         filterLaneNotesByBarActivation(*perc, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.usePerc; });
+        std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+        const float percKeep = std::clamp(laneActivityWeight(project, TrackType::Perc), 0.18f, 1.0f);
+        perc->notes.erase(std::remove_if(perc->notes.begin(), perc->notes.end(), [&](const NoteEvent&)
+        {
+            return chance(rng) > percKeep;
+        }), perc->notes.end());
     }
 
     if (auto* ride = findTrack(project, TrackType::Ride);

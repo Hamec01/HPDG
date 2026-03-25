@@ -9,7 +9,7 @@ namespace bbg
 class PatternProjectSerialization
 {
 public:
-    static constexpr int kPatternSchemaVersion = 3;
+    static constexpr int kPatternSchemaVersion = 8;
 
     static juce::ValueTree serialize(const PatternProject& project);
     static bool deserialize(const juce::ValueTree& rootState, PatternProject& projectOut);

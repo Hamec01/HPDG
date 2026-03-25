@@ -2,6 +2,11 @@
 
 namespace bbg
 {
+namespace
+{
+constexpr auto kUiBuildVersion = "0.004V";
+}
+
 MainHeaderComponent::MainHeaderComponent()
 {
     titleLabel.setText("HPDG", juce::dontSendNotification);
@@ -9,7 +14,7 @@ MainHeaderComponent::MainHeaderComponent()
     titleLabel.setFont(juce::Font(18.0f, juce::Font::bold));
     addAndMakeVisible(titleLabel);
 
-    subtitleLabel.setText("HamloProdDrumGenerator", juce::dontSendNotification);
+    subtitleLabel.setText("HamloProdDrumGenerator " + juce::String(kUiBuildVersion), juce::dontSendNotification);
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
     subtitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(170, 176, 186));
     subtitleLabel.setFont(juce::Font(12.0f));
@@ -18,6 +23,9 @@ MainHeaderComponent::MainHeaderComponent()
     bpmLabel.setText("BPM", juce::dontSendNotification);
     addAndMakeVisible(bpmLabel);
     setupSlider(bpmSlider, 60.0, 180.0, 0.1, " BPM");
+    bpmLockToggle.setTooltip("Lock BPM from auto style changes");
+    bpmLockToggle.setClickingTogglesState(true);
+    addAndMakeVisible(bpmLockToggle);
 
     addAndMakeVisible(syncTempoToggle);
 
@@ -81,25 +89,69 @@ MainHeaderComponent::MainHeaderComponent()
     addAndMakeVisible(seedLabel);
     setupSlider(seedSlider, 1.0, 999999.0, 1.0);
 
-    gridResolutionLabel.setText("Grid", juce::dontSendNotification);
+    gridResolutionLabel.setText("Snap", juce::dontSendNotification);
     addAndMakeVisible(gridResolutionLabel);
-    gridResolutionCombo.addItem("1/8", 1);
-    gridResolutionCombo.addItem("1/16", 2);
-    gridResolutionCombo.addItem("1/32", 3);
-    gridResolutionCombo.addItem("1/64", 4);
-    gridResolutionCombo.addItem("Triplet", 5);
-    gridResolutionCombo.setSelectedId(2, juce::dontSendNotification);
-    gridModeIndicatorLabel.setText("Grid: 1/16", juce::dontSendNotification);
+    gridResolutionCombo.addItem("Adaptive", 1);
+    gridResolutionCombo.addItem("Micro", 2);
+    gridResolutionCombo.addSeparator();
+    gridResolutionCombo.addItem("1/4", 10);
+    gridResolutionCombo.addItem("1/4T", 11);
+    gridResolutionCombo.addItem("1/8", 12);
+    gridResolutionCombo.addItem("1/8T", 13);
+    gridResolutionCombo.addItem("1/16", 14);
+    gridResolutionCombo.addItem("1/16T", 15);
+    gridResolutionCombo.addItem("1/32", 16);
+    gridResolutionCombo.addItem("1/32T", 17);
+    gridResolutionCombo.addItem("1/64", 18);
+    gridResolutionCombo.addItem("1/64T", 19);
+    gridResolutionCombo.setSelectedId(14, juce::dontSendNotification);
+    gridModeIndicatorLabel.setText("Snap: 1/16", juce::dontSendNotification);
     gridModeIndicatorLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(170, 176, 186));
     addAndMakeVisible(gridModeIndicatorLabel);
     gridResolutionCombo.onChange = [this]
     {
         const auto selected = gridResolutionCombo.getText();
-        gridModeIndicatorLabel.setText("Grid: " + selected, juce::dontSendNotification);
+        gridModeIndicatorLabel.setText("Snap: " + selected, juce::dontSendNotification);
         if (onGridResolutionChanged)
             onGridResolutionChanged(gridResolutionCombo.getSelectedId());
     };
     addAndMakeVisible(gridResolutionCombo);
+
+    previewPlaybackModeLabel.setText("Playback", juce::dontSendNotification);
+    addAndMakeVisible(previewPlaybackModeLabel);
+    previewPlaybackModeCombo.addItem("Play Flag", 1);
+    previewPlaybackModeCombo.addItem("Loop Range", 2);
+    previewPlaybackModeCombo.setSelectedId(1, juce::dontSendNotification);
+    previewPlaybackModeCombo.onChange = [this]
+    {
+        if (onPreviewPlaybackModeChanged)
+            onPreviewPlaybackModeChanged(previewPlaybackModeCombo.getSelectedId());
+    };
+    addAndMakeVisible(previewPlaybackModeCombo);
+
+    hatFxDensityLabel.setText("Hat Accent", juce::dontSendNotification);
+    hatFxDensityLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(170, 176, 186));
+    addAndMakeVisible(hatFxDensityLabel);
+
+    hatFxDensityValueLabel.setText("1.00", juce::dontSendNotification);
+    hatFxDensityValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(162, 208, 255));
+    addAndMakeVisible(hatFxDensityValueLabel);
+
+    hatFxDensitySlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    hatFxDensitySlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    hatFxDensitySlider.setRange(0.0, 2.0, 0.01);
+    hatFxDensitySlider.setValue(1.0, juce::dontSendNotification);
+    hatFxDensitySlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(110, 176, 248));
+    hatFxDensitySlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(196, 222, 255));
+    hatFxDensitySlider.setTooltip("Hat Accent density: 0 = no notes, 1 = original, >1 = more notes");
+    hatFxDensitySlider.onValueChange = [this]
+    {
+        hatFxDensityValueLabel.setText(juce::String(hatFxDensitySlider.getValue(), 2), juce::dontSendNotification);
+    };
+    addAndMakeVisible(hatFxDensitySlider);
+
+    hatFxDensityLockToggle.setTooltip("Lock Hat Accent density");
+    addAndMakeVisible(hatFxDensityLockToggle);
 
     addAndMakeVisible(standaloneWindowButton);
     standaloneWindowButton.onClick = [this]
@@ -108,6 +160,21 @@ MainHeaderComponent::MainHeaderComponent()
             onToggleStandaloneWindow();
     };
     standaloneWindowButton.setVisible(false);
+
+    addAndMakeVisible(advancedModeButton);
+    advancedModeButton.onClick = [this]
+    {
+        switch (controlsMode)
+        {
+            case HeaderControlsMode::Expanded: setHeaderControlsMode(HeaderControlsMode::Compact); break;
+            case HeaderControlsMode::Compact: setHeaderControlsMode(HeaderControlsMode::Hidden); break;
+            case HeaderControlsMode::Hidden: setHeaderControlsMode(HeaderControlsMode::Expanded); break;
+            default: setHeaderControlsMode(HeaderControlsMode::Expanded); break;
+        }
+
+        if (onHeaderControlsModeChanged)
+            onHeaderControlsModeChanged(controlsMode);
+    };
 
     masterSectionLabel.setText("MASTER", juce::dontSendNotification);
     masterSectionLabel.setJustificationType(juce::Justification::centredLeft);
@@ -128,7 +195,7 @@ MainHeaderComponent::MainHeaderComponent()
 
     zoomLabel.setText("Zoom", juce::dontSendNotification);
     addAndMakeVisible(zoomLabel);
-    setupSlider(zoomSlider, 0.6, 2.6, 0.05);
+    setupSlider(zoomSlider, 0.25, 8.0, 0.05);
     zoomSlider.setValue(1.0, juce::dontSendNotification);
 
     laneHeightLabel.setText("Lane H", juce::dontSendNotification);
@@ -138,17 +205,39 @@ MainHeaderComponent::MainHeaderComponent()
 
     addAndMakeVisible(seedLockToggle);
     addAndMakeVisible(playButton);
+    addAndMakeVisible(transportToStartButton);
+    addAndMakeVisible(transportStepBackButton);
+    addAndMakeVisible(transportStepForwardButton);
+    addAndMakeVisible(transportToEndButton);
     addAndMakeVisible(mutateButton);
+    addAndMakeVisible(clearAllButton);
     addAndMakeVisible(exportFullButton);
+    addAndMakeVisible(exportLoopWavButton);
     addAndMakeVisible(dragFullButton);
     addAndMakeVisible(generateButton);
+    addAndMakeVisible(startPlayWithDawToggle);
+    startPlayWithDawToggle.setClickingTogglesState(true);
+    startPlayWithDawToggle.onClick = [this]
+    {
+        if (onStartPlayWithDawToggled)
+            onStartPlayWithDawToggled(startPlayWithDawToggle.getToggleState());
+    };
 
     generateButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(232, 153, 66));
     generateButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(18, 19, 22));
     playButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(74, 122, 186));
+    transportToStartButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
+    transportStepBackButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
+    transportStepForwardButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
+    transportToEndButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
     mutateButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(156, 124, 58));
+    clearAllButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(122, 68, 68));
     exportFullButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
+    exportLoopWavButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(58, 86, 104));
     dragFullButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
+
+    transportStepBackButton.setRepeatSpeed(300, 75, 50);
+    transportStepForwardButton.setRepeatSpeed(300, 75, 50);
 
     generateButton.onClick = [this]
     {
@@ -160,6 +249,12 @@ MainHeaderComponent::MainHeaderComponent()
     {
         if (onExportFullPressed)
             onExportFullPressed();
+    };
+
+    exportLoopWavButton.onClick = [this]
+    {
+        if (onExportLoopWavPressed)
+            onExportLoopWavPressed();
     };
 
     dragFullButton.onClickAction = [this]
@@ -180,10 +275,40 @@ MainHeaderComponent::MainHeaderComponent()
             onPlayToggled(playButton.getButtonText() == "Play");
     };
 
+    transportToStartButton.onClick = [this]
+    {
+        if (onTransportToStart)
+            onTransportToStart();
+    };
+
+    transportStepBackButton.onClick = [this]
+    {
+        if (onTransportStepBack)
+            onTransportStepBack();
+    };
+
+    transportStepForwardButton.onClick = [this]
+    {
+        if (onTransportStepForward)
+            onTransportStepForward();
+    };
+
+    transportToEndButton.onClick = [this]
+    {
+        if (onTransportToEnd)
+            onTransportToEnd();
+    };
+
     mutateButton.onClick = [this]
     {
         if (onMutatePressed)
             onMutatePressed();
+    };
+
+    clearAllButton.onClick = [this]
+    {
+        if (onClearAllPressed)
+            onClearAllPressed();
     };
 
     const auto zoomChanged = [this]
@@ -193,6 +318,8 @@ MainHeaderComponent::MainHeaderComponent()
     };
     zoomSlider.onValueChange = zoomChanged;
     laneHeightSlider.onValueChange = zoomChanged;
+
+    updateAdvancedModeButtonText();
 }
 
 void MainHeaderComponent::paint(juce::Graphics& g)
@@ -209,68 +336,123 @@ void MainHeaderComponent::paint(juce::Graphics& g)
     g.fillRect(0, 0, getWidth(), 2);
 }
 
+void MainHeaderComponent::setGridModeIndicatorText(const juce::String& text)
+{
+    gridModeIndicatorLabel.setText(text, juce::dontSendNotification);
+}
+
+void MainHeaderComponent::setPreviewPlaybackModeId(int id)
+{
+    previewPlaybackModeCombo.setSelectedId(id, juce::dontSendNotification);
+}
+
 void MainHeaderComponent::resized()
 {
     auto area = getLocalBounds().reduced(8);
-    auto masterArea = area.removeFromRight(290);
-    area.removeFromRight(6);
+    const int fixedRowHeight = 42;
+    const int advancedRowHeight = controlsMode == HeaderControlsMode::Hidden
+        ? 0
+        : (controlsMode == HeaderControlsMode::Compact ? 30 : 44);
 
-    auto titleArea = area.removeFromLeft(210).reduced(4);
-    titleLabel.setBounds(titleArea.removeFromTop(26));
-    subtitleLabel.setBounds(titleArea.removeFromTop(18));
+    auto fixedRow = area.removeFromTop(fixedRowHeight);
+    if (advancedRowHeight > 0)
+        area.removeFromTop(4);
+    auto advancedRow = area.removeFromTop(advancedRowHeight);
 
-    auto topRow = area.removeFromTop(38);
-    area.removeFromTop(3);
-    auto bottomRow = area.removeFromTop(38);
+    auto masterArea = fixedRow.removeFromRight(320);
+    fixedRow.removeFromRight(6);
 
-    const auto placeSlider = [](juce::Rectangle<int>& row, int width, juce::Label& label, juce::Component& comp)
-    {
-        auto slot = row.removeFromLeft(width);
-        label.setBounds(slot.removeFromTop(15));
-        comp.setBounds(slot.removeFromTop(21));
-    };
+    auto titleArea = fixedRow.removeFromLeft(200).reduced(2);
+    titleLabel.setBounds(titleArea.removeFromTop(22));
+    subtitleLabel.setBounds(titleArea.removeFromTop(16));
 
-    placeSlider(topRow, 114, bpmLabel, bpmSlider);
-    syncTempoToggle.setBounds(topRow.removeFromLeft(70).reduced(2));
-    placeSlider(topRow, 108, swingLabel, swingSlider);
-    placeSlider(topRow, 108, velocityLabel, velocitySlider);
-    placeSlider(topRow, 108, timingLabel, timingSlider);
-    placeSlider(topRow, 108, humanizeLabel, humanizeSlider);
-    placeSlider(topRow, 108, densityLabel, densitySlider);
-    placeSlider(topRow, 88, tempoInterpretationLabel, tempoInterpretationCombo);
-    placeSlider(topRow, 70, barsLabel, barsCombo);
-    placeSlider(topRow, 92, genreLabel, genreCombo);
-    placeSlider(topRow, 98, substyleLabel, substyleCombo);
+    auto bpmArea = fixedRow.removeFromLeft(196);
+    bpmLabel.setBounds(bpmArea.removeFromTop(14));
+    auto bpmControlRow = bpmArea.removeFromTop(24);
+    bpmLockToggle.setBounds(bpmControlRow.removeFromLeft(50).reduced(2));
+    bpmSlider.setBounds(bpmControlRow.removeFromLeft(102));
+    syncTempoToggle.setBounds(bpmControlRow.reduced(2));
 
-    placeSlider(bottomRow, 126, seedLabel, seedSlider);
-    placeSlider(bottomRow, 84, gridResolutionLabel, gridResolutionCombo);
-    seedLockToggle.setBounds(bottomRow.removeFromLeft(84).reduced(2));
-    placeSlider(bottomRow, 112, zoomLabel, zoomSlider);
-    gridModeIndicatorLabel.setBounds(bottomRow.removeFromLeft(78).reduced(2));
-    placeSlider(bottomRow, 116, laneHeightLabel, laneHeightSlider);
-    generateButton.setBounds(bottomRow.removeFromLeft(128).reduced(2));
-    mutateButton.setBounds(bottomRow.removeFromLeft(84).reduced(2));
-    playButton.setBounds(bottomRow.removeFromLeft(96).reduced(2));
-    exportFullButton.setBounds(bottomRow.removeFromLeft(98).reduced(2));
-    dragFullButton.setBounds(bottomRow.removeFromLeft(86).reduced(2));
+    fixedRow.removeFromLeft(4);
+    generateButton.setBounds(fixedRow.removeFromLeft(124).reduced(2));
+    mutateButton.setBounds(fixedRow.removeFromLeft(84).reduced(2));
+    clearAllButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));
+    playButton.setBounds(fixedRow.removeFromLeft(88).reduced(2));
+    exportFullButton.setBounds(fixedRow.removeFromLeft(92).reduced(2));
+    exportLoopWavButton.setBounds(fixedRow.removeFromLeft(118).reduced(2));
+    dragFullButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));
+    transportToStartButton.setBounds(fixedRow.removeFromLeft(40).reduced(2));
+    transportStepBackButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));
+    transportStepForwardButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));
+    transportToEndButton.setBounds(fixedRow.removeFromLeft(40).reduced(2));
 
-    auto masterTop = masterArea.removeFromTop(18);
-    masterSectionLabel.setBounds(masterTop.removeFromLeft(74));
-    standaloneWindowButton.setBounds(masterTop.removeFromRight(56).reduced(2));
+    auto masterTop = masterArea.removeFromTop(16);
+    masterSectionLabel.setBounds(masterTop.removeFromLeft(70));
+    startPlayWithDawToggle.setBounds(masterTop.removeFromRight(152).reduced(1));
+    advancedModeButton.setBounds(masterTop.removeFromRight(96).reduced(1));
+    standaloneWindowButton.setBounds(masterTop.removeFromRight(56).reduced(1));
 
-    masterArea.removeFromTop(4);
-    auto masterRow = masterArea.removeFromTop(58);
+    masterArea.removeFromTop(2);
+    auto masterRow = masterArea.removeFromTop(24);
 
     const auto placeMaster = [](juce::Rectangle<int>& row, int width, juce::Label& label, juce::Slider& slider)
     {
         auto slot = row.removeFromLeft(width);
-        label.setBounds(slot.removeFromTop(15));
-        slider.setBounds(slot.removeFromTop(21));
+        label.setBounds(slot.removeFromTop(10));
+        slider.setBounds(slot.removeFromTop(14));
     };
 
-    placeMaster(masterRow, 96, masterVolumeLabel, masterVolumeSlider);
-    placeMaster(masterRow, 96, masterCompressorLabel, masterCompressorSlider);
-    placeMaster(masterRow, 96, masterLofiLabel, masterLofiSlider);
+    placeMaster(masterRow, 104, masterVolumeLabel, masterVolumeSlider);
+    placeMaster(masterRow, 104, masterCompressorLabel, masterCompressorSlider);
+    placeMaster(masterRow, 104, masterLofiLabel, masterLofiSlider);
+
+    const auto placeSlider = [](juce::Rectangle<int>& row, int width, juce::Label& label, juce::Component& comp)
+    {
+        auto slot = row.removeFromLeft(width);
+        label.setBounds(slot.removeFromTop(12));
+        comp.setBounds(slot.removeFromTop(16));
+    };
+
+    if (controlsMode == HeaderControlsMode::Hidden)
+        return;
+
+    if (controlsMode == HeaderControlsMode::Compact)
+    {
+        placeSlider(advancedRow, 94, genreLabel, genreCombo);
+        placeSlider(advancedRow, 110, substyleLabel, substyleCombo);
+        placeSlider(advancedRow, 76, barsLabel, barsCombo);
+        placeSlider(advancedRow, 110, tempoInterpretationLabel, tempoInterpretationCombo);
+        placeSlider(advancedRow, 102, swingLabel, swingSlider);
+        placeSlider(advancedRow, 102, densityLabel, densitySlider);
+        placeSlider(advancedRow, 90, gridResolutionLabel, gridResolutionCombo);
+        placeSlider(advancedRow, 112, previewPlaybackModeLabel, previewPlaybackModeCombo);
+        placeSlider(advancedRow, 112, seedLabel, seedSlider);
+        return;
+    }
+
+    placeSlider(advancedRow, 112, swingLabel, swingSlider);
+    placeSlider(advancedRow, 112, velocityLabel, velocitySlider);
+    placeSlider(advancedRow, 112, timingLabel, timingSlider);
+    placeSlider(advancedRow, 112, humanizeLabel, humanizeSlider);
+    placeSlider(advancedRow, 112, densityLabel, densitySlider);
+    placeSlider(advancedRow, 108, tempoInterpretationLabel, tempoInterpretationCombo);
+    placeSlider(advancedRow, 70, barsLabel, barsCombo);
+    placeSlider(advancedRow, 94, genreLabel, genreCombo);
+    placeSlider(advancedRow, 110, substyleLabel, substyleCombo);
+    placeSlider(advancedRow, 112, seedLabel, seedSlider);
+    placeSlider(advancedRow, 90, gridResolutionLabel, gridResolutionCombo);
+    seedLockToggle.setBounds(advancedRow.removeFromLeft(84).reduced(2));
+    placeSlider(advancedRow, 108, zoomLabel, zoomSlider);
+    placeSlider(advancedRow, 110, laneHeightLabel, laneHeightSlider);
+    gridModeIndicatorLabel.setBounds(advancedRow.removeFromLeft(88).reduced(2));
+    placeSlider(advancedRow, 112, previewPlaybackModeLabel, previewPlaybackModeCombo);
+
+    auto hatArea = advancedRow.removeFromLeft(170).reduced(1);
+    hatFxDensityLabel.setBounds(hatArea.removeFromLeft(68));
+    auto knobArea = hatArea.removeFromLeft(34);
+    hatFxDensitySlider.setBounds(knobArea.withSizeKeepingCentre(24, 24));
+    hatFxDensityValueLabel.setBounds(hatArea.removeFromLeft(44));
+    hatFxDensityLockToggle.setBounds(hatArea.removeFromLeft(44));
 }
 
 void MainHeaderComponent::setBpmLocked(bool locked)
@@ -295,6 +477,92 @@ void MainHeaderComponent::setStandaloneWindowMaximized(bool isMaximized)
 void MainHeaderComponent::setStandaloneWindowButtonVisible(bool visible)
 {
     standaloneWindowButton.setVisible(visible);
+}
+
+void MainHeaderComponent::setStartPlayWithDawEnabled(bool enabled)
+{
+    startPlayWithDawToggle.setToggleState(enabled, juce::dontSendNotification);
+}
+
+void MainHeaderComponent::setHeaderControlsMode(HeaderControlsMode mode)
+{
+    if (controlsMode == mode)
+        return;
+
+    controlsMode = mode;
+
+    const bool expanded = controlsMode == HeaderControlsMode::Expanded;
+    const bool hidden = controlsMode == HeaderControlsMode::Hidden;
+    const bool advancedVisible = !hidden;
+
+    swingLabel.setVisible(advancedVisible);
+    swingSlider.setVisible(advancedVisible);
+    bpmLockToggle.setVisible(true);
+    velocityLabel.setVisible(expanded);
+    velocitySlider.setVisible(expanded);
+    timingLabel.setVisible(expanded);
+    timingSlider.setVisible(expanded);
+    humanizeLabel.setVisible(expanded);
+    humanizeSlider.setVisible(expanded);
+    densityLabel.setVisible(advancedVisible);
+    densitySlider.setVisible(advancedVisible);
+    tempoInterpretationLabel.setVisible(advancedVisible);
+    tempoInterpretationCombo.setVisible(advancedVisible);
+    barsLabel.setVisible(advancedVisible);
+    barsCombo.setVisible(advancedVisible);
+    genreLabel.setVisible(advancedVisible);
+    genreCombo.setVisible(advancedVisible);
+    substyleLabel.setVisible(advancedVisible);
+    substyleCombo.setVisible(advancedVisible);
+    seedLabel.setVisible(advancedVisible);
+    seedSlider.setVisible(advancedVisible);
+    gridResolutionLabel.setVisible(advancedVisible);
+    gridResolutionCombo.setVisible(advancedVisible);
+    previewPlaybackModeLabel.setVisible(advancedVisible);
+    previewPlaybackModeCombo.setVisible(advancedVisible);
+    seedLockToggle.setVisible(expanded);
+    zoomLabel.setVisible(expanded);
+    zoomSlider.setVisible(expanded);
+    laneHeightLabel.setVisible(expanded);
+    laneHeightSlider.setVisible(expanded);
+    gridModeIndicatorLabel.setVisible(expanded || controlsMode == HeaderControlsMode::Compact);
+    hatFxDensityLabel.setVisible(expanded);
+    hatFxDensitySlider.setVisible(expanded);
+    hatFxDensityValueLabel.setVisible(expanded);
+    hatFxDensityLockToggle.setVisible(expanded);
+
+    updateAdvancedModeButtonText();
+    resized();
+    repaint();
+}
+
+int MainHeaderComponent::getPreferredHeight() const
+{
+    if (controlsMode == HeaderControlsMode::Hidden)
+        return 58;
+    if (controlsMode == HeaderControlsMode::Compact)
+        return 94;
+    return 110;
+}
+
+void MainHeaderComponent::setHatFxDensityState(float density, bool locked)
+{
+    const float clamped = juce::jlimit(0.0f, 2.0f, density);
+    hatFxDensitySlider.setValue(clamped, juce::dontSendNotification);
+    hatFxDensityValueLabel.setText(juce::String(clamped, 2), juce::dontSendNotification);
+    hatFxDensityLockToggle.setToggleState(locked, juce::dontSendNotification);
+    hatFxDensitySlider.setEnabled(!locked);
+}
+
+void MainHeaderComponent::updateAdvancedModeButtonText()
+{
+    switch (controlsMode)
+    {
+        case HeaderControlsMode::Expanded: advancedModeButton.setButtonText("ADV:FULL"); break;
+        case HeaderControlsMode::Compact: advancedModeButton.setButtonText("ADV:COMPACT"); break;
+        case HeaderControlsMode::Hidden: advancedModeButton.setButtonText("ADV:HIDDEN"); break;
+        default: advancedModeButton.setButtonText("ADV"); break;
+    }
 }
 
 void MainHeaderComponent::setupSlider(juce::Slider& slider, double min, double max, double step, const juce::String& suffix)

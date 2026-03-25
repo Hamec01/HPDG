@@ -17,6 +17,13 @@ enum class TrackType
     Sub808
 };
 
+constexpr int kTrackTypeCount = 11;
+
+constexpr int trackTypeIndex(TrackType type)
+{
+    return static_cast<int>(type);
+}
+
 inline const char* toString(TrackType type)
 {
     switch (type)

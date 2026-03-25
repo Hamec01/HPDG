@@ -10,12 +10,15 @@
 
 namespace bbg
 {
+struct StyleInfluenceState;
+
 class TrapKickGenerator
 {
 public:
     void generate(TrackState& track,
                   const GeneratorParams& params,
                   const TrapStyleProfile& style,
+                  const StyleInfluenceState& styleInfluence,
                   const std::vector<TrapPhraseRole>& phrase,
                   std::mt19937& rng) const;
 };

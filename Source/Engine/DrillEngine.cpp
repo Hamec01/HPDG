@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <cmath>
 
+#include "Drill/DrillGrooveBlueprint.h"
 #include "../Core/TrackRegistry.h"
 #include "HiResTiming.h"
+#include "StyleInfluence.h"
 #include "StyleDefaults.h"
 
 namespace bbg
@@ -19,6 +21,11 @@ TrackState* findTrack(PatternProject& project, TrackType type)
     return nullptr;
 }
 
+float laneActivityWeight(const PatternProject& project, TrackType type)
+{
+    return std::clamp(laneBiasFor(project.styleInfluence, type).activityWeight, 0.5f, 1.6f);
+}
+
 bool isAnchorStep(TrackType type, int stepInBar)
 {
     if (type == TrackType::Kick || type == TrackType::Sub808)
@@ -28,6 +35,84 @@ bool isAnchorStep(TrackType type, int stepInBar)
     if (type == TrackType::HiHat)
         return (stepInBar % 3) == 0;
     return false;
+}
+
+const StepFeature* featureAtStep(const AudioFeatureMap& map, int step)
+{
+    if (map.steps.empty() || map.stepsPerBar <= 0)
+        return nullptr;
+
+    const int normalized = std::max(0, step);
+    const size_t idx = static_cast<size_t>(normalized) % map.steps.size();
+    return &map.steps[idx];
+}
+
+bool isDrillHatFamily(TrackType type)
+{
+    return type == TrackType::HiHat
+        || type == TrackType::HatFX
+        || type == TrackType::OpenHat
+        || type == TrackType::Perc
+        || type == TrackType::Ride
+        || type == TrackType::Cymbal;
+}
+
+void applySampleAwareDrillFlavor(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks)
+{
+    const auto& ctx = project.sampleContext;
+    if (!ctx.enabled || ctx.featureMap.steps.empty())
+        return;
+
+    const float react = std::clamp(ctx.reactivity, 0.0f, 1.0f);
+    const float contrast = std::clamp(ctx.supportVsContrast, 0.0f, 1.0f);
+    const float support = 1.0f - contrast;
+
+    for (auto& track : project.tracks)
+    {
+        if (mutableTracks.count(track.type) == 0)
+            continue;
+
+        for (auto& note : track.notes)
+        {
+            const auto* f = featureAtStep(ctx.featureMap, note.step);
+            if (f == nullptr)
+                continue;
+
+            float guide = 0.42f * f->accent + 0.32f * f->onset + 0.26f * f->energy;
+            if (track.type == TrackType::Kick || track.type == TrackType::Sub808 || track.type == TrackType::GhostKick)
+                guide = 0.48f * f->low + 0.28f * f->accent + 0.24f * f->onset;
+            else if (isDrillHatFamily(track.type))
+                guide = 0.46f * f->high + 0.34f * f->energy + 0.20f * f->onset;
+
+            const float gain = std::clamp(1.0f
+                                              + 0.24f * react * support * (guide - 0.5f)
+                                              + 0.20f * react * contrast * (0.5f - guide),
+                                          0.64f,
+                                          1.46f);
+            note.velocity = std::clamp(static_cast<int>(static_cast<float>(note.velocity) * gain), 1, 127);
+
+            if ((track.type == TrackType::Snare || track.type == TrackType::ClapGhostSnare)
+                && f->nearPhraseBoundary
+                && contrast > 0.10f)
+            {
+                const int nudge = static_cast<int>(1.0f + 3.0f * contrast * react);
+                note.microOffset = std::clamp(note.microOffset + nudge, -120, 120);
+            }
+        }
+
+        if (isDrillHatFamily(track.type) && support * react > 0.44f)
+        {
+            track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+            {
+                const auto* f = featureAtStep(ctx.featureMap, note.step);
+                if (f == nullptr)
+                    return false;
+
+                const int phase = (note.step + note.velocity + static_cast<int>(track.type)) % 10;
+                return phase == 0 && f->high > 0.83f && f->onset < 0.24f && !f->isStrongBeat;
+            }), track.notes.end());
+        }
+    }
 }
 
 juce::String roleForTrack(TrackType type)
@@ -89,16 +174,68 @@ void expandCoupledTracks(TrackType trigger, std::unordered_set<TrackType>& track
         tracks.insert(TrackType::Sub808);
     }
 }
+
+int ghostSnareLimitPerTwoBars(DrillSubstyle substyle)
+{
+    switch (substyle)
+    {
+        case DrillSubstyle::UKDrill: return 2;
+        case DrillSubstyle::BrooklynDrill: return 3;
+        case DrillSubstyle::NYDrill: return 2;
+        case DrillSubstyle::DarkDrill: return 1;
+    }
+
+    return 2;
+}
+
+void snapNoteToMicroGrid(NoteEvent& note, int bars, int gridTicks)
+{
+    const int safeGrid = std::max(1, gridTicks);
+    const int totalTicks = std::max(1, bars * 16 * ticksPerStep());
+
+    int tick = note.step * ticksPerStep() + note.microOffset;
+    tick = std::clamp(tick, 0, totalTicks - 1);
+    tick = HiResTiming::quantizeTicks(tick, safeGrid);
+    tick = std::clamp(tick, 0, totalTicks - 1);
+
+    int step = tick / ticksPerStep();
+    int micro = tick - step * ticksPerStep();
+    if (micro > ticksPerStep() / 2)
+    {
+        micro -= ticksPerStep();
+        ++step;
+    }
+
+    note.step = std::clamp(step, 0, std::max(0, bars * 16 - 1));
+    note.microOffset = std::clamp(micro, -ticksPerStep() / 2, ticksPerStep() / 2);
+}
+
+void applyDrillStyleInfluence(PatternProject& project)
+{
+    juce::String applyError;
+    DrillStyleInfluence::apply(project, &applyError);
+    juce::ignoreUnused(applyError);
+}
 }
 
 DrillEngine::DrillEngine() = default;
 
 void DrillEngine::generate(PatternProject& project)
 {
+    applyDrillStyleInfluence(project);
     const auto& style = getDrillProfile(project.params.drillSubstyle);
     const auto styleSpec = getDrillStyleSpec(style.substyle);
+    const auto bassSpec = getDrill808StyleSpec(style.substyle);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.generationCounter * 59 + 907));
-    const auto phrase = DrillPhrasePlanner::createPlan(std::max(1, project.params.bars), project.params.densityAmount, rng);
+    const int bars = std::max(1, project.params.bars);
+    const auto phrasePlan = DrillPhrasePlanner::createDetailedPlan(bars, project.params.densityAmount, rng);
+
+    std::vector<DrillPhraseRole> phrase;
+    phrase.reserve(phrasePlan.bars.size());
+    for (const auto& barPlan : phrasePlan.bars)
+        phrase.push_back(barPlan.role);
+
+    auto grooveBlueprint = DrillGrooveBlueprintBuilder::build(phrasePlan, bars, style.substyle, project.params.densityAmount);
 
     std::unordered_set<TrackType> mutableTracks;
     for (auto& track : project.tracks)
@@ -115,43 +252,68 @@ void DrillEngine::generate(PatternProject& project)
     }
 
     generateDrillSnareBackbone(project, style, phrase, rng, mutableTracks);
-    generateDrillHiHatStructure(project, style, phrase, rng, mutableTracks);
-    generateDrillKickSkeleton(project, style, phrase, rng, mutableTracks);
-    generateSub808RhythmFromDrillKicks(project, style, styleSpec, phrase, rng, mutableTracks);
-    assignDrillSub808Pitches(project, style, styleSpec, phrase, rng, mutableTracks);
-    applyDrillSub808Slides(project, styleSpec, phrase, rng, mutableTracks);
-    generateDrillHatFX(project, style, phrase, rng, mutableTracks);
-    generateDrillSupportLanes(project, style, styleSpec, phrase, rng, mutableTracks);
+    if (const auto* snare = findTrack(project, TrackType::Snare); snare != nullptr)
+        grooveBlueprint.ingestSnareTrack(*snare, 1);
+
+    generateDrillKickSkeleton(project, style, phrase, &grooveBlueprint, rng, mutableTracks);
+    if (const auto* kick = findTrack(project, TrackType::Kick); kick != nullptr)
+        grooveBlueprint.ingestKickTrack(*kick);
+
+    generateDrillHiHatStructure(project, style, phrase, &grooveBlueprint, rng, mutableTracks);
+    generateSub808RhythmFromDrillKicks(project, style, bassSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    assignDrillSub808Pitches(project, style, bassSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    applyDrillSub808Slides(project, bassSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    generateDrillHatFX(project, style, phrase, &grooveBlueprint, rng, mutableTracks);
+    generateDrillSupportLanes(project, style, styleSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    crossTrackResolver.resolve(project, style, grooveBlueprint, mutableTracks);
     applyDrillHumanization(project, style, rng, mutableTracks);
     validatePattern(project, mutableTracks);
 }
 
 void DrillEngine::regenerateTrack(PatternProject& project, TrackType trackType)
 {
+    applyDrillStyleInfluence(project);
     regenerateTrackVariation(project, trackType);
 }
 
 void DrillEngine::generateTrackNew(PatternProject& project, TrackType trackType)
 {
+    applyDrillStyleInfluence(project);
     auto* track = findTrack(project, trackType);
     if (track == nullptr || track->locked)
         return;
 
     const auto& style = getDrillProfile(project.params.drillSubstyle);
     const auto styleSpec = getDrillStyleSpec(style.substyle);
+    const auto bassSpec = getDrill808StyleSpec(style.substyle);
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + static_cast<int>(trackType) * 53 + project.generationCounter * 23 + 997));
-    const auto phrase = DrillPhrasePlanner::createPlan(std::max(1, project.params.bars), project.params.densityAmount, rng);
+    const int bars = std::max(1, project.params.bars);
+    const auto phrasePlan = DrillPhrasePlanner::createDetailedPlan(bars, project.params.densityAmount, rng);
+
+    std::vector<DrillPhraseRole> phrase;
+    phrase.reserve(phrasePlan.bars.size());
+    for (const auto& barPlan : phrasePlan.bars)
+        phrase.push_back(barPlan.role);
+
+    auto grooveBlueprint = DrillGrooveBlueprintBuilder::build(phrasePlan, bars, style.substyle, project.params.densityAmount);
 
     std::unordered_set<TrackType> mutableTracks { trackType };
     expandCoupledTracks(trackType, mutableTracks);
     generateDrillSnareBackbone(project, style, phrase, rng, mutableTracks);
-    generateDrillHiHatStructure(project, style, phrase, rng, mutableTracks);
-    generateDrillKickSkeleton(project, style, phrase, rng, mutableTracks);
-    generateSub808RhythmFromDrillKicks(project, style, styleSpec, phrase, rng, mutableTracks);
-    assignDrillSub808Pitches(project, style, styleSpec, phrase, rng, mutableTracks);
-    applyDrillSub808Slides(project, styleSpec, phrase, rng, mutableTracks);
-    generateDrillHatFX(project, style, phrase, rng, mutableTracks);
-    generateDrillSupportLanes(project, style, styleSpec, phrase, rng, mutableTracks);
+    if (const auto* snare = findTrack(project, TrackType::Snare); snare != nullptr)
+        grooveBlueprint.ingestSnareTrack(*snare, 1);
+
+    generateDrillKickSkeleton(project, style, phrase, &grooveBlueprint, rng, mutableTracks);
+    if (const auto* kick = findTrack(project, TrackType::Kick); kick != nullptr)
+        grooveBlueprint.ingestKickTrack(*kick);
+
+    generateDrillHiHatStructure(project, style, phrase, &grooveBlueprint, rng, mutableTracks);
+    generateSub808RhythmFromDrillKicks(project, style, bassSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    assignDrillSub808Pitches(project, style, bassSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    applyDrillSub808Slides(project, bassSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    generateDrillHatFX(project, style, phrase, &grooveBlueprint, rng, mutableTracks);
+    generateDrillSupportLanes(project, style, styleSpec, phrase, &grooveBlueprint, rng, mutableTracks);
+    crossTrackResolver.resolve(project, style, grooveBlueprint, mutableTracks);
     applyDrillHumanization(project, style, rng, mutableTracks);
     validatePattern(project, mutableTracks);
 }
@@ -203,6 +365,7 @@ void DrillEngine::regenerateTrackVariation(PatternProject& project, TrackType tr
 
 void DrillEngine::mutatePattern(PatternProject& project)
 {
+    applyDrillStyleInfluence(project);
     std::vector<TrackType> candidates;
     for (const auto& track : project.tracks)
         if (!track.locked && track.enabled)
@@ -235,6 +398,7 @@ void DrillEngine::mutatePattern(PatternProject& project)
 
 void DrillEngine::mutateTrack(PatternProject& project, TrackType trackType)
 {
+    applyDrillStyleInfluence(project);
     auto* track = findTrack(project, trackType);
     if (track == nullptr || track->locked || !track->enabled)
         return;
@@ -358,9 +522,16 @@ void DrillEngine::regenerateTrackInternal(PatternProject& project,
 
     switch (track.type)
     {
-        case TrackType::Kick: kickGenerator.generate(track, project.params, style, phrase, rng); break;
+        case TrackType::Kick: kickGenerator.generate(track, project.params, style, project.styleInfluence, phrase, nullptr, rng); break;
         case TrackType::Snare: snareGenerator.generate(track, project.params, style, phrase, rng); break;
-        case TrackType::HiHat: hatGenerator.generate(track, project.params, style, phrase, rng); break;
+        case TrackType::HiHat:
+        {
+            const auto* snareTrack = findTrack(project, TrackType::Snare);
+            const auto* clapTrack = findTrack(project, TrackType::ClapGhostSnare);
+            const auto* kickTrack = findTrack(project, TrackType::Kick);
+            hatGenerator.generate(track, project.params, style, project.styleInfluence, phrase, nullptr, snareTrack, clapTrack, kickTrack, rng);
+            break;
+        }
         default: track.notes.clear(); break;
     }
 
@@ -384,6 +555,7 @@ void DrillEngine::generateDrillSnareBackbone(PatternProject& project,
 void DrillEngine::generateDrillHiHatStructure(PatternProject& project,
                                               const DrillStyleProfile& style,
                                               const std::vector<DrillPhraseRole>& phrase,
+                                              const DrillGrooveBlueprint* blueprint,
                                               std::mt19937& rng,
                                               const std::unordered_set<TrackType>& mutableTracks) const
 {
@@ -391,12 +563,16 @@ void DrillEngine::generateDrillHiHatStructure(PatternProject& project,
     if (hat == nullptr || mutableTracks.count(hat->type) == 0 || hat->locked || !hat->enabled)
         return;
 
-    hatGenerator.generate(*hat, project.params, style, phrase, rng);
+    const auto* snare = findTrack(project, TrackType::Snare);
+    const auto* clap = findTrack(project, TrackType::ClapGhostSnare);
+    const auto* kick = findTrack(project, TrackType::Kick);
+    hatGenerator.generate(*hat, project.params, style, project.styleInfluence, phrase, blueprint, snare, clap, kick, rng);
 }
 
 void DrillEngine::generateDrillKickSkeleton(PatternProject& project,
                                             const DrillStyleProfile& style,
                                             const std::vector<DrillPhraseRole>& phrase,
+                                            const DrillGrooveBlueprint* blueprint,
                                             std::mt19937& rng,
                                             const std::unordered_set<TrackType>& mutableTracks) const
 {
@@ -404,13 +580,14 @@ void DrillEngine::generateDrillKickSkeleton(PatternProject& project,
     if (kick == nullptr || mutableTracks.count(kick->type) == 0 || kick->locked || !kick->enabled)
         return;
 
-    kickGenerator.generate(*kick, project.params, style, phrase, rng);
+    kickGenerator.generate(*kick, project.params, style, project.styleInfluence, phrase, blueprint, rng);
 }
 
 void DrillEngine::generateSub808RhythmFromDrillKicks(PatternProject& project,
                                                      const DrillStyleProfile& style,
-                                                     const DrillStyleSpec& spec,
+                                                     const Drill808StyleSpec& spec,
                                                      const std::vector<DrillPhraseRole>& phrase,
+                                                     const DrillGrooveBlueprint* blueprint,
                                                      std::mt19937& rng,
                                                      const std::unordered_set<TrackType>& mutableTracks) const
 {
@@ -423,13 +600,14 @@ void DrillEngine::generateSub808RhythmFromDrillKicks(PatternProject& project,
         return;
 
     const auto& lane = getLaneStyleDefaults(styleDefaults, sub->type);
-    subGenerator.generateRhythm(*sub, *kick, project.params, style, spec, lane.sub808Activity, phrase, rng);
+    subGenerator.generateRhythm(*sub, *kick, project.params, style, spec, project.styleInfluence, lane.sub808Activity, phrase, blueprint, rng);
 }
 
 void DrillEngine::assignDrillSub808Pitches(PatternProject& project,
                                            const DrillStyleProfile& style,
-                                           const DrillStyleSpec& spec,
+                                           const Drill808StyleSpec& spec,
                                            const std::vector<DrillPhraseRole>& phrase,
+                                           const DrillGrooveBlueprint* blueprint,
                                            std::mt19937& rng,
                                            const std::unordered_set<TrackType>& mutableTracks) const
 {
@@ -437,12 +615,13 @@ void DrillEngine::assignDrillSub808Pitches(PatternProject& project,
     if (sub == nullptr || mutableTracks.count(sub->type) == 0 || sub->locked || !sub->enabled)
         return;
 
-    subGenerator.assignPitches(*sub, project.params, style, spec, phrase, rng);
+    subGenerator.assignPitches(*sub, project.params, style, spec, phrase, blueprint, rng);
 }
 
 void DrillEngine::applyDrillSub808Slides(PatternProject& project,
-                                         const DrillStyleSpec& spec,
+                                         const Drill808StyleSpec& spec,
                                          const std::vector<DrillPhraseRole>& phrase,
+                                         const DrillGrooveBlueprint* blueprint,
                                          std::mt19937& rng,
                                          const std::unordered_set<TrackType>& mutableTracks) const
 {
@@ -450,12 +629,13 @@ void DrillEngine::applyDrillSub808Slides(PatternProject& project,
     if (sub == nullptr || mutableTracks.count(sub->type) == 0 || sub->locked || !sub->enabled)
         return;
 
-    subGenerator.applySlides(*sub, spec, phrase, rng);
+    subGenerator.applySlides(*sub, spec, phrase, blueprint, rng);
 }
 
 void DrillEngine::generateDrillHatFX(PatternProject& project,
                                      const DrillStyleProfile& style,
                                      const std::vector<DrillPhraseRole>& phrase,
+                                     const DrillGrooveBlueprint* blueprint,
                                      std::mt19937& rng,
                                      const std::unordered_set<TrackType>& mutableTracks) const
 {
@@ -468,19 +648,34 @@ void DrillEngine::generateDrillHatFX(PatternProject& project,
         return;
 
     const auto& lane = getLaneStyleDefaults(styleDefaults, hatFx->type);
-    hatFxGenerator.generate(*hatFx, *hat, style, lane.hatFxIntensity, phrase, rng);
+    const auto* kick = findTrack(project, TrackType::Kick);
+    const auto* snare = findTrack(project, TrackType::Snare);
+    const auto* openHat = findTrack(project, TrackType::OpenHat);
+    const auto* sub = findTrack(project, TrackType::Sub808);
+    hatFxGenerator.generate(*hatFx,
+                            *hat,
+                            kick,
+                            snare,
+                            openHat,
+                            sub,
+                            style,
+                            lane.hatFxIntensity * laneActivityWeight(project, TrackType::HatFX),
+                            phrase,
+                            blueprint,
+                            rng);
 }
 
 void DrillEngine::generateDrillSupportLanes(PatternProject& project,
                                             const DrillStyleProfile& style,
                                             const DrillStyleSpec& spec,
                                             const std::vector<DrillPhraseRole>& phrase,
+                                            const DrillGrooveBlueprint* blueprint,
                                             std::mt19937& rng,
                                             const std::unordered_set<TrackType>& mutableTracks) const
 {
-    (void) phrase;
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     const auto& styleDefaults = getGenreStyleDefaults(GenreType::Drill, project.params.drillSubstyle);
+    const int bars = std::max(1, project.params.bars);
 
     auto* hat = findTrack(project, TrackType::HiHat);
     auto* kick = findTrack(project, TrackType::Kick);
@@ -494,10 +689,18 @@ void DrillEngine::generateDrillSupportLanes(PatternProject& project,
         const auto& lane = getLaneStyleDefaults(styleDefaults, open->type);
         for (const auto& h : hat->notes)
         {
+            const auto* slot = blueprint != nullptr ? blueprint->slotAt(h.step) : nullptr;
+            if (slot != nullptr && (slot->snareProtection || slot->majorEventReserved || slot->kickPlaced))
+                continue;
+
+            const int bar = h.step / 16;
+            const auto role = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : DrillPhraseRole::Statement;
             const float openBias = spec.allowOpenHatFrequently ? 1.3f : 0.75f;
             float gate = std::clamp(style.openHatChance * lane.noteProbability * openBias, 0.01f, 0.55f);
             if ((h.step % 16) >= 13)
                 gate += 0.12f;
+            if (role == DrillPhraseRole::Response)
+                gate *= 0.7f;
             if (chance(rng) < std::clamp(gate, 0.01f, 0.9f))
                 open->notes.push_back({ 46, h.step, 1, vel(rng), 0, false });
         }
@@ -509,11 +712,69 @@ void DrillEngine::generateDrillSupportLanes(PatternProject& project,
         clap->notes.clear();
         std::uniform_int_distribution<int> vel(style.snareVelocityMin - 8, style.snareVelocityMax - 2);
         const auto& lane = getLaneStyleDefaults(styleDefaults, clap->type);
-        for (const auto& s : snare->notes)
+
+        const int windows = std::max(1, (bars + 1) / 2);
+        std::vector<int> usedPerWindow(static_cast<size_t>(windows), 0);
+        const int limitPerWindow = ghostSnareLimitPerTwoBars(style.substyle);
+
+        auto tryAddGhost = [&](int step, bool asGhost, int velocity)
         {
-            if (chance(rng) < std::clamp(style.clapLayerChance * lane.noteProbability, 0.08f, 0.9f))
-                clap->notes.push_back({ 39, s.step, 1, std::clamp(vel(rng), 1, 127), 2, false });
+            if (step < 0 || step >= bars * 16)
+                return;
+            const int window = std::clamp((step / 16) / 2, 0, windows - 1);
+            if (usedPerWindow[static_cast<size_t>(window)] >= limitPerWindow)
+                return;
+
+            const bool collidesWithSnare = std::any_of(snare->notes.begin(), snare->notes.end(), [step](const NoteEvent& s)
+            {
+                return !s.isGhost && s.step == step;
+            });
+            if (collidesWithSnare)
+                return;
+
+            clap->notes.push_back({ 39, step, 1, std::clamp(velocity, 1, 127), 2, asGhost });
+            usedPerWindow[static_cast<size_t>(window)] += 1;
+        };
+
+        for (int bar = 0; bar < bars; ++bar)
+        {
+            const auto role = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : DrillPhraseRole::Base;
+            const int b = bar * 16;
+
+            // Pre-snare push and after-snare echo as support grammar.
+            float preSnareGate = std::clamp(style.clapLayerChance * lane.noteProbability * 0.48f, 0.02f, 0.72f);
+            float echoGate = std::clamp(style.clapLayerChance * lane.noteProbability * 0.34f, 0.02f, 0.62f);
+            float phraseAnswerGate = std::clamp(style.clapLayerChance * lane.noteProbability * 0.4f, 0.02f, 0.68f);
+
+            if (style.substyle == DrillSubstyle::BrooklynDrill)
+            {
+                preSnareGate += 0.08f;
+                echoGate += 0.06f;
+            }
+            else if (style.substyle == DrillSubstyle::DarkDrill)
+            {
+                preSnareGate *= 0.7f;
+                echoGate *= 0.55f;
+                phraseAnswerGate *= 0.6f;
+            }
+
+            if (chance(rng) < preSnareGate)
+                tryAddGhost(b + 3, true, std::max(style.snareVelocityMin, vel(rng) - 14));
+            if (chance(rng) < preSnareGate)
+                tryAddGhost(b + 11, true, std::max(style.snareVelocityMin, vel(rng) - 12));
+
+            if (chance(rng) < echoGate)
+                tryAddGhost(b + 5, true, std::max(style.snareVelocityMin, vel(rng) - 16));
+            if (chance(rng) < echoGate)
+                tryAddGhost(b + 13, true, std::max(style.snareVelocityMin, vel(rng) - 14));
+
+            if (role == DrillPhraseRole::Ending && chance(rng) < phraseAnswerGate)
+                tryAddGhost(b + 15,
+                            style.substyle != DrillSubstyle::BrooklynDrill,
+                            std::max(style.snareVelocityMin, vel(rng) - (style.substyle == DrillSubstyle::BrooklynDrill ? 8 : 14)));
         }
+
+        dedupeAndSort(clap->notes);
     }
 
     if (auto* ghost = findTrack(project, TrackType::GhostKick);
@@ -527,7 +788,17 @@ void DrillEngine::generateDrillSupportLanes(PatternProject& project,
         {
             if ((k.step % 16) == 0 || (k.step % 16) == 10)
                 continue;
-            if (chance(rng) < std::clamp(style.ghostKickChance * lane.noteProbability * (ghostDensity / 0.06f), 0.01f, 0.2f))
+            const auto* slot = blueprint != nullptr ? blueprint->slotAt(k.step) : nullptr;
+            if (slot != nullptr && (slot->snareProtection || slot->majorEventReserved))
+                continue;
+            const bool nearSnare = snare != nullptr && std::any_of(snare->notes.begin(), snare->notes.end(), [&k](const NoteEvent& s)
+            {
+                return !s.isGhost && std::abs(s.step - k.step) <= 1;
+            });
+            if (nearSnare)
+                continue;
+
+            if (chance(rng) < std::clamp(style.ghostKickChance * lane.noteProbability * (ghostDensity / 0.06f), 0.01f, 0.16f))
                 ghost->notes.push_back({ 35, std::max(0, k.step - 1), 1, std::clamp(vel(rng), 1, 127), 0, true });
         }
     }
@@ -552,10 +823,13 @@ void DrillEngine::generateDrillSupportLanes(PatternProject& project,
         perc->notes.clear();
         const auto& lane = getLaneStyleDefaults(styleDefaults, perc->type);
         std::uniform_int_distribution<int> vel(style.hatVelocityMin, style.hatVelocityMax);
-        for (int bar = 0; bar < std::max(1, project.params.bars); ++bar)
+        float percGate = std::clamp(style.percChance * lane.noteProbability * laneActivityWeight(project, TrackType::Perc), 0.01f, 0.3f);
+        if (style.substyle == DrillSubstyle::DarkDrill)
+            percGate *= 0.45f;
+        for (int bar = 0; bar < bars; ++bar)
         {
             for (int step : { 5, 11, 15 })
-                if (chance(rng) < std::clamp(style.percChance * lane.noteProbability, 0.01f, 0.38f))
+                if (chance(rng) < percGate)
                     perc->notes.push_back({ 50, bar * 16 + step, 1, vel(rng), 0, false });
         }
     }
@@ -566,10 +840,15 @@ void DrillEngine::applyDrillHumanization(PatternProject& project,
                                          std::mt19937& rng,
                                          const std::unordered_set<TrackType>& mutableTracks) const
 {
-    juce::ignoreUnused(style);
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     std::uniform_int_distribution<int> velJitter(-6, 6);
     const auto& styleDefaults = getGenreStyleDefaults(GenreType::Drill, project.params.drillSubstyle);
+    const int bars = std::max(1, project.params.bars);
+    const bool cleanHatTiming = style.cleanHatMode;
+    const bool strictHatSnap = cleanHatTiming
+        || style.substyle == DrillSubstyle::UKDrill
+        || style.substyle == DrillSubstyle::BrooklynDrill;
+    const int hatSnapGrid = HiResTiming::kTicks1_24 / 4; // 1/6 step (40 ticks at PPQ 960)
 
     for (auto& track : project.tracks)
     {
@@ -577,21 +856,39 @@ void DrillEngine::applyDrillHumanization(PatternProject& project,
             continue;
 
         const auto& lane = getLaneStyleDefaults(styleDefaults, track.type);
+        const bool isHatLane = track.type == TrackType::HiHat || track.type == TrackType::HatFX;
         for (auto& note : track.notes)
         {
-            if ((note.step % 2) == 1 && track.type != TrackType::Kick && track.type != TrackType::Sub808 && track.type != TrackType::Snare)
+            if ((note.step % 2) == 1
+                && track.type != TrackType::Kick
+                && track.type != TrackType::Sub808
+                && track.type != TrackType::Snare
+                && track.type != TrackType::HiHat
+                && track.type != TrackType::HatFX)
                 note.microOffset += static_cast<int>(juce::jmap(project.params.swingPercent, 50.0f, 58.0f, 0.0f, 10.0f));
 
             const int jitterMax = std::max(1, static_cast<int>(5.0f * lane.humanizeBias));
             std::uniform_int_distribution<int> timing(-jitterMax, jitterMax + 1);
             if (!isAnchorStep(track.type, note.step % 16))
-                note.microOffset += timing(rng);
+            {
+                if (track.type == TrackType::HatFX)
+                    note.microOffset += timing(rng) / 3;
+                else if (track.type == TrackType::HiHat)
+                    note.microOffset += cleanHatTiming ? 0 : timing(rng) / 2;
+                else
+                    note.microOffset += timing(rng);
+            }
 
             note.microOffset = std::clamp(static_cast<int>(note.microOffset * lane.timingBias), -120, 120);
+            if (isHatLane && strictHatSnap)
+                snapNoteToMicroGrid(note, bars, hatSnapGrid);
+
             if (chance(rng) < 0.86f)
                 note.velocity = std::clamp(note.velocity + velJitter(rng), 1, 127);
         }
     }
+
+    applySampleAwareDrillFlavor(project, mutableTracks);
 }
 
 void DrillEngine::validatePattern(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks) const
@@ -614,9 +911,9 @@ void DrillEngine::validatePattern(PatternProject& project, const std::unordered_
 
         int maxHits = bars * 10;
         if (track.type == TrackType::HiHat)
-            maxHits = bars * 52;
+            maxHits = bars * 42;
         else if (track.type == TrackType::HatFX)
-            maxHits = bars * 80;
+            maxHits = bars * 20;
         else if (track.type == TrackType::Sub808)
             maxHits = bars * 10;
         else if (track.type == TrackType::OpenHat)

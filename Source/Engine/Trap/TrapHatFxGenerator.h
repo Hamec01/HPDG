@@ -13,7 +13,11 @@ class TrapHatFxGenerator
 {
 public:
     void generate(TrackState& hatFxTrack,
-                  const TrackState& hatTrack,
+                  TrackState& hatTrack,
+                  const TrackState* kickTrack,
+                  const TrackState* snareTrack,
+                  const TrackState* openHatTrack,
+                  const TrackState* subTrack,
                   const TrapStyleProfile& style,
                   float fxIntensity,
                   const std::vector<TrapPhraseRole>& phrase,

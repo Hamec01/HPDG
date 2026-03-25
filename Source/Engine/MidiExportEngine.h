@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -19,7 +20,8 @@ public:
 
     static juce::MidiMessageSequence trackToSequence(const TrackState& track,
                                                      int bars,
-                                                     int ppq = 960);
+                                                     int ppq = 960,
+                                                     const std::vector<int>* chokeStartTicks = nullptr);
 
     static bool saveMidiFile(const PatternProject& project,
                              const juce::File& file,

@@ -12,6 +12,12 @@ namespace bbg
 {
 namespace
 {
+int makeStrokeCellKey(const RuntimeLaneId& laneId, int tick)
+{
+    return static_cast<int>(std::hash<juce::String>{}(laneId) & 0x0fffffff)
+        ^ ((tick & 0x0fffff) << 2);
+}
+
 enum class ToolCursorIcon
 {
     Pencil,
@@ -152,15 +158,54 @@ const juce::MouseCursor& toolCursorFor(GridEditorComponent::EditorTool tool)
         default: return crosshair;
     }
 }
+
+juce::String normalizedSemanticRole(const juce::String& role)
+{
+    return role.trim().toLowerCase();
+}
+
+juce::Colour semanticRoleColour(const juce::String& role)
+{
+    const auto normalized = normalizedSemanticRole(role);
+    if (normalized == "anchor")
+        return juce::Colour::fromRGB(255, 214, 102);
+    if (normalized == "support")
+        return juce::Colour::fromRGB(124, 196, 255);
+    if (normalized == "fill")
+        return juce::Colour::fromRGB(130, 222, 172);
+    if (normalized == "accent")
+        return juce::Colour::fromRGB(236, 142, 255);
+    return juce::Colour::fromRGB(210, 218, 232);
+}
+
+juce::String semanticRoleBadge(const juce::String& role)
+{
+    const auto normalized = normalizedSemanticRole(role);
+    if (normalized == "anchor")
+        return "A";
+    if (normalized == "support")
+        return "S";
+    if (normalized == "fill")
+        return "F";
+    if (normalized == "accent")
+        return "X";
+    if (normalized.isNotEmpty())
+        return normalized.substring(0, 1).toUpperCase();
+    return {};
+}
 }
 
 void GridEditorComponent::setProject(const PatternProject& value)
 {
     project = value;
+    if (selectedTrack.isEmpty() && !project.tracks.empty())
+        selectedTrack = project.tracks.front().laneId;
     previewStartStep = std::max(0, project.previewStartStep);
     previewStartTick = previewStartStep * ticksPerStep();
     normalizeSelection();
+    refreshEditorRegionState();
     invalidateStaticCache();
+    notifyGridModeDisplayChanged();
     repaint();
 }
 
@@ -172,6 +217,7 @@ void GridEditorComponent::setStepWidth(float width)
 
     stepWidth = next;
     invalidateStaticCache();
+    notifyGridModeDisplayChanged();
     repaint();
 }
 
@@ -193,24 +239,116 @@ void GridEditorComponent::setGridResolution(GridResolution resolution)
 
     gridResolution = resolution;
     invalidateStaticCache();
+    notifyGridModeDisplayChanged();
     repaint();
 }
 
-void GridEditorComponent::setLaneDisplayOrder(const std::vector<TrackType>& order)
+void GridEditorComponent::setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order)
 {
     laneDisplayOrder = order;
     invalidateStaticCache();
     repaint();
 }
 
-void GridEditorComponent::setSelectedTrack(TrackType type)
+void GridEditorComponent::setSelectedTrack(const RuntimeLaneId& laneId)
 {
-    if (selectedTrack == type)
+    if (selectedTrack == laneId)
         return;
 
-    selectedTrack = type;
+    selectedTrack = laneId;
+    refreshEditorRegionState();
     invalidateStaticCache();
     repaint();
+}
+
+void GridEditorComponent::notifyTrackFocused(const RuntimeLaneId& laneId)
+{
+    if (onTrackFocused)
+        onTrackFocused(laneId);
+}
+
+int GridEditorComponent::velocityFromY(int y, const RuntimeLaneId& laneId) const
+{
+    const int row = visibleLaneIndex(laneId);
+    if (row < 0)
+        return 100;
+
+    const int laneTop = rulerHeight + row * laneHeight;
+    const int laneBottom = laneTop + laneHeight - 1;
+    const float normalized = 1.0f - (static_cast<float>(juce::jlimit(laneTop, laneBottom, y) - laneTop)
+        / static_cast<float>(juce::jmax(1, laneHeight - 1)));
+    return juce::jlimit(1, 127, static_cast<int>(std::round(1.0f + normalized * 126.0f)));
+}
+
+bool GridEditorComponent::beginVelocityEditGesture(const SelectedNoteRef& ref, juce::Point<int> position)
+{
+    const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
+    {
+        return track.laneId == ref.laneId;
+    });
+
+    if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
+        return false;
+
+    if (!isSelected(ref))
+        setSingleSelection(ref);
+    else
+        primarySelectedNote = ref;
+
+    dragStartX = position.x;
+    dragStartY = position.y;
+    dragOriginalVelocity = trackIt->notes[static_cast<size_t>(ref.index)].velocity;
+    collectDragSnapshots();
+    editMode = EditMode::Velocity;
+    velocityWaveModeActive = false;
+    velocityOverlayDelta = 0;
+
+    const bool changed = applySelectionVelocityAbsolute(velocityFromY(position.y, ref.laneId));
+    movedDuringDrag = changed;
+
+    repaint();
+    return true;
+}
+
+void GridEditorComponent::refreshEditorRegionState()
+{
+    EditorRegionState nextState;
+    nextState.loopTickRange = loopRegionTicks;
+    nextState.previewStartTick = previewStartTick;
+    nextState.primaryLaneId = selectedTrack;
+
+    int minTick = std::numeric_limits<int>::max();
+    int maxTick = std::numeric_limits<int>::min();
+    std::set<RuntimeLaneId> activeLanes;
+
+    for (const auto& ref : selectedNotes)
+    {
+        const auto* track = findTrack(ref.laneId);
+        if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
+            continue;
+
+        const auto& note = track->notes[static_cast<size_t>(ref.index)];
+        minTick = juce::jmin(minTick, noteStartTick(note));
+        maxTick = juce::jmax(maxTick, noteEndTick(note));
+        activeLanes.insert(ref.laneId);
+    }
+
+    if (maxTick > minTick)
+        nextState.selectedTickRange = juce::Range<int>(minTick, maxTick);
+
+    if (activeLanes.empty())
+    {
+        if (selectedTrack.isNotEmpty())
+            nextState.activeLaneIds.push_back(selectedTrack);
+    }
+    else
+    {
+        nextState.activeLaneIds.assign(activeLanes.begin(), activeLanes.end());
+    }
+
+    editorRegionState = std::move(nextState);
+    if (onEditorRegionStateChanged)
+        onEditorRegionStateChanged(editorRegionState);
 }
 
 void GridEditorComponent::setPlayheadStep(float step)
@@ -241,6 +379,8 @@ void GridEditorComponent::setEditorTool(EditorTool tool)
 
     editorTool = tool;
     editMode = EditMode::None;
+    strokeMode = StrokeMode::None;
+    strokeEditedLanes.clear();
     drawVisitedTicks.clear();
     eraseVisitedKeys.clear();
     applyCursorForHover();
@@ -258,6 +398,7 @@ void GridEditorComponent::setLoopRegion(const std::optional<juce::Range<int>>& t
         return;
 
     loopRegionTicks = tickRange;
+    refreshEditorRegionState();
     repaint();
 }
 
@@ -269,6 +410,7 @@ std::optional<juce::Range<int>> GridEditorComponent::getLoopRegion() const
 void GridEditorComponent::refreshTransientInputState()
 {
     applyCursorForHover();
+    refreshEditorRegionState();
     repaint();
 }
 
@@ -283,30 +425,14 @@ bool GridEditorComponent::deleteSelectedNotes()
     if (selectedNotes.empty())
         return false;
 
-    std::set<TrackType> changedTracks;
-    std::sort(selectedNotes.begin(), selectedNotes.end(), [](const SelectedNoteRef& a, const SelectedNoteRef& b)
-    {
-        if (a.track != b.track)
-            return static_cast<int>(a.track) > static_cast<int>(b.track);
-        return a.index > b.index;
-    });
-
-    for (const auto& ref : selectedNotes)
-    {
-        auto* track = findMutableTrack(ref.track);
-        if (track == nullptr)
-            continue;
-        if (ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
-            continue;
-        track->notes.erase(track->notes.begin() + ref.index);
-        changedTracks.insert(ref.track);
-    }
+    std::set<RuntimeLaneId> changedTracks;
+    const bool changed = GridEditActions::removeNotes(makeModelContext(), selectedNotes, &changedTracks);
 
     clearSelectionInternal();
     for (const auto t : changedTracks)
         emitTrackEdited(t);
     repaint();
-    return !changedTracks.empty();
+    return changed;
 }
 
 bool GridEditorComponent::copySelectionToClipboard()
@@ -319,99 +445,103 @@ bool GridEditorComponent::cutSelectionToClipboard()
     return copySelectionInternal(true);
 }
 
+int GridEditorComponent::currentPasteAnchorTick() const
+{
+    if (hoverDrawTick >= 0)
+        return snappedTickFromTick(hoverDrawTick);
+
+    if (hoverNote.has_value())
+    {
+        const auto* track = findTrack(hoverNote->laneId);
+        if (track != nullptr && hoverNote->index >= 0 && hoverNote->index < static_cast<int>(track->notes.size()))
+            return snappedTickFromTick(noteStartTick(track->notes[static_cast<size_t>(hoverNote->index)]));
+    }
+
+    return snappedTickFromTick(previewStartTick);
+}
+
+bool GridEditorComponent::pasteClipboardAtTick(int anchorTick,
+                                              std::vector<SelectedNoteRef>* insertedSelectionOut,
+                                              std::set<RuntimeLaneId>* changedTracksOut,
+                                              bool clearSelectionBeforeInsert)
+{
+    if (clipboardNotes.empty())
+        return false;
+
+    if (clearSelectionBeforeInsert)
+        clearSelectionInternal();
+
+    std::set<RuntimeLaneId> changedTracks;
+    std::vector<SelectedNoteRef> insertedSelection;
+    const bool changed = GridEditActions::pasteNotes(makeModelContext(), clipboardNotes, anchorTick, &insertedSelection, &changedTracks);
+    if (!changed)
+        return false;
+
+    selectedNotes = insertedSelection;
+    if (!selectedNotes.empty())
+        primarySelectedNote = selectedNotes.front();
+
+    for (const auto t : changedTracks)
+        emitTrackEdited(t);
+
+    if (insertedSelectionOut != nullptr)
+        *insertedSelectionOut = insertedSelection;
+    if (changedTracksOut != nullptr)
+        *changedTracksOut = changedTracks;
+
+    refreshEditorRegionState();
+    repaint();
+    return true;
+}
+
 bool GridEditorComponent::pasteClipboardAtPlayhead()
 {
     if (clipboardNotes.empty())
         return false;
 
-    const int bars = juce::jmax(1, project.params.bars);
-    const int maxTicks = bars * 16 * ticksPerStep();
-    const int anchorTick = snappedTickFromTick(previewStartTick);
-
-    clearSelectionInternal();
-    std::set<TrackType> changedTracks;
-    std::vector<std::pair<TrackType, std::vector<NoteEvent>>> insertedNotesByTrack;
-
-    auto insertedBucketFor = [&insertedNotesByTrack](TrackType trackType) -> std::vector<NoteEvent>&
-    {
-        auto it = std::find_if(insertedNotesByTrack.begin(), insertedNotesByTrack.end(), [trackType](const auto& entry)
-        {
-            return entry.first == trackType;
-        });
-
-        if (it == insertedNotesByTrack.end())
-        {
-            insertedNotesByTrack.push_back({ trackType, {} });
-            return insertedNotesByTrack.back().second;
-        }
-
-        return it->second;
-    };
-
-    for (const auto& c : clipboardNotes)
-    {
-        auto* track = findMutableTrack(c.track);
-        if (track == nullptr)
-            continue;
-
-        NoteEvent note = c.note;
-        const int targetTick = juce::jlimit(0, juce::jmax(0, maxTicks - 1), anchorTick + c.relativeTick);
-        setNoteStartTick(note, targetTick, bars);
-        track->notes.push_back(note);
-        insertedBucketFor(c.track).push_back(note);
-        changedTracks.insert(c.track);
-    }
-
-    for (const auto trackType : changedTracks)
-        if (auto* track = findMutableTrack(trackType))
-            sortTrackNotes(*track);
-
-    for (const auto& inserted : insertedNotesByTrack)
-    {
-        auto* track = findMutableTrack(inserted.first);
-        if (track == nullptr)
-            continue;
-
-        std::vector<bool> consumed(track->notes.size(), false);
-        for (const auto& note : inserted.second)
-        {
-            for (int i = static_cast<int>(track->notes.size()) - 1; i >= 0; --i)
-            {
-                if (consumed[static_cast<size_t>(i)])
-                    continue;
-
-                const auto& current = track->notes[static_cast<size_t>(i)];
-                if (noteStartTick(current) == noteStartTick(note)
-                    && current.length == note.length
-                    && current.velocity == note.velocity
-                    && current.pitch == note.pitch
-                    && current.microOffset == note.microOffset)
-                {
-                    consumed[static_cast<size_t>(i)] = true;
-                    selectedNotes.push_back({ inserted.first, i });
-                    primarySelectedNote = SelectedNoteRef{ inserted.first, i };
-                    break;
-                }
-            }
-        }
-    }
-
-    for (const auto t : changedTracks)
-        emitTrackEdited(t);
-
-    repaint();
-    return !changedTracks.empty();
+    return pasteClipboardAtTick(currentPasteAnchorTick());
 }
 
 bool GridEditorComponent::duplicateSelectionToRight()
 {
+    return duplicateSelectionRepeated(1);
+}
+
+bool GridEditorComponent::duplicateSelectionRepeated(int repeatCount)
+{
+    if (repeatCount <= 0)
+        return false;
+
     if (!copySelectionInternal(false))
         return false;
 
-    const int insertTick = snappedTickFromTick(clipboardSourceStartTick + clipboardSpanTicks);
-    previewStartTick = insertTick;
-    previewStartStep = juce::jmax(0, insertTick / ticksPerStep());
-    return pasteClipboardAtPlayhead();
+    std::vector<SelectedNoteRef> allInserted;
+    bool changed = false;
+
+    for (int repeatIndex = 1; repeatIndex <= repeatCount; ++repeatIndex)
+    {
+        const int insertTick = snappedTickFromTick(clipboardSourceStartTick + clipboardSpanTicks * repeatIndex);
+        std::vector<SelectedNoteRef> insertedSelection;
+        if (!pasteClipboardAtTick(insertTick, &insertedSelection, nullptr, repeatIndex == 1))
+            continue;
+
+        allInserted.insert(allInserted.end(), insertedSelection.begin(), insertedSelection.end());
+        changed = true;
+    }
+
+    if (!changed)
+        return false;
+
+    selectedNotes = std::move(allInserted);
+    if (!selectedNotes.empty())
+        primarySelectedNote = selectedNotes.back();
+
+    const int finalInsertTick = snappedTickFromTick(clipboardSourceStartTick + clipboardSpanTicks * repeatCount);
+    previewStartTick = finalInsertTick;
+    previewStartStep = juce::jmax(0, finalInsertTick / ticksPerStep());
+    refreshEditorRegionState();
+    repaint();
+    return true;
 }
 
 void GridEditorComponent::clearNoteSelection()
@@ -426,35 +556,143 @@ bool GridEditorComponent::selectAllNotes()
 
     for (const auto& track : project.tracks)
     {
-        if (!isVisibleLane(track.type))
+        if (!isVisibleLane(track.laneId))
             continue;
 
         for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
-            selectedNotes.push_back({ track.type, i });
+            selectedNotes.push_back({ track.laneId, i });
     }
 
     if (!selectedNotes.empty())
         primarySelectedNote = selectedNotes.front();
 
+    refreshEditorRegionState();
     repaint();
     return !selectedNotes.empty();
 }
 
-bool GridEditorComponent::selectAllNotesInLane(TrackType lane)
+bool GridEditorComponent::selectAllNotesInLane(const RuntimeLaneId& laneId)
 {
-    auto* track = findMutableTrack(lane);
+    auto* track = findMutableTrack(laneId);
     if (track == nullptr)
         return false;
 
     clearSelectionInternal();
     for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
-        selectedNotes.push_back({ lane, i });
+        selectedNotes.push_back({ laneId, i });
 
     if (!selectedNotes.empty())
         primarySelectedNote = selectedNotes.front();
 
+    refreshEditorRegionState();
     repaint();
     return !selectedNotes.empty();
+}
+
+bool GridEditorComponent::setSelectionSemanticRole(const juce::String& role)
+{
+    normalizeSelection();
+    if (selectedNotes.empty())
+        return false;
+
+    const auto normalizedRole = normalizedSemanticRole(role);
+    std::set<RuntimeLaneId> changedLaneIds;
+    bool changed = false;
+
+    for (const auto& ref : selectedNotes)
+    {
+        auto* track = findMutableTrack(ref.laneId);
+        if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
+            continue;
+
+        auto& note = track->notes[static_cast<size_t>(ref.index)];
+        if (normalizedSemanticRole(note.semanticRole) == normalizedRole)
+            continue;
+
+        note.semanticRole = normalizedRole;
+        changedLaneIds.insert(ref.laneId);
+        changed = true;
+    }
+
+    if (!changed)
+        return false;
+
+    for (const auto& laneId : changedLaneIds)
+        emitTrackEdited(laneId);
+
+    repaint();
+    return true;
+}
+
+bool GridEditorComponent::selectNotesBySemanticRole(const juce::String& role)
+{
+    const auto normalizedRole = normalizedSemanticRole(role);
+    if (normalizedRole.isEmpty())
+        return false;
+
+    selectedNotes.clear();
+    primarySelectedNote.reset();
+
+    for (const auto& track : project.tracks)
+    {
+        for (int index = 0; index < static_cast<int>(track.notes.size()); ++index)
+        {
+            if (normalizedSemanticRole(track.notes[static_cast<size_t>(index)].semanticRole) != normalizedRole)
+                continue;
+
+            selectedNotes.push_back({ track.laneId, index });
+        }
+    }
+
+    normalizeSelection();
+    repaint();
+    return !selectedNotes.empty();
+}
+
+bool GridEditorComponent::nudgeSelectionBySnap(int direction)
+{
+    normalizeSelection();
+    if (selectedNotes.empty() || direction == 0)
+        return false;
+
+    collectDragSnapshots();
+    if (dragSnapshots.empty())
+        return false;
+
+    const int deltaTicks = keyboardNudgeTicks() * direction;
+    const int deltaSteps = deltaTicks / ticksPerStep();
+    const int deltaMicro = deltaTicks - deltaSteps * ticksPerStep();
+    if (!applySelectionMoveDelta(deltaSteps, 0, deltaMicro))
+        return false;
+
+    std::set<RuntimeLaneId> changedLaneIds;
+    for (const auto& ref : selectedNotes)
+        changedLaneIds.insert(ref.laneId);
+    for (const auto& laneId : changedLaneIds)
+        emitTrackEdited(laneId);
+
+    repaint();
+    return true;
+}
+
+bool GridEditorComponent::nudgeSelectionMicro(int direction)
+{
+    normalizeSelection();
+    if (selectedNotes.empty() || direction == 0)
+        return false;
+
+    collectDragSnapshots();
+    if (!applySelectionMicroOffsetDelta(keyboardMicroNudgeTicks() * direction))
+        return false;
+
+    std::set<RuntimeLaneId> changedLaneIds;
+    for (const auto& ref : selectedNotes)
+        changedLaneIds.insert(ref.laneId);
+    for (const auto& laneId : changedLaneIds)
+        emitTrackEdited(laneId);
+
+    repaint();
+    return true;
 }
 
 int GridEditorComponent::getGridWidth() const
@@ -468,7 +706,7 @@ int GridEditorComponent::getGridHeight() const
     int visibleRows = 0;
     for (const auto& track : project.tracks)
     {
-        if (isVisibleLane(track.type))
+        if (isVisibleLane(track.laneId))
             ++visibleRows;
     }
 
@@ -490,7 +728,7 @@ void GridEditorComponent::paint(juce::Graphics& g)
         return;
 
     const bool velocityPreviewActive = isVelocityEditKeyDown() || editMode == EditMode::Velocity || velocityWaveModeActive;
-    const auto velocityPreviewTrack = primarySelectedNote.has_value() ? primarySelectedNote->track : selectedTrack;
+    const auto velocityPreviewTrack = primarySelectedNote.has_value() ? primarySelectedNote->laneId : selectedTrack;
 
     if (loopRegionTicks.has_value() && loopRegionTicks->getLength() > 0)
     {
@@ -526,7 +764,7 @@ void GridEditorComponent::paint(juce::Graphics& g)
 
     for (const auto& track : project.tracks)
     {
-        const int row = visibleLaneIndex(track.type);
+        const int row = visibleLaneIndex(track.laneId);
         if (row < 0)
             continue;
 
@@ -535,35 +773,53 @@ void GridEditorComponent::paint(juce::Graphics& g)
             const auto& note = track.notes[static_cast<size_t>(i)];
             const auto boundsInt = noteBounds(note, row);
             const auto noteRect = boundsInt.toFloat();
-            const bool noteIsSelected = isSelected(SelectedNoteRef{ track.type, i });
-            const bool renderVelocityWave = velocityPreviewActive && (track.type == velocityPreviewTrack || noteIsSelected);
+            const bool noteIsSelected = isSelected(SelectedNoteRef{ track.laneId, i });
+            const bool renderVelocityWave = velocityPreviewActive && (track.laneId == velocityPreviewTrack || noteIsSelected);
 
             const float normVel = juce::jlimit(0.0f, 1.0f, static_cast<float>(note.velocity) / 127.0f);
             const auto color = note.isGhost
                 ? juce::Colour::fromRGB(120, 176, 255).withAlpha(0.45f + 0.45f * normVel)
                 : juce::Colour::fromRGB(255, 164, 74).withAlpha(0.4f + 0.5f * normVel);
+            const auto fillColour = noteIsSelected
+                ? color.brighter(0.28f).withAlpha(0.92f)
+                : color;
+            const auto outlineColour = noteIsSelected
+                ? juce::Colour::fromRGB(255, 236, 178).withAlpha(0.98f)
+                : color.brighter(0.35f).withAlpha(0.72f);
 
             if (renderVelocityWave)
             {
                 const float laneBottom = static_cast<float>(rulerHeight + row * laneHeight + laneHeight - 3);
                 const float waveHeight = juce::jmax(4.0f, normVel * static_cast<float>(laneHeight - 6));
                 const auto waveRect = juce::Rectangle<float>(noteRect.getX(), laneBottom - waveHeight, noteRect.getWidth(), waveHeight);
-                g.setColour(color.withAlpha(noteIsSelected ? 0.92f : 0.78f));
+                g.setColour(fillColour.withAlpha(noteIsSelected ? 0.94f : 0.8f));
                 g.fillRoundedRectangle(waveRect, 2.0f);
-                g.setColour(color.brighter(0.45f).withAlpha(0.95f));
+                g.setColour(outlineColour.withAlpha(0.95f));
                 g.drawLine(waveRect.getX(), waveRect.getY(), waveRect.getRight(), waveRect.getY(), 1.6f);
-                g.setColour(juce::Colour::fromRGBA(255, 255, 255, 22));
-                g.drawRoundedRectangle(noteRect, 2.0f, 0.8f);
+                g.setColour(noteIsSelected ? outlineColour : juce::Colour::fromRGBA(255, 255, 255, 22));
+                g.drawRoundedRectangle(noteRect, 2.0f, noteIsSelected ? 1.2f : 0.8f);
             }
             else
             {
-                g.setColour(color);
+                g.setColour(fillColour);
                 g.fillRoundedRectangle(noteRect, 2.0f);
 
+                if (noteIsSelected)
+                {
+                    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
+                    g.fillRoundedRectangle(noteRect.reduced(1.0f, 1.0f), 2.0f);
+                }
+
                 // Duration strip makes note length explicit even with dense patterns.
-                g.setColour(color.brighter(0.35f).withAlpha(0.92f));
+                g.setColour(outlineColour.withAlpha(0.92f));
                 const float stripY = noteRect.getBottom() - 2.5f;
                 g.drawLine(noteRect.getX() + 1.0f, stripY, noteRect.getRight() - 1.0f, stripY, 1.6f);
+
+                if (normalizedSemanticRole(note.semanticRole) == "anchor")
+                {
+                    g.setColour(juce::Colour::fromRGBA(255, 234, 164, 212));
+                    g.drawLine(noteRect.getX() + 1.0f, noteRect.getY() + 1.5f, noteRect.getRight() - 1.0f, noteRect.getY() + 1.5f, 1.8f);
+                }
 
                 if (note.length > 1 && noteRect.getWidth() > 14.0f)
                 {
@@ -575,7 +831,8 @@ void GridEditorComponent::paint(juce::Graphics& g)
                                false);
                 }
 
-                if (track.type == TrackType::Sub808 && noteRect.getWidth() > 24.0f)
+                const auto capabilities = laneEditorCapabilitiesForLane(track.laneId);
+                if (capabilities.rendersNotePitchInGrid && noteRect.getWidth() > 24.0f)
                 {
                     g.setColour(juce::Colour::fromRGBA(206, 224, 255, 210));
                     g.setFont(juce::Font(juce::FontOptions(9.0f)));
@@ -584,11 +841,39 @@ void GridEditorComponent::paint(juce::Graphics& g)
                                juce::Justification::centredLeft,
                                false);
                 }
+
+                if (noteRect.getWidth() > 24.0f && noteRect.getHeight() > 11.0f)
+                {
+                    g.setColour(juce::Colour::fromRGBA(20, 24, 30, noteIsSelected ? 210 : 164));
+                    g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+                    g.drawText(juce::String(note.velocity),
+                               noteRect.withTrimmedLeft(3.0f).withTrimmedRight(3.0f).withTrimmedTop(2.0f).toNearestInt(),
+                               juce::Justification::centredRight,
+                               false);
+                }
+
+                g.setColour(outlineColour.withAlpha(noteIsSelected ? 0.98f : 0.62f));
+                g.drawRoundedRectangle(noteRect, 2.0f, noteIsSelected ? 1.8f : 1.0f);
             }
 
             const bool isHovered = hoverNote.has_value()
-                && hoverNote->track == track.type
+                && hoverNote->laneId == track.laneId
                 && hoverNote->index == i;
+
+            const auto semanticRole = normalizedSemanticRole(note.semanticRole);
+            if (semanticRole.isNotEmpty())
+            {
+                const auto badgeBounds = juce::Rectangle<float>(noteRect.getX() + 3.0f,
+                                                               noteRect.getY() + 3.0f,
+                                                               juce::jmax(10.0f, juce::jmin(16.0f, noteRect.getWidth() - 6.0f)),
+                                                               10.0f);
+                const auto badgeColour = semanticRoleColour(semanticRole);
+                g.setColour(badgeColour.withAlpha(noteIsSelected ? 0.94f : 0.82f));
+                g.fillRoundedRectangle(badgeBounds, 3.0f);
+                g.setColour(juce::Colour::fromRGBA(18, 20, 24, 220));
+                g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+                g.drawText(semanticRoleBadge(semanticRole), badgeBounds.toNearestInt(), juce::Justification::centred, false);
+            }
 
             if (isHovered && !noteIsSelected)
             {
@@ -616,18 +901,46 @@ void GridEditorComponent::paint(juce::Graphics& g)
         g.fillRect(juce::Rectangle<float>(loopX, 0.0f, juce::jmax(1.0f, loopRight - loopX), static_cast<float>(rulerHeight)));
     }
 
+    if ((editorTool == EditorTool::Pencil || editorTool == EditorTool::Brush)
+        && editMode != EditMode::MoveNote
+        && editMode != EditMode::StretchNote
+        && editMode != EditMode::Velocity
+        && editMode != EditMode::MicroOffset
+        && hoverDrawTrack.has_value()
+        && hoverDrawTick >= 0)
+    {
+        const int row = visibleLaneIndex(*hoverDrawTrack);
+        if (row >= 0)
+        {
+            NoteEvent previewNote;
+            previewNote.length = juce::jmax(1,
+                                            static_cast<int>(std::ceil(static_cast<double>(ticksForGridResolution())
+                                                                       / static_cast<double>(juce::jmax(1, ticksPerStep())))));
+            setNoteStartTick(previewNote, hoverDrawTick, juce::jmax(1, project.params.bars));
+
+            const bool occupied = hasNoteAtTick(*hoverDrawTrack, noteStartTick(previewNote));
+            const auto previewRect = noteBounds(previewNote, row).toFloat();
+            g.setColour(occupied ? juce::Colour::fromRGBA(255, 108, 108, 52)
+                                 : juce::Colour::fromRGBA(142, 188, 255, 58));
+            g.fillRoundedRectangle(previewRect, 2.0f);
+            g.setColour(occupied ? juce::Colour::fromRGBA(255, 176, 176, 176)
+                                 : juce::Colour::fromRGBA(230, 238, 255, 186));
+            g.drawRoundedRectangle(previewRect, 2.0f, 1.0f);
+        }
+    }
+
     if (!selectedNotes.empty())
     {
         for (const auto& ref : selectedNotes)
         {
             for (const auto& track : project.tracks)
             {
-                if (track.type != ref.track)
+                if (track.laneId != ref.laneId)
                     continue;
                 if (ref.index < 0 || ref.index >= static_cast<int>(track.notes.size()))
                     continue;
 
-                const int row = visibleLaneIndex(track.type);
+                const int row = visibleLaneIndex(track.laneId);
                 if (row < 0)
                     continue;
 
@@ -669,7 +982,10 @@ void GridEditorComponent::paint(juce::Graphics& g)
         g.drawRect(marqueeRect, 1);
     }
 
-    if ((editMode == EditMode::Velocity || velocityWaveModeActive || (isVelocityEditKeyDown() && !selectedNotes.empty())) && !selectedNotes.empty())
+    const bool showVelocityOverlay = editMode == EditMode::Velocity
+        || velocityWaveModeActive
+        || (isVelocityEditKeyDown() && (!selectedNotes.empty() || hoverNote.has_value()));
+    if (showVelocityOverlay)
     {
         int overlayPercent = velocityOverlayPercent;
         int overlayDelta = velocityOverlayDelta;
@@ -677,17 +993,34 @@ void GridEditorComponent::paint(juce::Graphics& g)
         {
             int velocitySum = 0;
             int velocityCount = 0;
-            for (const auto& ref : selectedNotes)
+            if (!selectedNotes.empty())
             {
-                const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
+                for (const auto& ref : selectedNotes)
                 {
-                    return track.type == ref.track;
-                });
-                if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
-                    continue;
+                    const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
+                    {
+                        return track.laneId == ref.laneId;
+                    });
+                    if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
+                        continue;
 
-                velocitySum += trackIt->notes[static_cast<size_t>(ref.index)].velocity;
-                ++velocityCount;
+                    velocitySum += trackIt->notes[static_cast<size_t>(ref.index)].velocity;
+                    ++velocityCount;
+                }
+            }
+            else if (hoverNote.has_value())
+            {
+                const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [this](const TrackState& track)
+                {
+                    return hoverNote.has_value() && track.laneId == hoverNote->laneId;
+                });
+                if (trackIt != project.tracks.end()
+                    && hoverNote->index >= 0
+                    && hoverNote->index < static_cast<int>(trackIt->notes.size()))
+                {
+                    velocitySum = trackIt->notes[static_cast<size_t>(hoverNote->index)].velocity;
+                    velocityCount = 1;
+                }
             }
 
             if (velocityCount > 0)
@@ -720,20 +1053,6 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
     const bool laneHeightZoomModifierDown = isModifierDown(event.mods, inputBindings.laneHeightZoomModifier);
     const bool velocityModifierDown = isVelocityEditKeyDown();
 
-    if (!microtimingModifierDown
-        && !horizontalZoomModifierDown
-        && !laneHeightZoomModifierDown
-        && !velocityModifierDown)
-    {
-        const int semitoneDelta = wheel.deltaY > 0.0f ? 1 : (wheel.deltaY < 0.0f ? -1 : 0);
-        if (semitoneDelta != 0 && updatePitchForSub808Selection(semitoneDelta))
-        {
-            emitTrackEdited(TrackType::Sub808);
-            repaint();
-            return;
-        }
-    }
-
     if (microtimingModifierDown)
     {
         const int delta = static_cast<int>(std::round((wheel.deltaY + wheel.deltaX) * 24.0f));
@@ -745,9 +1064,9 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
                 collectDragSnapshots();
                 if (applySelectionMicroOffsetDelta(delta))
                 {
-                    std::set<TrackType> changed;
+                    std::set<RuntimeLaneId> changed;
                     for (const auto& ref : selectedNotes)
-                        changed.insert(ref.track);
+                        changed.insert(ref.laneId);
                     for (const auto trackType : changed)
                         emitTrackEdited(trackType);
                     repaint();
@@ -755,17 +1074,6 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
                 }
             }
 
-            if (auto hit = findSub808NoteForPitchEdit(event); hit.has_value())
-            {
-                setSingleSelection(*hit);
-                collectDragSnapshots();
-                if (applySelectionMicroOffsetDelta(delta))
-                {
-                    emitTrackEdited(hit->track);
-                    repaint();
-                    return;
-                }
-            }
         }
     }
 
@@ -777,9 +1085,9 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
             collectDragSnapshots();
             if (applySelectionVelocityDelta(delta))
             {
-                std::set<TrackType> changed;
+                std::set<RuntimeLaneId> changed;
                 for (const auto& ref : selectedNotes)
-                    changed.insert(ref.track);
+                    changed.insert(ref.laneId);
                 for (const auto t : changed)
                     emitTrackEdited(t);
                 repaint();
@@ -788,20 +1096,20 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
         }
 
         const auto p = event.getPosition();
-        const int laneIndex = (p.y - rulerHeight) / laneHeight;
+        const int laneIndex = makeGeometry().yToLane(p.y);
         const auto lane = trackForVisibleLaneIndex(laneIndex);
         if (lane.has_value())
         {
             if (auto hit = findNoteAt(p, *lane); hit.has_value())
             {
-                if (auto* track = findMutableTrack(hit->track))
+                if (auto* track = findMutableTrack(hit->laneId))
                 {
                     if (hit->index >= 0 && hit->index < static_cast<int>(track->notes.size()))
                     {
                         auto& note = track->notes[static_cast<size_t>(hit->index)];
                         note.velocity = juce::jlimit(1, 127, note.velocity + delta);
                         setSingleSelection(*hit);
-                        emitTrackEdited(hit->track);
+                        emitTrackEdited(hit->laneId);
                         repaint();
                         return;
                     }
@@ -813,14 +1121,14 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
     if (horizontalZoomModifierDown)
     {
         if (onHorizontalZoomGesture)
-            onHorizontalZoomGesture(wheel.deltaY);
+            onHorizontalZoomGesture(wheel.deltaY, event.getPosition());
         return;
     }
 
     if (laneHeightZoomModifierDown)
     {
         if (onLaneHeightZoomGesture)
-            onLaneHeightZoomGesture(wheel.deltaY);
+            onLaneHeightZoomGesture(wheel.deltaY, event.getPosition());
         return;
     }
 
@@ -830,6 +1138,8 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
 void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
 {
     editMode = EditMode::None;
+    strokeMode = StrokeMode::None;
+    strokeEditedLanes.clear();
     drawVisitedTicks.clear();
     eraseVisitedKeys.clear();
     lastDragPoint = event.getPosition();
@@ -841,6 +1151,40 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
         return;
 
     const auto p = event.getPosition();
+
+    const bool velocityEditActive = isVelocityEditKeyDown() && p.y >= rulerHeight;
+    const int velocityLaneIndex = velocityEditActive ? makeGeometry().yToLane(p.y) : -1;
+    const auto velocityTrack = velocityEditActive ? trackForVisibleLaneIndex(velocityLaneIndex) : std::optional<RuntimeLaneId>{};
+    const auto velocityHit = (velocityEditActive && velocityTrack.has_value())
+        ? findNoteAt(event.getPosition(), *velocityTrack)
+        : std::optional<SelectedNoteRef>{};
+
+    if (velocityEditActive)
+    {
+        if (velocityTrack.has_value())
+        {
+            selectedTrack = *velocityTrack;
+            notifyTrackFocused(*velocityTrack);
+        }
+
+        if (event.mods.isRightButtonDown())
+        {
+            showNoteContextMenu(p, velocityTrack);
+            return;
+        }
+
+        if (event.mods.isLeftButtonDown())
+        {
+            if (velocityHit.has_value())
+            {
+                beginVelocityEditGesture(*velocityHit, p);
+                return;
+            }
+
+            repaint();
+            return;
+        }
+    }
 
     if (event.mods.isRightButtonDown())
     {
@@ -864,7 +1208,16 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
         }
 
         const int laneIndex = (p.y - rulerHeight) / laneHeight;
-        showNoteContextMenu(p, trackForVisibleLaneIndex(laneIndex));
+        const auto clickedTrack = trackForVisibleLaneIndex(laneIndex);
+        if (!clickedTrack.has_value())
+            return;
+
+        selectedTrack = *clickedTrack;
+        notifyTrackFocused(*clickedTrack);
+        editMode = EditMode::EraseDrag;
+        strokeMode = StrokeMode::Erase;
+        applyEraseAtCell(*clickedTrack, quantizedTickAtX(p.x, true));
+        repaint();
         return;
     }
 
@@ -888,11 +1241,12 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
         }
     }
 
-    const int laneIndex = (p.y - rulerHeight) / laneHeight;
+    const int laneIndex = makeGeometry().yToLane(p.y);
     const auto clickedTrack = trackForVisibleLaneIndex(laneIndex);
     if (!clickedTrack.has_value())
         return;
     selectedTrack = *clickedTrack;
+    notifyTrackFocused(*clickedTrack);
 
     const auto hit = findNoteAt(event.getPosition(), *clickedTrack);
 
@@ -919,7 +1273,8 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
     if (editorTool == EditorTool::Erase)
     {
         editMode = EditMode::EraseDrag;
-        eraseNoteAt(event.getPosition(), clickedTrack);
+        strokeMode = StrokeMode::Erase;
+        applyEraseAtCell(*clickedTrack, quantizedTickAtX(p.x, true));
         repaint();
         return;
     }
@@ -930,9 +1285,9 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
         if (hit.has_value())
         {
             const int cutTick = quantizedTickAtX(event.getPosition().x, true);
-            if (splitNoteAtTick(hit->track, hit->index, cutTick))
+            if (splitNoteAtTick(hit->laneId, hit->index, cutTick))
             {
-                emitTrackEdited(hit->track);
+                emitTrackEdited(hit->laneId);
                 repaint();
             }
         }
@@ -943,9 +1298,26 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
     {
         const int tick = quantizedTickAtX(p.x, true);
         editMode = EditMode::BrushDraw;
+        strokeMode = StrokeMode::Draw;
         drawTrack = *clickedTrack;
-        placeDrawNoteAt(drawTrack, tick);
-        drawVisitedTicks.insert(tick);
+        applyDrawAtCell(drawTrack, tick);
+        repaint();
+        return;
+    }
+
+    if (editorTool == EditorTool::Pencil)
+    {
+        const int tick = quantizedTickAtX(p.x, true);
+        const bool shouldErase = hit.has_value() || hasNoteAtTick(*clickedTrack, tick);
+
+        strokeMode = shouldErase ? StrokeMode::Erase : StrokeMode::Draw;
+        editMode = shouldErase ? EditMode::EraseDrag : EditMode::Draw;
+
+        if (shouldErase)
+            applyEraseAtCell(*clickedTrack, tick);
+        else
+            applyDrawAtCell(*clickedTrack, tick);
+
         repaint();
         return;
     }
@@ -954,11 +1326,40 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
     {
         if (hit.has_value())
         {
-            const bool additive = event.mods.isShiftDown() || event.mods.isCommandDown() || event.mods.isCtrlDown();
-            if (additive)
+            const bool toggle = event.mods.isShiftDown() || event.mods.isCommandDown() || event.mods.isCtrlDown();
+            if (toggle)
+            {
                 toggleSelection(*hit);
-            else if (!isSelected(*hit))
-                setSingleSelection(*hit);
+                repaint();
+                return;
+            }
+
+            if (!isSelected(*hit))
+                addSelection(*hit);
+            else
+                primarySelectedNote = *hit;
+
+            dragStartX = p.x;
+            dragStartY = p.y;
+
+            for (const auto& track : project.tracks)
+            {
+                if (track.laneId != hit->laneId)
+                    continue;
+                if (hit->index < 0 || hit->index >= static_cast<int>(track.notes.size()))
+                    break;
+
+                const auto& note = track.notes[static_cast<size_t>(hit->index)];
+                dragOriginalTicks = note.step * ticksPerStep() + note.microOffset;
+                dragOriginalLength = std::max(1, note.length);
+                dragOriginalEndTick = dragOriginalTicks + dragOriginalLength * ticksPerStep();
+                dragOriginalVelocity = note.velocity;
+                break;
+            }
+
+            collectDragSnapshots();
+            editMode = isStretchEditKeyDown() ? EditMode::StretchNote : EditMode::MoveNote;
+
             repaint();
             return;
         }
@@ -983,9 +1384,9 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
     {
         const int tick = quantizedTickAtX(event.getPosition().x, true);
         editMode = EditMode::Draw;
+        strokeMode = StrokeMode::Draw;
         drawTrack = *clickedTrack;
-        placeDrawNoteAt(drawTrack, tick);
-        drawVisitedTicks.insert(tick);
+        applyDrawAtCell(drawTrack, tick);
         repaint();
         return;
     }
@@ -1007,7 +1408,7 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
 
         for (const auto& track : project.tracks)
         {
-            if (track.type != hit->track)
+            if (track.laneId != hit->laneId)
                 continue;
             if (hit->index < 0 || hit->index >= static_cast<int>(track.notes.size()))
                 break;
@@ -1022,16 +1423,6 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
 
         collectDragSnapshots();
 
-        if (isVelocityEditKeyDown())
-        {
-            editMode = EditMode::Velocity;
-            velocityWaveModeActive = false;
-            velocityOverlayPercent = dragOriginalVelocity * 100 / 127;
-            velocityOverlayDelta = 0;
-            repaint();
-            return;
-        }
-
         editMode = isStretchEditKeyDown() ? EditMode::StretchNote : EditMode::MoveNote;
 
         repaint();
@@ -1040,13 +1431,9 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
 
     const int tick = quantizedTickAtX(p.x, true);
     const bool added = placeDrawNoteAt(*clickedTrack, tick);
-    const int step = juce::jlimit(0, totalSteps - 1, tick / ticksPerStep());
     if (added)
         emitTrackEdited(*clickedTrack);
     repaint();
-
-    if (onCellClicked)
-        onCellClicked(*clickedTrack, step);
 }
 
 void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
@@ -1058,11 +1445,12 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
         const int currentTick = quantizedTickAtX(p.x, true);
         const int startTick = juce::jmin(rulerDragStartTick, currentTick);
         const int endTick = juce::jmax(rulerDragStartTick, currentTick);
-        rulerLoopDragMoved = rulerLoopDragMoved || (std::abs(currentTick - rulerDragStartTick) >= ticksForGridResolution());
+        rulerLoopDragMoved = rulerLoopDragMoved || (std::abs(currentTick - rulerDragStartTick) >= snapThresholdTicks());
 
         if (rulerLoopDragMoved && endTick > startTick)
         {
             loopRegionTicks = juce::Range<int>(startTick, endTick);
+            refreshEditorRegionState();
             if (onLoopRegionChanged)
                 onLoopRegionChanged(loopRegionTicks);
             repaint();
@@ -1082,11 +1470,24 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
         return;
     }
 
-    if (editMode == EditMode::Draw || editMode == EditMode::BrushDraw)
+    if (editMode == EditMode::Draw)
+    {
+        const auto fixedLane = (editorTool == EditorTool::Pencil)
+            ? std::optional<RuntimeLaneId>{}
+            : std::optional<RuntimeLaneId>(drawTrack);
+        applyStrokeAlongSegment(lastDragPoint, p, false, fixedLane);
+        lastDragPoint = p;
+        movedDuringDrag = true;
+        repaint();
+        return;
+    }
+
+    if (editMode == EditMode::BrushDraw)
     {
         const int tick = quantizedTickAtX(p.x, true);
-        if (drawVisitedTicks.insert(tick).second)
-            placeDrawNoteAt(drawTrack, tick);
+        if (drawVisitedTicks.insert(makeStrokeCellKey(drawTrack, tick)).second && placeDrawNoteAt(drawTrack, tick))
+            strokeEditedLanes.insert(drawTrack);
+        lastDragPoint = p;
         movedDuringDrag = true;
         repaint();
         return;
@@ -1094,7 +1495,7 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
 
     if (editMode == EditMode::EraseDrag)
     {
-        eraseNotesAlongSegment(lastDragPoint, p);
+        applyStrokeAlongSegment(lastDragPoint, p, true);
         lastDragPoint = p;
         movedDuringDrag = true;
         repaint();
@@ -1113,13 +1514,13 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
         std::vector<SelectedNoteRef> picks;
         for (const auto& track : project.tracks)
         {
-            const int row = visibleLaneIndex(track.type);
+            const int row = visibleLaneIndex(track.laneId);
             if (row < 0)
                 continue;
             for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
             {
                 if (marqueeRect.intersects(noteBounds(track.notes[static_cast<size_t>(i)], row)))
-                    picks.push_back({ track.type, i });
+                    picks.push_back({ track.laneId, i });
             }
         }
 
@@ -1146,9 +1547,8 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
 
     if (editMode == EditMode::Velocity)
     {
-        const int dy = dragStartY - p.y;
-        const int deltaVel = static_cast<int>(std::round(static_cast<float>(dy) * 0.6f));
-        if (applySelectionVelocityWave(deltaVel, p.x))
+        const auto targetLane = primarySelectedNote.has_value() ? primarySelectedNote->laneId : selectedTrack;
+        if (applySelectionVelocityAbsolute(velocityFromY(p.y, targetLane)))
             movedDuringDrag = true;
         repaint();
         return;
@@ -1162,7 +1562,7 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
         return;
 
     auto ref = primarySelectedNote.has_value() ? *primarySelectedNote : selectedNotes.front();
-    auto* track = findMutableTrack(ref.track);
+    auto* track = findMutableTrack(ref.laneId);
     if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()) || dragSnapshots.empty())
         return;
 
@@ -1185,7 +1585,10 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
     const int deltaPx = p.x - dragStartX;
     int deltaTicks = static_cast<int>(std::round(static_cast<float>(deltaPx) * static_cast<float>(ticksPerStep()) / juce::jmax(1.0f, stepWidth)));
     deltaTicks = quantizeTick(deltaTicks);
-    applySelectionMoveTicks(deltaTicks, bars);
+    const int deltaSteps = deltaTicks / ticksPerStep();
+    const int deltaMicro = deltaTicks - deltaSteps * ticksPerStep();
+    const int deltaLanes = static_cast<int>(std::round(static_cast<float>(p.y - dragStartY) / static_cast<float>(juce::jmax(1, laneHeight))));
+    applySelectionMoveDelta(deltaSteps, deltaLanes, deltaMicro);
     movedDuringDrag = true;
 
     repaint();
@@ -1202,12 +1605,14 @@ void GridEditorComponent::mouseUp(const juce::MouseEvent& event)
             const int totalSteps = juce::jmax(1, project.params.bars * 16);
             const int step = juce::jlimit(0, juce::jmax(0, totalSteps - 1), tick / ticksPerStep());
             previewStartStep = step;
-            if (onCellClicked)
-                onCellClicked(selectedTrack, step);
+            refreshEditorRegionState();
+            if (onPlaybackFlagChanged)
+                onPlaybackFlagChanged(step);
         }
         else if (loopRegionTicks.has_value() && loopRegionTicks->getLength() <= 0)
         {
             loopRegionTicks.reset();
+            refreshEditorRegionState();
             if (onLoopRegionChanged)
                 onLoopRegionChanged(std::nullopt);
         }
@@ -1221,26 +1626,24 @@ void GridEditorComponent::mouseUp(const juce::MouseEvent& event)
     if (editMode == EditMode::None)
         return;
 
-    if (editMode == EditMode::MoveNote
+    if ((editMode == EditMode::MoveNote
         || editMode == EditMode::StretchNote
         || editMode == EditMode::Velocity
         || editMode == EditMode::MicroOffset)
+        && movedDuringDrag)
     {
-        std::set<TrackType> changed;
+        std::set<RuntimeLaneId> changed;
         for (const auto& ref : selectedNotes)
-            changed.insert(ref.track);
+            changed.insert(ref.laneId);
         if (changed.empty() && primarySelectedNote.has_value())
-            changed.insert(primarySelectedNote->track);
+            changed.insert(primarySelectedNote->laneId);
         for (const auto t : changed)
             emitTrackEdited(t);
     }
-    else if (editMode == EditMode::Draw || editMode == EditMode::BrushDraw)
+    else if (editMode == EditMode::Draw || editMode == EditMode::BrushDraw || editMode == EditMode::EraseDrag)
     {
-        emitTrackEdited(drawTrack);
-    }
-    else if (editMode == EditMode::EraseDrag)
-    {
-        emitTrackEdited(selectedTrack);
+        for (const auto& laneId : strokeEditedLanes)
+            emitTrackEdited(laneId);
     }
 
     if (editMode == EditMode::Marquee)
@@ -1250,6 +1653,8 @@ void GridEditorComponent::mouseUp(const juce::MouseEvent& event)
     }
 
     editMode = EditMode::None;
+    strokeMode = StrokeMode::None;
+    strokeEditedLanes.clear();
     velocityWaveModeActive = false;
     velocityOverlayDelta = 0;
     drawVisitedTicks.clear();
@@ -1266,23 +1671,45 @@ void GridEditorComponent::mouseExit(const juce::MouseEvent& event)
 {
     juce::ignoreUnused(event);
     hoverNote.reset();
+    hoverDrawTrack.reset();
+    hoverDrawTick = -1;
     hoverZone = HoverZone::None;
     applyCursorForHover();
     repaint();
 }
 
+void GridEditorComponent::mouseDoubleClick(const juce::MouseEvent& event)
+{
+    if (!event.mods.isMiddleButtonDown())
+    {
+        juce::Component::mouseDoubleClick(event);
+        return;
+    }
+
+    const auto position = event.getPosition();
+    if (position.y < rulerHeight)
+    {
+        if (onHorizontalZoomGesture)
+            onHorizontalZoomGesture(2.5f, position);
+        return;
+    }
+
+    if (onLaneHeightZoomGesture)
+        onLaneHeightZoomGesture(1.5f, position);
+}
+
 std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findClosestNoteAt(juce::Point<int> position,
-                                                                                            TrackType lane,
+                                                                                            const RuntimeLaneId& laneId,
                                                                                             int maxDistancePx) const
 {
     for (const auto& track : project.tracks)
     {
-        if (track.type != lane)
+        if (track.laneId != laneId)
             continue;
 
         int bestIndex = -1;
         int bestDistance = std::numeric_limits<int>::max();
-        const int row = visibleLaneIndex(track.type);
+        const int row = visibleLaneIndex(track.laneId);
         if (row < 0)
             return std::nullopt;
 
@@ -1301,7 +1728,7 @@ std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findClo
         }
 
         if (bestIndex >= 0 && bestDistance <= maxDistancePx)
-            return SelectedNoteRef { lane, bestIndex };
+            return SelectedNoteRef { laneId, bestIndex };
 
         break;
     }
@@ -1309,78 +1736,54 @@ std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findClo
     return std::nullopt;
 }
 
-std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findSub808NoteForPitchEdit(const juce::MouseEvent& event) const
+LaneEditorCapabilities GridEditorComponent::laneEditorCapabilitiesForLane(const RuntimeLaneId& laneId) const
 {
-    if (primarySelectedNote.has_value())
-        return primarySelectedNote;
+    if (const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId))
+        return lane->editorCapabilities;
 
-    const auto p = event.getPosition();
-    const int laneIndex = (p.y - rulerHeight) / laneHeight;
-    const auto lane = trackForVisibleLaneIndex(laneIndex);
-    if (!lane.has_value())
-        return std::nullopt;
-
-    return findNoteAt(p, *lane);
+    return {};
 }
 
 int GridEditorComponent::noteStartTick(const NoteEvent& note) const
 {
-    return note.step * ticksPerStep() + note.microOffset;
+    return GridEditActions::noteStartTick(note, ticksPerStep());
 }
 
 int GridEditorComponent::noteEndTick(const NoteEvent& note) const
 {
-    return noteStartTick(note) + std::max(1, note.length) * ticksPerStep();
+    return GridEditActions::noteEndTick(note, ticksPerStep());
+}
+
+bool GridEditorComponent::eraseNote(const SelectedNoteRef& ref)
+{
+    std::set<RuntimeLaneId> changedLaneIds;
+    if (!GridEditActions::removeNotes(makeModelContext(), { ref }, &changedLaneIds))
+        return false;
+
+    normalizeSelection();
+    strokeEditedLanes.insert(ref.laneId);
+    return true;
+}
+
+bool GridEditorComponent::eraseNoteAtCell(const RuntimeLaneId& laneId, int tick)
+{
+    if (auto hit = findNoteCoveringTick(laneId, tick); hit.has_value())
+        return eraseNote(*hit);
+
+    return false;
 }
 
 bool GridEditorComponent::setNoteStartTick(NoteEvent& note, int targetTick, int bars)
 {
-    const int maxTicks = juce::jmax(1, bars * 16 * ticksPerStep());
-    int clamped = juce::jlimit(0, maxTicks - 1, targetTick);
-    int step = clamped / ticksPerStep();
-    int micro = clamped - step * ticksPerStep();
-    if (micro > ticksPerStep() / 2)
-    {
-        micro -= ticksPerStep();
-        ++step;
-    }
-
-    step = juce::jlimit(0, bars * 16 - 1, step);
-    note.step = step;
-    note.microOffset = juce::jlimit(-240, 240, micro);
-    return true;
+    return GridEditActions::setNoteStartTick(note, targetTick, bars, ticksPerStep());
 }
 
-bool GridEditorComponent::splitNoteAtTick(TrackType trackType, int noteIndex, int cutTick)
+bool GridEditorComponent::splitNoteAtTick(const RuntimeLaneId& laneId, int noteIndex, int cutTick)
 {
-    auto* track = findMutableTrack(trackType);
-    if (track == nullptr || noteIndex < 0 || noteIndex >= static_cast<int>(track->notes.size()))
-        return false;
-
-    auto& note = track->notes[static_cast<size_t>(noteIndex)];
-    const int startTick = noteStartTick(note);
-    const int endTick = noteEndTick(note);
-    const int minLenTicks = ticksPerStep();
-
-    if (cutTick <= startTick + minLenTicks || cutTick >= endTick - minLenTicks)
-        return false;
-
-    NoteEvent second = note;
-    setNoteStartTick(second, cutTick, juce::jmax(1, project.params.bars));
-
-    const int firstLen = juce::jmax(1,
-        static_cast<int>(std::ceil(static_cast<double>(cutTick - startTick) / static_cast<double>(ticksPerStep()))));
-    const int secondLen = juce::jmax(1,
-        static_cast<int>(std::ceil(static_cast<double>(endTick - cutTick) / static_cast<double>(ticksPerStep()))));
-
-    note.length = firstLen;
-    second.length = secondLen;
-    track->notes.push_back(second);
-    sortTrackNotes(*track);
-    return true;
+    return GridEditActions::splitNote(makeModelContext(), laneId, noteIndex, cutTick);
 }
 
-bool GridEditorComponent::eraseNoteAt(juce::Point<int> position, std::optional<TrackType> laneHint)
+bool GridEditorComponent::eraseNoteAt(juce::Point<int> position, std::optional<RuntimeLaneId> laneHint)
 {
     std::optional<SelectedNoteRef> hit;
     if (laneHint.has_value())
@@ -1391,71 +1794,102 @@ bool GridEditorComponent::eraseNoteAt(juce::Point<int> position, std::optional<T
     if (!hit.has_value())
         return false;
 
-    auto* track = findMutableTrack(hit->track);
+    const auto* track = findTrack(hit->laneId);
     if (track == nullptr || hit->index < 0 || hit->index >= static_cast<int>(track->notes.size()))
         return false;
 
     const auto& note = track->notes[static_cast<size_t>(hit->index)];
-    const int key = (static_cast<int>(hit->track) << 24)
-        ^ ((noteStartTick(note) & 0x0fffff) << 2)
-        ^ (note.pitch & 0x3);
+    const int key = makeStrokeCellKey(hit->laneId, noteStartTick(note));
     if (!eraseVisitedKeys.insert(key).second)
         return false;
 
-    track->notes.erase(track->notes.begin() + hit->index);
-    normalizeSelection();
-    return true;
+    return eraseNote(*hit);
 }
 
 bool GridEditorComponent::eraseNotesAlongSegment(juce::Point<int> from, juce::Point<int> to)
 {
-    bool changed = false;
-    const int steps = juce::jmax(1, static_cast<int>(std::ceil(from.getDistanceFrom(to) / 4.0f)));
-    for (int i = 0; i <= steps; ++i)
-    {
-        const float t = static_cast<float>(i) / static_cast<float>(steps);
-        juce::Point<int> p(static_cast<int>(std::round(juce::jmap(t, static_cast<float>(from.x), static_cast<float>(to.x)))),
-                           static_cast<int>(std::round(juce::jmap(t, static_cast<float>(from.y), static_cast<float>(to.y)))));
-        changed = eraseNoteAt(p) || changed;
-    }
-    return changed;
+    return applyStrokeAlongSegment(from, to, true);
 }
 
-bool GridEditorComponent::updatePitchForSub808Selection(int semitoneDelta)
+bool GridEditorComponent::applyDrawAtCell(const RuntimeLaneId& laneId, int tick)
 {
-    if (selectedNotes.empty() && !primarySelectedNote.has_value())
+    const int key = makeStrokeCellKey(laneId, tick);
+    if (!drawVisitedTicks.insert(key).second)
+        return false;
+
+    if (!placeDrawNoteAt(laneId, tick))
+        return false;
+
+    strokeEditedLanes.insert(laneId);
+    return true;
+}
+
+bool GridEditorComponent::applyEraseAtCell(const RuntimeLaneId& laneId, int tick)
+{
+    const int key = makeStrokeCellKey(laneId, tick);
+    if (!eraseVisitedKeys.insert(key).second)
+        return false;
+
+    return eraseNoteAtCell(laneId, tick);
+}
+
+bool GridEditorComponent::applyStrokeAlongSegment(juce::Point<int> from, juce::Point<int> to, bool erase, std::optional<RuntimeLaneId> fixedLane)
+{
+    const auto laneIds = orderedVisibleLaneIds();
+    if (laneIds.empty())
+        return false;
+
+    const int maxLaneIndex = static_cast<int>(laneIds.size()) - 1;
+    const int snapTicks = juce::jmax(1, snapTicksForCurrentResolution());
+    const int maxColumn = juce::jmax(0, (juce::jmax(1, project.params.bars * 16 * ticksPerStep()) - 1) / snapTicks);
+    const auto clampPointToGrid = [this](juce::Point<int> point)
+    {
+        return juce::Point<int>(juce::jmax(0, point.x), juce::jlimit(rulerHeight, juce::jmax(rulerHeight, getHeight() - 1), point.y));
+    };
+
+    const auto startPoint = clampPointToGrid(from);
+    const auto endPoint = clampPointToGrid(to);
+    const int startColumn = juce::jlimit(0, maxColumn, quantizedTickAtX(startPoint.x, true) / snapTicks);
+    const int endColumn = juce::jlimit(0, maxColumn, quantizedTickAtX(endPoint.x, true) / snapTicks);
+
+    const int startLaneIndex = fixedLane.has_value()
+        ? visibleLaneIndex(*fixedLane)
+        : juce::jlimit(0, maxLaneIndex, makeGeometry().yToLane(startPoint.y));
+    const int endLaneIndex = fixedLane.has_value()
+        ? visibleLaneIndex(*fixedLane)
+        : juce::jlimit(0, maxLaneIndex, makeGeometry().yToLane(endPoint.y));
+
+    if (startLaneIndex < 0 || endLaneIndex < 0)
         return false;
 
     bool changed = false;
-    for (const auto& ref : selectedNotes)
-    {
-        if (ref.track != TrackType::Sub808)
-            continue;
-        auto* track = findMutableTrack(ref.track);
-        if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
-            continue;
-        auto& note = track->notes[static_cast<size_t>(ref.index)];
-        const int next = juce::jlimit(24, 84, note.pitch + semitoneDelta);
-        if (next != note.pitch)
-        {
-            note.pitch = next;
-            changed = true;
-        }
-    }
+    int column = startColumn;
+    int laneIndex = startLaneIndex;
+    const int deltaColumn = std::abs(endColumn - startColumn);
+    const int deltaLane = std::abs(endLaneIndex - startLaneIndex);
+    const int stepColumn = (startColumn <= endColumn) ? 1 : -1;
+    const int stepLane = (startLaneIndex <= endLaneIndex) ? 1 : -1;
+    int error = deltaColumn - deltaLane;
 
-    if (!changed && primarySelectedNote.has_value() && primarySelectedNote->track == TrackType::Sub808)
+    while (true)
     {
-        const auto& ref = *primarySelectedNote;
-        auto* track = findMutableTrack(ref.track);
-        if (track != nullptr && ref.index >= 0 && ref.index < static_cast<int>(track->notes.size()))
+        const auto& laneId = laneIds[static_cast<size_t>(laneIndex)];
+        const int tick = clampTickToProject(column * snapTicks);
+        changed = (erase ? applyEraseAtCell(laneId, tick) : applyDrawAtCell(laneId, tick)) || changed;
+
+        if (column == endColumn && laneIndex == endLaneIndex)
+            break;
+
+        const int doubledError = error * 2;
+        if (doubledError > -deltaLane)
         {
-            auto& note = track->notes[static_cast<size_t>(ref.index)];
-            const int next = juce::jlimit(24, 84, note.pitch + semitoneDelta);
-            if (next != note.pitch)
-            {
-                note.pitch = next;
-                changed = true;
-            }
+            error -= deltaLane;
+            column += stepColumn;
+        }
+        if (doubledError < deltaColumn)
+        {
+            error += deltaColumn;
+            laneIndex += stepLane;
         }
     }
 
@@ -1472,6 +1906,30 @@ void GridEditorComponent::sortTrackNotes(TrackState& track)
     });
 }
 
+GridGeometry GridEditorComponent::makeGeometry() const
+{
+    return GridGeometry({ stepWidth,
+                          laneHeight,
+                          rulerHeight,
+                          juce::jmax(1, project.params.bars),
+                          ticksPerStep(),
+                          visualSubdivisionTicks() });
+}
+
+GridEditActions::ModelContext GridEditorComponent::makeModelContext()
+{
+    return { project, ticksPerStep() };
+}
+
+GridEditActions::TimelineContext GridEditorComponent::makeTimelineContext()
+{
+    return { previewStartStep,
+             previewStartTick,
+             loopRegionTicks,
+             ticksPerStep(),
+             juce::jmax(1, project.params.bars * 16) };
+}
+
 int GridEditorComponent::resizeHandleWidthPx(const NoteEvent& note, int row) const
 {
     const auto b = noteBounds(note, row);
@@ -1481,6 +1939,8 @@ int GridEditorComponent::resizeHandleWidthPx(const NoteEvent& note, int row) con
 void GridEditorComponent::updateHoverState(juce::Point<int> position)
 {
     hoverNote.reset();
+    hoverDrawTrack.reset();
+    hoverDrawTick = -1;
     hoverZone = HoverZone::None;
 
     const int laneIndex = (position.y - rulerHeight) / laneHeight;
@@ -1494,6 +1954,12 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
     auto hit = findNoteAt(position, *lane);
     if (!hit.has_value())
     {
+        if (editorTool == EditorTool::Pencil || editorTool == EditorTool::Brush)
+        {
+            hoverDrawTrack = *lane;
+            hoverDrawTick = quantizedTickAtX(position.x, true);
+        }
+
         applyCursorForHover();
         repaint();
         return;
@@ -1502,12 +1968,12 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
     hoverNote = hit;
     for (const auto& track : project.tracks)
     {
-        if (track.type != hit->track)
+        if (track.laneId != hit->laneId)
             continue;
         if (hit->index < 0 || hit->index >= static_cast<int>(track.notes.size()))
             break;
 
-        const int row = visibleLaneIndex(track.type);
+        const int row = visibleLaneIndex(track.laneId);
         if (row < 0)
             break;
 
@@ -1531,7 +1997,7 @@ bool GridEditorComponent::isSelected(const SelectedNoteRef& ref) const
 {
     return std::any_of(selectedNotes.begin(), selectedNotes.end(), [&ref](const SelectedNoteRef& s)
     {
-        return s.track == ref.track && s.index == ref.index;
+        return s.laneId == ref.laneId && s.index == ref.index;
     });
 }
 
@@ -1539,6 +2005,21 @@ void GridEditorComponent::clearSelectionInternal()
 {
     selectedNotes.clear();
     primarySelectedNote.reset();
+    refreshEditorRegionState();
+}
+
+void GridEditorComponent::addSelection(const SelectedNoteRef& ref)
+{
+    if (isSelected(ref))
+    {
+        primarySelectedNote = ref;
+        refreshEditorRegionState();
+        return;
+    }
+
+    selectedNotes.push_back(ref);
+    primarySelectedNote = ref;
+    refreshEditorRegionState();
 }
 
 void GridEditorComponent::setSingleSelection(const SelectedNoteRef& ref)
@@ -1546,13 +2027,14 @@ void GridEditorComponent::setSingleSelection(const SelectedNoteRef& ref)
     selectedNotes.clear();
     selectedNotes.push_back(ref);
     primarySelectedNote = ref;
+    refreshEditorRegionState();
 }
 
 void GridEditorComponent::toggleSelection(const SelectedNoteRef& ref)
 {
     auto it = std::find_if(selectedNotes.begin(), selectedNotes.end(), [&ref](const SelectedNoteRef& s)
     {
-        return s.track == ref.track && s.index == ref.index;
+        return s.laneId == ref.laneId && s.index == ref.index;
     });
 
     if (it != selectedNotes.end())
@@ -1564,6 +2046,8 @@ void GridEditorComponent::toggleSelection(const SelectedNoteRef& ref)
         primarySelectedNote.reset();
     else
         primarySelectedNote = selectedNotes.back();
+
+    refreshEditorRegionState();
 }
 
 void GridEditorComponent::normalizeSelection()
@@ -1575,7 +2059,7 @@ void GridEditorComponent::normalizeSelection()
     {
         const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& t)
         {
-            return t.type == ref.track;
+            return t.laneId == ref.laneId;
         });
         if (trackIt == project.tracks.end())
             continue;
@@ -1589,11 +2073,14 @@ void GridEditorComponent::normalizeSelection()
     if (selectedNotes.empty())
     {
         primarySelectedNote.reset();
+        refreshEditorRegionState();
         return;
     }
 
     if (!primarySelectedNote.has_value() || !isSelected(*primarySelectedNote))
         primarySelectedNote = selectedNotes.front();
+
+    refreshEditorRegionState();
 }
 
 void GridEditorComponent::collectDragSnapshots()
@@ -1604,14 +2091,15 @@ void GridEditorComponent::collectDragSnapshots()
 
     for (const auto& ref : selectedNotes)
     {
-        auto* track = findMutableTrack(ref.track);
+        auto* track = findMutableTrack(ref.laneId);
         if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
             continue;
 
         const auto& n = track->notes[static_cast<size_t>(ref.index)];
         DragSnapshot snap;
-        snap.track = ref.track;
+        snap.laneId = ref.laneId;
         snap.index = ref.index;
+        snap.sourceNote = n;
         snap.startTick = noteStartTick(n);
         snap.startLength = std::max(1, n.length);
         snap.startEndTick = snap.startTick + snap.startLength * ticksPerStep();
@@ -1624,31 +2112,42 @@ void GridEditorComponent::collectDragSnapshots()
 
 bool GridEditorComponent::applySelectionVelocityDelta(int deltaVel)
 {
-    bool changed = false;
     if (dragSnapshots.empty())
         collectDragSnapshots();
 
     int velocitySum = 0;
     int velocityCount = 0;
     int startVelocitySum = 0;
+    const bool changed = GridEditActions::changeVelocityDelta(makeModelContext(),
+                                                              dragSnapshots,
+                                                              deltaVel,
+                                                              &velocitySum,
+                                                              &startVelocitySum,
+                                                              &velocityCount);
 
-    for (const auto& snap : dragSnapshots)
+    if (velocityCount > 0)
     {
-        auto* track = findMutableTrack(snap.track);
-        if (track == nullptr || snap.index < 0 || snap.index >= static_cast<int>(track->notes.size()))
-            continue;
-        auto& n = track->notes[static_cast<size_t>(snap.index)];
-        const int next = juce::jlimit(1, 127, snap.startVelocity + deltaVel);
-        if (next != n.velocity)
-        {
-            n.velocity = next;
-            changed = true;
-        }
-
-        velocitySum += n.velocity;
-        startVelocitySum += snap.startVelocity;
-        ++velocityCount;
+        velocityOverlayPercent = static_cast<int>(std::round((static_cast<float>(velocitySum) / static_cast<float>(velocityCount)) * 100.0f / 127.0f));
+        velocityOverlayDelta = static_cast<int>(std::round(static_cast<float>(velocitySum - startVelocitySum) / static_cast<float>(velocityCount)));
     }
+
+    return changed;
+}
+
+bool GridEditorComponent::applySelectionVelocityAbsolute(int targetVelocity)
+{
+    if (dragSnapshots.empty())
+        collectDragSnapshots();
+
+    int velocitySum = 0;
+    int velocityCount = 0;
+    int startVelocitySum = 0;
+    const bool changed = GridEditActions::changeVelocityAbsolute(makeModelContext(),
+                                                                 dragSnapshots,
+                                                                 targetVelocity,
+                                                                 &velocitySum,
+                                                                 &startVelocitySum,
+                                                                 &velocityCount);
 
     if (velocityCount > 0)
     {
@@ -1674,35 +2173,22 @@ bool GridEditorComponent::applySelectionVelocityWave(int deltaVel, int currentMo
     if (!velocityWaveModeActive)
         return applySelectionVelocityDelta(deltaVel);
 
-    bool changed = false;
+    const int span = juce::jmax(1, maxMouseX - minMouseX);
+    juce::ignoreUnused(span);
     int velocitySum = 0;
     int velocityCount = 0;
     int startVelocitySum = 0;
-    const int span = juce::jmax(1, maxMouseX - minMouseX);
-
-    for (const auto& snap : dragSnapshots)
-    {
-        auto* track = findMutableTrack(snap.track);
-        if (track == nullptr || snap.index < 0 || snap.index >= static_cast<int>(track->notes.size()))
-            continue;
-
-        auto& n = track->notes[static_cast<size_t>(snap.index)];
-        const int noteX = static_cast<int>(std::round((static_cast<float>(snap.startTick) / static_cast<float>(ticksPerStep())) * stepWidth));
-        const float ratio = juce::jlimit(0.0f,
-                                         1.0f,
-                                         static_cast<float>(noteX - minMouseX) / static_cast<float>(span));
-        const float weighted = currentMouseX >= dragStartX ? ratio : (1.0f - ratio);
-        const int next = juce::jlimit(1, 127, snap.startVelocity + static_cast<int>(std::round(static_cast<float>(deltaVel) * weighted)));
-        if (next != n.velocity)
-        {
-            n.velocity = next;
-            changed = true;
-        }
-
-        velocitySum += n.velocity;
-        startVelocitySum += snap.startVelocity;
-        ++velocityCount;
-    }
+    const bool changed = GridEditActions::changeVelocityWave(makeModelContext(),
+                                                             dragSnapshots,
+                                                             deltaVel,
+                                                             minMouseX,
+                                                             maxMouseX,
+                                                             currentMouseX,
+                                                             stepWidth,
+                                                             dragStartX,
+                                                             &velocitySum,
+                                                             &startVelocitySum,
+                                                             &velocityCount);
 
     if (velocityCount > 0)
     {
@@ -1718,84 +2204,36 @@ bool GridEditorComponent::applySelectionMicroOffsetDelta(int deltaTicks)
     if (dragSnapshots.empty())
         collectDragSnapshots();
 
-    bool changed = false;
-    const int microLimit = ticksPerStep();
-
-    for (const auto& snap : dragSnapshots)
-    {
-        auto* track = findMutableTrack(snap.track);
-        if (track == nullptr || snap.index < 0 || snap.index >= static_cast<int>(track->notes.size()))
-            continue;
-
-        auto& note = track->notes[static_cast<size_t>(snap.index)];
-        const int nextMicro = juce::jlimit(-microLimit, microLimit, snap.startMicroOffset + deltaTicks);
-        if (note.microOffset != nextMicro)
-        {
-            note.microOffset = nextMicro;
-            changed = true;
-        }
-    }
-
-    return changed;
+    return GridEditActions::changeMicroOffset(makeModelContext(), dragSnapshots, deltaTicks);
 }
 
-bool GridEditorComponent::applySelectionMoveTicks(int deltaTicks, int bars)
+bool GridEditorComponent::applySelectionMoveDelta(int deltaSteps, int deltaLanes, int deltaMicro)
 {
-    if (dragSnapshots.empty())
+    std::set<RuntimeLaneId> changedLaneIds;
+    std::vector<SelectedNoteRef> movedSelection;
+    const bool changed = GridEditActions::moveSelection(makeModelContext(),
+                                                        selectedNotes,
+                                                        dragSnapshots,
+                                                        orderedVisibleLaneIds(),
+                                                        deltaSteps,
+                                                        deltaLanes,
+                                                        deltaMicro,
+                                                        &movedSelection,
+                                                        &changedLaneIds);
+    if (!changed)
         return false;
 
-    bool changed = false;
-    const int maxTick = bars * 16 * ticksPerStep() - 1;
-
-    for (const auto& snap : dragSnapshots)
-    {
-        auto* track = findMutableTrack(snap.track);
-        if (track == nullptr || snap.index < 0 || snap.index >= static_cast<int>(track->notes.size()))
-            continue;
-
-        auto& note = track->notes[static_cast<size_t>(snap.index)];
-        const int targetTick = juce::jlimit(0, juce::jmax(0, maxTick), snap.startTick + deltaTicks);
-        const int previousStep = note.step;
-        const int previousMicro = note.microOffset;
-        setNoteStartTick(note, targetTick, bars);
-
-        if (note.step != previousStep || note.microOffset != previousMicro)
-        {
-            changed = true;
-        }
-    }
-
-    return changed;
+    selectedNotes = std::move(movedSelection);
+    normalizeSelection();
+    if (primarySelectedNote.has_value())
+        selectedTrack = primarySelectedNote->laneId;
+    return true;
 }
 
 bool GridEditorComponent::applySelectionStretchTicks(int deltaTicks, int bars)
 {
-    if (dragSnapshots.empty() || deltaTicks <= 0)
-        return false;
-
-    bool changed = false;
-    const int maxTick = bars * 16 * ticksPerStep();
-
-    for (const auto& snap : dragSnapshots)
-    {
-        auto* track = findMutableTrack(snap.track);
-        if (track == nullptr || snap.index < 0 || snap.index >= static_cast<int>(track->notes.size()))
-            continue;
-
-        auto& current = track->notes[static_cast<size_t>(snap.index)];
-        const int clampedEndTick = juce::jlimit(snap.startTick + ticksPerStep(), maxTick, snap.startEndTick + deltaTicks);
-        const int nextLength = juce::jlimit(1,
-                                            bars * 16,
-                                            static_cast<int>(std::ceil(static_cast<double>(clampedEndTick - snap.startTick)
-                                                                       / static_cast<double>(ticksPerStep()))));
-        if (current.length != nextLength)
-        {
-            current.length = nextLength;
-            changed = true;
-        }
-    }
-
-    return changed;
+    juce::ignoreUnused(bars);
+    return GridEditActions::resizeSelection(makeModelContext(), dragSnapshots, deltaTicks);
 }
 
 bool GridEditorComponent::copySelectionInternal(bool removeAfterCopy)
@@ -1810,7 +2248,7 @@ bool GridEditorComponent::copySelectionInternal(bool removeAfterCopy)
 
     for (const auto& ref : selectedNotes)
     {
-        auto* track = findMutableTrack(ref.track);
+        auto* track = findMutableTrack(ref.laneId);
         if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
             continue;
 
@@ -1820,7 +2258,7 @@ bool GridEditorComponent::copySelectionInternal(bool removeAfterCopy)
         minTick = juce::jmin(minTick, start);
         maxTick = juce::jmax(maxTick, end);
 
-        clipboardNotes.push_back({ ref.track, n, 0 });
+        clipboardNotes.push_back({ ref.laneId, n, 0 });
     }
 
     if (clipboardNotes.empty())
@@ -1842,7 +2280,7 @@ bool GridEditorComponent::copySelectionInternal(bool removeAfterCopy)
 }
 
 GridEditorComponent::ContextMenuTarget GridEditorComponent::contextMenuTargetAt(juce::Point<int> p,
-                                                                                 std::optional<TrackType> laneHint,
+                                                                                 std::optional<RuntimeLaneId> laneHint,
                                                                                  std::optional<SelectedNoteRef>* hitOut)
 {
     std::optional<SelectedNoteRef> hit;
@@ -1864,7 +2302,7 @@ GridEditorComponent::ContextMenuTarget GridEditorComponent::contextMenuTargetAt(
     return ContextMenuTarget::SingleNote;
 }
 
-void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<TrackType> laneHint)
+void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<RuntimeLaneId> laneHint)
 {
     std::optional<SelectedNoteRef> hit;
     const auto target = contextMenuTargetAt(p, laneHint, &hit);
@@ -1887,6 +2325,15 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
     constexpr int kActionQuickRoll = 9;
     constexpr int kActionAdvancedRollBase = 100;
     constexpr int kActionFillBase = 200;
+    constexpr int kActionRoleAnchor = 300;
+    constexpr int kActionRoleSupport = 301;
+    constexpr int kActionRoleFill = 302;
+    constexpr int kActionRoleAccent = 303;
+    constexpr int kActionRoleClear = 304;
+    constexpr int kActionSelectRoleAnchor = 320;
+    constexpr int kActionSelectRoleSupport = 321;
+    constexpr int kActionSelectRoleFill = 322;
+    constexpr int kActionSelectRoleAccent = 323;
 
     juce::PopupMenu fillMenu;
     fillMenu.addItem(kActionFillBase + 2, "Fill every 2");
@@ -1894,11 +2341,26 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
     fillMenu.addItem(kActionFillBase + 8, "Fill every 8");
     fillMenu.addItem(kActionFillBase + 16, "Fill every 16");
 
+    juce::PopupMenu semanticRoleMenu;
+    semanticRoleMenu.addItem(kActionRoleAnchor, "Anchor (protected)");
+    semanticRoleMenu.addItem(kActionRoleSupport, "Support");
+    semanticRoleMenu.addItem(kActionRoleFill, "Fill");
+    semanticRoleMenu.addItem(kActionRoleAccent, "Accent");
+    semanticRoleMenu.addSeparator();
+    semanticRoleMenu.addItem(kActionRoleClear, "Clear role");
+
+    juce::PopupMenu selectRoleMenu;
+    selectRoleMenu.addItem(kActionSelectRoleAnchor, "Select Anchor");
+    selectRoleMenu.addItem(kActionSelectRoleSupport, "Select Support");
+    selectRoleMenu.addItem(kActionSelectRoleFill, "Select Fill");
+    selectRoleMenu.addItem(kActionSelectRoleAccent, "Select Accent");
+
     if (target == ContextMenuTarget::Empty)
     {
         menu.addItem(kActionPaste, "Paste", !clipboardNotes.empty());
         if (laneHint.has_value())
             menu.addSubMenu("Fill Notes", fillMenu, true);
+        menu.addSubMenu("Select By Role", selectRoleMenu, true);
         menu.addItem(kActionSelectAll, "Select All", std::any_of(project.tracks.begin(), project.tracks.end(), [](const TrackState& track)
         {
             return !track.notes.empty();
@@ -1915,6 +2377,8 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
         const bool quickRollEnabled = canQuickRollSelection();
         const auto advancedDivisions = availableAdvancedRollDivisions();
         menu.addSeparator();
+        menu.addSubMenu("Semantic Role", semanticRoleMenu, true);
+        menu.addSubMenu("Select By Role", selectRoleMenu, true);
         menu.addSubMenu("Fill Notes", fillMenu, laneHint.has_value());
         menu.addItem(kActionQuickRoll, "Create Roll", quickRollEnabled);
 
@@ -1933,6 +2397,8 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
         const bool quickRollEnabled = canQuickRollSelection();
         const auto advancedDivisions = availableAdvancedRollDivisions();
         menu.addSeparator();
+        menu.addSubMenu("Semantic Role", semanticRoleMenu, true);
+        menu.addSubMenu("Select By Role", selectRoleMenu, true);
         menu.addSubMenu("Fill Notes", fillMenu, laneHint.has_value());
         menu.addItem(kActionQuickRoll, "Create Roll", quickRollEnabled);
 
@@ -1951,12 +2417,50 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
                        });
 }
 
-bool GridEditorComponent::applyContextMenuAction(int actionId, std::optional<TrackType> laneHint, juce::Point<int> p)
+bool GridEditorComponent::applyContextMenuAction(int actionId, std::optional<RuntimeLaneId> laneHint, juce::Point<int> p)
 {
+    constexpr int kActionRoleAnchor = 300;
+    constexpr int kActionRoleSupport = 301;
+    constexpr int kActionRoleFill = 302;
+    constexpr int kActionRoleAccent = 303;
+    constexpr int kActionRoleClear = 304;
+    constexpr int kActionSelectRoleAnchor = 320;
+    constexpr int kActionSelectRoleSupport = 321;
+    constexpr int kActionSelectRoleFill = 322;
+    constexpr int kActionSelectRoleAccent = 323;
+
     if (actionId >= 100)
     {
         if (actionId >= 200)
         {
+            if (actionId >= 320)
+            {
+                if (actionId == kActionSelectRoleAnchor)
+                    return selectNotesBySemanticRole("anchor");
+                if (actionId == kActionSelectRoleSupport)
+                    return selectNotesBySemanticRole("support");
+                if (actionId == kActionSelectRoleFill)
+                    return selectNotesBySemanticRole("fill");
+                if (actionId == kActionSelectRoleAccent)
+                    return selectNotesBySemanticRole("accent");
+                return false;
+            }
+
+            if (actionId >= 300)
+            {
+                if (actionId == kActionRoleAnchor)
+                    return setSelectionSemanticRole("anchor");
+                if (actionId == kActionRoleSupport)
+                    return setSelectionSemanticRole("support");
+                if (actionId == kActionRoleFill)
+                    return setSelectionSemanticRole("fill");
+                if (actionId == kActionRoleAccent)
+                    return setSelectionSemanticRole("accent");
+                if (actionId == kActionRoleClear)
+                    return setSelectionSemanticRole({});
+                return false;
+            }
+
             const auto targetLane = laneHint.value_or(selectedTrack);
             const int intervalSteps = actionId - 200;
             const int barTicks = 16 * ticksPerStep();
@@ -1991,10 +2495,10 @@ bool GridEditorComponent::applyContextMenuAction(int actionId, std::optional<Tra
     {
         if (auto hit = findNoteAt(p, *laneHint); hit.has_value())
         {
-            const bool changed = splitNoteAtTick(hit->track, hit->index, quantizedTickAtX(p.x, true));
+            const bool changed = splitNoteAtTick(hit->laneId, hit->index, quantizedTickAtX(p.x, true));
             if (changed)
             {
-                emitTrackEdited(hit->track);
+                emitTrackEdited(hit->laneId);
                 repaint();
             }
             return changed;
@@ -2023,7 +2527,7 @@ std::vector<int> GridEditorComponent::availableAdvancedRollDivisions() const
     {
         const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
         {
-            return track.type == ref.track;
+            return track.laneId == ref.laneId;
         });
 
         if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
@@ -2045,7 +2549,7 @@ std::vector<int> GridEditorComponent::availableAdvancedRollDivisions() const
         {
             const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
             {
-                return track.type == ref.track;
+                return track.laneId == ref.laneId;
             });
             if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
             {
@@ -2083,120 +2587,51 @@ bool GridEditorComponent::rollSelectionWithDivisions(int divisions)
     if (std::find(available.begin(), available.end(), divisions) == available.end())
         return false;
 
-    std::set<TrackType> changedTracks;
-    std::vector<std::pair<TrackType, std::vector<NoteEvent>>> insertedNotesByTrack;
-
-    auto insertedBucketFor = [&insertedNotesByTrack](TrackType trackType) -> std::vector<NoteEvent>&
-    {
-        auto it = std::find_if(insertedNotesByTrack.begin(), insertedNotesByTrack.end(), [trackType](const auto& entry)
-        {
-            return entry.first == trackType;
-        });
-
-        if (it == insertedNotesByTrack.end())
-        {
-            insertedNotesByTrack.push_back({ trackType, {} });
-            return insertedNotesByTrack.back().second;
-        }
-
-        return it->second;
-    };
-
     auto refs = selectedNotes;
     std::sort(refs.begin(), refs.end(), [](const SelectedNoteRef& a, const SelectedNoteRef& b)
     {
-        if (a.track != b.track)
-            return static_cast<int>(a.track) > static_cast<int>(b.track);
+        if (a.laneId != b.laneId)
+            return a.laneId > b.laneId;
         return a.index > b.index;
     });
 
-    const int bars = juce::jmax(1, project.params.bars);
-    for (const auto& ref : refs)
-    {
-        auto* track = findMutableTrack(ref.track);
-        if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
-            continue;
-
-        const auto source = track->notes[static_cast<size_t>(ref.index)];
-        const int startTick = noteStartTick(source);
-        const int segmentSteps = source.length / divisions;
-
-        for (int i = 0; i < divisions; ++i)
-        {
-            NoteEvent rolled = source;
-            rolled.length = segmentSteps;
-            setNoteStartTick(rolled, startTick + i * segmentSteps * ticksPerStep(), bars);
-            insertedBucketFor(ref.track).push_back(rolled);
-        }
-
-        track->notes.erase(track->notes.begin() + ref.index);
-        changedTracks.insert(ref.track);
-    }
+    std::set<RuntimeLaneId> changedTracks;
+    std::vector<SelectedNoteRef> insertedSelection;
+    const bool changed = GridEditActions::rollSelection(makeModelContext(), refs, divisions, &insertedSelection, &changedTracks);
 
     clearSelectionInternal();
-    for (auto& inserted : insertedNotesByTrack)
-    {
-        auto* track = findMutableTrack(inserted.first);
-        if (track == nullptr)
-            continue;
-
-        for (const auto& note : inserted.second)
-            track->notes.push_back(note);
-        sortTrackNotes(*track);
-
-        std::vector<bool> consumed(track->notes.size(), false);
-        for (const auto& note : inserted.second)
-        {
-            for (int i = static_cast<int>(track->notes.size()) - 1; i >= 0; --i)
-            {
-                if (consumed[static_cast<size_t>(i)])
-                    continue;
-
-                const auto& current = track->notes[static_cast<size_t>(i)];
-                if (noteStartTick(current) == noteStartTick(note)
-                    && current.length == note.length
-                    && current.velocity == note.velocity
-                    && current.pitch == note.pitch
-                    && current.microOffset == note.microOffset)
-                {
-                    consumed[static_cast<size_t>(i)] = true;
-                    selectedNotes.push_back({ inserted.first, i });
-                    primarySelectedNote = SelectedNoteRef{ inserted.first, i };
-                    break;
-                }
-            }
-        }
-    }
+    selectedNotes = insertedSelection;
+    if (!selectedNotes.empty())
+        primarySelectedNote = selectedNotes.front();
 
     for (const auto trackType : changedTracks)
         emitTrackEdited(trackType);
     repaint();
-    return !changedTracks.empty();
+    return changed;
 }
 
 int GridEditorComponent::clampTickToProject(int tick) const
 {
-    const int bars = juce::jmax(1, project.params.bars);
-    const int maxTicks = bars * 16 * ticksPerStep();
-    return juce::jlimit(0, juce::jmax(0, maxTicks - 1), tick);
+    return makeGeometry().clampTick(tick);
 }
 
 int GridEditorComponent::quantizeTick(int tick) const
 {
+    if (!isSnapEnabled())
+        return tick;
+
     const int snap = juce::jmax(1, snapTicksForCurrentResolution());
     return static_cast<int>(std::round(static_cast<float>(tick) / static_cast<float>(snap))) * snap;
 }
 
 int GridEditorComponent::tickAtX(int x) const
 {
-    const float stepFloat = static_cast<float>(x) / juce::jmax(1.0f, stepWidth);
-    const int tick = static_cast<int>(std::round(stepFloat * static_cast<float>(ticksPerStep())));
-    return clampTickToProject(tick);
+    return makeGeometry().xToTick(x);
 }
 
 int GridEditorComponent::snappedTickFromTick(int tick) const
 {
-    return clampTickToProject(quantizeTick(tick));
+    return clampTickToProject(isSnapEnabled() ? quantizeTick(tick) : tick);
 }
 
 bool GridEditorComponent::isModifierDown(const juce::ModifierKeys& mods, juce::ModifierKeys::Flags modifier) const
@@ -2247,15 +2682,15 @@ bool GridEditorComponent::isStretchEditKeyDown() const
     return false;
 }
 
-bool GridEditorComponent::isVisibleLane(TrackType type) const
+bool GridEditorComponent::isVisibleLane(const RuntimeLaneId& laneId) const
 {
-    const auto* info = TrackRegistry::find(type);
-    return info != nullptr && info->visibleInUI;
+    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+    return lane != nullptr && lane->isVisibleInEditor;
 }
 
-int GridEditorComponent::visibleLaneIndex(TrackType type) const
+std::vector<RuntimeLaneId> GridEditorComponent::orderedVisibleLaneIds() const
 {
-    std::vector<TrackType> ordered;
+    std::vector<RuntimeLaneId> ordered;
     ordered.reserve(project.tracks.size());
 
     for (const auto& lane : laneDisplayOrder)
@@ -2263,42 +2698,37 @@ int GridEditorComponent::visibleLaneIndex(TrackType type) const
             ordered.push_back(lane);
 
     for (const auto& track : project.tracks)
-        if (isVisibleLane(track.type)
-            && std::find(ordered.begin(), ordered.end(), track.type) == ordered.end())
-            ordered.push_back(track.type);
+        if (isVisibleLane(track.laneId)
+            && std::find(ordered.begin(), ordered.end(), track.laneId) == ordered.end())
+            ordered.push_back(track.laneId);
+
+    return ordered;
+}
+
+int GridEditorComponent::visibleLaneIndex(const RuntimeLaneId& laneId) const
+{
+    const auto ordered = orderedVisibleLaneIds();
 
     for (int index = 0; index < static_cast<int>(ordered.size()); ++index)
     {
-        if (ordered[static_cast<size_t>(index)] == type)
+        if (ordered[static_cast<size_t>(index)] == laneId)
             return index;
     }
 
     return -1;
 }
 
-std::optional<TrackType> GridEditorComponent::trackForVisibleLaneIndex(int laneIndex) const
+std::optional<RuntimeLaneId> GridEditorComponent::trackForVisibleLaneIndex(int laneIndex) const
 {
     if (laneIndex < 0)
         return std::nullopt;
 
-    std::vector<TrackType> ordered;
-    ordered.reserve(project.tracks.size());
-
-    for (const auto& lane : laneDisplayOrder)
-        if (isVisibleLane(lane))
-            ordered.push_back(lane);
-
-    for (const auto& track : project.tracks)
-        if (isVisibleLane(track.type)
-            && std::find(ordered.begin(), ordered.end(), track.type) == ordered.end())
-            ordered.push_back(track.type);
+    const auto ordered = orderedVisibleLaneIds();
 
     if (laneIndex >= static_cast<int>(ordered.size()))
         return std::nullopt;
 
     return ordered[static_cast<size_t>(laneIndex)];
-
-    return std::nullopt;
 }
 
 void GridEditorComponent::invalidateStaticCache()
@@ -2328,11 +2758,21 @@ void GridEditorComponent::ensureStaticCache()
     g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
     g.drawLine(0.0f, static_cast<float>(rulerHeight), static_cast<float>(area.getWidth()), static_cast<float>(rulerHeight));
 
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        const int x = static_cast<int>(std::round(static_cast<float>(bar * 16) * stepWidth));
+        const int width = static_cast<int>(std::round(stepWidth * 16.0f));
+        const auto barArea = juce::Rectangle<int>(x, rulerHeight, juce::jmax(1, width), juce::jmax(1, area.getHeight() - rulerHeight));
+        g.setColour((bar % 2 == 0) ? juce::Colour::fromRGBA(255, 255, 255, 4)
+                                   : juce::Colour::fromRGBA(0, 0, 0, 10));
+        g.fillRect(barArea);
+    }
+
     for (int row = 0; row < tracksCount; ++row)
     {
         const auto rowArea = area.withTop(rulerHeight + row * laneHeight).withHeight(laneHeight);
-        g.setColour((row % 2 == 0) ? juce::Colour::fromRGB(26, 29, 34)
-                                   : juce::Colour::fromRGB(22, 25, 29));
+        g.setColour((row % 2 == 0) ? juce::Colour::fromRGB(27, 30, 35)
+                                   : juce::Colour::fromRGB(22, 25, 30));
         g.fillRect(rowArea);
     }
 
@@ -2343,20 +2783,40 @@ void GridEditorComponent::ensureStaticCache()
         g.fillRect(area.withTop(rulerHeight + selectedRow * laneHeight).withHeight(laneHeight));
     }
 
+    const int totalTicks = bars * 16 * ticksPerStep();
+    const int beatTicks = ticksPerStep() * 4;
+    const int visualTicks = juce::jmax(1, visualSubdivisionTicks());
+    const int fineTicks = juce::jmax(1, visualFineSubdivisionTicks());
+
+    for (int tick = 0; tick <= totalTicks; tick += fineTicks)
+    {
+        const float x = (static_cast<float>(tick) / static_cast<float>(ticksPerStep())) * stepWidth;
+
+        if (tick % (ticksPerStep() * 16) == 0)
+        {
+            g.setColour(juce::Colour::fromRGB(148, 158, 178));
+            g.fillRect(juce::Rectangle<float>(x - 1.0f, 0.0f, 2.0f, static_cast<float>(area.getHeight())));
+            continue;
+        }
+        else if (tick % beatTicks == 0)
+        {
+            g.setColour(juce::Colour::fromRGBA(116, 128, 146, 204));
+            g.fillRect(juce::Rectangle<float>(x, static_cast<float>(rulerHeight), 1.2f, static_cast<float>(area.getHeight() - rulerHeight)));
+            g.setColour(juce::Colour::fromRGBA(206, 214, 228, 94));
+            g.fillRect(juce::Rectangle<float>(x, 0.0f, 1.2f, static_cast<float>(rulerHeight)));
+            continue;
+        }
+        else if (tick % visualTicks == 0)
+            g.setColour(juce::Colour::fromRGBA(86, 94, 108, 160));
+        else
+            g.setColour(juce::Colour::fromRGBA(160, 172, 192, 16));
+
+        g.drawVerticalLine(static_cast<int>(std::round(x)), static_cast<float>(rulerHeight), static_cast<float>(area.getBottom()));
+    }
+
     for (int s = 0; s <= steps; ++s)
     {
         const float x = static_cast<float>(s) * stepWidth;
-        if (s % 16 == 0)
-            g.setColour(juce::Colour::fromRGB(106, 114, 130));
-        else if (s % 4 == 0)
-            g.setColour(juce::Colour::fromRGB(74, 80, 92));
-        else if (s % 2 == 0)
-            g.setColour(juce::Colour::fromRGB(58, 64, 74));
-        else
-            g.setColour(juce::Colour::fromRGB(44, 49, 56));
-
-        g.drawVerticalLine(static_cast<int>(x), static_cast<float>(rulerHeight), static_cast<float>(area.getBottom()));
-
         if (s % 16 == 0)
         {
             const int barNumber = s / 16 + 1;
@@ -2364,26 +2824,15 @@ void GridEditorComponent::ensureStaticCache()
             g.setFont(juce::Font(juce::FontOptions(11.0f)));
             g.drawText(juce::String(barNumber), static_cast<int>(x) + 4, 2, 20, rulerHeight - 4, juce::Justification::centredLeft);
         }
-    }
-
-    const int totalTicks = bars * 16 * ticksPerStep();
-    const int resolutionTicks = std::max(1, ticksForGridResolution());
-    const bool drawSubGrid = resolutionTicks < ticksPerStep() * 2;
-
-    if (drawSubGrid)
-    {
-        g.setColour(juce::Colour::fromRGBA(180, 190, 208, 26));
-        for (int tick = resolutionTicks; tick < totalTicks; tick += resolutionTicks)
+        else if ((s % 4 == 0) && stepWidth >= 12.0f)
         {
-            if (tick % ticksPerStep() == 0)
-                continue;
-
-            const float xSub = (static_cast<float>(tick) / static_cast<float>(ticksPerStep())) * stepWidth;
-            g.drawVerticalLine(static_cast<int>(xSub), static_cast<float>(rulerHeight), static_cast<float>(area.getBottom()));
+            g.setColour(juce::Colour::fromRGBA(218, 224, 235, 112));
+            g.setFont(juce::Font(juce::FontOptions(9.0f)));
+            g.drawText(juce::String((s / 4) % 4 + 1), static_cast<int>(x) - 6, 8, 12, rulerHeight - 10, juce::Justification::centred, false);
         }
     }
 
-    g.setColour(juce::Colour::fromRGB(54, 60, 72));
+    g.setColour(juce::Colour::fromRGB(58, 64, 78));
     const float rowHeight = static_cast<float>(laneHeight);
     for (int r = 0; r <= tracksCount; ++r)
     {
@@ -2398,35 +2847,35 @@ std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNot
 {
     for (const auto& track : project.tracks)
     {
-        const int row = visibleLaneIndex(track.type);
+        const int row = visibleLaneIndex(track.laneId);
         if (row < 0)
             continue;
 
         for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
         {
             if (noteBounds(track.notes[static_cast<size_t>(i)], row).expanded(3, 3).contains(position))
-                return SelectedNoteRef { track.type, i };
+                return SelectedNoteRef { track.laneId, i };
         }
     }
 
     return std::nullopt;
 }
 
-std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNoteAt(juce::Point<int> position, TrackType lane) const
+std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNoteAt(juce::Point<int> position, const RuntimeLaneId& laneId) const
 {
     for (const auto& track : project.tracks)
     {
-        if (track.type != lane)
+        if (track.laneId != laneId)
             continue;
 
-        const int row = visibleLaneIndex(track.type);
+        const int row = visibleLaneIndex(track.laneId);
         if (row < 0)
             return std::nullopt;
 
         for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
         {
             if (noteBounds(track.notes[static_cast<size_t>(i)], row).expanded(3, 3).contains(position))
-                return SelectedNoteRef { track.type, i };
+                return SelectedNoteRef { track.laneId, i };
         }
 
         break;
@@ -2435,28 +2884,52 @@ std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNot
     return std::nullopt;
 }
 
-TrackState* GridEditorComponent::findMutableTrack(TrackType type)
+std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNoteCoveringTick(const RuntimeLaneId& laneId, int tick) const
 {
-    auto it = std::find_if(project.tracks.begin(), project.tracks.end(), [type](const TrackState& track)
+    for (const auto& track : project.tracks)
     {
-        return track.type == type;
-    });
+        if (track.laneId != laneId)
+            continue;
 
-    return (it != project.tracks.end()) ? &(*it) : nullptr;
+        for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
+        {
+            const auto& note = track.notes[static_cast<size_t>(i)];
+            const int startTick = noteStartTick(note);
+            const int endTick = noteEndTick(note);
+            if (tick >= startTick && tick < endTick)
+                return SelectedNoteRef { laneId, i };
+        }
+
+        break;
+    }
+
+    return std::nullopt;
 }
 
-void GridEditorComponent::emitTrackEdited(TrackType type)
+TrackState* GridEditorComponent::findMutableTrack(const RuntimeLaneId& laneId)
+{
+    return GridEditActions::findMutableTrack(makeModelContext(), laneId);
+}
+
+const TrackState* GridEditorComponent::findTrack(const RuntimeLaneId& laneId) const
+{
+    return GridEditActions::findTrack(project, laneId);
+}
+
+bool GridEditorComponent::hasNoteAtTick(const RuntimeLaneId& laneId, int tick) const
+{
+    return findNoteCoveringTick(laneId, tick).has_value();
+}
+
+void GridEditorComponent::emitTrackEdited(const RuntimeLaneId& laneId)
 {
     if (!onTrackNotesEdited)
         return;
 
-    for (const auto& track : project.tracks)
+    if (const auto* track = findTrack(laneId))
     {
-        if (track.type == type)
-        {
-            onTrackNotesEdited(track.type, track.notes);
-            return;
-        }
+        onTrackNotesEdited(laneId, track->notes);
+        return;
     }
 }
 
@@ -2471,10 +2944,14 @@ int GridEditorComponent::stepAtX(int x) const
 int GridEditorComponent::quantizedTickAtX(int x, bool snapToGrid) const
 {
     const int tick = tickAtX(x);
-    return snapToGrid ? snappedTickFromTick(tick) : tick;
+    if (!snapToGrid || !isSnapEnabled())
+        return tick;
+
+    const int snap = juce::jmax(1, snapTicksForCurrentResolution());
+    return clampTickToProject(static_cast<int>(std::round(static_cast<float>(tick) / static_cast<float>(snap))) * snap);
 }
 
-bool GridEditorComponent::fillLaneRange(TrackType trackType, juce::Range<int> tickRange, int stepInterval)
+bool GridEditorComponent::fillLaneRange(const RuntimeLaneId& laneId, juce::Range<int> tickRange, int stepInterval)
 {
     const int intervalTicks = juce::jmax(1, stepInterval) * ticksPerStep();
     const int totalTicks = juce::jmax(1, project.params.bars * 16 * ticksPerStep());
@@ -2483,44 +2960,35 @@ bool GridEditorComponent::fillLaneRange(TrackType trackType, juce::Range<int> ti
 
     bool changed = false;
     for (int tick = startTick; tick < endTick; tick += intervalTicks)
-        changed = placeDrawNoteAt(trackType, tick) || changed;
+        changed = placeDrawNoteAt(laneId, tick) || changed;
 
     if (changed)
     {
-        emitTrackEdited(trackType);
+        emitTrackEdited(laneId);
         repaint();
     }
 
     return changed;
 }
 
-bool GridEditorComponent::placeDrawNoteAt(TrackType trackType, int tick)
+bool GridEditorComponent::placeDrawNoteAt(const RuntimeLaneId& laneId, int tick)
 {
-    auto* track = findMutableTrack(trackType);
+    auto* track = findMutableTrack(laneId);
     if (track == nullptr)
         return false;
 
     const int bars = juce::jmax(1, project.params.bars);
     NoteEvent insertedNote;
+    insertedNote.length = juce::jmax(1,
+                                     static_cast<int>(std::ceil(static_cast<double>(defaultNoteLengthTicks())
+                                                                / static_cast<double>(juce::jmax(1, ticksPerStep())))));
+    insertedNote.velocity = 100;
     setNoteStartTick(insertedNote, tick, bars);
 
-    for (const auto& existingNote : track->notes)
-    {
-        if (existingNote.step == insertedNote.step
-            && std::abs(existingNote.microOffset - insertedNote.microOffset) <= snapTicksForCurrentResolution() / 2)
-            return false;
-    }
+    if (hasNoteAtTick(laneId, noteStartTick(insertedNote)))
+        return false;
 
-    insertedNote.length = juce::jmax(1, ticksForGridResolution() / juce::jmax(1, ticksPerStep()));
-    insertedNote.velocity = 100;
-
-    track->notes.push_back(insertedNote);
-    std::sort(track->notes.begin(), track->notes.end(), [](const NoteEvent& a, const NoteEvent& b)
-    {
-        if (a.step != b.step)
-            return a.step < b.step;
-        return a.microOffset < b.microOffset;
-    });
+    GridEditActions::addNote(makeModelContext(), laneId, insertedNote);
 
     clearSelectionInternal();
     return true;
@@ -2528,50 +2996,154 @@ bool GridEditorComponent::placeDrawNoteAt(TrackType trackType, int tick)
 
 juce::Rectangle<int> GridEditorComponent::noteBounds(const NoteEvent& note, int row) const
 {
-    const float microStep = static_cast<float>(note.microOffset) / static_cast<float>(ticksPerStep());
-    const float microShiftPx = juce::jlimit(-0.98f * stepWidth, 0.98f * stepWidth, microStep * stepWidth);
-    const float x = static_cast<float>(note.step) * stepWidth + microShiftPx;
-    const float y = static_cast<float>(rulerHeight + row * laneHeight);
-
-    // In sub-step grids (e.g. 1/6 step), draw and hit-test notes closer to a single cell width.
-    const float subStepWidth = stepWidth * (static_cast<float>(ticksForGridResolution())
-                                           / static_cast<float>(juce::jmax(1, ticksPerStep())));
-    float w = stepWidth * static_cast<float>(std::max(1, note.length));
-    if (note.length <= 1 && ticksForGridResolution() < ticksPerStep())
-        w = juce::jmax(2.0f, subStepWidth - 1.0f);
-
-    return juce::Rectangle<int>(static_cast<int>(std::floor(x + 1.0f)),
-                                static_cast<int>(std::floor(y + 2.0f)),
-                                static_cast<int>(std::ceil(juce::jmax(2.0f, w - 2.0f))),
-                                juce::jmax(4, laneHeight - 4));
+    return makeGeometry().noteRect(note, row);
 }
 
 int GridEditorComponent::snapTicksForCurrentResolution() const
 {
-    return ticksForGridResolution();
+    return effectiveSnapTicks();
 }
 
 int GridEditorComponent::ticksForGridResolution() const
 {
     switch (gridResolution)
     {
-        case GridResolution::OneSixthStep: return juce::jmax(1, ticksPerStep() / 6);
-        case GridResolution::OneQuarterStep: return juce::jmax(1, ticksPerStep() / 4);
-        case GridResolution::OneThirdStep: return juce::jmax(1, ticksPerStep() / 3);
-        case GridResolution::OneHalfStep: return juce::jmax(1, ticksPerStep() / 2);
-        case GridResolution::Step: return ticksPerStep();
-        case GridResolution::OneSixthBeat: return juce::jmax(1, ticksPerStep() * 4 / 6);
-        case GridResolution::OneQuarterBeat: return ticksPerStep();
-        case GridResolution::OneThirdBeat: return juce::jmax(1, ticksPerStep() * 4 / 3);
-        case GridResolution::OneHalfBeat: return ticksPerStep() * 2;
-        case GridResolution::Beat: return ticksPerStep() * 4;
-        case GridResolution::Bar: return ticksPerStep() * 16;
-        case GridResolution::OneEighth: return ticksPerStep() * 2; // 1/8
-        case GridResolution::OneSixteenth: return ticksPerStep(); // 1/16
-        case GridResolution::OneThirtySecond: return ticksPerStep() / 2; // 1/32
-        case GridResolution::OneSixtyFourth: return ticksPerStep() / 4; // 1/64
-        case GridResolution::Triplet: return (ticksPerStep() * 2) / 3; // 1/24
+        case GridResolution::OneQuarter: return ticksPerStep() * 4;
+        case GridResolution::OneQuarterTriplet: return juce::jmax(1, (ticksPerStep() * 8) / 3);
+        case GridResolution::OneEighth: return ticksPerStep() * 2;
+        case GridResolution::OneEighthTriplet: return juce::jmax(1, (ticksPerStep() * 4) / 3);
+        case GridResolution::OneSixteenth: return ticksPerStep();
+        case GridResolution::OneSixteenthTriplet: return juce::jmax(1, (ticksPerStep() * 2) / 3);
+        case GridResolution::OneThirtySecond: return juce::jmax(1, ticksPerStep() / 2);
+        case GridResolution::OneThirtySecondTriplet: return juce::jmax(1, ticksPerStep() / 3);
+        case GridResolution::OneSixtyFourth: return juce::jmax(1, ticksPerStep() / 4);
+        case GridResolution::OneSixtyFourthTriplet: return juce::jmax(1, ticksPerStep() / 6);
+        case GridResolution::Adaptive:
+        case GridResolution::Micro:
         default: return ticksPerStep();
     }
+}
+
+bool GridEditorComponent::isSnapEnabled() const
+{
+    return gridResolution != GridResolution::Micro;
+}
+
+int GridEditorComponent::defaultNoteLengthTicks() const
+{
+    return isSnapEnabled() ? effectiveSnapTicks() : ticksPerStep();
+}
+
+int GridEditorComponent::effectiveSnapTicks() const
+{
+    if (!isSnapEnabled())
+        return 1;
+
+    if (gridResolution == GridResolution::Adaptive)
+        return adaptiveSnapTicks();
+
+    return juce::jmax(1, ticksForGridResolution());
+}
+
+int GridEditorComponent::adaptiveSnapTicks() const
+{
+    if (stepWidth >= 92.0f)
+        return juce::jmax(1, ticksPerStep() / 4);
+    if (stepWidth >= 64.0f)
+        return juce::jmax(1, ticksPerStep() / 3);
+    if (stepWidth >= 40.0f)
+        return juce::jmax(1, ticksPerStep() / 2);
+    if (stepWidth >= 22.0f)
+        return ticksPerStep();
+    if (stepWidth >= 12.0f)
+        return ticksPerStep() * 2;
+    return ticksPerStep() * 4;
+}
+
+int GridEditorComponent::keyboardNudgeTicks() const
+{
+    return isSnapEnabled() ? effectiveSnapTicks() : ticksPerStep();
+}
+
+int GridEditorComponent::keyboardMicroNudgeTicks() const
+{
+    return juce::jmax(1, ticksPerStep() / 8);
+}
+
+int GridEditorComponent::visualSubdivisionTicks() const
+{
+    if (stepWidth >= 112.0f)
+        return juce::jmax(1, ticksPerStep() / 6);
+    if (stepWidth >= 84.0f)
+        return juce::jmax(1, ticksPerStep() / 4);
+    if (stepWidth >= 56.0f)
+        return juce::jmax(1, ticksPerStep() / 3);
+    if (stepWidth >= 34.0f)
+        return juce::jmax(1, ticksPerStep() / 2);
+    if (stepWidth >= 18.0f)
+        return ticksPerStep();
+    if (stepWidth >= 10.0f)
+        return ticksPerStep() * 2;
+    return ticksPerStep() * 4;
+}
+
+int GridEditorComponent::visualFineSubdivisionTicks() const
+{
+    const int coarse = juce::jmax(1, visualSubdivisionTicks());
+    if (coarse >= ticksPerStep() * 4)
+        return ticksPerStep();
+    if (coarse >= ticksPerStep() * 2)
+        return ticksPerStep();
+    if (coarse >= ticksPerStep())
+        return juce::jmax(1, ticksPerStep() / 2);
+    return coarse;
+}
+
+int GridEditorComponent::snapThresholdTicks() const
+{
+    return isSnapEnabled() ? effectiveSnapTicks() : visualSubdivisionTicks();
+}
+
+juce::String GridEditorComponent::effectiveSnapLabel() const
+{
+    const int snap = effectiveSnapTicks();
+    if (!isSnapEnabled())
+        return "Micro";
+    if (snap == ticksPerStep() * 4)
+        return "1/4";
+    if (snap == juce::jmax(1, (ticksPerStep() * 8) / 3))
+        return "1/4T";
+    if (snap == ticksPerStep() * 2)
+        return "1/8";
+    if (snap == juce::jmax(1, (ticksPerStep() * 4) / 3))
+        return "1/8T";
+    if (snap == ticksPerStep())
+        return "1/16";
+    if (snap == juce::jmax(1, (ticksPerStep() * 2) / 3))
+        return "1/16T";
+    if (snap == juce::jmax(1, ticksPerStep() / 2))
+        return "1/32";
+    if (snap == juce::jmax(1, ticksPerStep() / 3))
+        return "1/32T";
+    if (snap == juce::jmax(1, ticksPerStep() / 4))
+        return "1/64";
+    if (snap == juce::jmax(1, ticksPerStep() / 6))
+        return "1/64T";
+    return "1/16";
+}
+
+juce::String GridEditorComponent::currentGridModeLabel() const
+{
+    if (gridResolution == GridResolution::Adaptive)
+        return "Snap: Adaptive (" + effectiveSnapLabel() + ")";
+    if (gridResolution == GridResolution::Micro)
+        return "Snap: Micro";
+    return "Snap: " + effectiveSnapLabel();
+}
+
+void GridEditorComponent::notifyGridModeDisplayChanged()
+{
+    if (onGridModeDisplayChanged)
+        onGridModeDisplayChanged(currentGridModeLabel());
 }
 } // namespace bbg

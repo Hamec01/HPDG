@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <optional>
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -10,6 +11,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "../Core/PatternProject.h"
+#include "GridEditActions.h"
+#include "GridGeometry.h"
 
 namespace bbg
 {
@@ -38,30 +41,35 @@ public:
 
     enum class GridResolution
     {
-        OneSixthStep,
-        OneQuarterStep,
-        OneThirdStep,
-        OneHalfStep,
-        Step,
-        OneSixthBeat,
-        OneQuarterBeat,
-        OneThirdBeat,
-        OneHalfBeat,
-        Beat,
-        Bar,
+        Adaptive,
+        Micro,
+        OneQuarter,
+        OneQuarterTriplet,
         OneEighth,
+        OneEighthTriplet,
         OneSixteenth,
+        OneSixteenthTriplet,
         OneThirtySecond,
+        OneThirtySecondTriplet,
         OneSixtyFourth,
-        Triplet
+        OneSixtyFourthTriplet
+    };
+
+    struct EditorRegionState
+    {
+        std::optional<juce::Range<int>> selectedTickRange;
+        std::optional<juce::Range<int>> loopTickRange;
+        std::vector<RuntimeLaneId> activeLaneIds;
+        RuntimeLaneId primaryLaneId;
+        int previewStartTick = 0;
     };
 
     void setProject(const PatternProject& value);
     void setStepWidth(float width);
     void setLaneHeight(int height);
     void setGridResolution(GridResolution resolution);
-    void setLaneDisplayOrder(const std::vector<TrackType>& order);
-    void setSelectedTrack(TrackType type);
+    void setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order);
+    void setSelectedTrack(const RuntimeLaneId& laneId);
     void setPlayheadStep(float step);
     void setEditorTool(EditorTool tool);
     void setInputBindings(const InputBindings& bindings);
@@ -75,10 +83,16 @@ public:
     bool cutSelectionToClipboard();
     bool pasteClipboardAtPlayhead();
     bool duplicateSelectionToRight();
+    bool duplicateSelectionRepeated(int repeatCount);
     void clearNoteSelection();
     bool selectAllNotes();
-    bool selectAllNotesInLane(TrackType lane);
+    bool selectAllNotesInLane(const RuntimeLaneId& laneId);
+    bool setSelectionSemanticRole(const juce::String& role);
+    bool selectNotesBySemanticRole(const juce::String& role);
+    bool nudgeSelectionBySnap(int direction);
+    bool nudgeSelectionMicro(int direction);
     bool hasSelection() const { return !selectedNotes.empty(); }
+    EditorRegionState getEditorRegionState() const { return editorRegionState; }
 
     int getGridWidth() const;
     int getGridHeight() const;
@@ -89,39 +103,26 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& event) override;
+    void mouseDoubleClick(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
 
-    std::function<void(TrackType, int)> onCellClicked;
-    std::function<void(TrackType, const std::vector<NoteEvent>&)> onTrackNotesEdited;
-    std::function<void(float)> onHorizontalZoomGesture;
-    std::function<void(float)> onLaneHeightZoomGesture;
+    std::function<void(const RuntimeLaneId&)> onTrackFocused;
+    std::function<void(int)> onPlaybackFlagChanged;
+    std::function<void(const RuntimeLaneId&, const std::vector<NoteEvent>&)> onTrackNotesEdited;
+    std::function<void(float, juce::Point<int>)> onHorizontalZoomGesture;
+    std::function<void(float, juce::Point<int>)> onLaneHeightZoomGesture;
     std::function<void(const std::optional<juce::Range<int>>&)> onLoopRegionChanged;
+    std::function<void(const juce::String&)> onGridModeDisplayChanged;
+    std::function<void(const EditorRegionState&)> onEditorRegionStateChanged;
+
+    float getStepWidth() const { return stepWidth; }
+    int getLaneHeightPx() const { return laneHeight; }
+    int getRulerHeightPx() const { return rulerHeight; }
 
 private:
-    struct SelectedNoteRef
-    {
-        TrackType track = TrackType::Kick;
-        int index = -1;
-    };
-
-    struct DragSnapshot
-    {
-        TrackType track = TrackType::Kick;
-        int index = -1;
-        int startTick = 0;
-        int startLength = 1;
-        int startEndTick = 0;
-        int startVelocity = 100;
-        int startMicroOffset = 0;
-        int startPitch = 36;
-    };
-
-    struct ClipboardNote
-    {
-        TrackType track = TrackType::Kick;
-        NoteEvent note;
-        int relativeTick = 0;
-    };
+    using SelectedNoteRef = GridEditActions::SelectedNoteRef;
+    using DragSnapshot = GridEditActions::DragSnapshot;
+    using ClipboardNote = GridEditActions::ClipboardNote;
 
     enum class ContextMenuTarget
     {
@@ -133,61 +134,95 @@ private:
     void invalidateStaticCache();
     void ensureStaticCache();
     std::optional<SelectedNoteRef> findNoteAt(juce::Point<int> position) const;
-    std::optional<SelectedNoteRef> findNoteAt(juce::Point<int> position, TrackType lane) const;
-    std::optional<SelectedNoteRef> findClosestNoteAt(juce::Point<int> position, TrackType lane, int maxDistancePx) const;
-    std::optional<SelectedNoteRef> findSub808NoteForPitchEdit(const juce::MouseEvent& event) const;
+    std::optional<SelectedNoteRef> findNoteAt(juce::Point<int> position, const RuntimeLaneId& laneId) const;
+    std::optional<SelectedNoteRef> findNoteCoveringTick(const RuntimeLaneId& laneId, int tick) const;
+    std::optional<SelectedNoteRef> findClosestNoteAt(juce::Point<int> position, const RuntimeLaneId& laneId, int maxDistancePx) const;
     juce::Rectangle<int> noteBounds(const NoteEvent& note, int row) const;
     int noteStartTick(const NoteEvent& note) const;
     int noteEndTick(const NoteEvent& note) const;
     bool setNoteStartTick(NoteEvent& note, int targetTick, int bars);
-    bool splitNoteAtTick(TrackType trackType, int noteIndex, int cutTick);
-    bool eraseNoteAt(juce::Point<int> position, std::optional<TrackType> laneHint = std::nullopt);
+    bool eraseNote(const SelectedNoteRef& ref);
+    bool eraseNoteAtCell(const RuntimeLaneId& laneId, int tick);
+    bool splitNoteAtTick(const RuntimeLaneId& laneId, int noteIndex, int cutTick);
+    bool eraseNoteAt(juce::Point<int> position, std::optional<RuntimeLaneId> laneHint = std::nullopt);
     bool eraseNotesAlongSegment(juce::Point<int> from, juce::Point<int> to);
-    bool updatePitchForSub808Selection(int semitoneDelta);
+    bool applyDrawAtCell(const RuntimeLaneId& laneId, int tick);
+    bool applyEraseAtCell(const RuntimeLaneId& laneId, int tick);
+    bool applyStrokeAlongSegment(juce::Point<int> from, juce::Point<int> to, bool erase, std::optional<RuntimeLaneId> fixedLane = std::nullopt);
     void sortTrackNotes(TrackState& track);
     int resizeHandleWidthPx(const NoteEvent& note, int row) const;
     void updateHoverState(juce::Point<int> position);
     void applyCursorForHover();
     bool isSelected(const SelectedNoteRef& ref) const;
     void clearSelectionInternal();
+    void addSelection(const SelectedNoteRef& ref);
     void setSingleSelection(const SelectedNoteRef& ref);
     void toggleSelection(const SelectedNoteRef& ref);
     void normalizeSelection();
     void collectDragSnapshots();
     bool applySelectionVelocityDelta(int deltaVel);
+    bool applySelectionVelocityAbsolute(int targetVelocity);
     bool applySelectionVelocityWave(int deltaVel, int currentMouseX);
     bool applySelectionMicroOffsetDelta(int deltaTicks);
-    bool applySelectionMoveTicks(int deltaTicks, int bars);
+    bool applySelectionMoveDelta(int deltaSteps, int deltaLanes, int deltaMicro);
     bool applySelectionStretchTicks(int deltaTicks, int bars);
     bool copySelectionInternal(bool removeAfterCopy);
+    bool pasteClipboardAtTick(int anchorTick,
+                              std::vector<SelectedNoteRef>* insertedSelectionOut = nullptr,
+                              std::set<RuntimeLaneId>* changedTracksOut = nullptr,
+                              bool clearSelectionBeforeInsert = true);
     ContextMenuTarget contextMenuTargetAt(juce::Point<int> p,
-                                          std::optional<TrackType> laneHint,
+                                          std::optional<RuntimeLaneId> laneHint,
                                           std::optional<SelectedNoteRef>* hitOut = nullptr);
-    void showNoteContextMenu(juce::Point<int> p, std::optional<TrackType> laneHint);
-    bool applyContextMenuAction(int actionId, std::optional<TrackType> laneHint, juce::Point<int> p);
+    void showNoteContextMenu(juce::Point<int> p, std::optional<RuntimeLaneId> laneHint);
+    bool applyContextMenuAction(int actionId, std::optional<RuntimeLaneId> laneHint, juce::Point<int> p);
     bool canQuickRollSelection() const;
     std::vector<int> availableAdvancedRollDivisions() const;
     bool rollSelectionQuick();
     bool rollSelectionWithDivisions(int divisions);
+    LaneEditorCapabilities laneEditorCapabilitiesForLane(const RuntimeLaneId& laneId) const;
     int clampTickToProject(int tick) const;
     int quantizeTick(int tick) const;
-    TrackState* findMutableTrack(TrackType type);
-    void emitTrackEdited(TrackType type);
+    TrackState* findMutableTrack(const RuntimeLaneId& laneId);
+    const TrackState* findTrack(const RuntimeLaneId& laneId) const;
+    bool hasNoteAtTick(const RuntimeLaneId& laneId, int tick) const;
+    void emitTrackEdited(const RuntimeLaneId& laneId);
+    void notifyTrackFocused(const RuntimeLaneId& laneId);
+    void refreshEditorRegionState();
+    bool beginVelocityEditGesture(const SelectedNoteRef& ref, juce::Point<int> position);
+    int velocityFromY(int y, const RuntimeLaneId& laneId) const;
+    int currentPasteAnchorTick() const;
     int tickAtX(int x) const;
     int snappedTickFromTick(int tick) const;
     int quantizedTickAtX(int x, bool snapToGrid) const;
     int stepAtX(int x) const;
-    bool placeDrawNoteAt(TrackType trackType, int tick);
-    bool fillLaneRange(TrackType trackType, juce::Range<int> tickRange, int stepInterval);
+    bool placeDrawNoteAt(const RuntimeLaneId& laneId, int tick);
+    bool fillLaneRange(const RuntimeLaneId& laneId, juce::Range<int> tickRange, int stepInterval);
     bool isModifierDown(const juce::ModifierKeys& mods, juce::ModifierKeys::Flags modifier) const;
     bool isVelocityEditKeyDown() const;
     bool isStretchEditKeyDown() const;
+    bool isSnapEnabled() const;
+    int defaultNoteLengthTicks() const;
+    int effectiveSnapTicks() const;
+    int adaptiveSnapTicks() const;
+    int keyboardNudgeTicks() const;
+    int keyboardMicroNudgeTicks() const;
+    int visualSubdivisionTicks() const;
+    int visualFineSubdivisionTicks() const;
+    int snapThresholdTicks() const;
+    juce::String effectiveSnapLabel() const;
+    juce::String currentGridModeLabel() const;
+    void notifyGridModeDisplayChanged();
     int snapTicksForCurrentResolution() const;
     int ticksForGridResolution() const;
+    GridGeometry makeGeometry() const;
+    GridEditActions::ModelContext makeModelContext();
+    GridEditActions::TimelineContext makeTimelineContext();
+    std::vector<RuntimeLaneId> orderedVisibleLaneIds() const;
 
-    bool isVisibleLane(TrackType type) const;
-    int visibleLaneIndex(TrackType type) const;
-    std::optional<TrackType> trackForVisibleLaneIndex(int laneIndex) const;
+    bool isVisibleLane(const RuntimeLaneId& laneId) const;
+    int visibleLaneIndex(const RuntimeLaneId& laneId) const;
+    std::optional<RuntimeLaneId> trackForVisibleLaneIndex(int laneIndex) const;
 
     PatternProject project;
     juce::Image staticGridCache;
@@ -197,11 +232,12 @@ private:
     int laneHeight = 30;
     int rulerHeight = 24;
     GridResolution gridResolution = GridResolution::OneSixteenth;
-    std::vector<TrackType> laneDisplayOrder;
-    TrackType selectedTrack = TrackType::Kick;
+    std::vector<RuntimeLaneId> laneDisplayOrder;
+    RuntimeLaneId selectedTrack;
     int previewStartStep = 0;
     int previewStartTick = 0;
     std::optional<juce::Range<int>> loopRegionTicks;
+    EditorRegionState editorRegionState;
     float playheadStep = -1.0f;
     int lastPlayheadPixel = -1;
 
@@ -227,6 +263,13 @@ private:
         Cut,
         MicroOffset,
         Marquee
+    };
+
+    enum class StrokeMode
+    {
+        None,
+        Draw,
+        Erase
     };
 
     EditorTool editorTool = EditorTool::Pencil;
@@ -258,11 +301,15 @@ private:
     int rulerDragStartTick = 0;
     bool rulerDraggingLoop = false;
     bool rulerLoopDragMoved = false;
-    TrackType drawTrack = TrackType::Kick;
+    RuntimeLaneId drawTrack;
     std::unordered_set<int> drawVisitedTicks;
     std::unordered_set<int> eraseVisitedKeys;
+    StrokeMode strokeMode = StrokeMode::None;
+    std::set<RuntimeLaneId> strokeEditedLanes;
 
     std::optional<SelectedNoteRef> hoverNote;
+    std::optional<RuntimeLaneId> hoverDrawTrack;
+    int hoverDrawTick = -1;
     HoverZone hoverZone = HoverZone::None;
 };
 } // namespace bbg

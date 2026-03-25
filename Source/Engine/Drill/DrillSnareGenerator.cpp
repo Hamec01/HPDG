@@ -59,15 +59,15 @@ void DrillSnareGenerator::generate(TrackState& track,
 
         if (halfTimeAware)
         {
-            // Fast drill keeps halftime snare weight around beat 3.
+            // Keep the half-time frame explicit even when everything else is broken.
             track.notes.push_back({ pitch, bar * 16 + 8, 1, vel(rng), 0, false });
 
             if (substyle == DrillSubstyle::BrooklynDrill && chance(rng) < 0.3f)
                 track.notes.push_back({ pitch, bar * 16 + 11, 1, std::max(style.snareVelocityMin, vel(rng) - 7), 0, false });
             else if (substyle == DrillSubstyle::NYDrill && chance(rng) < 0.2f)
                 track.notes.push_back({ pitch, bar * 16 + 12, 1, std::max(style.snareVelocityMin, vel(rng) - 9), 0, false });
-            else if (substyle == DrillSubstyle::DarkDrill && role == DrillPhraseRole::Ending && chance(rng) < 0.12f)
-                track.notes.push_back({ pitch, bar * 16 + 14, 1, std::max(style.snareVelocityMin, vel(rng) - 13), 0, true });
+            else if (substyle == DrillSubstyle::DarkDrill && role == DrillPhraseRole::Ending && chance(rng) < 0.08f)
+                track.notes.push_back({ pitch, bar * 16 + 14, 1, std::max(style.snareVelocityMin, vel(rng) - 14), 0, true });
 
             if (role == DrillPhraseRole::Tension && chance(rng) < tensionChance)
                 track.notes.push_back({ pitch, bar * 16 + 7, 1, std::max(style.snareVelocityMin, vel(rng) - 12), 0, true });
@@ -80,6 +80,7 @@ void DrillSnareGenerator::generate(TrackState& track,
         }
         else
         {
+            // 4/12 backbone keeps the frame readable in slower interpretation.
             track.notes.push_back({ pitch, bar * 16 + 4, 1, vel(rng), 0, false });
             track.notes.push_back({ pitch, bar * 16 + 12, 1, vel(rng), 0, false });
             if (role == DrillPhraseRole::Tension && chance(rng) < tensionChance)
