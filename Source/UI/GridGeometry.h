@@ -96,12 +96,15 @@ public:
         const float microShiftPx = juce::jlimit(-0.98f * config.stepWidth, 0.98f * config.stepWidth, microStep * config.stepWidth);
         const float x = stepToX(note.step) + microShiftPx;
         const float y = laneToY(laneIndex);
-        const float subStepWidth = config.stepWidth * (static_cast<float>(config.resolutionTicks)
-                                                      / static_cast<float>(config.ticksPerStep));
+        const float resolutionWidth = config.stepWidth * (static_cast<float>(config.resolutionTicks)
+                                                          / static_cast<float>(config.ticksPerStep));
+        const int defaultResolutionSteps = juce::jmax(1,
+                                                      static_cast<int>(std::ceil(static_cast<double>(config.resolutionTicks)
+                                                                                 / static_cast<double>(config.ticksPerStep))));
 
         float width = config.stepWidth * static_cast<float>(std::max(1, note.length));
-        if (note.length <= 1 && config.resolutionTicks < config.ticksPerStep)
-            width = juce::jmax(2.0f, subStepWidth - 1.0f);
+        if (std::max(1, note.length) == defaultResolutionSteps)
+            width = juce::jmax(2.0f, resolutionWidth - 1.0f);
 
         return juce::Rectangle<int>(static_cast<int>(std::floor(x + 1.0f)),
                                     static_cast<int>(std::floor(y + 2.0f)),

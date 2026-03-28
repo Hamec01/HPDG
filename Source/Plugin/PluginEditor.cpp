@@ -9,6 +9,7 @@
 
 #include "../Core/PatternProjectSerialization.h"
 #include "../Core/RuntimeLaneLifecycle.h"
+#include "../Core/Sub808TrackAccess.h"
 #include "../Core/TrackRegistry.h"
 #include "../Engine/StyleDefaults.h"
 #include "../Services/MidiImportService.h"
@@ -20,6 +21,28 @@ namespace bbg
 {
 namespace
 {
+class DetachedSub808Window final : public juce::DocumentWindow
+{
+public:
+    DetachedSub808Window()
+        : juce::DocumentWindow("Sub808 Piano Roll",
+                               juce::Colour::fromRGB(18, 22, 28),
+                               juce::DocumentWindow::allButtons,
+                               true)
+    {
+        setUsingNativeTitleBar(true);
+        setResizable(true, true);
+    }
+
+    std::function<void()> onCloseRequested;
+
+    void closeButtonPressed() override
+    {
+        if (onCloseRequested)
+            onCloseRequested();
+    }
+};
+
 constexpr int kRackMinWidth = 260;
 constexpr int kRackCompactThreshold = 360;
 constexpr int kRackFullThreshold = 820;
@@ -48,6 +71,7 @@ constexpr auto kActionBrushTool = "tool_brush";
 constexpr auto kActionSelectTool = "tool_select";
 constexpr auto kActionCutTool = "tool_cut";
 constexpr auto kActionEraseTool = "tool_erase";
+constexpr auto kActionStretchResize = "stretch_resize";
 constexpr auto kActionMicrotimingEdit = "microtiming_edit";
 constexpr auto kActionDeleteNote = "delete_note";
 constexpr auto kActionCopySelection = "copy_selection";
@@ -190,6 +214,8 @@ juce::KeyPress defaultKeyForAction(const juce::String& actionId)
         return juce::KeyPress('4');
     if (actionId == kActionEraseTool)
         return juce::KeyPress('5');
+    if (actionId == kActionStretchResize)
+        return juce::KeyPress('R', juce::ModifierKeys::shiftModifier, 0);
     if (actionId == kActionDeleteNote)
         return juce::KeyPress(juce::KeyPress::deleteKey);
     if (actionId == kActionCopySelection)
@@ -205,9 +231,9 @@ juce::KeyPress defaultKeyForAction(const juce::String& actionId)
     if (actionId == kActionDeselectAll)
         return juce::KeyPress(juce::KeyPress::escapeKey);
     if (actionId == kActionUndo)
-        return juce::KeyPress('U', juce::ModifierKeys::ctrlModifier, 0);
+        return juce::KeyPress('Z', juce::ModifierKeys::ctrlModifier, 0);
     if (actionId == kActionRedo)
-        return juce::KeyPress('R', juce::ModifierKeys::ctrlModifier, 0);
+        return juce::KeyPress('Z', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0);
     if (actionId == kActionRoleAnchor)
         return juce::KeyPress('1', juce::ModifierKeys::altModifier, 0);
     if (actionId == kActionRoleSupport)
@@ -605,6 +631,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     addAndMakeVisible(laneSurface);
     laneSurface.addAndMakeVisible(trackList);
     laneSurface.addAndMakeVisible(gridViewport);
+    addAndMakeVisible(sub808Viewport);
     addAndMakeVisible(analysisPanel);
     addAndMakeVisible(soundModule);
     addAndMakeVisible(editorToolBar);
@@ -641,15 +668,25 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     laneSurface.addAndMakeVisible(*splitterHandle);
     splitterHandle->toFront(false);
 
+    grid.setWantsKeyboardFocus(true);
+    grid.setMouseClickGrabsKeyboardFocus(true);
+    sub808PianoRoll.setWantsKeyboardFocus(true);
+    sub808PianoRoll.setMouseClickGrabsKeyboardFocus(true);
+
     gridViewport.setViewedComponent(&grid, false);
     gridViewport.setScrollBarsShown(true, false);
     gridViewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
+    sub808Viewport.setViewedComponent(&sub808PianoRoll, false);
+    sub808Viewport.setScrollBarsShown(true, true);
+    sub808Viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
+    sub808Viewport.setVisible(false);
 
-    sub808PianoRoll.onNotesEdited = [this](const std::vector<NoteEvent>& notes)
+    sub808PianoRoll.onNotesEdited = [this](const std::vector<Sub808NoteEvent>& notes)
     {
         auto before = audioProcessor.getProjectSnapshot();
         auto after = before;
         auto dedicatedTrackType = alternateEditorSession.trackType;
+        const auto dedicatedLaneId = alternateEditorSession.laneId;
         if (!dedicatedTrackType.has_value())
             dedicatedTrackType = dedicatedPianoRollTrackType(after);
 
@@ -658,16 +695,54 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
         for (auto& track : after.tracks)
         {
-            if (track.type == *dedicatedTrackType)
+            if ((!dedicatedLaneId.isEmpty() && track.laneId == dedicatedLaneId)
+                || (dedicatedLaneId.isEmpty() && track.type == *dedicatedTrackType))
             {
-                track.notes = notes;
+                track.sub808Notes = notes;
+                track.notes = toLegacyNoteEvents(notes);
                 break;
             }
         }
 
-        audioProcessor.setTrackNotes(*dedicatedTrackType, notes);
+        if (!dedicatedLaneId.isEmpty())
+            audioProcessor.setSub808TrackNotes(dedicatedLaneId, notes);
+        else
+            audioProcessor.setSub808TrackNotes(*dedicatedTrackType, notes);
         pushProjectHistoryState(before, after);
         refreshFromProcessor(true);
+    };
+    sub808PianoRoll.onLaneSettingsEdited = [this](const Sub808LaneSettings& settings)
+    {
+        auto before = audioProcessor.getProjectSnapshot();
+        auto after = before;
+        auto dedicatedTrackType = alternateEditorSession.trackType;
+        const auto dedicatedLaneId = alternateEditorSession.laneId;
+        if (!dedicatedTrackType.has_value())
+            dedicatedTrackType = dedicatedPianoRollTrackType(after);
+
+        if (!dedicatedTrackType.has_value())
+            return;
+
+        for (auto& track : after.tracks)
+        {
+            if ((!dedicatedLaneId.isEmpty() && track.laneId == dedicatedLaneId)
+                || (dedicatedLaneId.isEmpty() && track.type == *dedicatedTrackType))
+            {
+                track.sub808Settings = settings;
+                break;
+            }
+        }
+
+        if (!dedicatedLaneId.isEmpty())
+            audioProcessor.setSub808LaneSettings(dedicatedLaneId, settings);
+        else
+            audioProcessor.setSub808LaneSettings(*dedicatedTrackType, settings);
+        pushProjectHistoryState(before, after);
+        refreshFromProcessor(true);
+    };
+    sub808PianoRoll.onPreviewNote = [this](int pitch, int velocity, int lengthTicks)
+    {
+        audioProcessor.auditionSub808Note(pitch, velocity, lengthTicks);
     };
     sub808PianoRoll.onOpenHotkeys = [this] { showHotkeysMenu(); };
 
@@ -722,6 +797,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     {
         showHotkeysMenu();
     };
+    pianoRollFullscreenButton.setButtonText("Window");
     pianoRollFullscreenButton.setClickingTogglesState(true);
     pianoRollFullscreenButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(98, 152, 220));
     pianoRollFullscreenButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(48, 56, 68));
@@ -744,14 +820,18 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
     header.onGeneratePressed = [this]
     {
-        audioProcessor.generatePattern();
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this]
+        {
+            audioProcessor.generatePattern();
+        });
     };
 
     header.onMutatePressed = [this]
     {
-        audioProcessor.mutatePattern();
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this]
+        {
+            audioProcessor.mutatePattern();
+        });
     };
 
     header.onPlayToggled = [this](bool shouldStart)
@@ -761,8 +841,10 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
     header.onStartPlayWithDawToggled = [this](bool enabled)
     {
-        audioProcessor.setStartPlayWithDawEnabled(enabled);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, enabled]
+        {
+            audioProcessor.setStartPlayWithDawEnabled(enabled);
+        }, false);
     };
 
     header.onTransportToStart = [this]
@@ -805,6 +887,11 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
         dragFullPatternExternal();
     };
 
+    header.onClearAllPressed = [this]
+    {
+        clearAllPatternNotes();
+    };
+
     header.onToggleStandaloneWindow = [this]
     {
         toggleStandaloneWindowMaximize();
@@ -828,8 +915,10 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
     header.onPreviewPlaybackModeChanged = [this](int selectedId)
     {
-        audioProcessor.setPreviewPlaybackMode(previewPlaybackModeFromId(selectedId));
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, selectedId]
+        {
+            audioProcessor.setPreviewPlaybackMode(previewPlaybackModeFromId(selectedId));
+        }, false);
     };
 
     grid.onGridModeDisplayChanged = [this](const juce::String& text)
@@ -846,8 +935,10 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
         header.hatFxDensityLockToggle.onClick = [this]
         {
             hatFxDragLockedUi = header.hatFxDensityLockToggle.getToggleState();
-            audioProcessor.setHatFxDragDensity(hatFxDragDensityUi, hatFxDragLockedUi);
-            refreshFromProcessor(true);
+            applyProcessorProjectMutation([this]
+            {
+                audioProcessor.setHatFxDragDensity(hatFxDragDensityUi, hatFxDragLockedUi);
+            });
         };
 
     header.onHeaderControlsModeChanged = [this](MainHeaderComponent::HeaderControlsMode mode)
@@ -859,8 +950,10 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
     grid.onTrackFocused = [this](const RuntimeLaneId& laneId)
     {
+        const auto project = audioProcessor.getProjectSnapshot();
         audioProcessor.setSelectedTrack(laneId);
         grid.setSelectedTrack(laneId);
+        syncAlternateEditorForLane(project, laneId);
     };
 
     grid.onPlaybackFlagChanged = [this](int step)
@@ -939,12 +1032,13 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     startTimerHz(30);
 }
 
-BoomBGeneratorAudioProcessorEditor::~BoomBGeneratorAudioProcessorEditor() = default;
+BoomBGeneratorAudioProcessorEditor::~BoomBGeneratorAudioProcessorEditor()
+{
+    setSub808DetachedWindowVisible(false);
+}
 
 bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent)
 {
-    juce::ignoreUnused(originatingComponent);
-
     if (key == juce::KeyPress('L', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::altModifier | juce::ModifierKeys::shiftModifier, 0))
     {
         showStyleLabWindow();
@@ -959,7 +1053,7 @@ bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, j
             toggleGridEditorFullscreen();
             return true;
         }
-        if (pianoRollFullscreenMode)
+        if (pianoRollFullscreenMode || (sub808DetachedWindow != nullptr && sub808DetachedWindow->isVisible()))
         {
             toggleSub808PianoRollFullscreen();
             return true;
@@ -980,35 +1074,72 @@ bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, j
             && key.getModifiers().getRawFlags() == it->keyPress.getModifiers().getRawFlags();
     };
 
-    auto applyCurrentEditorTool = [this](GridEditorComponent::EditorTool tool)
-    {
-        setActiveEditorTool(tool);
-        return true;
-    };
-
-    if (isKeyForAction(kActionPencilTool))
-        return applyCurrentEditorTool(GridEditorComponent::EditorTool::Pencil);
-
-    if (isKeyForAction(kActionBrushTool))
-        return applyCurrentEditorTool(GridEditorComponent::EditorTool::Brush);
-
-    if (isKeyForAction(kActionSelectTool))
-        return applyCurrentEditorTool(GridEditorComponent::EditorTool::Select);
-
-    if (isKeyForAction(kActionCutTool))
-        return applyCurrentEditorTool(GridEditorComponent::EditorTool::Cut);
-
-    if (isKeyForAction(kActionEraseTool))
-        return applyCurrentEditorTool(GridEditorComponent::EditorTool::Erase);
-
     if (isKeyForAction(kActionUndo))
         return performUndo();
 
-    if (isKeyForAction(kActionRedo))
+    const bool redoHotkeyPressed = isKeyForAction(kActionRedo)
+        || key == juce::KeyPress('Y', juce::ModifierKeys::ctrlModifier, 0);
+
+    if (redoHotkeyPressed)
         return performRedo();
 
-    if (isPianoRollEditorVisible())
+    auto focusIsWithin = [](juce::Component& component, juce::Component* focused, juce::Component* origin)
     {
+        return focused == &component
+            || (focused != nullptr && component.isParentOf(focused))
+            || origin == &component
+            || (origin != nullptr && component.isParentOf(origin));
+    };
+
+    auto* focusedComponent = juce::Component::getCurrentlyFocusedComponent();
+    const bool routeToPianoRoll = isPianoRollEditorVisible()
+        && (pianoRollFullscreenMode || focusIsWithin(sub808PianoRoll, focusedComponent, originatingComponent));
+
+    auto isPlainLetter = [&key](juce::juce_wchar upperCaseLetter)
+    {
+        if (key.getModifiers().isCtrlDown() || key.getModifiers().isAltDown() || key.getModifiers().isCommandDown())
+            return false;
+
+        const int keyCode = static_cast<int>(key.getKeyCode());
+        const int upperCode = static_cast<int>(upperCaseLetter);
+        const int lowerCode = std::tolower(upperCode);
+        return keyCode == upperCode || keyCode == lowerCode;
+    };
+
+    auto applyGridEditorTool = [this](GridEditorComponent::EditorTool tool)
+    {
+        grid.setEditorTool(tool);
+        syncEditorToolButtons(tool);
+        return true;
+    };
+
+    auto applyPianoRollEditorTool = [this](GridEditorComponent::EditorTool tool)
+    {
+        sub808PianoRoll.setEditorTool(tool);
+        syncEditorToolButtons(tool);
+        return true;
+    };
+
+    if (routeToPianoRoll)
+    {
+        if (isPlainLetter('D') || isKeyForAction(kActionPencilTool))
+            return applyPianoRollEditorTool(GridEditorComponent::EditorTool::Pencil);
+
+        if (isPlainLetter('B') || isKeyForAction(kActionBrushTool))
+            return applyPianoRollEditorTool(GridEditorComponent::EditorTool::Brush);
+
+        if (isPlainLetter('S') || isKeyForAction(kActionSelectTool))
+            return applyPianoRollEditorTool(GridEditorComponent::EditorTool::Select);
+
+        if (isKeyForAction(kActionCutTool))
+            return applyPianoRollEditorTool(GridEditorComponent::EditorTool::Cut);
+
+        if (isKeyForAction(kActionEraseTool))
+            return applyPianoRollEditorTool(GridEditorComponent::EditorTool::Erase);
+
+        if ((isKeyForAction(kActionDeleteNote) || key.getKeyCode() == juce::KeyPress::backspaceKey) && sub808PianoRoll.deleteSelectedNotes())
+            return true;
+
         if (isKeyForAction(kActionDeleteNote) && sub808PianoRoll.deleteSelectedNotes())
             return true;
 
@@ -1032,7 +1163,54 @@ bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, j
             sub808PianoRoll.clearNoteSelection();
             return true;
         }
+
+        if (key.getKeyCode() == juce::KeyPress::leftKey)
+        {
+            if (key.getModifiers().isAltDown())
+                return sub808PianoRoll.nudgeSelectionByTicks(-1);
+            if (key.getModifiers().isShiftDown())
+                return sub808PianoRoll.nudgeSelectionByTicks(-4 * ticksPerStep());
+            return sub808PianoRoll.nudgeSelectionByTicks(-ticksPerStep());
+        }
+
+        if (key.getKeyCode() == juce::KeyPress::rightKey)
+        {
+            if (key.getModifiers().isAltDown())
+                return sub808PianoRoll.nudgeSelectionByTicks(1);
+            if (key.getModifiers().isShiftDown())
+                return sub808PianoRoll.nudgeSelectionByTicks(4 * ticksPerStep());
+            return sub808PianoRoll.nudgeSelectionByTicks(ticksPerStep());
+        }
+
+        if (key.getKeyCode() == juce::KeyPress::upKey)
+        {
+            if (key.getModifiers().isShiftDown())
+                return sub808PianoRoll.nudgeSelectionByPitch(12);
+            return sub808PianoRoll.nudgeSelectionByPitch(1);
+        }
+
+        if (key.getKeyCode() == juce::KeyPress::downKey)
+        {
+            if (key.getModifiers().isShiftDown())
+                return sub808PianoRoll.nudgeSelectionByPitch(-12);
+            return sub808PianoRoll.nudgeSelectionByPitch(-1);
+        }
     }
+
+    if (isKeyForAction(kActionPencilTool))
+        return applyGridEditorTool(GridEditorComponent::EditorTool::Pencil);
+
+    if (isKeyForAction(kActionBrushTool))
+        return applyGridEditorTool(GridEditorComponent::EditorTool::Brush);
+
+    if (isKeyForAction(kActionSelectTool))
+        return applyGridEditorTool(GridEditorComponent::EditorTool::Select);
+
+    if (isKeyForAction(kActionCutTool))
+        return applyGridEditorTool(GridEditorComponent::EditorTool::Cut);
+
+    if (isKeyForAction(kActionEraseTool))
+        return applyGridEditorTool(GridEditorComponent::EditorTool::Erase);
 
     if (isKeyForAction(kActionDeleteNote) && grid.deleteSelectedNotes())
         return true;
@@ -1174,12 +1352,19 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         header.setBounds({});
     }
 
+    const bool sub808DetachedVisible = sub808DetachedWindow != nullptr && sub808DetachedWindow->isVisible();
+
     // ─────────────────────────────────────────────────────────────────────
     // GRID EDITOR FULLSCREEN MODE
     // ─────────────────────────────────────────────────────────────────────
     if (gridEditorFullscreenMode)
     {
         laneSurface.setVisible(true);
+        if (!sub808DetachedVisible)
+        {
+            sub808Viewport.setVisible(false);
+            sub808Viewport.setBounds({});
+        }
         analysisPanel.setVisible(false);
         soundModule.setVisible(false);
         soundModule.setBounds({});
@@ -1243,8 +1428,13 @@ void BoomBGeneratorAudioProcessorEditor::resized()
     // ─────────────────────────────────────────────────────────────────────
     else if (pianoRollFullscreenMode && isAlternateEditorVisible())
     {
-        laneSurface.setVisible(true);
+        laneSurface.setVisible(false);
+        trackList.setBounds({});
+        gridViewport.setBounds({});
+        if (!sub808DetachedVisible)
+            sub808Viewport.setVisible(true);
         analysisPanel.setVisible(false);
+        analysisPanel.setBounds({});
         soundModule.setVisible(false);
         soundModule.setBounds({});
         splitterBounds = {};
@@ -1252,55 +1442,15 @@ void BoomBGeneratorAudioProcessorEditor::resized()
             splitterHandle->setBounds({});
         optionsToolButton.setVisible(false);
         hotkeysToolButton.setVisible(false);
-
-        const int maxRackByAvailableSpace = juce::jmax(kRackMinWidth, area.getWidth() - kGridMinWidth - kSplitterHitWidth - kPaneGap);
-        const int rackMax = juce::jmax(kRackMinWidth, juce::jmin(kRackMaxWidth, maxRackByAvailableSpace));
-        uiLayoutState.leftPanelWidth = juce::jlimit(kRackMinWidth, rackMax, uiLayoutState.leftPanelWidth);
-        const int visibleRows = juce::jmax(1, trackList.getVisibleRowCount());
-        const int fullscreenLaneHeight = juce::jlimit(22,
-                                  96,
-                                  (juce::jmax(1, area.getHeight() - kEditorToolBarHeight - 6 - 24)
-                                   - 24) / visibleRows);
-        trackList.setRowHeight(fullscreenLaneHeight);
-        trackList.setDisplayMode(laneRackModeForWidth(uiLayoutState.leftPanelWidth));
-        const int laneSurfaceHeight = juce::jmax(1, trackList.getLaneSectionHeight());
-        laneSurface.setBounds(area.removeFromTop(laneSurfaceHeight));
-
-        auto laneArea = laneSurface.getLocalBounds();
-        trackList.setBounds(laneArea.removeFromLeft(uiLayoutState.leftPanelWidth));
-        laneArea.removeFromLeft(kPaneGap);
-        auto splitterLocalArea = juce::Rectangle<int>(laneArea.getX(), laneArea.getY(), kSplitterHitWidth, laneSurface.getHeight());
-        splitterBounds = splitterLocalArea.translated(laneSurface.getX(), laneSurface.getY());
-        if (splitterHandle != nullptr)
-            splitterHandle->setBounds(splitterLocalArea);
-        const int toolsHeight = kEditorToolBarHeight;
         const int gridToToolsGap = 2;
-        laneArea.removeFromLeft(kSplitterHitWidth + kPaneGap);
-        gridViewport.setBounds(laneArea);
+
+        editorToolBar.setBounds({});
 
         if (area.getHeight() > 0)
             area.removeFromTop(juce::jmin(gridToToolsGap, area.getHeight()));
 
-        if (area.getHeight() >= toolsHeight)
-        {
-            auto toolBarArea = area.removeFromTop(toolsHeight);
-            editorToolBar.setBounds(toolBarArea);
-            auto tb = editorToolBar.getLocalBounds().reduced(6, 4);
-            editorToolLabel.setBounds(tb.removeFromLeft(42));
-            pencilToolButton.setBounds(tb.removeFromLeft(66));
-            tb.removeFromLeft(4);
-            brushToolButton.setBounds(tb.removeFromLeft(62));
-            tb.removeFromLeft(4);
-            selectToolButton.setBounds(tb.removeFromLeft(62));
-            tb.removeFromLeft(4);
-            cutToolButton.setBounds(tb.removeFromLeft(52));
-            tb.removeFromLeft(4);
-            eraseToolButton.setBounds(tb.removeFromLeft(58));
-        }
-        else
-        {
-            editorToolBar.setBounds({});
-        }
+        if (!sub808DetachedVisible)
+            sub808Viewport.setBounds(area);
     }
     // ─────────────────────────────────────────────────────────────────────
     // NORMAL MODE: standard layout with left panel + grid + sound module
@@ -1310,8 +1460,10 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         trackList.setRowHeight(laneHeight);
         grid.setLaneHeight(laneHeight);
         laneSurface.setVisible(true);
-        const bool alternateEditorVisible = isAlternateEditorVisible();
-        analysisPanel.setVisible(!alternateEditorVisible);
+        const bool alternateEditorVisible = isAlternateEditorVisible() && !sub808DetachedVisible;
+        if (!sub808DetachedVisible)
+            sub808Viewport.setVisible(alternateEditorVisible);
+        analysisPanel.setVisible(true);
         soundModule.setVisible(!alternateEditorVisible);
 
         const int maxRackByAvailableSpace = juce::jmax(kRackMinWidth, area.getWidth() - kGridMinWidth - kSplitterHitWidth - kPaneGap);
@@ -1319,7 +1471,8 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         uiLayoutState.leftPanelWidth = juce::jlimit(kRackMinWidth, rackMax, uiLayoutState.leftPanelWidth);
 
         trackList.setDisplayMode(laneRackModeForWidth(uiLayoutState.leftPanelWidth));
-        const int toolsHeight = kEditorToolBarHeight;
+        const bool showGlobalTools = !alternateEditorVisible;
+        const int toolsHeight = showGlobalTools ? kEditorToolBarHeight : 0;
         const int toolsToBottomGap = 10;
         const int gridToToolsGap = 2;
         int soundModuleHeight = juce::jlimit(kSoundModuleMinHeight,
@@ -1351,7 +1504,7 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         if (area.getHeight() > 0)
             area.removeFromTop(juce::jmin(gridToToolsGap, area.getHeight()));
 
-        if (area.getHeight() >= toolsHeight)
+        if (showGlobalTools && area.getHeight() >= toolsHeight)
         {
             auto toolBarArea = area.removeFromTop(toolsHeight);
             editorToolBar.setBounds(toolBarArea);
@@ -1377,22 +1530,25 @@ void BoomBGeneratorAudioProcessorEditor::resized()
 
         auto bottomArea = area;
         auto leftColumn = bottomArea.removeFromLeft(uiLayoutState.leftPanelWidth);
-        if (!alternateEditorVisible)
-        {
-            bottomArea.removeFromLeft(kPaneGap + kSplitterHitWidth + kPaneGap);
-            soundModule.setBounds(bottomArea);
-            soundModule.setVisible(!bottomArea.isEmpty());
-        }
-        else
+        bottomArea.removeFromLeft(kPaneGap + kSplitterHitWidth + kPaneGap);
+        analysisPanel.setBounds(leftColumn);
+
+        if (alternateEditorVisible)
         {
             soundModule.setVisible(false);
             soundModule.setBounds({});
+            sub808Viewport.setBounds(bottomArea);
         }
-
-        if (!alternateEditorVisible)
-            analysisPanel.setBounds(leftColumn);
         else
-            analysisPanel.setBounds({});
+        {
+            if (!sub808DetachedVisible)
+            {
+                sub808Viewport.setVisible(false);
+                sub808Viewport.setBounds({});
+            }
+            soundModule.setBounds(bottomArea);
+            soundModule.setVisible(!bottomArea.isEmpty());
+        }
     }
 
     // Keep global Options/Hotkeys in top-left corner only in normal mode
@@ -1410,14 +1566,17 @@ void BoomBGeneratorAudioProcessorEditor::resized()
 
     const int fullscreenButtonWidth = 60;
     const int fullscreenButtonHeight = 24;
-    const auto viewportInEditor = gridViewport.getBounds().translated(laneSurface.getX(), laneSurface.getY());
-    const int fullscreenButtonX = juce::jmax(0, viewportInEditor.getRight() - fullscreenButtonWidth - 8);
-    const int fullscreenButtonY = juce::jmax(0, viewportInEditor.getY() + 6);
+    const auto gridViewportInEditor = gridViewport.getBounds().translated(laneSurface.getX(), laneSurface.getY());
+    const auto pianoViewportInEditor = sub808DetachedVisible ? juce::Rectangle<int>{} : sub808Viewport.getBounds();
+    const int gridFullscreenButtonX = juce::jmax(0, gridViewportInEditor.getRight() - fullscreenButtonWidth - 8);
+    const int gridFullscreenButtonY = juce::jmax(0, gridViewportInEditor.getY() + 6);
+    const int pianoFullscreenButtonX = juce::jmax(0, pianoViewportInEditor.getRight() - fullscreenButtonWidth - 8);
+    const int pianoFullscreenButtonY = juce::jmax(0, pianoViewportInEditor.getY() + 6);
 
-    gridEditorFullscreenButton.setBounds(fullscreenButtonX, fullscreenButtonY, fullscreenButtonWidth, fullscreenButtonHeight);
-    pianoRollFullscreenButton.setBounds(fullscreenButtonX, fullscreenButtonY, fullscreenButtonWidth, fullscreenButtonHeight);
-    gridEditorFullscreenButton.setVisible(!isAlternateEditorVisible());
-    pianoRollFullscreenButton.setVisible(isPianoRollEditorVisible());
+    gridEditorFullscreenButton.setBounds(gridFullscreenButtonX, gridFullscreenButtonY, fullscreenButtonWidth, fullscreenButtonHeight);
+    pianoRollFullscreenButton.setBounds(pianoFullscreenButtonX, pianoFullscreenButtonY, fullscreenButtonWidth, fullscreenButtonHeight);
+    gridEditorFullscreenButton.setVisible(laneSurface.isVisible() && !gridViewportInEditor.isEmpty() && !pianoRollFullscreenMode);
+    pianoRollFullscreenButton.setVisible(isPianoRollEditorVisible() && (sub808DetachedVisible || !pianoViewportInEditor.isEmpty()));
 
     updateGridGeometry();
 
@@ -1435,6 +1594,10 @@ void BoomBGeneratorAudioProcessorEditor::resized()
     laneSurface.setTransform(transform);
     analysisPanel.setTransform(transform);
     soundModule.setTransform(transform);
+    if (sub808DetachedVisible)
+        sub808Viewport.setTransform(juce::AffineTransform());
+    else
+        sub808Viewport.setTransform(transform);
     editorToolBar.setTransform(transform);
     optionsToolButton.setTransform(transform);
     hotkeysToolButton.setTransform(transform);
@@ -1446,14 +1609,28 @@ void BoomBGeneratorAudioProcessorEditor::resized()
 
 void BoomBGeneratorAudioProcessorEditor::timerCallback()
 {
+    const auto before = lastObservedProjectState.has_value()
+        ? *lastObservedProjectState
+        : audioProcessor.getProjectSnapshot();
+
     refreshSubstyleBindingForGenre();
     audioProcessor.applySelectedStylePreset(false);
+
+    const auto after = audioProcessor.getProjectSnapshot();
+    if (lastObservedProjectState.has_value())
+        pushProjectHistoryState(before, after);
+    else
+        lastObservedProjectState = after;
+
     refreshFromProcessor(false);
 }
 
 void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackRows)
 {
     auto project = audioProcessor.getProjectSnapshot();
+    if (!lastObservedProjectState.has_value())
+        lastObservedProjectState = project;
+
     syncLaneDisplayOrder(project);
     const auto transport = audioProcessor.getLastTransportSnapshot();
     const auto analysisRequest = audioProcessor.getSampleAnalysisRequest();
@@ -1508,16 +1685,60 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
         ? RuntimeLaneId{}
         : project.tracks[static_cast<size_t>(juce::jlimit(0, static_cast<int>(project.tracks.size()) - 1, project.selectedTrackIndex))].laneId;
     grid.setSelectedTrack(selectedTrack);
+    syncAlternateEditorForLane(project, selectedTrack);
 
     sub808PianoRoll.setBars(project.params.bars);
     sub808PianoRoll.setStepWidth(20.0f * horizontalZoom);
+    sub808PianoRoll.setScaleContext(audioProcessor.getBassKeyRootChoice(),
+                                    audioProcessor.getBassScaleModeChoice());
+
+    std::vector<Sub808PianoRollComponent::DrumGhostNote> drumGhostNotes;
     for (const auto& track : project.tracks)
     {
-        if (alternateEditorForTrack(project, track.type) == AlternateLaneEditor::PianoRoll)
+        if (!track.enabled || track.type == TrackType::Sub808)
+            continue;
+
+        const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, track.laneId);
+        const bool isGhostTrack = lane != nullptr ? lane->isGhostTrack
+                                                  : (track.type == TrackType::GhostKick || track.type == TrackType::ClapGhostSnare);
+
+        for (const auto& note : track.notes)
         {
-            sub808PianoRoll.setNotes(track.notes);
+            Sub808PianoRollComponent::DrumGhostNote ghostNote;
+            ghostNote.trackType = track.type;
+            ghostNote.startTick = note.step * ticksPerStep() + note.microOffset;
+            ghostNote.lengthTicks = juce::jmax(1, note.length) * ticksPerStep();
+            ghostNote.velocity = note.velocity;
+            ghostNote.isGhostTrack = isGhostTrack;
+            drumGhostNotes.push_back(ghostNote);
+        }
+    }
+    sub808PianoRoll.setDrumGhostNotes(drumGhostNotes);
+
+    bool sub808TrackFound = false;
+    for (const auto& track : project.tracks)
+    {
+        const bool laneMatch = !alternateEditorSession.laneId.isEmpty() && track.laneId == alternateEditorSession.laneId;
+        const bool typeMatch = alternateEditorSession.laneId.isEmpty()
+            && alternateEditorSession.trackType.has_value()
+            && track.type == *alternateEditorSession.trackType;
+        const bool fallbackMatch = alternateEditorSession.laneId.isEmpty()
+            && !alternateEditorSession.trackType.has_value()
+            && track.type == TrackType::Sub808;
+
+        if (laneMatch || typeMatch || fallbackMatch)
+        {
+            sub808PianoRoll.setLaneSettings(track.sub808Settings);
+            sub808PianoRoll.setNotes(sub808NotesForRead(track));
+            sub808TrackFound = true;
             break;
         }
+    }
+
+    if (!sub808TrackFound)
+    {
+        sub808PianoRoll.setLaneSettings(Sub808LaneSettings{});
+        sub808PianoRoll.setNotes({});
     }
 
     const bool mustRefreshGridModel = refreshTrackRows || (project.generationCounter != lastGenerationCounter);
@@ -1724,8 +1945,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.regenerateTrack(*type);
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this, type]
+        {
+            audioProcessor.regenerateTrack(*type);
+        });
     };
 
     trackList.onSoloTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
@@ -1734,8 +1957,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.setTrackSolo(*type, value);
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this, type, value]
+        {
+            audioProcessor.setTrackSolo(*type, value);
+        });
     };
 
     trackList.onMuteTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
@@ -1744,18 +1969,16 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.setTrackMuted(*type, value);
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this, type, value]
+        {
+            audioProcessor.setTrackMuted(*type, value);
+        });
     };
 
     trackList.onClearTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        audioProcessor.clearTrack(*type);
-        refreshFromProcessor();
+        juce::ignoreUnused(resolveTrackType);
+        clearLaneNotes(laneId);
     };
 
     trackList.onLockTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
@@ -1764,8 +1987,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.setTrackLocked(*type, value);
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this, type, value]
+        {
+            audioProcessor.setTrackLocked(*type, value);
+        });
     };
 
     trackList.onEnableTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
@@ -1774,8 +1999,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.setTrackEnabled(*type, value);
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this, type, value]
+        {
+            audioProcessor.setTrackEnabled(*type, value);
+        });
     };
 
     trackList.onDragTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
@@ -1812,8 +2039,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
             return;
 
         hatFxDragLockedUi = locked;
-        audioProcessor.setHatFxDragDensity(hatFxDragDensityUi, hatFxDragLockedUi);
-        refreshFromProcessor(true);
+        applyProcessorProjectMutation([this]
+        {
+            audioProcessor.setHatFxDragDensity(hatFxDragDensityUi, hatFxDragLockedUi);
+        });
     };
 
     trackList.onExportTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
@@ -1831,8 +2060,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.selectPreviousLaneSample(*type);
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this, type]
+        {
+            audioProcessor.selectPreviousLaneSample(*type);
+        });
     };
 
     trackList.onNextSampleTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
@@ -1841,8 +2072,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.selectNextLaneSample(*type);
-        refreshFromProcessor();
+        applyProcessorProjectMutation([this, type]
+        {
+            audioProcessor.selectNextLaneSample(*type);
+        });
     };
 
     trackList.onSampleMenuTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
@@ -1861,24 +2094,11 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
 
     trackList.onTrackNameClicked = [this, resolveTrackType](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
         const auto project = audioProcessor.getProjectSnapshot();
-        const auto editorType = alternateEditorForTrack(project, *type);
-        if (editorType != AlternateLaneEditor::None)
-        {
-            audioProcessor.setSelectedTrack(laneId);
-            grid.setSelectedTrack(laneId);
-            const bool isSameEditor = alternateEditorSession.isVisible
-                && alternateEditorSession.editorType == editorType
-                && alternateEditorSession.trackType == *type;
-            setAlternateEditorVisible(!isSameEditor, editorType, *type);
-            return;
-        }
-
-        setAlternateEditorVisible(false);
+        juce::ignoreUnused(resolveTrackType);
+        audioProcessor.setSelectedTrack(laneId);
+        grid.setSelectedTrack(laneId);
+        syncAlternateEditorForLane(project, laneId);
     };
 
     trackList.onLaneVolumeTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, float volume)
@@ -1887,8 +2107,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!type.has_value())
             return;
 
-        audioProcessor.setTrackLaneVolume(*type, volume);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, type, volume]
+        {
+            audioProcessor.setTrackLaneVolume(*type, volume);
+        }, false);
     };
 
     trackList.onLaneSoundTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, const SoundLayerState& state)
@@ -1914,8 +2136,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
             break;
         }
 
-        audioProcessor.setTrackSoundLayer(*type, nextState);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, type, nextState]
+        {
+            audioProcessor.setTrackSoundLayer(*type, nextState);
+        }, false);
     };
 
     trackList.onRenameLaneRequested = [this](const RuntimeLaneId& laneId)
@@ -1948,14 +2172,36 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
 
     trackList.onBassKeyChanged = [this](int choice)
     {
-        audioProcessor.setBassKeyRootChoice(choice);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, choice]
+        {
+            audioProcessor.setBassKeyRootChoice(choice);
+        }, false);
     };
 
     trackList.onBassScaleChanged = [this](int choice)
     {
-        audioProcessor.setBassScaleModeChoice(choice);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, choice]
+        {
+            audioProcessor.setBassScaleModeChoice(choice);
+        }, false);
+    };
+
+    trackList.onSub808SettingsChanged = [this](const RuntimeLaneId& laneId, const Sub808LaneSettings& settings)
+    {
+        auto before = audioProcessor.getProjectSnapshot();
+        auto after = before;
+        for (auto& track : after.tracks)
+        {
+            if (track.laneId == laneId)
+            {
+                track.sub808Settings = settings;
+                break;
+            }
+        }
+
+        audioProcessor.setSub808LaneSettings(laneId, settings);
+        pushProjectHistoryState(before, after);
+        refreshFromProcessor(true);
     };
 
     trackList.onAddLaneRequested = [this]
@@ -1971,53 +2217,67 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
 
     soundModule.onSoundLayerChanged = [this](const std::optional<TrackType>& target, const SoundLayerState& state)
     {
-        if (target.has_value())
-            audioProcessor.setTrackSoundLayer(*target, state);
-        else
-            audioProcessor.setGlobalSoundLayer(state);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, target, state]
+        {
+            if (target.has_value())
+                audioProcessor.setTrackSoundLayer(*target, state);
+            else
+                audioProcessor.setGlobalSoundLayer(state);
+        }, false);
     };
 
     analysisPanel.onAnalysisSourceChanged = [this](SampleAnalysisRequest::SourceType source)
     {
-        auto request = audioProcessor.getSampleAnalysisRequest();
-        request.source = source;
-        audioProcessor.setSampleAnalysisRequest(request);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, source]
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.source = source;
+            audioProcessor.setSampleAnalysisRequest(request);
+        }, false);
     };
 
     analysisPanel.onAnalysisModeChanged = [this](AnalysisMode mode)
     {
-        audioProcessor.setAnalysisMode(mode);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, mode]
+        {
+            audioProcessor.setAnalysisMode(mode);
+        }, false);
     };
 
     analysisPanel.onAnalysisBarsChanged = [this](int bars)
     {
-        auto request = audioProcessor.getSampleAnalysisRequest();
-        request.barsToCapture = juce::jlimit(2, 16, bars);
-        audioProcessor.setSampleAnalysisRequest(request);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, bars]
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.barsToCapture = juce::jlimit(2, 16, bars);
+            audioProcessor.setSampleAnalysisRequest(request);
+        }, false);
     };
 
     analysisPanel.onAnalysisTempoHandlingChanged = [this](SampleAnalysisRequest::TempoHandling tempoHandling)
     {
-        auto request = audioProcessor.getSampleAnalysisRequest();
-        request.tempoHandling = tempoHandling;
-        audioProcessor.setSampleAnalysisRequest(request);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, tempoHandling]
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.tempoHandling = tempoHandling;
+            audioProcessor.setSampleAnalysisRequest(request);
+        }, false);
     };
 
     analysisPanel.onAnalysisReactivityChanged = [this](float value)
     {
-        audioProcessor.setSampleReactivity(value);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, value]
+        {
+            audioProcessor.setSampleReactivity(value);
+        }, false);
     };
 
     analysisPanel.onSupportVsContrastChanged = [this](float value)
     {
-        audioProcessor.setSupportVsContrast(value);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, value]
+        {
+            audioProcessor.setSupportVsContrast(value);
+        }, false);
     };
 
     analysisPanel.onChooseAnalysisFile = [this]
@@ -2034,11 +2294,13 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
                                  if (selected == juce::File())
                                      return;
 
-                                 auto request = audioProcessor.getSampleAnalysisRequest();
-                                 request.source = SampleAnalysisRequest::SourceType::AudioFile;
-                                 request.audioFile = selected;
-                                 audioProcessor.setSampleAnalysisRequest(request);
-                                 refreshFromProcessor(false);
+                                 applyProcessorProjectMutation([this, selected]
+                                 {
+                                     auto request = audioProcessor.getSampleAnalysisRequest();
+                                     request.source = SampleAnalysisRequest::SourceType::AudioFile;
+                                     request.audioFile = selected;
+                                     audioProcessor.setSampleAnalysisRequest(request);
+                                 }, false);
                              });
     };
 
@@ -2047,11 +2309,13 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         if (!file.existsAsFile())
             return;
 
-        auto request = audioProcessor.getSampleAnalysisRequest();
-        request.source = SampleAnalysisRequest::SourceType::AudioFile;
-        request.audioFile = file;
-        audioProcessor.setSampleAnalysisRequest(request);
-        refreshFromProcessor(false);
+        applyProcessorProjectMutation([this, file]
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.source = SampleAnalysisRequest::SourceType::AudioFile;
+            request.audioFile = file;
+            audioProcessor.setSampleAnalysisRequest(request);
+        }, false);
     };
 
     analysisPanel.onRunAnalysis = [this]
@@ -2120,8 +2384,10 @@ void BoomBGeneratorAudioProcessorEditor::applyHatFxDragDensityFromUi(float densi
         return;
     }
 
-    audioProcessor.setHatFxDragDensity(hatFxDragDensityUi, hatFxDragLockedUi);
-    refreshFromProcessor(true);
+    applyProcessorProjectMutation([this]
+    {
+        audioProcessor.setHatFxDragDensity(hatFxDragDensityUi, hatFxDragLockedUi);
+    });
 }
 
 void BoomBGeneratorAudioProcessorEditor::mouseMove(const juce::MouseEvent& event)
@@ -2229,22 +2495,30 @@ void BoomBGeneratorAudioProcessorEditor::showSampleMenu(TrackType type)
                                                         if (result == juce::File())
                                                             return;
 
+                                                        const auto before = audioProcessor.getProjectSnapshot();
                                                         juce::String error;
-                                                        const bool ok = audioProcessor.importLaneSample(type, result, &error);
+                                                        auto trackType = type;
+                                                        const bool ok = audioProcessor.importLaneSample(trackType, result, &error);
+                                                        const auto after = audioProcessor.getProjectSnapshot();
+                                                        pushProjectHistoryState(before, after);
+                                                        refreshFromProcessor();
                                                         if (!ok && error.isNotEmpty())
                                                             logDrag("importLaneSample error: " + error);
-                                                        refreshFromProcessor();
                                                     });
                                return;
                            }
 
                            if (choice == 2)
                            {
+                               const auto before = audioProcessor.getProjectSnapshot();
                                juce::String error;
-                               const bool ok = audioProcessor.deleteSelectedLaneSample(type, &error);
+                               auto trackType = type;
+                               const bool ok = audioProcessor.deleteSelectedLaneSample(trackType, &error);
+                               const auto after = audioProcessor.getProjectSnapshot();
+                               pushProjectHistoryState(before, after);
+                               refreshFromProcessor();
                                if (!ok && error.isNotEmpty())
                                    logDrag("deleteSelectedLaneSample error: " + error);
-                               refreshFromProcessor();
                                return;
                            }
 
@@ -2368,23 +2642,19 @@ void BoomBGeneratorAudioProcessorEditor::dragTrackExternal(TrackType type)
 
 void BoomBGeneratorAudioProcessorEditor::updateGridGeometry()
 {
-    if (isAlternateEditorVisible())
-    {
-        const auto project = audioProcessor.getProjectSnapshot();
-        const int width = juce::jmax(gridViewport.getWidth(),
-                                     64 + static_cast<int>(std::round(static_cast<float>(project.params.bars * 16) * (20.0f * horizontalZoom))));
-        const int height = juce::jmax(gridViewport.getHeight(), 30 + (61 * 14) + 92);
-        if (auto* component = activeAlternateEditorComponent())
-            component->setSize(width, height);
-        return;
-    }
-
     const int width = juce::jmax(1, grid.getGridWidth());
     const int targetTrackHeight = (gridEditorFullscreenMode || pianoRollFullscreenMode)
         ? trackList.getLaneSectionHeight()
         : trackList.getContentHeight();
     const int height = juce::jmax(gridViewport.getHeight(), targetTrackHeight);
     grid.setSize(width, height);
+
+    if (auto* component = activeAlternateEditorComponent())
+    {
+        const int alternateWidth = juce::jmax(sub808Viewport.getWidth(), sub808PianoRoll.getPreferredContentWidth());
+        const int alternateHeight = juce::jmax(sub808Viewport.getHeight(), sub808PianoRoll.getPreferredContentHeight());
+        component->setSize(alternateWidth, alternateHeight);
+    }
 }
 
 void BoomBGeneratorAudioProcessorEditor::adjustGridHorizontalZoom(float delta, int anchorViewportX)
@@ -2560,15 +2830,37 @@ const juce::Component* BoomBGeneratorAudioProcessorEditor::activeAlternateEditor
     return const_cast<BoomBGeneratorAudioProcessorEditor*>(this)->activeAlternateEditorComponent();
 }
 
+void BoomBGeneratorAudioProcessorEditor::syncAlternateEditorForLane(const PatternProject& project,
+                                                                    const RuntimeLaneId& laneId)
+{
+    if (laneId.isEmpty())
+    {
+        setAlternateEditorVisible(false);
+        return;
+    }
+
+    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+    if (lane == nullptr || !lane->runtimeTrackType.has_value() || !lane->editorCapabilities.usesAlternateEditor())
+    {
+        setAlternateEditorVisible(false);
+        return;
+    }
+
+    setAlternateEditorVisible(true, lane->editorCapabilities.alternateEditor, *lane->runtimeTrackType, laneId);
+}
+
 void BoomBGeneratorAudioProcessorEditor::setAlternateEditorVisible(bool shouldShow,
                                                                    AlternateLaneEditor editorType,
-                                                                   std::optional<TrackType> trackType)
+                                                                   std::optional<TrackType> trackType,
+                                                                   RuntimeLaneId laneId)
 {
     const auto nextType = shouldShow ? editorType : AlternateLaneEditor::None;
     const auto nextTrack = shouldShow ? trackType : std::nullopt;
+    const auto nextLaneId = shouldShow ? laneId : RuntimeLaneId{};
     if (alternateEditorSession.isVisible == shouldShow
         && alternateEditorSession.editorType == nextType
-        && alternateEditorSession.trackType == nextTrack)
+        && alternateEditorSession.trackType == nextTrack
+        && alternateEditorSession.laneId == nextLaneId)
     {
         return;
     }
@@ -2576,25 +2868,24 @@ void BoomBGeneratorAudioProcessorEditor::setAlternateEditorVisible(bool shouldSh
     alternateEditorSession.isVisible = shouldShow;
     alternateEditorSession.editorType = nextType;
     alternateEditorSession.trackType = nextTrack;
+    alternateEditorSession.laneId = nextLaneId;
     gridEditorFullscreenMode = false;
     gridEditorFullscreenButton.setToggleState(false, juce::dontSendNotification);
-    pianoRollFullscreenMode = false;
-    pianoRollFullscreenButton.setToggleState(false, juce::dontSendNotification);
+
+    if (!isPianoRollEditorVisible())
+        setSub808DetachedWindowVisible(false);
+
+    sub808Viewport.setVisible(isPianoRollEditorVisible());
 
     if (auto* component = activeAlternateEditorComponent())
     {
-        gridViewport.setViewedComponent(component, false);
         component->setWantsKeyboardFocus(true);
         component->grabKeyboardFocus();
     }
-    else
-    {
-        gridViewport.setViewedComponent(&grid, false);
-    }
 
-    editorToolBar.setVisible(true);
-    optionsToolButton.setVisible(true);
-    hotkeysToolButton.setVisible(true);
+    editorToolBar.setVisible(!isPianoRollEditorVisible());
+    optionsToolButton.setVisible(!isPianoRollEditorVisible());
+    hotkeysToolButton.setVisible(!isPianoRollEditorVisible());
     pianoRollFullscreenButton.setVisible(isPianoRollEditorVisible());
     resized();
 }
@@ -2612,6 +2903,7 @@ void BoomBGeneratorAudioProcessorEditor::setupHotkeys()
         { kActionSelectTool, "Select Tool", defaultKeyForAction(kActionSelectTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionSelectTool), juce::ModifierKeys::noModifiers },
         { kActionCutTool, "Cut Tool", defaultKeyForAction(kActionCutTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionCutTool), juce::ModifierKeys::noModifiers },
         { kActionEraseTool, "Erase Tool", defaultKeyForAction(kActionEraseTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionEraseTool), juce::ModifierKeys::noModifiers },
+        { kActionStretchResize, "Resize notes", defaultKeyForAction(kActionStretchResize), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionStretchResize), juce::ModifierKeys::noModifiers },
         { kActionMicrotimingEdit, "Microtiming Edit modifier", {}, true, defaultModifierForAction(kActionMicrotimingEdit), {}, defaultModifierForAction(kActionMicrotimingEdit) },
         { kActionDeleteNote, "Delete Note", defaultKeyForAction(kActionDeleteNote), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionDeleteNote), juce::ModifierKeys::noModifiers },
         { kActionCopySelection, "Copy", defaultKeyForAction(kActionCopySelection), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionCopySelection), juce::ModifierKeys::noModifiers },
@@ -2653,6 +2945,11 @@ void BoomBGeneratorAudioProcessorEditor::applyHotkeysToGrid()
             bindings.microtimingEditModifier = binding.mouseModifier;
         else if (binding.actionId == kActionVelocityEdit && !binding.usesMouseModifier && binding.keyPress.isValid())
             bindings.velocityEditKeyCode = binding.keyPress.getKeyCode();
+        else if (binding.actionId == kActionStretchResize && !binding.usesMouseModifier && binding.keyPress.isValid())
+        {
+            bindings.stretchNoteKeyCode = binding.keyPress.getKeyCode();
+            bindings.stretchNoteModifiers = static_cast<juce::ModifierKeys::Flags>(binding.keyPress.getModifiers().getRawFlags());
+        }
     }
 
     grid.setInputBindings(bindings);
@@ -2680,7 +2977,27 @@ void BoomBGeneratorAudioProcessorEditor::loadHotkeys()
         {
             const int keyCode = static_cast<int>(state.getProperty(keyPath));
             const int mods = state.hasProperty(modsPath) ? static_cast<int>(state.getProperty(modsPath)) : 0;
-            binding.keyPress = keyCode > 0 ? juce::KeyPress(keyCode, juce::ModifierKeys(mods), 0) : juce::KeyPress();
+            const bool migrateStretchResize = binding.actionId == kActionStretchResize
+                && keyCode == binding.defaultKeyPress.getKeyCode()
+                && mods == 0
+                && binding.defaultKeyPress.getModifiers().getRawFlags() != 0;
+            const bool migrateLegacyUndo = binding.actionId == kActionUndo
+                && keyCode == 'U'
+                && mods == juce::ModifierKeys::ctrlModifier;
+            const bool migrateLegacyRedo = binding.actionId == kActionRedo
+                && keyCode == 'R'
+                && mods == juce::ModifierKeys::ctrlModifier;
+
+            if (migrateStretchResize || migrateLegacyUndo || migrateLegacyRedo)
+            {
+                binding.keyPress = binding.defaultKeyPress;
+                state.setProperty(keyPath, binding.keyPress.getKeyCode(), nullptr);
+                state.setProperty(modsPath, binding.keyPress.getModifiers().getRawFlags(), nullptr);
+            }
+            else
+            {
+                binding.keyPress = keyCode > 0 ? juce::KeyPress(keyCode, juce::ModifierKeys(mods), 0) : juce::KeyPress();
+            }
         }
         else
         {
@@ -2727,6 +3044,72 @@ void BoomBGeneratorAudioProcessorEditor::applyProjectSnapshotChange(const Patter
     audioProcessor.restoreEditorProjectSnapshot(after);
     pushProjectHistoryState(before, after);
     refreshFromProcessor(refreshTrackRows);
+}
+
+void BoomBGeneratorAudioProcessorEditor::applyProcessorProjectMutation(const std::function<void()>& mutation,
+                                                                       bool refreshTrackRows)
+{
+    const auto before = audioProcessor.getProjectSnapshot();
+    mutation();
+    const auto after = audioProcessor.getProjectSnapshot();
+
+    pushProjectHistoryState(before, after);
+    refreshFromProcessor(refreshTrackRows);
+}
+
+bool BoomBGeneratorAudioProcessorEditor::clearLaneNotes(const RuntimeLaneId& laneId)
+{
+    if (laneId.isEmpty())
+        return false;
+
+    const auto before = audioProcessor.getProjectSnapshot();
+    auto after = before;
+    bool changed = false;
+
+    for (auto& track : after.tracks)
+    {
+        if (track.laneId != laneId)
+            continue;
+
+        changed = changed || !track.notes.empty() || !track.sub808Notes.empty();
+        track.notes.clear();
+        track.sub808Notes.clear();
+        break;
+    }
+
+    if (!changed)
+        return false;
+
+    applyProjectSnapshotChange(before, after, true);
+    grid.clearNoteSelection();
+    sub808PianoRoll.clearNoteSelection();
+    return true;
+}
+
+bool BoomBGeneratorAudioProcessorEditor::clearAllPatternNotes()
+{
+    const auto before = audioProcessor.getProjectSnapshot();
+    auto after = before;
+    bool changed = false;
+
+    for (auto& track : after.tracks)
+    {
+        changed = changed || !track.notes.empty() || !track.sub808Notes.empty();
+        track.notes.clear();
+        track.sub808Notes.clear();
+    }
+
+    if (!changed)
+    {
+        grid.clearNoteSelection();
+        sub808PianoRoll.clearNoteSelection();
+        return false;
+    }
+
+    applyProjectSnapshotChange(before, after, true);
+    grid.clearNoteSelection();
+    sub808PianoRoll.clearNoteSelection();
+    return true;
 }
 
 void BoomBGeneratorAudioProcessorEditor::showImportMidiToLaneDialog(const RuntimeLaneId& laneId)
@@ -2933,6 +3316,8 @@ void BoomBGeneratorAudioProcessorEditor::showAddLaneMenu()
 
 void BoomBGeneratorAudioProcessorEditor::pushProjectHistoryState(const PatternProject& before, const PatternProject& after)
 {
+    lastObservedProjectState = after;
+
     if (suppressHistory || projectsEquivalent(before, after))
         return;
 
@@ -2987,6 +3372,7 @@ bool BoomBGeneratorAudioProcessorEditor::performUndo()
     suppressHistory = true;
     audioProcessor.restoreEditorProjectSnapshot(snapshot);
     suppressHistory = false;
+    lastObservedProjectState = snapshot;
     refreshFromProcessor(true);
     return true;
 }
@@ -3005,6 +3391,7 @@ bool BoomBGeneratorAudioProcessorEditor::performRedo()
     suppressHistory = true;
     audioProcessor.restoreEditorProjectSnapshot(snapshot);
     suppressHistory = false;
+    lastObservedProjectState = snapshot;
     refreshFromProcessor(true);
     return true;
 }
@@ -3447,9 +3834,17 @@ juce::Point<float> BoomBGeneratorAudioProcessorEditor::toVirtualPoint(juce::Poin
 
 void BoomBGeneratorAudioProcessorEditor::setActiveEditorTool(GridEditorComponent::EditorTool tool)
 {
-    grid.setEditorTool(tool);
-    if (isPianoRollEditorVisible())
+    auto* focusedComponent = juce::Component::getCurrentlyFocusedComponent();
+    const bool pianoRollFocused = isPianoRollEditorVisible()
+        && (pianoRollFullscreenMode
+            || focusedComponent == &sub808PianoRoll
+            || (focusedComponent != nullptr && sub808PianoRoll.isParentOf(focusedComponent)));
+
+    if (pianoRollFocused)
         sub808PianoRoll.setEditorTool(tool);
+    else
+        grid.setEditorTool(tool);
+
     syncEditorToolButtons(tool);
 }
 
@@ -3458,9 +3853,8 @@ void BoomBGeneratorAudioProcessorEditor::toggleSub808PianoRollFullscreen()
     if (!isPianoRollEditorVisible())
         return;
 
-    pianoRollFullscreenMode = !pianoRollFullscreenMode;
-    pianoRollFullscreenButton.setToggleState(pianoRollFullscreenMode, juce::dontSendNotification);
-    resized();
+    const bool shouldShow = !(sub808DetachedWindow != nullptr && sub808DetachedWindow->isVisible());
+    setSub808DetachedWindowVisible(shouldShow);
 }
 
 void BoomBGeneratorAudioProcessorEditor::toggleGridEditorFullscreen()
@@ -3470,6 +3864,61 @@ void BoomBGeneratorAudioProcessorEditor::toggleGridEditorFullscreen()
 
     gridEditorFullscreenMode = !gridEditorFullscreenMode;
     gridEditorFullscreenButton.setToggleState(gridEditorFullscreenMode, juce::dontSendNotification);
+    resized();
+}
+
+void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool shouldShow)
+{
+    const bool isVisible = sub808DetachedWindow != nullptr && sub808DetachedWindow->isVisible();
+    if (shouldShow == isVisible)
+        return;
+
+    if (!shouldShow)
+    {
+        pianoRollFullscreenButton.setToggleState(false, juce::dontSendNotification);
+
+        if (sub808DetachedWindow != nullptr)
+        {
+            sub808DetachedWindow->clearContentComponent();
+            sub808DetachedWindow->setVisible(false);
+        }
+
+        if (sub808Viewport.getParentComponent() != this)
+            addAndMakeVisible(sub808Viewport);
+
+        sub808Viewport.setVisible(isPianoRollEditorVisible());
+        resized();
+        return;
+    }
+
+    if (!isPianoRollEditorVisible())
+        return;
+
+    if (sub808DetachedWindow == nullptr)
+    {
+        auto window = std::make_unique<DetachedSub808Window>();
+        window->onCloseRequested = [this]
+        {
+            setSub808DetachedWindowVisible(false);
+        };
+        sub808DetachedWindow = std::move(window);
+    }
+
+    pianoRollFullscreenButton.setToggleState(true, juce::dontSendNotification);
+
+    if (sub808Viewport.getParentComponent() == this)
+        removeChildComponent(&sub808Viewport);
+    else if (auto* parent = sub808Viewport.getParentComponent(); parent != nullptr)
+        parent->removeChildComponent(&sub808Viewport);
+
+    sub808DetachedWindow->setContentNonOwned(&sub808Viewport, false);
+    sub808DetachedWindow->centreAroundComponent(this,
+                                                juce::jmax(720, getWidth() - 80),
+                                                juce::jmax(520, getHeight() - 60));
+    sub808DetachedWindow->setVisible(true);
+    sub808DetachedWindow->toFront(true);
+    sub808Viewport.setVisible(true);
+    sub808PianoRoll.grabKeyboardFocus();
     resized();
 }
 

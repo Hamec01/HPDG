@@ -83,6 +83,7 @@ public:
     std::function<void(const RuntimeLaneId&)> onLaneMoveDownTrack;
     std::function<void(int)> onBassKeyChanged;
     std::function<void(int)> onBassScaleChanged;
+    std::function<void(const RuntimeLaneId&, const Sub808LaneSettings&)> onSub808SettingsChanged;
 
     std::function<void(const std::optional<TrackType>&)> onSoundTargetChanged;
     std::function<void(const std::optional<TrackType>&, const SoundLayerState&)> onSoundLayerChanged;

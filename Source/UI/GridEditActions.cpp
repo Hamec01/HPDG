@@ -139,25 +139,38 @@ bool addNote(ModelContext context, const RuntimeLaneId& laneId, const NoteEvent&
 
 bool removeNotes(ModelContext context, const std::vector<SelectedNoteRef>& refs, std::set<RuntimeLaneId>* changedLaneIds)
 {
-    auto sortedRefs = refs;
-    std::sort(sortedRefs.begin(), sortedRefs.end(), [](const SelectedNoteRef& a, const SelectedNoteRef& b)
+    std::map<RuntimeLaneId, std::vector<int>> refsByLane;
+    for (const auto& ref : refs)
     {
-        if (a.laneId != b.laneId)
-            return a.laneId > b.laneId;
-        return a.index > b.index;
-    });
-
-    bool changed = false;
-    for (const auto& ref : sortedRefs)
-    {
-        auto* track = findMutableTrack(context, ref.laneId);
-        if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
+        if (ref.index < 0)
             continue;
 
-        track->notes.erase(track->notes.begin() + ref.index);
-        if (changedLaneIds != nullptr)
-            changedLaneIds->insert(ref.laneId);
-        changed = true;
+        refsByLane[ref.laneId].push_back(ref.index);
+    }
+
+    bool changed = false;
+    for (auto& [laneId, indices] : refsByLane)
+    {
+        auto* track = findMutableTrack(context, laneId);
+        if (track == nullptr || indices.empty())
+            continue;
+
+        std::sort(indices.begin(), indices.end(), std::greater<int>());
+        indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
+
+        bool laneChanged = false;
+        for (const int index : indices)
+        {
+            if (index < 0 || index >= static_cast<int>(track->notes.size()))
+                continue;
+
+            track->notes.erase(track->notes.begin() + index);
+            laneChanged = true;
+            changed = true;
+        }
+
+        if (laneChanged && changedLaneIds != nullptr)
+            changedLaneIds->insert(laneId);
     }
 
     return changed;
@@ -445,11 +458,11 @@ bool moveSelection(ModelContext context,
     return changed;
 }
 
-bool resizeSelection(ModelContext context, const std::vector<DragSnapshot>& snapshots, int deltaTicks)
+bool resizeSelection(ModelContext context,
+                     const std::vector<DragSnapshot>& snapshots,
+                     int deltaTicks,
+                     bool resizeFromStart)
 {
-    if (deltaTicks <= 0)
-        return false;
-
     bool changed = false;
     const int maxTick = context.project.params.bars * 16 * context.ticksPerStep;
     for (const auto& snapshot : snapshots)
@@ -459,15 +472,47 @@ bool resizeSelection(ModelContext context, const std::vector<DragSnapshot>& snap
             continue;
 
         auto& note = track->notes[static_cast<size_t>(snapshot.index)];
-        const int clampedEndTick = juce::jlimit(snapshot.startTick + context.ticksPerStep, maxTick, snapshot.startEndTick + deltaTicks);
-        const int nextLength = juce::jlimit(1,
-                                            context.project.params.bars * 16,
-                                            static_cast<int>(std::ceil(static_cast<double>(clampedEndTick - snapshot.startTick)
-                                                                       / static_cast<double>(context.ticksPerStep))));
-        if (note.length != nextLength)
+        if (resizeFromStart)
         {
-            note.length = nextLength;
-            changed = true;
+            const int clampedStartTick = juce::jlimit(0,
+                                                      snapshot.startEndTick - context.ticksPerStep,
+                                                      snapshot.startTick + deltaTicks);
+            const int nextLength = juce::jlimit(1,
+                                                context.project.params.bars * 16,
+                                                static_cast<int>(std::ceil(static_cast<double>(snapshot.startEndTick - clampedStartTick)
+                                                                           / static_cast<double>(context.ticksPerStep))));
+
+            NoteEvent resizedNote = snapshot.sourceNote;
+            setNoteStartTick(resizedNote,
+                             clampedStartTick,
+                             context.project.params.bars,
+                             context.ticksPerStep);
+            resizedNote.length = nextLength;
+
+            if (note.step != resizedNote.step
+                || note.microOffset != resizedNote.microOffset
+                || note.length != resizedNote.length)
+            {
+                note.step = resizedNote.step;
+                note.microOffset = resizedNote.microOffset;
+                note.length = resizedNote.length;
+                changed = true;
+            }
+        }
+        else
+        {
+            const int clampedEndTick = juce::jlimit(snapshot.startTick + context.ticksPerStep,
+                                                    maxTick,
+                                                    snapshot.startEndTick + deltaTicks);
+            const int nextLength = juce::jlimit(1,
+                                                context.project.params.bars * 16,
+                                                static_cast<int>(std::ceil(static_cast<double>(clampedEndTick - snapshot.startTick)
+                                                                           / static_cast<double>(context.ticksPerStep))));
+            if (note.length != nextLength)
+            {
+                note.length = nextLength;
+                changed = true;
+            }
         }
     }
 
@@ -477,16 +522,38 @@ bool resizeSelection(ModelContext context, const std::vector<DragSnapshot>& snap
 bool pasteNotes(ModelContext context,
                 const std::vector<ClipboardNote>& clipboardNotes,
                 int anchorTick,
+                const std::vector<RuntimeLaneId>& laneOrder,
+                std::optional<RuntimeLaneId> anchorLaneId,
                 std::vector<SelectedNoteRef>* insertedSelection,
                 std::set<RuntimeLaneId>* changedLaneIds)
 {
     bool changed = false;
     std::vector<SelectedNoteRef> inserted;
     const int maxTicks = context.project.params.bars * 16 * context.ticksPerStep;
+    auto resolveTargetLane = [&](const ClipboardNote& clipboard) -> RuntimeLaneId
+    {
+        if (!anchorLaneId.has_value() || laneOrder.empty())
+            return clipboard.sourceLaneId;
+
+        const auto anchorIt = std::find(laneOrder.begin(), laneOrder.end(), *anchorLaneId);
+        if (anchorIt == laneOrder.end())
+            return clipboard.sourceLaneId;
+
+        const int anchorIndex = static_cast<int>(std::distance(laneOrder.begin(), anchorIt));
+        const int targetIndex = anchorIndex + clipboard.relativeLaneOffset;
+        if (targetIndex < 0 || targetIndex >= static_cast<int>(laneOrder.size()))
+            return RuntimeLaneId();
+
+        return laneOrder[static_cast<size_t>(targetIndex)];
+    };
 
     for (const auto& clipboard : clipboardNotes)
     {
-        auto* track = findMutableTrack(context, clipboard.laneId);
+        const auto targetLaneId = resolveTargetLane(clipboard);
+        if (targetLaneId.isEmpty())
+            continue;
+
+        auto* track = findMutableTrack(context, targetLaneId);
         if (track == nullptr)
             continue;
 
@@ -505,13 +572,13 @@ bool pasteNotes(ModelContext context,
                 && current.pitch == note.pitch
                 && current.microOffset == note.microOffset)
             {
-                inserted.push_back({ clipboard.laneId, index });
+                inserted.push_back({ targetLaneId, index });
                 break;
             }
         }
 
         if (changedLaneIds != nullptr)
-            changedLaneIds->insert(clipboard.laneId);
+            changedLaneIds->insert(targetLaneId);
         changed = true;
     }
 

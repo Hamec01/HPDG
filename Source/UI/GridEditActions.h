@@ -31,9 +31,10 @@ struct DragSnapshot
 
 struct ClipboardNote
 {
-    RuntimeLaneId laneId;
+    RuntimeLaneId sourceLaneId;
     NoteEvent note;
     int relativeTick = 0;
+    int relativeLaneOffset = 0;
 };
 
 struct ModelContext
@@ -73,10 +74,15 @@ bool moveSelection(ModelContext context,
                    int deltaMicro,
                    std::vector<SelectedNoteRef>* movedSelection = nullptr,
                    std::set<RuntimeLaneId>* changedLaneIds = nullptr);
-bool resizeSelection(ModelContext context, const std::vector<DragSnapshot>& snapshots, int deltaTicks);
+bool resizeSelection(ModelContext context,
+                     const std::vector<DragSnapshot>& snapshots,
+                     int deltaTicks,
+                     bool resizeFromStart);
 bool pasteNotes(ModelContext context,
                 const std::vector<ClipboardNote>& clipboardNotes,
                 int anchorTick,
+                const std::vector<RuntimeLaneId>& laneOrder,
+                std::optional<RuntimeLaneId> anchorLaneId = std::nullopt,
                 std::vector<SelectedNoteRef>* insertedSelection = nullptr,
                 std::set<RuntimeLaneId>* changedLaneIds = nullptr);
 bool rollSelection(ModelContext context,

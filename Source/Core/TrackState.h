@@ -7,6 +7,7 @@
 
 #include "NoteEvent.h"
 #include "SoundLayerState.h"
+#include "Sub808Types.h"
 #include "TrackType.h"
 
 namespace bbg
@@ -32,5 +33,7 @@ struct TrackState
     SoundLayerState sound;
 
     std::vector<NoteEvent> notes;
+    std::vector<Sub808NoteEvent> sub808Notes;
+    Sub808LaneSettings sub808Settings;
 };
 } // namespace bbg

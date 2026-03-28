@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../Core/Sub808TrackAccess.h"
+
 #include "PluginEditor.h"
 #include "../Core/PatternProjectSerialization.h"
 #include "../Core/TrackRegistry.h"
@@ -59,6 +61,14 @@ float defaultBpmForGenre(GenreType genre)
         case GenreType::BoomBap:
         default: return 90.0f;
     }
+}
+
+float playbackRateForTrackPitch(TrackType track, int pitch)
+{
+    const auto* info = TrackRegistry::find(track);
+    const int basePitch = info != nullptr ? info->defaultMidiNote : 36;
+    const int clampedPitch = juce::jlimit(0, 127, pitch);
+    return std::pow(2.0f, static_cast<float>(clampedPitch - basePitch) / 12.0f);
 }
 
 bool isSyncEnabled(const juce::AudioProcessorValueTreeState& apvts)
@@ -247,6 +257,32 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         return;
 
     std::scoped_lock lock(projectMutex);
+    for (const auto& audition : pendingPreviewNotes)
+    {
+        PreviewEngine::TriggerOptions options;
+        options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch);
+        if (audition.track == TrackType::Sub808)
+        {
+            if (const auto* subTrack = findTrackState(TrackType::Sub808); subTrack != nullptr)
+            {
+                options.mono = subTrack->sub808Settings.mono;
+                options.cutItself = subTrack->sub808Settings.cutItself;
+                options.legato = subTrack->sub808Settings.overlapMode == Sub808OverlapMode::Legato;
+                options.glide = subTrack->sub808Settings.overlapMode == Sub808OverlapMode::Glide;
+                options.glideDurationSamples = static_cast<int>((static_cast<double>(subTrack->sub808Settings.glideTimeMs) / 1000.0) * currentSampleRate);
+            }
+        }
+        if (audition.lengthTicks > 0)
+            options.maxDurationSamples = juce::jmax(1, ticksToSamples(audition.lengthTicks, currentSampleRate, project.params.bpm));
+
+        previewEngine.noteOn(audition.track,
+                             juce::jlimit(0.0f, 1.0f, static_cast<float>(audition.velocity) / 127.0f),
+                             laneSampleBank,
+                             options);
+    }
+    pendingPreviewNotes.clear();
+
+    bool shouldRenderPreviewVoices = false;
 
     for (int i = 0; i < midiCache.getNumEvents(); ++i)
     {
@@ -279,7 +315,21 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 
                 const int rel = eventSample - segmentStart;
                 if (rel >= 0 && rel < segmentLength)
-                    previewEngine.noteOnAtSample(event.track, event.gain, bufferOffset + rel, laneSampleBank);
+                {
+                    PreviewEngine::TriggerOptions options;
+                    if (event.track == TrackType::Sub808)
+                    {
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch);
+                        options.legato = event.legato;
+                        options.glide = event.glide;
+                        options.mono = event.mono;
+                        options.cutItself = event.cutItself;
+                        options.glideDurationSamples = juce::jmax(0, event.glideDurationSamples);
+                        if (event.endSample > event.sample)
+                            options.maxDurationSamples = juce::jmax(1, event.endSample - event.sample);
+                    }
+                    previewEngine.noteOnAtSample(event.track, event.gain, bufferOffset + rel, laneSampleBank, options);
+                }
             }
         };
 
@@ -311,8 +361,6 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                         localPreviewPosition = loopStartSample;
                 }
 
-                previewEngine.render(buffer, 0, numSamples);
-                applyMasterFx(buffer);
                 previewSamplePosition = localPreviewPosition;
             }
         }
@@ -329,13 +377,34 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     rel += patternLength;
 
                 if (rel >= 0 && rel < numSamples)
-                    previewEngine.noteOnAtSample(event.track, event.gain, rel, laneSampleBank);
+                {
+                    PreviewEngine::TriggerOptions options;
+                    if (event.track == TrackType::Sub808)
+                    {
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch);
+                        options.legato = event.legato;
+                        options.glide = event.glide;
+                        options.mono = event.mono;
+                        options.cutItself = event.cutItself;
+                        options.glideDurationSamples = juce::jmax(0, event.glideDurationSamples);
+                        if (event.endSample > event.sample)
+                            options.maxDurationSamples = juce::jmax(1, event.endSample - event.sample);
+                    }
+                    previewEngine.noteOnAtSample(event.track, event.gain, rel, laneSampleBank, options);
+                }
             }
 
-            previewEngine.render(buffer, 0, numSamples);
-            applyMasterFx(buffer);
             previewSamplePosition = previewStart + numSamples;
         }
+
+        shouldRenderPreviewVoices = true;
+    }
+
+    shouldRenderPreviewVoices = shouldRenderPreviewVoices || previewEngine.hasActiveVoices();
+    if (shouldRenderPreviewVoices)
+    {
+        previewEngine.render(buffer, 0, numSamples);
+        applyMasterFx(buffer);
     }
 
     transportSamplePosition = startSample + numSamples;
@@ -736,6 +805,93 @@ void BoomBapGeneratorAudioProcessor::setBassScaleModeChoice(int choice)
     }
 }
 
+void BoomBapGeneratorAudioProcessor::auditionSub808Note(int pitch, int velocity, int lengthTicks)
+{
+    std::scoped_lock lock(projectMutex);
+    if (!laneSampleBank.hasSamples(TrackType::Sub808))
+        rescanLaneSamplesLocked();
+
+    pendingPreviewNotes.push_back({ TrackType::Sub808,
+                                    juce::jlimit(0, 127, pitch),
+                                    juce::jlimit(1, 127, velocity),
+                                    juce::jmax(1, lengthTicks) });
+    if (pendingPreviewNotes.size() > 32)
+        pendingPreviewNotes.erase(pendingPreviewNotes.begin(), pendingPreviewNotes.end() - 32);
+}
+
+void BoomBapGeneratorAudioProcessor::setSub808TrackNotes(TrackType track, const std::vector<Sub808NoteEvent>& notes)
+{
+    std::scoped_lock lock(projectMutex);
+    auto* state = findTrackState(track);
+    if (state == nullptr || state->locked || !state->enabled || track != TrackType::Sub808)
+        return;
+
+    state->sub808Notes = notes;
+    state->notes = toLegacyNoteEvents(state->sub808Notes);
+
+    const int bars = juce::jmax(1, project.params.bars);
+    const int maxTicks = bars * 16 * ticksPerStep();
+
+    for (auto& note : state->sub808Notes)
+    {
+        note.pitch = juce::jlimit(0, 127, note.pitch);
+        note.velocity = juce::jlimit(1, 127, note.velocity);
+        note.length = juce::jlimit(1, 64, note.length);
+
+        int ticks = note.step * ticksPerStep() + note.microOffset;
+        ticks = juce::jlimit(0, juce::jmax(0, maxTicks - 1), ticks);
+
+        int step = floorDiv(ticks, ticksPerStep());
+        int micro = ticks - step * ticksPerStep();
+        if (micro > ticksPerStep() / 2)
+        {
+            micro -= ticksPerStep();
+            ++step;
+        }
+
+        note.step = juce::jlimit(0, bars * 16 - 1, step);
+        note.microOffset = juce::jlimit(-960, 960, micro);
+        note.semanticRole = note.semanticRole.trim();
+    }
+
+    std::sort(state->sub808Notes.begin(), state->sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
+    {
+        if (a.step != b.step)
+            return a.step < b.step;
+        return a.pitch < b.pitch;
+    });
+
+    state->notes = toLegacyNoteEvents(state->sub808Notes);
+    rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::setSub808TrackNotes(const RuntimeLaneId& laneId, const std::vector<Sub808NoteEvent>& notes)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setSub808TrackNotes(*type, notes);
+}
+
+void BoomBapGeneratorAudioProcessor::setSub808LaneSettings(TrackType track, const Sub808LaneSettings& settings)
+{
+    std::scoped_lock lock(projectMutex);
+    auto* state = findTrackState(track);
+    if (state == nullptr || track != TrackType::Sub808)
+        return;
+
+    state->sub808Settings.mono = settings.mono;
+    state->sub808Settings.cutItself = settings.cutItself;
+    state->sub808Settings.glideTimeMs = juce::jlimit(0, 4000, settings.glideTimeMs);
+    state->sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0, 2, static_cast<int>(settings.overlapMode)));
+    state->sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0, 2, static_cast<int>(settings.scaleSnapPolicy)));
+    rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::setSub808LaneSettings(const RuntimeLaneId& laneId, const Sub808LaneSettings& settings)
+{
+    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
+        setSub808LaneSettings(*type, settings);
+}
+
 void BoomBapGeneratorAudioProcessor::setTrackSolo(TrackType track, bool value)
 {
     std::scoped_lock lock(projectMutex);
@@ -811,6 +967,12 @@ void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(const RuntimeLaneId& lan
 
 void BoomBapGeneratorAudioProcessor::setTrackNotes(TrackType track, const std::vector<NoteEvent>& notes)
 {
+    if (track == TrackType::Sub808)
+    {
+        setSub808TrackNotes(track, toSub808NoteEvents(notes));
+        return;
+    }
+
     std::scoped_lock lock(projectMutex);
     auto* state = findTrackState(track);
     if (state == nullptr || state->locked || !state->enabled)
@@ -1427,6 +1589,12 @@ void BoomBapGeneratorAudioProcessor::setFloatParameterValue(const juce::String& 
 
 void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
 {
+    for (auto& track : project.tracks)
+    {
+        if (track.type == TrackType::Sub808 && !track.notes.empty())
+            track.sub808Notes = toSub808NoteEvents(track.notes);
+    }
+
     midiCache = MidiExportEngine::patternToSequence(project, std::nullopt);
     previewEvents.clear();
 
@@ -1453,12 +1621,36 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
         if (!shouldIncludeTrackForPlayback(project, track))
             continue;
 
-        for (const auto& note : track.notes)
+        const auto sub808Notes = track.type == TrackType::Sub808 ? sub808NotesForRead(track) : std::vector<Sub808NoteEvent> {};
+        const auto noteCount = track.type == TrackType::Sub808 ? static_cast<int>(sub808Notes.size()) : static_cast<int>(track.notes.size());
+        for (int noteIndex = 0; noteIndex < noteCount; ++noteIndex)
         {
+            const NoteEvent note = track.type == TrackType::Sub808
+                ? toLegacyNoteEvent(sub808Notes[static_cast<size_t>(noteIndex)])
+                : track.notes[static_cast<size_t>(noteIndex)];
             PreviewEvent event;
             const int noteTicks = note.step * ticksPerStep() + note.microOffset;
             event.sample = ticksToSamples(noteTicks, currentSampleRate, project.params.bpm);
             event.track = track.type;
+            event.pitch = juce::jlimit(0, 127, note.pitch);
+            event.mono = track.sub808Settings.mono;
+            event.cutItself = track.sub808Settings.cutItself;
+            event.glideDurationSamples = static_cast<int>((static_cast<double>(track.sub808Settings.glideTimeMs) / 1000.0) * currentSampleRate);
+            if (track.type == TrackType::Sub808)
+            {
+                event.legato = track.sub808Settings.overlapMode == Sub808OverlapMode::Legato || note.isLegato;
+                event.glide = track.sub808Settings.overlapMode == Sub808OverlapMode::Glide || note.isSlide || note.glideToNext;
+            }
+            else
+            {
+                event.legato = note.isLegato;
+                event.glide = note.isSlide || note.glideToNext;
+            }
+            if (track.type == TrackType::Sub808)
+            {
+                const int endTick = noteTicks + juce::jmax(1, note.length) * ticksPerStep();
+                event.endSample = ticksToSamples(endTick, currentSampleRate, project.params.bpm);
+            }
 
             const float velNorm = juce::jlimit(0.0f, 1.0f, static_cast<float>(note.velocity) / 127.0f);
             const bool snareFamily = track.type == TrackType::Snare || track.type == TrackType::ClapGhostSnare;

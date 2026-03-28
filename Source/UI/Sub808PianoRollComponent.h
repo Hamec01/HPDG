@@ -7,13 +7,26 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "../Core/Sub808Types.h"
+#include "../Core/TrackType.h"
 #include "GridEditorComponent.h"
+#include "Sub808EditModel.h"
+#include "Sub808Geometry.h"
 
 namespace bbg
 {
 class Sub808PianoRollComponent : public juce::Component
 {
 public:
+    struct DrumGhostNote
+    {
+        TrackType trackType = TrackType::Kick;
+        int startTick = 0;
+        int lengthTicks = 960;
+        int velocity = 100;
+        bool isGhostTrack = false;
+    };
+
     Sub808PianoRollComponent();
 
     void paint(juce::Graphics& g) override;
@@ -25,7 +38,10 @@ public:
 
     void setBars(int barsCount);
     void setStepWidth(float width);
-    void setNotes(const std::vector<NoteEvent>& notesIn);
+    void setNotes(const std::vector<Sub808NoteEvent>& notesIn);
+    void setDrumGhostNotes(const std::vector<DrumGhostNote>& ghostNotesIn);
+    void setLaneSettings(const Sub808LaneSettings& settingsIn);
+    void setScaleContext(int keyRootChoice, int scaleModeChoice);
     void setEditorTool(GridEditorComponent::EditorTool tool);
     void setInputBindings(const GridEditorComponent::InputBindings& bindings);
     void refreshTransientInputState();
@@ -36,26 +52,22 @@ public:
     bool duplicateSelectionToRight();
     void clearNoteSelection();
     bool selectAllNotes();
+    bool nudgeSelectionByTicks(int deltaTicks);
+    bool nudgeSelectionByPitch(int deltaPitch);
+    GridEditorComponent::EditorTool getEditorTool() const;
+    int getPreferredContentWidth() const;
+    int getPreferredContentHeight() const;
 
-    std::function<void(const std::vector<NoteEvent>&)> onNotesEdited;
+    std::function<void(const std::vector<Sub808NoteEvent>&)> onNotesEdited;
+    std::function<void(const Sub808LaneSettings&)> onLaneSettingsEdited;
+    std::function<void(int pitch, int velocity, int lengthTicks)> onPreviewNote;
     std::function<void()> onOpenHotkeys;
     std::function<void(GridEditorComponent::EditorTool)> onToolChanged;
 
 private:
-    struct DragSnapshot
-    {
-        int index = -1;
-        int startTick = 0;
-        int startPitch = 36;
-        int startLength = 1;
-        int startVelocity = 100;
-    };
-
-    struct ClipboardNote
-    {
-        NoteEvent note;
-        int relativeTick = 0;
-    };
+    using PitchedNoteEvent = Sub808EditModel::PitchedNoteEvent;
+    using DragSnapshot = Sub808EditModel::DragSnapshot;
+    using ClipboardNote = Sub808EditModel::ClipboardNote;
 
     enum class ContextMenuTarget
     {
@@ -75,6 +87,14 @@ private:
         EraseDrag
     };
 
+    enum class HoverZone
+    {
+        None,
+        NoteBody,
+        ResizeLeft,
+        ResizeRight
+    };
+
     enum class SnapMode
     {
         Free,
@@ -91,13 +111,17 @@ private:
     static constexpr int kMaxPitch = 84;
     static constexpr int kPitchRows = (kMaxPitch - kMinPitch + 1);
 
-    std::vector<NoteEvent> notes;
+    std::vector<PitchedNoteEvent> notes;
+    std::vector<DrumGhostNote> drumGhostNotes;
     int bars = 8;
     float stepWidth = 20.0f;
     int rowHeight = 14;
     SnapMode snapMode = SnapMode::OneSixteenth;
     GridEditorComponent::EditorTool editorTool = GridEditorComponent::EditorTool::Pencil;
     GridEditorComponent::InputBindings inputBindings;
+    int bassKeyRootChoice = 0;
+    int bassScaleModeChoice = 0;
+    Sub808LaneSettings laneSettings;
     int focusedOctave = 3;
     std::vector<int> selectedIndices;
     int activeNoteIndex = -1;
@@ -115,6 +139,10 @@ private:
     std::vector<int> marqueeBaseSelection;
     juce::Point<int> lastDragPoint;
     int pasteAnchorTick = 0;
+    std::optional<int> hoverNoteIndex;
+    HoverZone hoverZone = HoverZone::None;
+    int dragResizeAnchorTick = 0;
+    bool resizeFromStart = false;
     std::unordered_set<int> drawVisitedKeys;
     std::unordered_set<int> eraseVisitedKeys;
     std::vector<ClipboardNote> clipboardNotes;
@@ -123,14 +151,17 @@ private:
 
     int totalSteps() const;
     int totalTicks() const;
+    Sub808Geometry makeGeometry() const;
     int contentWidth() const;
     int contentHeight() const;
     juce::Rectangle<int> topBarBounds() const;
     juce::Rectangle<int> noteGridBounds() const;
     juce::Rectangle<int> velocityLaneBounds() const;
-    int noteStartTick(const NoteEvent& n) const;
-    int noteEndTick(const NoteEvent& n) const;
-    void setNoteStartTick(NoteEvent& n, int tick);
+    static PitchedNoteEvent toPitchedNoteEvent(const Sub808NoteEvent& note);
+    static Sub808NoteEvent toSub808NoteEvent(const PitchedNoteEvent& note);
+    int noteStartTick(const PitchedNoteEvent& n) const;
+    int noteEndTick(const PitchedNoteEvent& n) const;
+    void setNoteStartTick(PitchedNoteEvent& n, int tick);
     int snapTickSize() const;
     int clampTickToRoll(int tick) const;
     int quantizeTick(int tick, bool bypassSnap = false) const;
@@ -139,10 +170,12 @@ private:
     int snappedTickAtX(int x, bool bypassSnap = false) const;
     int pitchAtY(int y) const;
     int yForPitch(int pitch) const;
-    juce::Rectangle<int> noteBounds(const NoteEvent& n) const;
-    juce::Rectangle<int> velocityHandleBounds(const NoteEvent& n) const;
+    juce::Rectangle<int> noteBounds(const PitchedNoteEvent& n) const;
+    int resizeHandleWidthPx(const PitchedNoteEvent& n) const;
+    juce::Rectangle<int> velocityHandleBounds(const PitchedNoteEvent& n) const;
     std::optional<int> findNoteAt(juce::Point<int> p) const;
     std::optional<int> findVelocityHandleAt(juce::Point<int> p) const;
+    void updateHoverState(juce::Point<int> p);
     bool isSelectedIndex(int index) const;
     void clearSelection();
     void setSingleSelection(int index);
@@ -151,6 +184,9 @@ private:
     bool applySelectionVelocityDelta(int deltaVel);
     bool applySelectionVelocityWave(int deltaVel, int currentMouseX);
     bool copySelectionInternal(bool removeAfterCopy);
+    bool setSelectionSlideState(bool enabled);
+    bool setSelectionLegatoState(bool enabled);
+    bool setSelectionGlideState(bool enabled);
     ContextMenuTarget contextMenuTargetAt(juce::Point<int> p, std::optional<int>* hitOut = nullptr);
     void showContextMenu(juce::Point<int> p);
     bool applyContextAction(int actionId, juce::Point<int> p);
@@ -164,6 +200,11 @@ private:
     bool placeDrawNoteAt(juce::Point<int> p);
     bool isVelocityEditKeyDown() const;
     bool isStretchEditKeyDown() const;
+    int snappedPitchForInput(int rawPitch, bool bypassScaleSnap) const;
+    bool isPitchInActiveScale(int pitch) const;
+    bool isRootPitch(int pitch) const;
+    bool shouldForceScaleSnap() const;
+    void previewNote(const PitchedNoteEvent& note);
     juce::String snapModeLabel() const;
     void cycleSnapMode(bool forward);
     void shiftFocusedOctave(int delta);

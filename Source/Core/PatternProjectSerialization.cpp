@@ -4,6 +4,8 @@
 #include <map>
 #include <unordered_map>
 
+#include "Sub808Types.h"
+
 #include "TrackRegistry.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -509,6 +511,16 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
         track.selectedSampleName = trackNode.getProperty("selected_sample_name", {}).toString();
         deserializeSoundLayer(trackNode, track.sound, "sound");
         track.notes.clear();
+        track.sub808Notes.clear();
+        track.sub808Settings.mono = safeBool(trackNode, "sub808_mono", true);
+        track.sub808Settings.cutItself = safeBool(trackNode, "sub808_cut_itself", true);
+        track.sub808Settings.glideTimeMs = safeInt(trackNode, "sub808_glide_time_ms", 120);
+        track.sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0,
+                                                  2,
+                                                  safeInt(trackNode, "sub808_overlap_mode", 0)));
+        track.sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0,
+                                                    2,
+                                                    safeInt(trackNode, "sub808_scale_snap_policy", 2)));
 
         for (int n = 0; n < trackNode.getNumChildren(); ++n)
         {
@@ -524,9 +536,18 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
             note.microOffset = safeInt(noteNode, "micro_offset", 0);
             note.isGhost = safeBool(noteNode, "is_ghost", false);
             note.semanticRole = noteNode.getProperty("semantic_role", {}).toString().trim();
+            note.isSlide = safeBool(noteNode, "is_slide", false);
+            note.isLegato = safeBool(noteNode, "is_legato", false);
+            note.glideToNext = safeBool(noteNode, "glide_to_next", false);
 
-            track.notes.push_back(note);
+            if (track.type == TrackType::Sub808)
+                track.sub808Notes.push_back(toSub808NoteEvent(note));
+            else
+                track.notes.push_back(note);
         }
+
+        if (track.type == TrackType::Sub808)
+            track.notes = toLegacyNoteEvents(track.sub808Notes);
     }
 
     validate(restored);
@@ -739,6 +760,49 @@ void PatternProjectSerialization::validate(PatternProject& project)
             note.velocity = std::clamp(note.velocity, 1, 127);
             note.microOffset = std::clamp(note.microOffset, -960, 960);
             note.semanticRole = note.semanticRole.trim();
+            if (track.type != TrackType::Sub808)
+            {
+                note.isSlide = false;
+                note.isLegato = false;
+                note.glideToNext = false;
+            }
+        }
+
+        track.sub808Settings.glideTimeMs = std::clamp(track.sub808Settings.glideTimeMs, 0, 4000);
+        track.sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0,
+                                                                                        2,
+                                                                                        static_cast<int>(track.sub808Settings.overlapMode)));
+        track.sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0,
+                                                                                                2,
+                                                                                                static_cast<int>(track.sub808Settings.scaleSnapPolicy)));
+
+        if (track.type == TrackType::Sub808)
+        {
+            if (track.sub808Notes.empty() && !track.notes.empty())
+                track.sub808Notes = toSub808NoteEvents(track.notes);
+
+            for (auto& note : track.sub808Notes)
+            {
+                note.pitch = std::clamp(note.pitch, 0, 127);
+                note.step = std::clamp(note.step, 0, maxStep);
+                note.length = std::clamp(note.length, 1, 64);
+                note.velocity = std::clamp(note.velocity, 1, 127);
+                note.microOffset = std::clamp(note.microOffset, -960, 960);
+                note.semanticRole = note.semanticRole.trim();
+            }
+
+            std::sort(track.sub808Notes.begin(), track.sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
+            {
+                if (a.step != b.step)
+                    return a.step < b.step;
+                return a.pitch < b.pitch;
+            });
+
+            track.notes = toLegacyNoteEvents(track.sub808Notes);
+        }
+        else
+        {
+            track.sub808Notes.clear();
         }
 
         track.templateId = std::max(0, track.templateId);
@@ -792,10 +856,24 @@ juce::ValueTree PatternProjectSerialization::serializeTrack(const TrackState& tr
     node.setProperty("lane_volume", track.laneVolume, nullptr);
     node.setProperty("selected_sample_index", track.selectedSampleIndex, nullptr);
     node.setProperty("selected_sample_name", track.selectedSampleName, nullptr);
+    node.setProperty("sub808_mono", track.sub808Settings.mono, nullptr);
+    node.setProperty("sub808_cut_itself", track.sub808Settings.cutItself, nullptr);
+    node.setProperty("sub808_glide_time_ms", track.sub808Settings.glideTimeMs, nullptr);
+    node.setProperty("sub808_overlap_mode", static_cast<int>(track.sub808Settings.overlapMode), nullptr);
+    node.setProperty("sub808_scale_snap_policy", static_cast<int>(track.sub808Settings.scaleSnapPolicy), nullptr);
     serializeSoundLayer(node, track.sound, "sound");
 
-    for (const auto& note : track.notes)
-        node.addChild(serializeNote(note), -1, nullptr);
+    if (track.type == TrackType::Sub808)
+    {
+        const auto serializedSub808Notes = track.sub808Notes.empty() ? toSub808NoteEvents(track.notes) : track.sub808Notes;
+        for (const auto& note : serializedSub808Notes)
+            node.addChild(serializeNote(toLegacyNoteEvent(note)), -1, nullptr);
+    }
+    else
+    {
+        for (const auto& note : track.notes)
+            node.addChild(serializeNote(note), -1, nullptr);
+    }
 
     return node;
 }
@@ -810,6 +888,9 @@ juce::ValueTree PatternProjectSerialization::serializeNote(const NoteEvent& note
     node.setProperty("micro_offset", note.microOffset, nullptr);
     node.setProperty("is_ghost", note.isGhost, nullptr);
     node.setProperty("semantic_role", note.semanticRole, nullptr);
+    node.setProperty("is_slide", note.isSlide, nullptr);
+    node.setProperty("is_legato", note.isLegato, nullptr);
+    node.setProperty("glide_to_next", note.glideToNext, nullptr);
     return node;
 }
 } // namespace bbg

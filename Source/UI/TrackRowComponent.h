@@ -51,6 +51,7 @@ struct RuntimeLaneRowState
     float laneVolume = 0.85f;
     SoundLayerState sound;
     juce::String selectedSampleName;
+    Sub808LaneSettings sub808Settings;
 };
 
 class TrackRowComponent : public juce::Component,
@@ -91,8 +92,10 @@ public:
     std::function<void(const RuntimeLaneId&)> onMoveLaneDown;
     std::function<void(int)> onBassKeyChanged;
     std::function<void(int)> onBassScaleChanged;
+    std::function<void(const RuntimeLaneId&, const Sub808LaneSettings&)> onSub808SettingsChanged;
 
     void setBassControls(int keyRootChoice, int scaleModeChoice);
+    void setSub808Settings(const Sub808LaneSettings& settings);
     void setHatFxDragState(float density, bool locked);
     const RuntimeLaneId& getLaneId() const { return laneId; }
     std::optional<TrackType> getRuntimeTrackType() const { return runtimeTrackType; }
@@ -152,5 +155,6 @@ private:
     bool dragDensityLocked = false;
     int currentBassKeyChoice = 0;
     int currentBassScaleChoice = 0;
+    Sub808LaneSettings currentSub808Settings;
 };
 } // namespace bbg

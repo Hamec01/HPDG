@@ -1,4 +1,7 @@
 #include "Sub808PianoRollComponent.h"
+#include "Sub808Scale.h"
+
+#include <array>
 
 #include <algorithm>
 #include <array>
@@ -11,6 +14,30 @@ namespace bbg
 {
 namespace
 {
+int drumGhostRowIndexForTrack(TrackType trackType)
+{
+    switch (trackType)
+    {
+        case TrackType::Kick:
+        case TrackType::GhostKick:
+            return 2;
+        case TrackType::Snare:
+        case TrackType::ClapGhostSnare:
+            return 5;
+        case TrackType::HiHat:
+        case TrackType::OpenHat:
+        case TrackType::HatFX:
+            return 8;
+        case TrackType::Perc:
+        case TrackType::Ride:
+        case TrackType::Cymbal:
+            return 11;
+        case TrackType::Sub808:
+        default:
+            return 13;
+    }
+}
+
 enum class ToolCursorIcon
 {
     Pencil,
@@ -23,7 +50,6 @@ juce::MouseCursor makeToolCursor(ToolCursorIcon icon)
 {
     juce::Image image(juce::Image::ARGB, 32, 32, true);
     juce::Graphics g(image);
-
     auto transform = juce::AffineTransform::rotation(-0.72f, 14.0f, 18.0f);
 
     if (icon == ToolCursorIcon::Pencil)
@@ -155,7 +181,40 @@ const juce::MouseCursor& toolCursorFor(GridEditorComponent::EditorTool tool)
 
 Sub808PianoRollComponent::Sub808PianoRollComponent()
 {
+    setWantsKeyboardFocus(true);
+    setMouseClickGrabsKeyboardFocus(true);
     updateMouseCursor();
+}
+
+Sub808PianoRollComponent::PitchedNoteEvent Sub808PianoRollComponent::toPitchedNoteEvent(const Sub808NoteEvent& note)
+{
+    PitchedNoteEvent pitched;
+    pitched.pitch = note.pitch;
+    pitched.step = note.step;
+    pitched.length = note.length;
+    pitched.velocity = note.velocity;
+    pitched.microOffset = note.microOffset;
+    pitched.isGhost = false;
+    pitched.semanticRole = note.semanticRole;
+    pitched.isSlide = note.isSlide;
+    pitched.isLegato = note.isLegato;
+    pitched.glideToNext = note.glideToNext;
+    return pitched;
+}
+
+Sub808NoteEvent Sub808PianoRollComponent::toSub808NoteEvent(const PitchedNoteEvent& note)
+{
+    Sub808NoteEvent event;
+    event.pitch = note.pitch;
+    event.step = note.step;
+    event.length = note.length;
+    event.velocity = note.velocity;
+    event.microOffset = note.microOffset;
+    event.semanticRole = note.semanticRole;
+    event.isSlide = note.isSlide;
+    event.isLegato = note.isLegato;
+    event.glideToNext = note.glideToNext;
+    return event;
 }
 
 void Sub808PianoRollComponent::setEditorTool(GridEditorComponent::EditorTool tool)
@@ -184,22 +243,7 @@ void Sub808PianoRollComponent::refreshTransientInputState()
 
 bool Sub808PianoRollComponent::deleteSelectedNotes()
 {
-    if (selectedIndices.empty())
-        return false;
-
-    std::sort(selectedIndices.begin(), selectedIndices.end(), std::greater<int>());
-    selectedIndices.erase(std::unique(selectedIndices.begin(), selectedIndices.end()), selectedIndices.end());
-
-    bool changed = false;
-    for (const int idx : selectedIndices)
-    {
-        if (idx < 0 || idx >= static_cast<int>(notes.size()))
-            continue;
-        notes.erase(notes.begin() + idx);
-        changed = true;
-    }
-
-    clearSelection();
+    const bool changed = Sub808EditModel::deleteSelectedNotes(notes, selectedIndices, activeNoteIndex);
     if (changed)
         commit();
     repaint();
@@ -222,17 +266,16 @@ bool Sub808PianoRollComponent::pasteClipboardAtAnchor()
         return false;
 
     const int anchorTick = snappedTickFromTick(pasteAnchorTick);
-    clearSelection();
-    std::vector<NoteEvent> insertedNotes;
-    insertedNotes.reserve(clipboardNotes.size());
-
-    for (const auto& item : clipboardNotes)
-    {
-        NoteEvent note = item.note;
-        setNoteStartTick(note, juce::jlimit(0, totalTicks() - 1, anchorTick + item.relativeTick));
-        notes.push_back(note);
-        insertedNotes.push_back(note);
-    }
+    std::vector<PitchedNoteEvent> insertedNotes;
+    if (!Sub808EditModel::pasteClipboard(notes,
+                                         clipboardNotes,
+                                         anchorTick,
+                                         totalTicks(),
+                                         selectedIndices,
+                                         activeNoteIndex,
+                                         &insertedNotes,
+                                         [this](PitchedNoteEvent& note, int tick) { setNoteStartTick(note, tick); }))
+        return false;
 
     sortNotes();
 
@@ -249,7 +292,10 @@ bool Sub808PianoRollComponent::pasteClipboardAtAnchor()
                 && current.pitch == note.pitch
                 && current.length == note.length
                 && current.velocity == note.velocity
-                && current.microOffset == note.microOffset)
+                && current.microOffset == note.microOffset
+                && current.isSlide == note.isSlide
+                && current.isLegato == note.isLegato
+                && current.glideToNext == note.glideToNext)
             {
                 consumed[static_cast<size_t>(i)] = true;
                 selectedIndices.push_back(i);
@@ -289,6 +335,70 @@ bool Sub808PianoRollComponent::selectAllNotes()
     return !selectedIndices.empty();
 }
 
+bool Sub808PianoRollComponent::nudgeSelectionByTicks(int deltaTicks)
+{
+    if (selectedIndices.empty() || deltaTicks == 0)
+        return false;
+
+    for (const int idx : selectedIndices)
+    {
+        if (idx < 0 || idx >= static_cast<int>(notes.size()))
+            continue;
+
+        auto& note = notes[static_cast<size_t>(idx)];
+        setNoteStartTick(note, noteStartTick(note) + deltaTicks);
+    }
+
+    sortNotes();
+    commit();
+    repaint();
+    return true;
+}
+
+bool Sub808PianoRollComponent::nudgeSelectionByPitch(int deltaPitch)
+{
+    if (selectedIndices.empty() || deltaPitch == 0)
+        return false;
+
+    bool changed = false;
+    for (const int idx : selectedIndices)
+    {
+        if (idx < 0 || idx >= static_cast<int>(notes.size()))
+            continue;
+
+        auto& note = notes[static_cast<size_t>(idx)];
+        const int nextPitch = snappedPitchForInput(note.pitch + deltaPitch, true);
+        if (nextPitch != note.pitch)
+        {
+            note.pitch = nextPitch;
+            changed = true;
+        }
+    }
+
+    if (!changed)
+        return false;
+
+    sortNotes();
+    commit();
+    repaint();
+    return true;
+}
+
+GridEditorComponent::EditorTool Sub808PianoRollComponent::getEditorTool() const
+{
+    return editorTool;
+}
+
+int Sub808PianoRollComponent::getPreferredContentWidth() const
+{
+    return contentWidth();
+}
+
+int Sub808PianoRollComponent::getPreferredContentHeight() const
+{
+    return contentHeight();
+}
+
 void Sub808PianoRollComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour::fromRGB(14, 16, 20));
@@ -300,7 +410,7 @@ void Sub808PianoRollComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour::fromRGB(20, 23, 28));
     g.fillRect(topBar);
     g.setColour(juce::Colour::fromRGBA(255, 255, 255, 22));
-    g.drawHorizontalLine(static_cast<float>(topBar.getBottom()), 0.0f, static_cast<float>(getWidth()));
+    g.drawLine(0.0f, static_cast<float>(topBar.getBottom()), static_cast<float>(getWidth()), static_cast<float>(topBar.getBottom()));
 
     const int btnH = topBar.getHeight() - 8;
     const juce::Rectangle<int> octaveDownButton(4, 4, 24, btnH);
@@ -361,19 +471,66 @@ void Sub808PianoRollComponent::paint(juce::Graphics& g)
     {
         const int pitch = kMaxPitch - i;
         const bool black = (pitch % 12 == 1 || pitch % 12 == 3 || pitch % 12 == 6 || pitch % 12 == 8 || pitch % 12 == 10);
+        const bool inScale = isPitchInActiveScale(pitch);
+        const bool rootPitch = isRootPitch(pitch);
         const int y = gridArea.getY() + i * rowHeight;
 
-        g.setColour(black ? juce::Colour::fromRGB(18, 21, 26) : juce::Colour::fromRGB(28, 32, 38));
+        juce::Colour rowColour = black ? juce::Colour::fromRGB(18, 21, 26) : juce::Colour::fromRGB(28, 32, 38);
+        if (inScale)
+            rowColour = rowColour.interpolatedWith(juce::Colour::fromRGB(42, 56, 40), rootPitch ? 0.46f : 0.24f);
+        if (rootPitch)
+            rowColour = rowColour.interpolatedWith(juce::Colour::fromRGB(132, 166, 98), 0.18f);
+
+        g.setColour(rowColour);
         g.fillRect(kKeyboardWidth, y, gridArea.getWidth() - kKeyboardWidth, rowHeight);
 
         g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
-        g.drawHorizontalLine(static_cast<float>(y), static_cast<float>(kKeyboardWidth), static_cast<float>(gridArea.getRight()));
+    g.drawLine(static_cast<float>(kKeyboardWidth), static_cast<float>(y), static_cast<float>(gridArea.getRight()), static_cast<float>(y));
 
         if ((pitch % 12) == 0)
         {
             g.setColour(juce::Colour::fromRGB(164, 174, 190));
             g.setFont(juce::Font(juce::FontOptions(10.0f)));
             g.drawText("C" + juce::String((pitch / 12) - 1), 4, y, kKeyboardWidth - 8, rowHeight, juce::Justification::centredLeft, false);
+        }
+        else if (rootPitch)
+        {
+            g.setColour(juce::Colour::fromRGB(176, 198, 150));
+            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            static const std::array<const char*, 12> noteNames { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+            g.drawText(noteNames[static_cast<size_t>(pitch % 12)], 4, y, kKeyboardWidth - 8, rowHeight, juce::Justification::centredLeft, false);
+        }
+    }
+
+    if (!drumGhostNotes.empty())
+    {
+        const float ticksPerStepF = static_cast<float>(juce::jmax(1, ticksPerStep()));
+        for (const auto& ghostNote : drumGhostNotes)
+        {
+            const int ghostRow = juce::jlimit(1, kPitchRows - 2, drumGhostRowIndexForTrack(ghostNote.trackType));
+            const int y = gridArea.getY() + ghostRow * rowHeight + rowHeight / 4;
+            const int h = (ghostNote.trackType == TrackType::HiHat
+                           || ghostNote.trackType == TrackType::OpenHat
+                           || ghostNote.trackType == TrackType::HatFX) ? 4 : 7;
+            const float startX = static_cast<float>(kKeyboardWidth)
+                + (static_cast<float>(juce::jmax(0, ghostNote.startTick)) / ticksPerStepF) * stepWidth;
+            const float width = juce::jmax(2.0f,
+                                           (static_cast<float>(juce::jmax(1, ghostNote.lengthTicks)) / ticksPerStepF) * stepWidth);
+            const juce::Rectangle<float> ghostRect(startX,
+                                                   static_cast<float>(y),
+                                                   width,
+                                                   static_cast<float>(h));
+            const float alpha = (ghostNote.trackType == TrackType::HiHat
+                                 || ghostNote.trackType == TrackType::OpenHat
+                                 || ghostNote.trackType == TrackType::HatFX) ? 0.16f : 0.24f;
+            const auto ghostColour = juce::Colour::fromRGB(168, 174, 182)
+                .withAlpha(ghostNote.isGhostTrack ? alpha * 0.8f : alpha);
+
+            g.setColour(ghostColour);
+            g.fillRoundedRectangle(ghostRect, 2.0f);
+
+            g.setColour(juce::Colour::fromRGB(214, 218, 224).withAlpha(alpha * 0.65f));
+            g.drawRoundedRectangle(ghostRect, 2.0f, 1.0f);
         }
     }
 
@@ -394,7 +551,7 @@ void Sub808PianoRollComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour::fromRGB(26, 29, 35));
     g.fillRect(velocityArea);
     g.setColour(juce::Colour::fromRGBA(255, 255, 255, 24));
-    g.drawHorizontalLine(static_cast<float>(velocityArea.getY()), static_cast<float>(kKeyboardWidth), static_cast<float>(velocityArea.getRight()));
+    g.drawLine(static_cast<float>(kKeyboardWidth), static_cast<float>(velocityArea.getY()), static_cast<float>(velocityArea.getRight()), static_cast<float>(velocityArea.getY()));
     g.setColour(juce::Colour::fromRGB(148, 160, 182));
     g.setFont(juce::Font(juce::FontOptions(10.0f)));
     g.drawText("Velocity", 6, velocityArea.getY() + 4, kKeyboardWidth - 10, 14, juce::Justification::centredLeft, false);
@@ -408,7 +565,13 @@ void Sub808PianoRollComponent::paint(juce::Graphics& g)
         const bool isSelected = isSelectedIndex(i);
 
         const float v = juce::jlimit(0.0f, 1.0f, static_cast<float>(n.velocity) / 127.0f);
-        const auto base = juce::Colour::fromRGB(255, 164, 74).withAlpha(0.42f + 0.5f * v);
+        juce::Colour base = juce::Colour::fromRGB(255, 164, 74).withAlpha(0.42f + 0.5f * v);
+        if (n.isSlide)
+            base = juce::Colour::fromRGB(114, 208, 166).withAlpha(0.48f + 0.42f * v);
+        else if (n.isLegato)
+            base = juce::Colour::fromRGB(242, 184, 88).withAlpha(0.46f + 0.46f * v);
+        else if (n.glideToNext)
+            base = juce::Colour::fromRGB(126, 190, 255).withAlpha(0.44f + 0.42f * v);
 
         if (velocityPreviewActive)
         {
@@ -432,6 +595,58 @@ void Sub808PianoRollComponent::paint(juce::Graphics& g)
             g.setColour(juce::Colour::fromRGBA(210, 226, 255, 190));
             g.setFont(juce::Font(juce::FontOptions(9.0f)));
             g.drawText(juce::String(n.pitch), r.toNearestInt().reduced(4, 2), juce::Justification::centredLeft, false);
+
+            juce::StringArray noteFlags;
+            if (n.isSlide)
+                noteFlags.add("SL");
+            if (n.isLegato)
+                noteFlags.add("LG");
+            if (n.glideToNext)
+                noteFlags.add("GL");
+
+            if (!noteFlags.isEmpty() && r.getWidth() > 28.0f)
+            {
+                g.setColour(juce::Colour::fromRGBA(255, 246, 214, 210));
+                g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+                g.drawText(noteFlags.joinIntoString(" "),
+                           r.toNearestInt().reduced(4, 2).withTrimmedLeft(20),
+                           juce::Justification::centredRight,
+                           false);
+            }
+
+            if (n.isLegato)
+            {
+                g.setColour(juce::Colour::fromRGBA(255, 244, 192, 220));
+                g.drawLine(r.getX() + 2.0f, r.getY() + 2.0f, r.getRight() - 2.0f, r.getY() + 2.0f, 1.4f);
+            }
+        }
+
+        if ((n.isSlide || n.glideToNext) && i + 1 < static_cast<int>(notes.size()))
+        {
+            for (int nextIndex = i + 1; nextIndex < static_cast<int>(notes.size()); ++nextIndex)
+            {
+                const auto& nextNote = notes[static_cast<size_t>(nextIndex)];
+                if (noteStartTick(nextNote) <= noteStartTick(n))
+                    continue;
+
+                const auto nextRect = noteBounds(nextNote).toFloat();
+                const float startX = r.getRight() - 2.0f;
+                const float startY = r.getCentreY();
+                const float endX = nextRect.getX() + 2.0f;
+                const float endY = nextRect.getCentreY();
+
+                g.setColour(n.isSlide
+                    ? juce::Colour::fromRGBA(144, 236, 190, 180)
+                    : juce::Colour::fromRGBA(154, 208, 255, 176));
+                g.drawLine(startX, startY, endX, endY, n.isSlide ? 2.0f : 1.5f);
+
+                juce::Path arrow;
+                arrow.startNewSubPath(endX - 6.0f, endY - 3.0f);
+                arrow.lineTo(endX, endY);
+                arrow.lineTo(endX - 6.0f, endY + 3.0f);
+                g.strokePath(arrow, juce::PathStrokeType(n.isSlide ? 1.6f : 1.2f));
+                break;
+            }
         }
 
         if (isSelected)
@@ -498,6 +713,7 @@ void Sub808PianoRollComponent::paint(juce::Graphics& g)
 void Sub808PianoRollComponent::mouseDown(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    updateHoverState(p);
 
     if (topBarBounds().contains(p))
     {
@@ -569,17 +785,11 @@ void Sub808PianoRollComponent::mouseDown(const juce::MouseEvent& event)
     drawVisitedKeys.clear();
     eraseVisitedKeys.clear();
 
-    if (editorTool == GridEditorComponent::EditorTool::Erase && !event.mods.isRightButtonDown())
+    if (event.mods.isRightButtonDown())
     {
         editMode = EditMode::EraseDrag;
         eraseNoteAt(p);
         repaint();
-        return;
-    }
-
-    if (event.mods.isRightButtonDown())
-    {
-        showContextMenu(p);
         return;
     }
 
@@ -614,6 +824,8 @@ void Sub808PianoRollComponent::mouseDown(const juce::MouseEvent& event)
             setSingleSelection(*hit);
         }
 
+        previewNote(notes[static_cast<size_t>(*hit)]);
+
         if (selectedIndices.empty())
         {
             editMode = EditMode::None;
@@ -636,24 +848,32 @@ void Sub808PianoRollComponent::mouseDown(const juce::MouseEvent& event)
             return;
         }
 
-        editMode = isStretchEditKeyDown() ? EditMode::Stretch : EditMode::Move;
+        if (hoverZone == HoverZone::ResizeLeft || hoverZone == HoverZone::ResizeRight)
+        {
+            editMode = EditMode::Stretch;
+            resizeFromStart = (hoverZone == HoverZone::ResizeLeft);
+            dragResizeAnchorTick = snappedTickAtX(p.x, event.mods.isAltDown());
+        }
+        else
+        {
+            editMode = EditMode::Move;
+            resizeFromStart = false;
+            dragResizeAnchorTick = 0;
+        }
 
         repaint();
         return;
     }
 
-    if (editorTool == GridEditorComponent::EditorTool::Brush)
+    if ((editorTool == GridEditorComponent::EditorTool::Pencil
+         || editorTool == GridEditorComponent::EditorTool::Brush)
+        && placeDrawNoteAt(p))
     {
-        editMode = EditMode::BrushDraw;
-        placeDrawNoteAt(p);
-        repaint();
-        return;
-    }
-
-    if (editorTool == GridEditorComponent::EditorTool::Pencil)
-    {
-        if (placeDrawNoteAt(p))
+        if (editorTool == GridEditorComponent::EditorTool::Brush)
+            editMode = EditMode::BrushDraw;
+        else
             commit();
+
         repaint();
         return;
     }
@@ -673,6 +893,7 @@ void Sub808PianoRollComponent::mouseDown(const juce::MouseEvent& event)
 void Sub808PianoRollComponent::mouseDrag(const juce::MouseEvent& event)
 {
     const auto p = event.getPosition();
+    updateHoverState(p);
 
     if (editMode == EditMode::BrushDraw)
     {
@@ -726,7 +947,7 @@ void Sub808PianoRollComponent::mouseDrag(const juce::MouseEvent& event)
 
             auto& n = notes[static_cast<size_t>(snapshot.index)];
             setNoteStartTick(n, snapshot.startTick + tickDelta);
-            n.pitch = juce::jlimit(kMinPitch, kMaxPitch, snapshot.startPitch + pitchDelta);
+            n.pitch = snappedPitchForInput(snapshot.startPitch + pitchDelta, event.mods.isAltDown());
         }
         repaint();
         return;
@@ -734,23 +955,39 @@ void Sub808PianoRollComponent::mouseDrag(const juce::MouseEvent& event)
 
     if (editMode == EditMode::Stretch)
     {
-        const int deltaX = p.x - dragStartX;
-        const int rawDeltaTicks = static_cast<int>(std::round(static_cast<float>(deltaX) * static_cast<float>(ticksPerStep()) / juce::jmax(1.0f, stepWidth)));
-        const int deltaTicks = juce::jmax(0, quantizeTick(rawDeltaTicks, event.mods.isAltDown()));
+        const int pointerTick = snappedTickAtX(p.x, event.mods.isAltDown());
+        const int deltaTicks = pointerTick - dragResizeAnchorTick;
         for (const auto& snapshot : dragSnapshots)
         {
             if (snapshot.index < 0 || snapshot.index >= static_cast<int>(notes.size()))
                 continue;
 
             auto& n = notes[static_cast<size_t>(snapshot.index)];
-            const int startTick = snapshot.startTick;
-            const int baseEndTick = startTick + snapshot.startLength * ticksPerStep();
-            const int clampedEnd = juce::jlimit(startTick + ticksPerStep(), totalTicks(), baseEndTick + deltaTicks);
-            n.length = juce::jmax(1,
-                                  static_cast<int>(std::ceil(static_cast<double>(clampedEnd - startTick)
-                                                             / static_cast<double>(ticksPerStep()))));
+            const int originalStartTick = snapshot.startTick;
+            const int originalEndTick = snapshot.startTick + snapshot.startLength * ticksPerStep();
+
+            if (resizeFromStart)
+            {
+                const int nextStartTick = juce::jlimit(0,
+                                                       juce::jmax(0, originalEndTick - ticksPerStep()),
+                                                       originalStartTick + deltaTicks);
+                setNoteStartTick(n, nextStartTick);
+                n.length = juce::jmax(1,
+                                      static_cast<int>(std::ceil(static_cast<double>(originalEndTick - nextStartTick)
+                                                                 / static_cast<double>(ticksPerStep()))));
+            }
+            else
+            {
+                const int nextEndTick = juce::jlimit(originalStartTick + ticksPerStep(),
+                                                     totalTicks(),
+                                                     originalEndTick + deltaTicks);
+                n.length = juce::jmax(1,
+                                      static_cast<int>(std::ceil(static_cast<double>(nextEndTick - originalStartTick)
+                                                                 / static_cast<double>(ticksPerStep()))));
+            }
         }
         repaint();
+        return;
     }
 }
 
@@ -778,7 +1015,7 @@ void Sub808PianoRollComponent::mouseUp(const juce::MouseEvent& event)
 
 void Sub808PianoRollComponent::mouseMove(const juce::MouseEvent& event)
 {
-    juce::ignoreUnused(event);
+    updateHoverState(event.getPosition());
     updateMouseCursor();
 }
 
@@ -791,27 +1028,25 @@ void Sub808PianoRollComponent::mouseWheelMove(const juce::MouseEvent& event, con
         return;
     }
 
-    if (selectedIndices.empty())
-        return;
-
-    const int delta = wheel.deltaY > 0.0f ? 1 : (wheel.deltaY < 0.0f ? -1 : 0);
-    if (delta == 0)
-        return;
-
-    for (const int idx : selectedIndices)
+    if (auto* viewport = findParentComponentOfClass<juce::Viewport>())
     {
-        if (idx < 0 || idx >= static_cast<int>(notes.size()))
-            continue;
+        const int maxViewX = juce::jmax(0, getWidth() - viewport->getWidth());
+        const int maxViewY = juce::jmax(0, getHeight() - viewport->getHeight());
+        const float wheelScale = wheel.isSmooth ? 120.0f : 220.0f;
+        int deltaX = static_cast<int>(std::round(-wheel.deltaX * wheelScale));
+        int deltaY = static_cast<int>(std::round(-wheel.deltaY * wheelScale));
+        if (wheel.isReversed)
+        {
+            deltaX = -deltaX;
+            deltaY = -deltaY;
+        }
 
-        auto& n = notes[static_cast<size_t>(idx)];
-        if (velocityLaneBounds().contains(event.getPosition()))
-            n.velocity = juce::jlimit(1, 127, n.velocity + delta * 3);
-        else
-            n.pitch = juce::jlimit(kMinPitch, kMaxPitch, n.pitch + delta);
+        viewport->setViewPosition(juce::jlimit(0, maxViewX, viewport->getViewPositionX() + deltaX),
+                                  juce::jlimit(0, maxViewY, viewport->getViewPositionY() + deltaY));
+        return;
     }
 
-    commit();
-    repaint();
+    juce::Component::mouseWheelMove(event, wheel);
 }
 
 void Sub808PianoRollComponent::setBars(int barsCount)
@@ -826,11 +1061,89 @@ void Sub808PianoRollComponent::setStepWidth(float width)
     repaint();
 }
 
-void Sub808PianoRollComponent::setNotes(const std::vector<NoteEvent>& notesIn)
+void Sub808PianoRollComponent::setLaneSettings(const Sub808LaneSettings& settingsIn)
 {
-    notes = notesIn;
+    const Sub808LaneSettings nextSettings {
+        settingsIn.mono,
+        settingsIn.cutItself,
+        juce::jlimit(0, 4000, settingsIn.glideTimeMs),
+        static_cast<Sub808OverlapMode>(juce::jlimit(0, 2, static_cast<int>(settingsIn.overlapMode))),
+        static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0, 2, static_cast<int>(settingsIn.scaleSnapPolicy)))
+    };
+
+    if (laneSettings.mono == nextSettings.mono
+        && laneSettings.cutItself == nextSettings.cutItself
+        && laneSettings.glideTimeMs == nextSettings.glideTimeMs
+        && laneSettings.overlapMode == nextSettings.overlapMode
+        && laneSettings.scaleSnapPolicy == nextSettings.scaleSnapPolicy)
+    {
+        return;
+    }
+
+    laneSettings = nextSettings;
+    repaint();
+}
+
+void Sub808PianoRollComponent::setScaleContext(int keyRootChoice, int scaleModeChoice)
+{
+    const int nextRoot = juce::jlimit(0, 11, keyRootChoice);
+    const int nextScale = juce::jlimit(0, 2, scaleModeChoice);
+    if (bassKeyRootChoice == nextRoot && bassScaleModeChoice == nextScale)
+        return;
+
+    bassKeyRootChoice = nextRoot;
+    bassScaleModeChoice = nextScale;
+    repaint();
+}
+
+void Sub808PianoRollComponent::setNotes(const std::vector<Sub808NoteEvent>& notesIn)
+{
+    if (editMode != EditMode::None)
+        return;
+
+    std::vector<PitchedNoteEvent> incomingNotes;
+    incomingNotes.reserve(notesIn.size());
+    for (const auto& note : notesIn)
+        incomingNotes.push_back(toPitchedNoteEvent(note));
+
+    const auto notesMatch = [this, &incomingNotes]()
+    {
+        if (notes.size() != incomingNotes.size())
+            return false;
+
+        for (size_t i = 0; i < notes.size(); ++i)
+        {
+            const auto& current = notes[i];
+            const auto& incoming = incomingNotes[i];
+            if (current.pitch != incoming.pitch
+                || current.step != incoming.step
+                || current.length != incoming.length
+                || current.velocity != incoming.velocity
+                || current.microOffset != incoming.microOffset
+                || current.semanticRole != incoming.semanticRole
+                || current.isSlide != incoming.isSlide
+                || current.isLegato != incoming.isLegato
+                || current.glideToNext != incoming.glideToNext)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }();
+
+    if (notesMatch)
+        return;
+
+    notes = std::move(incomingNotes);
     clearSelection();
     sortNotes();
+    repaint();
+}
+
+void Sub808PianoRollComponent::setDrumGhostNotes(const std::vector<DrumGhostNote>& ghostNotesIn)
+{
+    drumGhostNotes = ghostNotesIn;
     repaint();
 }
 
@@ -844,42 +1157,56 @@ int Sub808PianoRollComponent::totalTicks() const
     return totalSteps() * ticksPerStep();
 }
 
+Sub808Geometry Sub808PianoRollComponent::makeGeometry() const
+{
+    return Sub808Geometry({ getWidth(),
+                            totalSteps(),
+                            stepWidth,
+                            rowHeight,
+                            kTopBarHeight,
+                            kKeyboardWidth,
+                            kVelocityLaneHeight,
+                            kMinPitch,
+                            kMaxPitch,
+                            ticksPerStep() });
+}
+
 int Sub808PianoRollComponent::contentWidth() const
 {
-    return kKeyboardWidth + static_cast<int>(std::round(static_cast<float>(totalSteps()) * stepWidth));
+    return makeGeometry().contentWidth();
 }
 
 int Sub808PianoRollComponent::contentHeight() const
 {
-    return kTopBarHeight + kPitchRows * rowHeight + kVelocityLaneHeight;
+    return makeGeometry().contentHeight();
 }
 
 juce::Rectangle<int> Sub808PianoRollComponent::topBarBounds() const
 {
-    return { 0, 0, getWidth(), kTopBarHeight };
+    return makeGeometry().topBarBounds();
 }
 
 juce::Rectangle<int> Sub808PianoRollComponent::noteGridBounds() const
 {
-    return { 0, kTopBarHeight, getWidth(), kPitchRows * rowHeight };
+    return makeGeometry().noteGridBounds();
 }
 
 juce::Rectangle<int> Sub808PianoRollComponent::velocityLaneBounds() const
 {
-    return { 0, kTopBarHeight + kPitchRows * rowHeight, getWidth(), kVelocityLaneHeight };
+    return makeGeometry().velocityLaneBounds();
 }
 
-int Sub808PianoRollComponent::noteStartTick(const NoteEvent& n) const
+int Sub808PianoRollComponent::noteStartTick(const PitchedNoteEvent& n) const
 {
     return n.step * ticksPerStep() + n.microOffset;
 }
 
-int Sub808PianoRollComponent::noteEndTick(const NoteEvent& n) const
+int Sub808PianoRollComponent::noteEndTick(const PitchedNoteEvent& n) const
 {
     return noteStartTick(n) + std::max(1, n.length) * ticksPerStep();
 }
 
-void Sub808PianoRollComponent::setNoteStartTick(NoteEvent& n, int tick)
+void Sub808PianoRollComponent::setNoteStartTick(PitchedNoteEvent& n, int tick)
 {
     const int clamped = juce::jlimit(0, totalTicks() - 1, tick);
     int step = clamped / ticksPerStep();
@@ -940,30 +1267,27 @@ int Sub808PianoRollComponent::snappedTickAtX(int x, bool bypassSnap) const
 
 int Sub808PianoRollComponent::pitchAtY(int y) const
 {
-    const int row = juce::jlimit(0, kPitchRows - 1, (y - noteGridBounds().getY()) / juce::jmax(1, rowHeight));
-    return juce::jlimit(kMinPitch, kMaxPitch, kMaxPitch - row);
+    return makeGeometry().pitchAtY(y);
 }
 
 int Sub808PianoRollComponent::yForPitch(int pitch) const
 {
-    const int p = juce::jlimit(kMinPitch, kMaxPitch, pitch);
-    return noteGridBounds().getY() + (kMaxPitch - p) * rowHeight;
+    return makeGeometry().yForPitch(pitch);
 }
 
-juce::Rectangle<int> Sub808PianoRollComponent::noteBounds(const NoteEvent& n) const
+juce::Rectangle<int> Sub808PianoRollComponent::noteBounds(const PitchedNoteEvent& n) const
 {
-    const float microStep = static_cast<float>(n.microOffset) / static_cast<float>(ticksPerStep());
-    const float x = static_cast<float>(kKeyboardWidth) + (static_cast<float>(n.step) + microStep) * stepWidth;
-    const float w = stepWidth * static_cast<float>(std::max(1, n.length));
-    const int y = yForPitch(n.pitch);
-
-    return juce::Rectangle<int>(static_cast<int>(std::floor(x + 1.0f)),
-                                y + 1,
-                                static_cast<int>(std::ceil(juce::jmax(3.0f, w - 2.0f))),
-                                juce::jmax(6, rowHeight - 2));
+    return makeGeometry().noteBounds(n.step, n.microOffset, n.length, n.pitch);
 }
 
-juce::Rectangle<int> Sub808PianoRollComponent::velocityHandleBounds(const NoteEvent& n) const
+int Sub808PianoRollComponent::resizeHandleWidthPx(const PitchedNoteEvent& n) const
+{
+    const int noteWidth = noteBounds(n).getWidth();
+    const int maxHandleWidth = juce::jmax(3, (noteWidth - 8) / 2);
+    return juce::jlimit(3, 6, juce::jmin(maxHandleWidth, noteWidth / 6));
+}
+
+juce::Rectangle<int> Sub808PianoRollComponent::velocityHandleBounds(const PitchedNoteEvent& n) const
 {
     const float microStep = static_cast<float>(n.microOffset) / static_cast<float>(ticksPerStep());
     const float startX = static_cast<float>(kKeyboardWidth) + (static_cast<float>(n.step) + microStep) * stepWidth;
@@ -1002,50 +1326,62 @@ std::optional<int> Sub808PianoRollComponent::findVelocityHandleAt(juce::Point<in
     return std::nullopt;
 }
 
+void Sub808PianoRollComponent::updateHoverState(juce::Point<int> p)
+{
+    hoverNoteIndex.reset();
+    hoverZone = HoverZone::None;
+
+    if (!noteGridBounds().contains(p) || p.x < kKeyboardWidth)
+        return;
+
+    const auto hit = findNoteAt(p);
+    if (!hit.has_value())
+        return;
+
+    hoverNoteIndex = *hit;
+    hoverZone = HoverZone::NoteBody;
+
+    const auto& note = notes[static_cast<size_t>(*hit)];
+    const auto bounds = noteBounds(note);
+    const int handleWidth = resizeHandleWidthPx(note);
+    if (p.x <= bounds.getX() + handleWidth)
+        hoverZone = HoverZone::ResizeLeft;
+    else if (p.x >= bounds.getRight() - handleWidth)
+        hoverZone = HoverZone::ResizeRight;
+}
+
 bool Sub808PianoRollComponent::isSelectedIndex(int index) const
 {
-    return std::find(selectedIndices.begin(), selectedIndices.end(), index) != selectedIndices.end();
+    return Sub808EditModel::isSelectedIndex(selectedIndices, index);
 }
 
 void Sub808PianoRollComponent::clearSelection()
 {
-    selectedIndices.clear();
-    activeNoteIndex = -1;
+    Sub808EditModel::clearSelection(selectedIndices, activeNoteIndex);
 }
 
 void Sub808PianoRollComponent::setSingleSelection(int index)
 {
-    selectedIndices = { index };
-    activeNoteIndex = index;
+    Sub808EditModel::setSingleSelection(selectedIndices, activeNoteIndex, index);
 }
 
 void Sub808PianoRollComponent::setMarqueeSelection(const juce::Rectangle<int>& marquee, bool additive)
 {
-    std::set<int> result;
-    if (additive)
-        result.insert(marqueeBaseSelection.begin(), marqueeBaseSelection.end());
-
-    for (int i = 0; i < static_cast<int>(notes.size()); ++i)
-    {
-        if (marquee.intersects(noteBounds(notes[static_cast<size_t>(i)])))
-            result.insert(i);
-    }
-
-    selectedIndices.assign(result.begin(), result.end());
-    activeNoteIndex = selectedIndices.empty() ? -1 : selectedIndices.back();
+    Sub808EditModel::setMarqueeSelection(marquee,
+                                         additive,
+                                         marqueeBaseSelection,
+                                         notes,
+                                         selectedIndices,
+                                         activeNoteIndex,
+                                         [this](const PitchedNoteEvent& note) { return noteBounds(note); });
 }
 
 void Sub808PianoRollComponent::collectDragSnapshots()
 {
-    dragSnapshots.clear();
-    for (const int idx : selectedIndices)
-    {
-        if (idx < 0 || idx >= static_cast<int>(notes.size()))
-            continue;
-
-        const auto& n = notes[static_cast<size_t>(idx)];
-        dragSnapshots.push_back({ idx, noteStartTick(n), n.pitch, juce::jmax(1, n.length), n.velocity });
-    }
+    Sub808EditModel::collectDragSnapshots(selectedIndices,
+                                          notes,
+                                          dragSnapshots,
+                                          [this](const PitchedNoteEvent& note) { return noteStartTick(note); });
 }
 
 bool Sub808PianoRollComponent::applySelectionVelocityDelta(int deltaVel)
@@ -1140,39 +1476,105 @@ bool Sub808PianoRollComponent::applySelectionVelocityWave(int deltaVel, int curr
 
 bool Sub808PianoRollComponent::copySelectionInternal(bool removeAfterCopy)
 {
-    if (selectedIndices.empty())
+    if (!Sub808EditModel::copySelectionToClipboard(selectedIndices,
+                                                   notes,
+                                                   clipboardNotes,
+                                                   clipboardSourceStartTick,
+                                                   clipboardSpanTicks,
+                                                   [this](const PitchedNoteEvent& note) { return noteStartTick(note); },
+                                                   [this](const PitchedNoteEvent& note) { return noteEndTick(note); }))
         return false;
 
-    clipboardNotes.clear();
-    int minTick = std::numeric_limits<int>::max();
-    int maxTick = 0;
-
-    for (const int idx : selectedIndices)
-    {
-        if (idx < 0 || idx >= static_cast<int>(notes.size()))
-            continue;
-
-        const auto& note = notes[static_cast<size_t>(idx)];
-        const int startTick = noteStartTick(note);
-        const int endTick = noteEndTick(note);
-        minTick = juce::jmin(minTick, startTick);
-        maxTick = juce::jmax(maxTick, endTick);
-        clipboardNotes.push_back({ note, 0 });
-    }
-
-    if (clipboardNotes.empty())
-        return false;
-
-    for (auto& item : clipboardNotes)
-        item.relativeTick = noteStartTick(item.note) - minTick;
-
-    clipboardSourceStartTick = minTick;
-    clipboardSpanTicks = juce::jmax(ticksPerStep(), maxTick - minTick);
+    clipboardSpanTicks = juce::jmax(ticksPerStep(), clipboardSpanTicks);
 
     if (removeAfterCopy)
         return deleteSelectedNotes();
 
     return true;
+}
+
+bool Sub808PianoRollComponent::setSelectionSlideState(bool enabled)
+{
+    if (selectedIndices.empty())
+        return false;
+
+    bool changed = false;
+    for (const int idx : selectedIndices)
+    {
+        if (idx < 0 || idx >= static_cast<int>(notes.size()))
+            continue;
+
+        auto& note = notes[static_cast<size_t>(idx)];
+        if (note.isSlide == enabled)
+            continue;
+
+        note.isSlide = enabled;
+        changed = true;
+    }
+
+    if (changed)
+    {
+        commit();
+        repaint();
+    }
+
+    return changed;
+}
+
+bool Sub808PianoRollComponent::setSelectionLegatoState(bool enabled)
+{
+    if (selectedIndices.empty())
+        return false;
+
+    bool changed = false;
+    for (const int idx : selectedIndices)
+    {
+        if (idx < 0 || idx >= static_cast<int>(notes.size()))
+            continue;
+
+        auto& note = notes[static_cast<size_t>(idx)];
+        if (note.isLegato == enabled)
+            continue;
+
+        note.isLegato = enabled;
+        changed = true;
+    }
+
+    if (changed)
+    {
+        commit();
+        repaint();
+    }
+
+    return changed;
+}
+
+bool Sub808PianoRollComponent::setSelectionGlideState(bool enabled)
+{
+    if (selectedIndices.empty())
+        return false;
+
+    bool changed = false;
+    for (const int idx : selectedIndices)
+    {
+        if (idx < 0 || idx >= static_cast<int>(notes.size()))
+            continue;
+
+        auto& note = notes[static_cast<size_t>(idx)];
+        if (note.glideToNext == enabled)
+            continue;
+
+        note.glideToNext = enabled;
+        changed = true;
+    }
+
+    if (changed)
+    {
+        commit();
+        repaint();
+    }
+
+    return changed;
 }
 
 Sub808PianoRollComponent::ContextMenuTarget Sub808PianoRollComponent::contextMenuTargetAt(juce::Point<int> p, std::optional<int>* hitOut)
@@ -1208,12 +1610,59 @@ void Sub808PianoRollComponent::showContextMenu(juce::Point<int> p)
     constexpr int kActionSplit = 8;
     constexpr int kActionQuickRoll = 9;
     constexpr int kActionAdvancedRollBase = 100;
+    constexpr int kActionSlideOn = 210;
+    constexpr int kActionSlideOff = 211;
+    constexpr int kActionLegatoOn = 220;
+    constexpr int kActionLegatoOff = 221;
+    constexpr int kActionGlideOn = 230;
+    constexpr int kActionGlideOff = 231;
+    constexpr int kActionMonoToggle = 240;
+    constexpr int kActionCutToggle = 241;
+    constexpr int kActionOverlapRetrigger = 242;
+    constexpr int kActionOverlapLegato = 243;
+    constexpr int kActionOverlapGlide = 244;
+    constexpr int kActionSnapOff = 245;
+    constexpr int kActionSnapHighlight = 246;
+    constexpr int kActionSnapForce = 247;
+    constexpr int kActionGlideTimeBase = 300;
+
+    auto addSettingsMenu = [&](juce::PopupMenu& targetMenu)
+    {
+        juce::PopupMenu settingsMenu;
+        settingsMenu.addItem(kActionMonoToggle, laneSettings.mono ? "Mono: On" : "Mono: Off");
+        settingsMenu.addItem(kActionCutToggle, laneSettings.cutItself ? "Cut Itself: On" : "Cut Itself: Off");
+
+        juce::PopupMenu overlapMenu;
+        overlapMenu.addItem(kActionOverlapRetrigger, "Retrigger", true, laneSettings.overlapMode == Sub808OverlapMode::Retrigger);
+        overlapMenu.addItem(kActionOverlapLegato, "Legato", true, laneSettings.overlapMode == Sub808OverlapMode::Legato);
+        overlapMenu.addItem(kActionOverlapGlide, "Glide", true, laneSettings.overlapMode == Sub808OverlapMode::Glide);
+        settingsMenu.addSubMenu("Overlap Mode", overlapMenu, true);
+
+        juce::PopupMenu snapPolicyMenu;
+        snapPolicyMenu.addItem(kActionSnapOff, "Off", true, laneSettings.scaleSnapPolicy == Sub808ScaleSnapPolicy::Off);
+        snapPolicyMenu.addItem(kActionSnapHighlight, "Highlight Only", true, laneSettings.scaleSnapPolicy == Sub808ScaleSnapPolicy::HighlightOnly);
+        snapPolicyMenu.addItem(kActionSnapForce, "Force To Scale", true, laneSettings.scaleSnapPolicy == Sub808ScaleSnapPolicy::ForceToScale);
+        settingsMenu.addSubMenu("Scale Snap", snapPolicyMenu, true);
+
+        juce::PopupMenu glideTimeMenu;
+        static constexpr std::array<int, 6> glideTimes { 0, 40, 80, 120, 200, 320 };
+        for (const int glideTime : glideTimes)
+            glideTimeMenu.addItem(kActionGlideTimeBase + glideTime,
+                                  juce::String(glideTime) + " ms",
+                                  true,
+                                  laneSettings.glideTimeMs == glideTime);
+        settingsMenu.addSubMenu("Glide Time", glideTimeMenu, true);
+
+        targetMenu.addSeparator();
+        targetMenu.addSubMenu("Lane Settings", settingsMenu, true);
+    };
 
     if (target == ContextMenuTarget::Empty)
     {
         menu.addItem(kActionPaste, "Paste", !clipboardNotes.empty());
         menu.addItem(kActionSelectAll, "Select All", !notes.empty());
         menu.addItem(kActionDeselect, "Deselect", !selectedIndices.empty());
+        addSettingsMenu(menu);
     }
     else if (target == ContextMenuTarget::SingleNote)
     {
@@ -1224,13 +1673,24 @@ void Sub808PianoRollComponent::showContextMenu(juce::Point<int> p)
 
         const bool quickRollEnabled = canQuickRollSelection();
         const auto advancedDivisions = availableAdvancedRollDivisions();
+        juce::PopupMenu articulationMenu;
+        articulationMenu.addItem(kActionSlideOn, "Slide On");
+        articulationMenu.addItem(kActionSlideOff, "Slide Off");
+        articulationMenu.addSeparator();
+        articulationMenu.addItem(kActionLegatoOn, "Legato On");
+        articulationMenu.addItem(kActionLegatoOff, "Legato Off");
+        articulationMenu.addSeparator();
+        articulationMenu.addItem(kActionGlideOn, "Glide On");
+        articulationMenu.addItem(kActionGlideOff, "Glide Off");
         menu.addSeparator();
+        menu.addSubMenu("Articulation", articulationMenu, true);
         menu.addItem(kActionQuickRoll, "Create Roll", quickRollEnabled);
 
         juce::PopupMenu advancedRollMenu;
         for (const int division : advancedDivisions)
             advancedRollMenu.addItem(kActionAdvancedRollBase + division, "Divide x" + juce::String(division));
         menu.addSubMenu("Advanced Roll", advancedRollMenu, !advancedDivisions.empty());
+        addSettingsMenu(menu);
     }
     else
     {
@@ -1241,13 +1701,24 @@ void Sub808PianoRollComponent::showContextMenu(juce::Point<int> p)
 
         const bool quickRollEnabled = canQuickRollSelection();
         const auto advancedDivisions = availableAdvancedRollDivisions();
+        juce::PopupMenu articulationMenu;
+        articulationMenu.addItem(kActionSlideOn, "Slide On");
+        articulationMenu.addItem(kActionSlideOff, "Slide Off");
+        articulationMenu.addSeparator();
+        articulationMenu.addItem(kActionLegatoOn, "Legato On");
+        articulationMenu.addItem(kActionLegatoOff, "Legato Off");
+        articulationMenu.addSeparator();
+        articulationMenu.addItem(kActionGlideOn, "Glide On");
+        articulationMenu.addItem(kActionGlideOff, "Glide Off");
         menu.addSeparator();
+        menu.addSubMenu("Articulation", articulationMenu, true);
         menu.addItem(kActionQuickRoll, "Create Roll", quickRollEnabled);
 
         juce::PopupMenu advancedRollMenu;
         for (const int division : advancedDivisions)
             advancedRollMenu.addItem(kActionAdvancedRollBase + division, "Divide x" + juce::String(division));
         menu.addSubMenu("Advanced Roll", advancedRollMenu, !advancedDivisions.empty());
+        addSettingsMenu(menu);
     }
 
     menu.showMenuAsync(juce::PopupMenu::Options{}.withParentComponent(this),
@@ -1261,8 +1732,71 @@ void Sub808PianoRollComponent::showContextMenu(juce::Point<int> p)
 
 bool Sub808PianoRollComponent::applyContextAction(int actionId, juce::Point<int> p)
 {
+    if (actionId >= 300)
+    {
+        const int glideTimeMs = actionId - 300;
+        laneSettings.glideTimeMs = juce::jlimit(0, 4000, glideTimeMs);
+        if (onLaneSettingsEdited)
+            onLaneSettingsEdited(laneSettings);
+        repaint();
+        return true;
+    }
+
     if (actionId >= 100)
+    {
+        if (actionId >= 200)
+        {
+            if (actionId == 210)
+                return setSelectionSlideState(true);
+            if (actionId == 211)
+                return setSelectionSlideState(false);
+            if (actionId == 220)
+                return setSelectionLegatoState(true);
+            if (actionId == 221)
+                return setSelectionLegatoState(false);
+            if (actionId == 230)
+                return setSelectionGlideState(true);
+            if (actionId == 231)
+                return setSelectionGlideState(false);
+            if (actionId == 240)
+            {
+                laneSettings.mono = !laneSettings.mono;
+                if (onLaneSettingsEdited)
+                    onLaneSettingsEdited(laneSettings);
+                repaint();
+                return true;
+            }
+            if (actionId == 241)
+            {
+                laneSettings.cutItself = !laneSettings.cutItself;
+                if (onLaneSettingsEdited)
+                    onLaneSettingsEdited(laneSettings);
+                repaint();
+                return true;
+            }
+            if (actionId == 242 || actionId == 243 || actionId == 244)
+            {
+                laneSettings.overlapMode = actionId == 242 ? Sub808OverlapMode::Retrigger
+                    : (actionId == 243 ? Sub808OverlapMode::Legato : Sub808OverlapMode::Glide);
+                if (onLaneSettingsEdited)
+                    onLaneSettingsEdited(laneSettings);
+                repaint();
+                return true;
+            }
+            if (actionId == 245 || actionId == 246 || actionId == 247)
+            {
+                laneSettings.scaleSnapPolicy = actionId == 245 ? Sub808ScaleSnapPolicy::Off
+                    : (actionId == 246 ? Sub808ScaleSnapPolicy::HighlightOnly : Sub808ScaleSnapPolicy::ForceToScale);
+                if (onLaneSettingsEdited)
+                    onLaneSettingsEdited(laneSettings);
+                repaint();
+                return true;
+            }
+            return false;
+        }
+
         return rollSelectionWithDivisions(actionId - 100);
+    }
     if (actionId == 1)
         return cutSelectionToClipboard();
     if (actionId == 2)
@@ -1354,7 +1888,7 @@ bool Sub808PianoRollComponent::rollSelectionWithDivisions(int divisions)
     if (std::find(available.begin(), available.end(), divisions) == available.end())
         return false;
 
-    std::vector<NoteEvent> insertedNotes;
+    std::vector<PitchedNoteEvent> insertedNotes;
     auto refs = selectedIndices;
     std::sort(refs.begin(), refs.end(), std::greater<int>());
 
@@ -1369,7 +1903,7 @@ bool Sub808PianoRollComponent::rollSelectionWithDivisions(int divisions)
 
         for (int i = 0; i < divisions; ++i)
         {
-            NoteEvent rolled = source;
+            PitchedNoteEvent rolled = source;
             rolled.length = segmentSteps;
             setNoteStartTick(rolled, startTick + i * segmentSteps * ticksPerStep());
             insertedNotes.push_back(rolled);
@@ -1396,7 +1930,10 @@ bool Sub808PianoRollComponent::rollSelectionWithDivisions(int divisions)
                 && current.pitch == note.pitch
                 && current.length == note.length
                 && current.velocity == note.velocity
-                && current.microOffset == note.microOffset)
+                && current.microOffset == note.microOffset
+                && current.isSlide == note.isSlide
+                && current.isLegato == note.isLegato
+                && current.glideToNext == note.glideToNext)
             {
                 consumed[static_cast<size_t>(i)] = true;
                 selectedIndices.push_back(i);
@@ -1422,7 +1959,7 @@ bool Sub808PianoRollComponent::splitNoteAtTick(int noteIndex, int cutTick)
     if (cutTick <= startTick + ticksPerStep() || cutTick >= endTick - ticksPerStep())
         return false;
 
-    NoteEvent tail = note;
+    PitchedNoteEvent tail = note;
     setNoteStartTick(tail, cutTick);
     note.length = juce::jmax(1,
                              static_cast<int>(std::ceil(static_cast<double>(cutTick - startTick)
@@ -1442,7 +1979,7 @@ bool Sub808PianoRollComponent::eraseNoteAt(juce::Point<int> p)
         return false;
 
     const auto& note = notes[static_cast<size_t>(*hit)];
-    const int key = ((noteStartTick(note) & 0x0fffff) << 4) ^ (note.pitch & 0x0f);
+    const int key = ((noteStartTick(note) & 0x0fffff) << 8) ^ (note.pitch & 0x0ff);
     if (!eraseVisitedKeys.insert(key).second)
         return false;
 
@@ -1480,8 +2017,8 @@ bool Sub808PianoRollComponent::placeDrawNoteAt(juce::Point<int> p)
     if (!noteGridBounds().contains(p) || p.x < kKeyboardWidth)
         return false;
 
-    NoteEvent note;
-    note.pitch = pitchAtY(p.y);
+    PitchedNoteEvent note;
+    note.pitch = snappedPitchForInput(pitchAtY(p.y), false);
     const int tick = snappedTickAtX(p.x);
     note.step = juce::jlimit(0, totalSteps() - 1, tick / ticksPerStep());
     note.length = 1;
@@ -1508,6 +2045,7 @@ bool Sub808PianoRollComponent::placeDrawNoteAt(juce::Point<int> p)
         {
             setSingleSelection(i);
             activeNoteIndex = i;
+            previewNote(notes[static_cast<size_t>(i)]);
             break;
         }
     }
@@ -1536,7 +2074,9 @@ bool Sub808PianoRollComponent::isStretchEditKeyDown() const
         return false;
 
     const auto modifiers = juce::ModifierKeys::getCurrentModifiersRealtime();
-    if (!modifiers.isCtrlDown())
+    const auto requiredFlags = inputBindings.stretchNoteModifiers;
+    if (requiredFlags != juce::ModifierKeys::noModifiers
+        && (modifiers.getRawFlags() & requiredFlags) != requiredFlags)
         return false;
 
     if (juce::KeyPress::isKeyCurrentlyDown(code))
@@ -1546,6 +2086,39 @@ bool Sub808PianoRollComponent::isStretchEditKeyDown() const
     if (code >= 'a' && code <= 'z')
         return juce::KeyPress::isKeyCurrentlyDown(code - 32);
     return false;
+}
+
+int Sub808PianoRollComponent::snappedPitchForInput(int rawPitch, bool bypassScaleSnap) const
+{
+    const int clamped = juce::jlimit(kMinPitch, kMaxPitch, rawPitch);
+    if (bypassScaleSnap || !shouldForceScaleSnap())
+        return clamped;
+
+    return Sub808Scale::snapPitchToScale(clamped, bassKeyRootChoice, bassScaleModeChoice, kMinPitch, kMaxPitch);
+}
+
+bool Sub808PianoRollComponent::isPitchInActiveScale(int pitch) const
+{
+    if (laneSettings.scaleSnapPolicy == Sub808ScaleSnapPolicy::Off)
+        return false;
+
+    return Sub808Scale::isPitchInScale(pitch, bassKeyRootChoice, bassScaleModeChoice);
+}
+
+bool Sub808PianoRollComponent::isRootPitch(int pitch) const
+{
+    return Sub808Scale::isRootPitch(pitch, bassKeyRootChoice);
+}
+
+bool Sub808PianoRollComponent::shouldForceScaleSnap() const
+{
+    return laneSettings.scaleSnapPolicy == Sub808ScaleSnapPolicy::ForceToScale;
+}
+
+void Sub808PianoRollComponent::previewNote(const PitchedNoteEvent& note)
+{
+    if (onPreviewNote)
+        onPreviewNote(note.pitch, note.velocity, juce::jmax(1, note.length) * ticksPerStep());
 }
 
 juce::String Sub808PianoRollComponent::snapModeLabel() const
@@ -1610,74 +2183,30 @@ void Sub808PianoRollComponent::shiftFocusedOctave(int delta)
 
 void Sub808PianoRollComponent::updateMouseCursor()
 {
-    if (editMode == EditMode::Stretch || isStretchEditKeyDown())
+    if (editMode == EditMode::Stretch
+        || hoverZone == HoverZone::ResizeLeft
+        || hoverZone == HoverZone::ResizeRight)
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    else if (editMode == EditMode::EraseDrag)
+        setMouseCursor(toolCursorFor(GridEditorComponent::EditorTool::Erase));
     else
         setMouseCursor(toolCursorFor(editorTool));
 }
 
 void Sub808PianoRollComponent::sortNotes()
 {
-    std::vector<NoteEvent> selectedSnapshots;
-    selectedSnapshots.reserve(selectedIndices.size());
-    for (const int idx : selectedIndices)
-    {
-        if (idx >= 0 && idx < static_cast<int>(notes.size()))
-            selectedSnapshots.push_back(notes[static_cast<size_t>(idx)]);
-    }
-
-    std::optional<NoteEvent> activeSnapshot;
-    if (activeNoteIndex >= 0 && activeNoteIndex < static_cast<int>(notes.size()))
-        activeSnapshot = notes[static_cast<size_t>(activeNoteIndex)];
-
-    std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
-    {
-        if (a.step != b.step)
-            return a.step < b.step;
-        if (a.microOffset != b.microOffset)
-            return a.microOffset < b.microOffset;
-        return a.pitch < b.pitch;
-    });
-
-    selectedIndices.clear();
-    for (const auto& selectedNote : selectedSnapshots)
-    {
-        for (int i = 0; i < static_cast<int>(notes.size()); ++i)
-        {
-            const auto& current = notes[static_cast<size_t>(i)];
-            if (current.pitch == selectedNote.pitch
-                && current.step == selectedNote.step
-                && current.length == selectedNote.length
-                && current.velocity == selectedNote.velocity
-                && current.microOffset == selectedNote.microOffset)
-            {
-                selectedIndices.push_back(i);
-                break;
-            }
-        }
-    }
-
-    activeNoteIndex = -1;
-    if (activeSnapshot.has_value())
-    {
-        for (int i = 0; i < static_cast<int>(notes.size()); ++i)
-        {
-            const auto& current = notes[static_cast<size_t>(i)];
-            if (current.pitch == activeSnapshot->pitch
-                && current.step == activeSnapshot->step
-                && current.length == activeSnapshot->length
-                && current.microOffset == activeSnapshot->microOffset)
-            {
-                activeNoteIndex = i;
-                break;
-            }
-        }
-    }
+    Sub808EditModel::sortNotes(notes, selectedIndices, activeNoteIndex);
 }
 
 void Sub808PianoRollComponent::commit()
 {
     if (onNotesEdited)
-        onNotesEdited(notes);
+    {
+        std::vector<Sub808NoteEvent> committedNotes;
+        committedNotes.reserve(notes.size());
+        for (const auto& note : notes)
+            committedNotes.push_back(toSub808NoteEvent(note));
+        onNotesEdited(committedNotes);
+    }
 }
 } // namespace bbg

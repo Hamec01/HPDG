@@ -117,6 +117,11 @@ public:
     int getBassScaleModeChoice() const;
     void setBassKeyRootChoice(int choice);
     void setBassScaleModeChoice(int choice);
+    void auditionSub808Note(int pitch, int velocity, int lengthTicks);
+    void setSub808TrackNotes(TrackType track, const std::vector<Sub808NoteEvent>& notes);
+    void setSub808TrackNotes(const RuntimeLaneId& laneId, const std::vector<Sub808NoteEvent>& notes);
+    void setSub808LaneSettings(TrackType track, const Sub808LaneSettings& settings);
+    void setSub808LaneSettings(const RuntimeLaneId& laneId, const Sub808LaneSettings& settings);
 
     void setTrackSolo(TrackType track, bool value);
     void setTrackSolo(const RuntimeLaneId& laneId, bool value);
@@ -188,7 +193,18 @@ private:
         int pitch = 36;
         bool legato = false;
         bool glide = false;
+        bool mono = true;
+        bool cutItself = true;
+        int glideDurationSamples = 0;
         juce::String sampleName;
+    };
+
+    struct PendingPreviewNote
+    {
+        TrackType track = TrackType::Sub808;
+        int pitch = 36;
+        int velocity = 100;
+        int lengthTicks = 960;
     };
 
     struct SoundFxRuntimeState
@@ -266,6 +282,7 @@ private:
     SoundFxRuntimeState globalFxRuntimeState;
     MasterFxRuntimeState masterFxRuntimeState;
     std::vector<PreviewEvent> previewEvents;
+    std::vector<PendingPreviewNote> pendingPreviewNotes;
     bool previewPlaying = false;
     int previewSamplePosition = 0;
     bool startPlayWithDawEnabled = false;

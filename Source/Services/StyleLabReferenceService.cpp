@@ -4,6 +4,7 @@
 
 #include "TemporaryMidiExportService.h"
 #include "../Core/PatternProjectSerialization.h"
+#include "../Core/Sub808TrackAccess.h"
 #include "../Core/TrackRegistry.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -221,6 +222,9 @@ juce::var noteToMetadataVar(const NoteEvent& note)
     object->setProperty("stepInBar", note.step % 16);
     object->setProperty("isGhost", note.isGhost);
     object->setProperty("semanticRole", note.semanticRole);
+    object->setProperty("isSlide", note.isSlide);
+    object->setProperty("isLegato", note.isLegato);
+    object->setProperty("glideToNext", note.glideToNext);
     return juce::var(object);
 }
 
@@ -236,17 +240,36 @@ juce::var trackStateToVar(const TrackState& track)
     object->setProperty("selectedSampleIndex", track.selectedSampleIndex);
     object->setProperty("selectedSampleName", track.selectedSampleName);
     object->setProperty("sound", soundLayerToVar(track.sound));
+    object->setProperty("sub808Mono", track.sub808Settings.mono);
+    object->setProperty("sub808CutItself", track.sub808Settings.cutItself);
+    object->setProperty("sub808GlideTimeMs", track.sub808Settings.glideTimeMs);
+    object->setProperty("sub808OverlapMode", static_cast<int>(track.sub808Settings.overlapMode));
+    object->setProperty("sub808ScaleSnapPolicy", static_cast<int>(track.sub808Settings.scaleSnapPolicy));
 
+    const auto effectiveSub808Notes = track.type == TrackType::Sub808 ? sub808NotesForRead(track) : std::vector<Sub808NoteEvent> {};
     juce::Array<juce::var> notes;
     int taggedNoteCount = 0;
-    for (const auto& note : track.notes)
+    if (track.type == TrackType::Sub808)
     {
-        if (note.semanticRole.isNotEmpty())
-            ++taggedNoteCount;
-        notes.add(noteToMetadataVar(note));
+        for (const auto& note : effectiveSub808Notes)
+        {
+            const auto legacy = toLegacyNoteEvent(note);
+            if (legacy.semanticRole.isNotEmpty())
+                ++taggedNoteCount;
+            notes.add(noteToMetadataVar(legacy));
+        }
+    }
+    else
+    {
+        for (const auto& note : track.notes)
+        {
+            if (note.semanticRole.isNotEmpty())
+                ++taggedNoteCount;
+            notes.add(noteToMetadataVar(note));
+        }
     }
 
-    object->setProperty("noteCount", static_cast<int>(track.notes.size()));
+    object->setProperty("noteCount", track.type == TrackType::Sub808 ? static_cast<int>(effectiveSub808Notes.size()) : static_cast<int>(track.notes.size()));
     object->setProperty("taggedNoteCount", taggedNoteCount);
     object->setProperty("notes", juce::var(notes));
     return juce::var(object);
@@ -425,11 +448,23 @@ juce::var projectToMetadataVar(const PatternProject& project)
         const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, track.laneId);
         tracks.add(trackToMetadataVar(track, lane));
         ++backedLaneCount;
-        totalNotes += static_cast<int>(track.notes.size());
-        taggedNotes += static_cast<int>(std::count_if(track.notes.begin(), track.notes.end(), [](const NoteEvent& note)
+        if (track.type == TrackType::Sub808)
         {
-            return note.semanticRole.isNotEmpty();
-        }));
+            const auto effectiveSub808Notes = sub808NotesForRead(track);
+            totalNotes += static_cast<int>(effectiveSub808Notes.size());
+            taggedNotes += static_cast<int>(std::count_if(effectiveSub808Notes.begin(), effectiveSub808Notes.end(), [](const Sub808NoteEvent& note)
+            {
+                return note.semanticRole.isNotEmpty();
+            }));
+        }
+        else
+        {
+            totalNotes += static_cast<int>(track.notes.size());
+            taggedNotes += static_cast<int>(std::count_if(track.notes.begin(), track.notes.end(), [](const NoteEvent& note)
+            {
+                return note.semanticRole.isNotEmpty();
+            }));
+        }
     }
 
     const auto selectedTrackLaneId = (project.selectedTrackIndex >= 0 && project.selectedTrackIndex < static_cast<int>(project.tracks.size()))

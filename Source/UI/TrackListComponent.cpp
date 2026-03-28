@@ -45,6 +45,7 @@ RuntimeLaneRowState buildLaneRowState(const RuntimeLaneDefinition& lane, const s
         row.laneVolume = trackIt->laneVolume;
         row.sound = trackIt->sound;
         row.selectedSampleName = trackIt->selectedSampleName;
+        row.sub808Settings = trackIt->sub808Settings;
         if (trackIt->runtimeTrackType.has_value())
             row.runtimeTrackType = trackIt->runtimeTrackType;
     }
@@ -335,6 +336,7 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
         {
             rows[i]->syncFromState(visibleLanes[i]);
             rows[i]->setBassControls(bassKeyRootChoice, bassScaleModeChoice);
+            rows[i]->setSub808Settings(visibleLanes[i].sub808Settings);
             if (rows[i]->isBackedBy(TrackType::HatFX))
                 rows[i]->setHatFxDragState(hatFxDragDensity, hatFxDragLocked);
         }
@@ -470,7 +472,13 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
             if (onBassScaleChanged)
                 onBassScaleChanged(choice);
         };
+        row->onSub808SettingsChanged = [this](const RuntimeLaneId& laneId, const Sub808LaneSettings& settings)
+        {
+            if (onSub808SettingsChanged)
+                onSub808SettingsChanged(laneId, settings);
+        };
         row->setBassControls(bassKeyRootChoice, bassScaleModeChoice);
+        row->setSub808Settings(lane.sub808Settings);
         if (row->isBackedBy(TrackType::HatFX))
             row->setHatFxDragState(hatFxDragDensity, hatFxDragLocked);
 

@@ -36,6 +36,7 @@ public:
     struct UiLayoutState
     {
         int leftPanelWidth = 420;
+        juce::Viewport sub808Viewport;
         MainHeaderComponent::HeaderControlsMode headerControlsMode = MainHeaderComponent::HeaderControlsMode::Expanded;
     };
 
@@ -43,6 +44,7 @@ public:
     {
         AlternateLaneEditor editorType = AlternateLaneEditor::None;
         std::optional<TrackType> trackType;
+        RuntimeLaneId laneId;
         bool isVisible = false;
     };
 
@@ -85,10 +87,12 @@ private:
     void adjustGridVerticalZoom(float delta, int anchorViewportY);
     bool zoomGridToSelection();
     void zoomGridToPattern();
+    void syncAlternateEditorForLane(const PatternProject& project, const RuntimeLaneId& laneId);
     void syncEditorToolButtons(GridEditorComponent::EditorTool tool);
     void setAlternateEditorVisible(bool shouldShow,
                                    AlternateLaneEditor editorType = AlternateLaneEditor::None,
-                                   std::optional<TrackType> trackType = std::nullopt);
+                                   std::optional<TrackType> trackType = std::nullopt,
+                                   RuntimeLaneId laneId = {});
     void setupHotkeys();
     void applyHotkeysToGrid();
     void loadHotkeys();
@@ -113,6 +117,9 @@ private:
     void showHotkeysMenu();
     void showHotkeyActionMenu(const juce::String& actionId, std::function<void()> onDone = {});
     void applyProjectSnapshotChange(const PatternProject& before, const PatternProject& after, bool refreshTrackRows = true);
+    void applyProcessorProjectMutation(const std::function<void()>& mutation, bool refreshTrackRows = true);
+    bool clearLaneNotes(const RuntimeLaneId& laneId);
+    bool clearAllPatternNotes();
     void showImportMidiToLaneDialog(const RuntimeLaneId& laneId);
     void showRenameLaneDialog(const RuntimeLaneId& laneId);
     void requestDeleteLane(const RuntimeLaneId& laneId);
@@ -124,6 +131,7 @@ private:
     void setActiveEditorTool(GridEditorComponent::EditorTool tool);
     void toggleSub808PianoRollFullscreen();
     void toggleGridEditorFullscreen();
+    void setSub808DetachedWindowVisible(bool shouldShow);
     void updateCursorForMousePosition(juce::Point<float> point);
     bool isStandaloneWindowMaximized() const;
     void toggleStandaloneWindowMaximize();
@@ -151,6 +159,7 @@ private:
     juce::TextButton pianoRollFullscreenButton { "Full" };
     juce::TextButton gridEditorFullscreenButton { "Full" };
     juce::Viewport gridViewport;
+    juce::Viewport sub808Viewport;
     GridEditorComponent grid;
     Sub808PianoRollComponent sub808PianoRoll;
     float horizontalZoom = 1.0f;
@@ -158,6 +167,7 @@ private:
     AlternateEditorSession alternateEditorSession;
     bool pianoRollFullscreenMode = false;
     bool gridEditorFullscreenMode = false;
+    std::unique_ptr<juce::DocumentWindow> sub808DetachedWindow;
     int lastGenerationCounter = -1;
     juce::Rectangle<int> standaloneRestoreBounds;
     UiLayoutState uiLayoutState;
@@ -176,6 +186,7 @@ private:
     std::vector<PatternProject> redoHistory;
     std::optional<PatternProject> pendingHistoryBefore;
     std::optional<PatternProject> pendingHistoryAfter;
+    std::optional<PatternProject> lastObservedProjectState;
     std::optional<StyleLabState> styleLabState;
     bool pendingHistoryCommitScheduled = false;
     bool suppressHistory = false;

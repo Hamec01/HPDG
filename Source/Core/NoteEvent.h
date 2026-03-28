@@ -13,5 +13,8 @@ struct NoteEvent
     int microOffset = 0;   // Signed tick offset at PPQ=960 from step-quantized position.
     bool isGhost = false;
     juce::String semanticRole;
+    bool isSlide = false;
+    bool isLegato = false;
+    bool glideToNext = false;
 };
 } // namespace bbg

@@ -1,5 +1,6 @@
 #include "TrackRowComponent.h"
 
+#include <array>
 #include <cmath>
 
 namespace bbg
@@ -612,6 +613,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     if (sampleText.isEmpty())
         sampleText = "(none)";
     sampleNameLabel.setText(sampleText, juce::dontSendNotification);
+    currentSub808Settings = state.sub808Settings;
 
     rgButton.setEnabled(hasRuntimeTrack());
     soloButton.setEnabled(hasRuntimeTrack());
@@ -645,6 +647,14 @@ void TrackRowComponent::setBassControls(int keyRootChoice, int scaleModeChoice)
     currentBassScaleChoice = scaleModeChoice;
     bassKeyCombo.setSelectedId(juce::jlimit(1, 12, keyRootChoice + 1), juce::dontSendNotification);
     bassScaleCombo.setSelectedId(juce::jlimit(1, 3, scaleModeChoice + 1), juce::dontSendNotification);
+}
+
+void TrackRowComponent::setSub808Settings(const Sub808LaneSettings& settings)
+{
+    if (!isSub808Lane())
+        return;
+
+    currentSub808Settings = settings;
 }
 
 void TrackRowComponent::setHatFxDragState(float density, bool locked)
@@ -683,6 +693,15 @@ void TrackRowComponent::showOverflowMenu()
     constexpr int kActionMoveLaneDown = 10;
     constexpr int kActionRenameLane = 11;
     constexpr int kActionDeleteLane = 12;
+    constexpr int kActionSub808Mono = 20;
+    constexpr int kActionSub808CutItself = 21;
+    constexpr int kActionSub808OverlapRetrigger = 22;
+    constexpr int kActionSub808OverlapLegato = 23;
+    constexpr int kActionSub808OverlapGlide = 24;
+    constexpr int kActionSub808SnapOff = 25;
+    constexpr int kActionSub808SnapHighlight = 26;
+    constexpr int kActionSub808SnapForce = 27;
+    constexpr int kActionSub808GlideTimeBase = 100;
 
     menu.addItem(kActionOpenSampleMenu, "Sample Menu", hasRuntimeTrack() && onSampleMenuRequested != nullptr);
     menu.addItem(kActionPrevSample, "Previous Sample", hasRuntimeTrack() && onPrevSample != nullptr);
@@ -697,6 +716,37 @@ void TrackRowComponent::showOverflowMenu()
     menu.addItem(kActionDeleteLane, "Delete Lane", onDeleteLaneRequested != nullptr);
     menu.addItem(kActionMoveLaneUp, "Move Lane Up", onMoveLaneUp != nullptr);
     menu.addItem(kActionMoveLaneDown, "Move Lane Down", onMoveLaneDown != nullptr);
+
+    if (isSub808Lane() && onSub808SettingsChanged != nullptr)
+    {
+        juce::PopupMenu settingsMenu;
+        settingsMenu.addItem(kActionSub808Mono, "Mono", true, currentSub808Settings.mono);
+        settingsMenu.addItem(kActionSub808CutItself, "Cut Itself", true, currentSub808Settings.cutItself);
+
+        juce::PopupMenu overlapMenu;
+        overlapMenu.addItem(kActionSub808OverlapRetrigger, "Retrigger", true, currentSub808Settings.overlapMode == Sub808OverlapMode::Retrigger);
+        overlapMenu.addItem(kActionSub808OverlapLegato, "Legato", true, currentSub808Settings.overlapMode == Sub808OverlapMode::Legato);
+        overlapMenu.addItem(kActionSub808OverlapGlide, "Glide", true, currentSub808Settings.overlapMode == Sub808OverlapMode::Glide);
+        settingsMenu.addSubMenu("Overlap Mode", overlapMenu, true);
+
+        juce::PopupMenu snapMenu;
+        snapMenu.addItem(kActionSub808SnapOff, "Snap Off", true, currentSub808Settings.scaleSnapPolicy == Sub808ScaleSnapPolicy::Off);
+        snapMenu.addItem(kActionSub808SnapHighlight, "Highlight Only", true, currentSub808Settings.scaleSnapPolicy == Sub808ScaleSnapPolicy::HighlightOnly);
+        snapMenu.addItem(kActionSub808SnapForce, "Force To Scale", true, currentSub808Settings.scaleSnapPolicy == Sub808ScaleSnapPolicy::ForceToScale);
+        settingsMenu.addSubMenu("Scale Snap", snapMenu, true);
+
+        juce::PopupMenu glideMenu;
+        static constexpr std::array<int, 6> glideTimes { 0, 40, 80, 120, 200, 320 };
+        for (const int glideTime : glideTimes)
+            glideMenu.addItem(kActionSub808GlideTimeBase + glideTime,
+                              juce::String(glideTime) + " ms",
+                              true,
+                              currentSub808Settings.glideTimeMs == glideTime);
+        settingsMenu.addSubMenu("Glide Time", glideMenu, true);
+
+        menu.addSeparator();
+        menu.addSubMenu("Sub808 Settings", settingsMenu, true);
+    }
 
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(&overflowMenuButton),
                        [safe = juce::Component::SafePointer<TrackRowComponent>(this)](int choice)
@@ -757,6 +807,46 @@ void TrackRowComponent::showOverflowMenu()
                            {
                                if (safe->onEnableChanged)
                                    safe->onEnableChanged(safe->laneId, !safe->enableButton.getToggleState());
+                               return;
+                           }
+
+                           if (choice >= 100)
+                           {
+                               if (safe->onSub808SettingsChanged)
+                               {
+                                   auto settings = safe->currentSub808Settings;
+                                   settings.glideTimeMs = juce::jlimit(0, 4000, choice - 100);
+                                   safe->currentSub808Settings = settings;
+                                   safe->onSub808SettingsChanged(safe->laneId, settings);
+                               }
+                               return;
+                           }
+
+                           if (choice >= 20 && choice <= 27)
+                           {
+                               if (safe->onSub808SettingsChanged == nullptr)
+                                   return;
+
+                               auto settings = safe->currentSub808Settings;
+                               if (choice == 20)
+                                   settings.mono = !settings.mono;
+                               else if (choice == 21)
+                                   settings.cutItself = !settings.cutItself;
+                               else if (choice == 22)
+                                   settings.overlapMode = Sub808OverlapMode::Retrigger;
+                               else if (choice == 23)
+                                   settings.overlapMode = Sub808OverlapMode::Legato;
+                               else if (choice == 24)
+                                   settings.overlapMode = Sub808OverlapMode::Glide;
+                               else if (choice == 25)
+                                   settings.scaleSnapPolicy = Sub808ScaleSnapPolicy::Off;
+                               else if (choice == 26)
+                                   settings.scaleSnapPolicy = Sub808ScaleSnapPolicy::HighlightOnly;
+                               else if (choice == 27)
+                                   settings.scaleSnapPolicy = Sub808ScaleSnapPolicy::ForceToScale;
+
+                               safe->currentSub808Settings = settings;
+                               safe->onSub808SettingsChanged(safe->laneId, settings);
                                return;
                            }
 

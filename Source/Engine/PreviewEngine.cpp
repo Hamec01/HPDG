@@ -1,5 +1,6 @@
 #include "PreviewEngine.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace bbg
@@ -25,9 +26,21 @@ void PreviewEngine::reset()
         voice.sample = nullptr;
         voice.trackType = TrackType::Kick;
         voice.active = false;
-        voice.samplePosition = 0;
+        voice.samplePosition = 0.0;
         voice.startDelaySamples = 0;
         voice.velocity = 1.0f;
+        voice.playbackRate = 1.0f;
+        voice.targetPlaybackRate = 1.0f;
+        voice.glideStepPerSample = 0.0f;
+        voice.glideSamplesRemaining = 0;
+        voice.remainingSamples = -1;
+        voice.hasPendingTransition = false;
+        voice.pendingTransitionDelaySamples = 0;
+        voice.pendingPlaybackRate = 1.0f;
+        voice.pendingVelocity = 1.0f;
+        voice.pendingRemainingSamples = -1;
+        voice.pendingGlide = false;
+        voice.pendingGlideDurationSamples = 0;
     }
 }
 
@@ -37,6 +50,16 @@ void PreviewEngine::noteOn(TrackType trackType, float gain, const LaneSampleBank
 }
 
 void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOffset, const LaneSampleBank& sampleBank)
+{
+    noteOnAtSample(trackType, gain, sampleOffset, sampleBank, {});
+}
+
+void PreviewEngine::noteOn(TrackType trackType, float gain, const LaneSampleBank& sampleBank, const TriggerOptions& options)
+{
+    noteOnAtSample(trackType, gain, 0, sampleBank, options);
+}
+
+void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOffset, const LaneSampleBank& sampleBank, const TriggerOptions& options)
 {
     const auto* selected = sampleBank.getSelectedBuffer(trackType);
     if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == TrackType::HatFX)
@@ -50,13 +73,31 @@ void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOf
 
     if (trackType == TrackType::Sub808)
     {
-        // Mono choke: retriggering sub immediately cuts previous sub tail.
-        for (auto& voice : voices)
+        if (options.mono && (options.legato || options.glide))
         {
-            if (voice.active && voice.trackType == TrackType::Sub808)
+            if (auto* activeVoice = findActiveVoice(TrackType::Sub808); activeVoice != nullptr)
             {
-                voice.active = false;
-                voice.samplePosition = 0;
+                activeVoice->hasPendingTransition = true;
+                activeVoice->pendingTransitionDelaySamples = std::max(0, sampleOffset);
+                activeVoice->pendingPlaybackRate = juce::jmax(0.01f, options.playbackRate);
+                activeVoice->pendingVelocity = juce::jlimit(0.0f, 1.0f, gain);
+                activeVoice->pendingRemainingSamples = options.maxDurationSamples;
+                activeVoice->pendingGlide = options.glide;
+                activeVoice->pendingGlideDurationSamples = std::max(0, options.glideDurationSamples);
+                return;
+            }
+        }
+
+        if (options.mono || options.cutItself)
+        {
+            for (auto& voice : voices)
+            {
+                if (voice.active && voice.trackType == TrackType::Sub808)
+                {
+                    voice.active = false;
+                    voice.samplePosition = 0.0;
+                    voice.hasPendingTransition = false;
+                }
             }
         }
     }
@@ -68,9 +109,41 @@ void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOf
     voice->active = true;
     voice->sample = selected;
     voice->trackType = trackType;
-    voice->samplePosition = 0;
+    voice->samplePosition = 0.0;
     voice->startDelaySamples = std::max(0, sampleOffset);
     voice->velocity = juce::jlimit(0.0f, 1.0f, gain);
+    voice->playbackRate = juce::jmax(0.01f, options.playbackRate);
+    voice->targetPlaybackRate = voice->playbackRate;
+    voice->glideStepPerSample = 0.0f;
+    voice->glideSamplesRemaining = 0;
+    voice->remainingSamples = options.maxDurationSamples;
+    voice->hasPendingTransition = false;
+}
+
+void PreviewEngine::applyPendingTransition(Voice& voice)
+{
+    if (!voice.hasPendingTransition)
+        return;
+
+    voice.velocity = juce::jlimit(0.0f, 1.0f, voice.pendingVelocity);
+    voice.remainingSamples = voice.pendingRemainingSamples;
+
+    if (voice.pendingGlide && voice.pendingGlideDurationSamples > 0)
+    {
+        voice.targetPlaybackRate = juce::jmax(0.01f, voice.pendingPlaybackRate);
+        voice.glideSamplesRemaining = voice.pendingGlideDurationSamples;
+        voice.glideStepPerSample = (voice.targetPlaybackRate - voice.playbackRate)
+            / static_cast<float>(juce::jmax(1, voice.glideSamplesRemaining));
+    }
+    else
+    {
+        voice.playbackRate = juce::jmax(0.01f, voice.pendingPlaybackRate);
+        voice.targetPlaybackRate = voice.playbackRate;
+        voice.glideStepPerSample = 0.0f;
+        voice.glideSamplesRemaining = 0;
+    }
+
+    voice.hasPendingTransition = false;
 }
 
 void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
@@ -81,6 +154,26 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
     const auto totalSamples = buffer.getNumSamples();
     const int start = juce::jlimit(0, totalSamples, startSample);
     const int end = juce::jlimit(start, totalSamples, start + numSamples);
+
+    const auto readSampleAt = [](const juce::AudioBuffer<float>& source, double position)
+    {
+        const int channelCount = source.getNumChannels();
+        const int sampleCount = source.getNumSamples();
+        const int baseIndex = juce::jlimit(0, juce::jmax(0, sampleCount - 1), static_cast<int>(position));
+        const int nextIndex = juce::jlimit(0, juce::jmax(0, sampleCount - 1), baseIndex + 1);
+        const float fraction = static_cast<float>(position - static_cast<double>(baseIndex));
+
+        const auto monoAt = [&](int index)
+        {
+            if (channelCount <= 1)
+                return source.getSample(0, index);
+            return 0.5f * (source.getSample(0, index) + source.getSample(1, index));
+        };
+
+        const float base = monoAt(baseIndex);
+        const float next = monoAt(nextIndex);
+        return base + (next - base) * fraction;
+    };
 
     for (int sample = start; sample < end; ++sample)
     {
@@ -97,29 +190,71 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
                 continue;
             }
 
+            if (voice.hasPendingTransition)
+            {
+                if (voice.pendingTransitionDelaySamples > 0)
+                {
+                    --voice.pendingTransitionDelaySamples;
+                }
+                else
+                {
+                    applyPendingTransition(voice);
+                }
+            }
+
             const auto* bufferRef = voice.sample;
             const int length = bufferRef->getNumSamples();
-            if (voice.samplePosition >= length)
+            if (voice.samplePosition >= static_cast<double>(length))
             {
                 voice.active = false;
                 continue;
             }
 
-            const int chCount = bufferRef->getNumChannels();
-            float src = 0.0f;
-            if (chCount == 1)
-                src = bufferRef->getSample(0, voice.samplePosition);
-            else
-                src = 0.5f * (bufferRef->getSample(0, voice.samplePosition) + bufferRef->getSample(1, voice.samplePosition));
+            const float src = readSampleAt(*bufferRef, voice.samplePosition);
 
             mixed += src * voice.velocity;
-            ++voice.samplePosition;
+
+            if (voice.glideSamplesRemaining > 0)
+            {
+                voice.playbackRate += voice.glideStepPerSample;
+                --voice.glideSamplesRemaining;
+                if (voice.glideSamplesRemaining <= 0)
+                    voice.playbackRate = voice.targetPlaybackRate;
+            }
+
+            voice.samplePosition += static_cast<double>(voice.playbackRate);
+
+            if (voice.remainingSamples > 0)
+            {
+                --voice.remainingSamples;
+                if (voice.remainingSamples <= 0)
+                    voice.active = false;
+            }
         }
 
         const float normalized = std::tanh(mixed * 0.85f);
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             buffer.addSample(ch, sample, normalized);
     }
+}
+
+PreviewEngine::Voice* PreviewEngine::findActiveVoice(TrackType trackType)
+{
+    for (auto& voice : voices)
+    {
+        if (voice.active && voice.trackType == trackType)
+            return &voice;
+    }
+
+    return nullptr;
+}
+
+bool PreviewEngine::hasActiveVoices() const
+{
+    return std::any_of(voices.begin(), voices.end(), [](const Voice& voice)
+    {
+        return voice.active;
+    });
 }
 
 PreviewEngine::Voice* PreviewEngine::allocateVoice(TrackType incomingTrack)
@@ -142,7 +277,7 @@ PreviewEngine::Voice* PreviewEngine::allocateVoice(TrackType incomingTrack)
             continue;
 
         const int length = std::max(1, voice.sample->getNumSamples());
-        const int progress = (voice.samplePosition * 1000) / length;
+        const int progress = static_cast<int>((voice.samplePosition * 1000.0) / static_cast<double>(length));
         if (progress > bestProgress)
         {
             bestProgress = progress;

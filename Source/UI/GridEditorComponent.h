@@ -23,7 +23,8 @@ public:
     {
         juce::ModifierKeys::Flags drawModeModifier = juce::ModifierKeys::shiftModifier;
         int velocityEditKeyCode = 'V';
-        int stretchNoteKeyCode = 'S';
+        int stretchNoteKeyCode = 'R';
+        juce::ModifierKeys::Flags stretchNoteModifiers = juce::ModifierKeys::shiftModifier;
         juce::ModifierKeys::Flags panViewModifier = juce::ModifierKeys::ctrlModifier;
         juce::ModifierKeys::Flags horizontalZoomModifier = juce::ModifierKeys::ctrlModifier;
         juce::ModifierKeys::Flags laneHeightZoomModifier = juce::ModifierKeys::shiftModifier;
@@ -140,6 +141,7 @@ private:
     juce::Rectangle<int> noteBounds(const NoteEvent& note, int row) const;
     int noteStartTick(const NoteEvent& note) const;
     int noteEndTick(const NoteEvent& note) const;
+    int noteEditorEndTick(const NoteEvent& note) const;
     bool setNoteStartTick(NoteEvent& note, int targetTick, int bars);
     bool eraseNote(const SelectedNoteRef& ref);
     bool eraseNoteAtCell(const RuntimeLaneId& laneId, int tick);
@@ -168,6 +170,7 @@ private:
     bool applySelectionStretchTicks(int deltaTicks, int bars);
     bool copySelectionInternal(bool removeAfterCopy);
     bool pasteClipboardAtTick(int anchorTick,
+                              std::optional<RuntimeLaneId> anchorLaneId = std::nullopt,
                               std::vector<SelectedNoteRef>* insertedSelectionOut = nullptr,
                               std::set<RuntimeLaneId>* changedTracksOut = nullptr,
                               bool clearSelectionBeforeInsert = true);
@@ -181,6 +184,7 @@ private:
     bool rollSelectionQuick();
     bool rollSelectionWithDivisions(int divisions);
     LaneEditorCapabilities laneEditorCapabilitiesForLane(const RuntimeLaneId& laneId) const;
+    bool canEditLaneInGrid(const RuntimeLaneId& laneId) const;
     int clampTickToProject(int tick) const;
     int quantizeTick(int tick) const;
     TrackState* findMutableTrack(const RuntimeLaneId& laneId);
@@ -192,6 +196,7 @@ private:
     bool beginVelocityEditGesture(const SelectedNoteRef& ref, juce::Point<int> position);
     int velocityFromY(int y, const RuntimeLaneId& laneId) const;
     int currentPasteAnchorTick() const;
+    std::optional<RuntimeLaneId> currentPasteAnchorLane() const;
     int tickAtX(int x) const;
     int snappedTickFromTick(int tick) const;
     int quantizedTickAtX(int x, bool snapToGrid) const;
@@ -202,6 +207,8 @@ private:
     bool isVelocityEditKeyDown() const;
     bool isStretchEditKeyDown() const;
     bool isSnapEnabled() const;
+    int defaultNoteLengthSteps() const;
+    int displayedNoteLengthTicks(const NoteEvent& note) const;
     int defaultNoteLengthTicks() const;
     int effectiveSnapTicks() const;
     int adaptiveSnapTicks() const;
@@ -247,7 +254,9 @@ private:
     enum class HoverZone
     {
         None,
-        NoteBody
+        NoteBody,
+        ResizeLeft,
+        ResizeRight
     };
 
     enum class EditMode
@@ -283,6 +292,7 @@ private:
     int dragOriginalVelocity = 100;
     int dragOriginalMicroOffset = 0;
     int dragOriginalPitch = 36;
+    int dragResizeAnchorTick = 0;
     bool resizeFromStart = false;
     bool movedDuringDrag = false;
     juce::Rectangle<int> marqueeRect;
@@ -293,6 +303,7 @@ private:
     std::vector<ClipboardNote> clipboardNotes;
     int clipboardSourceStartTick = 0;
     int clipboardSpanTicks = 0;
+    RuntimeLaneId clipboardSourceAnchorLane;
     int velocityOverlayPercent = 0;
     int velocityOverlayDelta = 0;
     bool velocityWaveModeActive = false;
