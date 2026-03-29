@@ -969,6 +969,7 @@ void runLifecycleCompositeContract()
                 { 42, 2, 1, 66, 0, false },
                 { 42, 4, 1, 98, 0, false },
                 { 42, 7, 1, 72, 0, false },
+                { 42, 7, 1, 78, 120, false },
                 { 42, 8, 1, 92, 0, false },
                 { 42, 10, 1, 62, 0, false },
                 { 42, 12, 1, 96, 0, false },
@@ -1722,6 +1723,8 @@ int main(int argc, char** argv)
 {
     try
     {
+        // Contract sections resolve StyleLabReferences via repo-relative paths, so run the full executable
+        // from the repository root rather than build/Release to avoid false missing-directory failures.
         const juce::String requestedContract = argc > 1 ? juce::String(argv[1]) : juce::String();
         const auto runNamed = [](const char* name, const auto& fn)
         {

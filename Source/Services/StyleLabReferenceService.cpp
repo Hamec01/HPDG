@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "TemporaryMidiExportService.h"
+#include "../Core/LaneDefaults.h"
 #include "../Core/PatternProjectSerialization.h"
 #include "../Core/Sub808TrackAccess.h"
 #include "../Core/TrackRegistry.h"
@@ -36,86 +37,6 @@ juce::String sanitizePathSegment(const juce::String& input)
 
     cleaned = cleaned.trimCharactersAtStart("_").trimCharactersAtEnd("_");
     return cleaned.isEmpty() ? "Unsorted" : cleaned;
-}
-
-juce::String defaultGroupForTrack(TrackType type)
-{
-    switch (type)
-    {
-        case TrackType::Kick:
-        case TrackType::GhostKick:
-            return "Kick";
-        case TrackType::Snare:
-        case TrackType::ClapGhostSnare:
-            return "Snare";
-        case TrackType::HiHat:
-        case TrackType::OpenHat:
-        case TrackType::HatFX:
-            return "Hats";
-        case TrackType::Ride:
-        case TrackType::Cymbal:
-            return "Texture";
-        case TrackType::Perc:
-            return "Perc";
-        case TrackType::Sub808:
-            return "Bass";
-        default:
-            break;
-    }
-
-    return "Custom";
-}
-
-juce::String defaultDependencyForTrack(TrackType type)
-{
-    switch (type)
-    {
-        case TrackType::GhostKick: return "Kick";
-        case TrackType::ClapGhostSnare: return "Snare";
-        case TrackType::HatFX: return "HiHat";
-        case TrackType::Sub808: return "Kick";
-        default: break;
-    }
-
-    return {};
-}
-
-int defaultPriorityForTrack(TrackType type)
-{
-    switch (type)
-    {
-        case TrackType::Kick: return 96;
-        case TrackType::Snare: return 92;
-        case TrackType::HiHat: return 86;
-        case TrackType::Sub808: return 82;
-        case TrackType::OpenHat: return 74;
-        case TrackType::Perc: return 68;
-        case TrackType::ClapGhostSnare: return 60;
-        case TrackType::GhostKick: return 58;
-        case TrackType::HatFX: return 56;
-        case TrackType::Ride: return 42;
-        case TrackType::Cymbal: return 38;
-        default: break;
-    }
-
-    return 50;
-}
-
-bool defaultCoreForTrack(TrackType type)
-{
-    switch (type)
-    {
-        case TrackType::GhostKick:
-        case TrackType::ClapGhostSnare:
-        case TrackType::HatFX:
-        case TrackType::Ride:
-        case TrackType::Cymbal:
-            return false;
-        default:
-            break;
-    }
-
-    return true;
 }
 
 juce::var valueTreeToVar(const juce::ValueTree& node)
@@ -542,10 +463,10 @@ StyleLabState StyleLabReferenceService::createDefaultState(const PatternProject&
             StyleLabLaneDefinition lane;
             lane.id = makeId();
             lane.laneName = info.displayName;
-            lane.groupName = defaultGroupForTrack(info.type);
-            lane.dependencyName = defaultDependencyForTrack(info.type);
-            lane.generationPriority = defaultPriorityForTrack(info.type);
-            lane.isCore = defaultCoreForTrack(info.type);
+            lane.groupName = LaneDefaults::defaultGroupForTrack(info.type);
+            lane.dependencyName = LaneDefaults::defaultDependencyForTrack(info.type);
+            lane.generationPriority = LaneDefaults::defaultPriorityForTrack(info.type);
+            lane.isCore = LaneDefaults::defaultCoreForTrack(info.type);
             lane.enabled = true;
             lane.isRuntimeRegistryLane = true;
             lane.runtimeTrackType = info.type;

@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(JUCE_TARGET_ARCHITECTURE "x86_64")
 
+include(CTest)
+
 # Point this to your JUCE checkout if not using FetchContent.
 # add_subdirectory("C:/JUCE" JUCE)
 
@@ -167,3 +169,40 @@ target_link_libraries(HPDG_RuntimeMetadataContract
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+add_executable(HPDG_CoreTests
+    Tests/CoreStage0Tests.cpp
+    Source/Core/TrackRegistry.cpp
+    Source/Core/RuntimeLaneLifecycle.cpp
+    Source/Core/PatternProjectSerialization.cpp
+    Source/Engine/MidiExportEngine.cpp
+    Source/Engine/StyleDefaults.cpp
+    Source/Engine/StyleDefinitionLoader.cpp
+    Source/Engine/StyleDefinitionResolver.cpp
+    Source/Engine/StyleInfluence.cpp
+    Source/Engine/BoomBap/BoomBapStyleProfile.cpp
+    Source/Engine/Rap/RapStyleProfile.cpp
+    Source/Engine/Trap/TrapStyleProfile.cpp
+    Source/Engine/Drill/DrillGrooveBlueprint.cpp
+    Source/Engine/Drill/DrillHatGenerator.cpp
+    Source/Engine/Drill/DrillStyleProfile.cpp
+    Source/Services/TemporaryMidiExportService.cpp
+    Source/Services/StyleLabReferenceService.cpp
+    Source/Services/StyleLabReferenceBrowserService.cpp
+)
+
+target_include_directories(HPDG_CoreTests
+    PRIVATE
+        Source
+)
+
+target_link_libraries(HPDG_CoreTests
+    PRIVATE
+        juce::juce_audio_formats
+        juce::juce_data_structures
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_test(NAME HPDG_CoreTests COMMAND HPDG_CoreTests)

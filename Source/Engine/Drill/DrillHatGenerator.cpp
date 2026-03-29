@@ -2000,20 +2000,70 @@ void DrillHatGenerator::applyVelocityShape(std::vector<HatEvent>& hats,
 void DrillHatGenerator::applyMicroTiming(std::vector<HatEvent>& hats,
                                          const std::vector<RollSegmentState>& segments,
                                          const DrillStyleProfile& style,
+                                         const MotionProfile& motion,
                                          const DrillHatBaseSpec& spec,
                                          const std::vector<BarContext>& contexts,
                                          int bars,
                                          std::mt19937& rng) const
 {
+    const int combinedMin = static_cast<int>(std::lround(spec.microTimingMin));
+    const int combinedMax = static_cast<int>(std::lround(spec.microTimingMax));
+    const double motionScale = std::clamp(0.48 + (motion.motionWeight - 0.65) * 0.58
+                                          + (motion.mode == MotionMode::High ? 0.22 : (motion.mode == MotionMode::Low ? -0.08 : 0.06)),
+                                          0.3,
+                                          1.25);
+    const int swingTicks = static_cast<int>(std::lround((style.swingPercent - 50.0f) * 1.2f * motionScale));
+
     for (auto& h : hats)
-        h.microOffset = 0;
+    {
+        const int bar = std::clamp(barFromTick(h.tick), 0, std::max(0, bars - 1));
+        const auto& context = contexts[static_cast<size_t>(bar)];
+        const int step32 = stepInBar32FromTick(h.tick);
+        const bool strongAnchor = h.entity == HatEntity::Backbone && (step32 % 8) == 0;
+
+        if (strongAnchor)
+        {
+            h.microOffset = 0;
+            continue;
+        }
+
+        double entityScale = 0.34;
+        switch (h.entity)
+        {
+            case HatEntity::Backbone: entityScale = 0.34; break;
+            case HatEntity::Fill: entityScale = 0.62; break;
+            case HatEntity::Roll: entityScale = 0.84; break;
+            case HatEntity::Accent: entityScale = 0.5; break;
+        }
+
+        const double roleScale = context.role == BarRole::Ending ? 1.15
+            : (context.role == BarRole::Transition ? 1.08 : 1.0);
+        const int scaledMin = std::min(-1, static_cast<int>(std::floor(static_cast<double>(combinedMin) * motionScale * entityScale * roleScale)));
+        const int scaledMax = std::max(1, static_cast<int>(std::ceil(static_cast<double>(combinedMax) * motionScale * entityScale * roleScale)));
+        std::uniform_int_distribution<int> jitter(scaledMin, scaledMax);
+
+        int offset = jitter(rng);
+        if ((step32 % 2) == 1)
+            offset += swingTicks;
+
+        if (h.entity == HatEntity::Roll)
+            offset += ((step32 % 2) == 0 ? -1 : 1) * static_cast<int>(std::lround(1.0 + motionScale * 2.0));
+        else if (h.entity == HatEntity::Accent && (step32 % 4) == 2)
+            offset += static_cast<int>(std::lround(1.0 + motionScale));
+
+        const int nextSnare = nearestForward(h.tick, context.snareTargetTicks);
+        if (nextSnare >= 0 && (nextSnare - h.tick) <= HiResTiming::kTicks1_16 && h.entity != HatEntity::Backbone)
+            offset -= static_cast<int>(std::lround(1.0 + motionScale * 2.0));
+
+        if (offset == 0 && motion.mode != MotionMode::Low && h.entity != HatEntity::Backbone)
+            offset = (step32 % 2) == 0 ? -1 : 1;
+
+        h.microOffset = std::clamp(offset,
+                                   std::min(combinedMin, -HiResTiming::kTicks1_32 / 3),
+                                   std::max(combinedMax, HiResTiming::kTicks1_32 / 3));
+    }
 
     (void)segments;
-    (void)style;
-    (void)spec;
-    (void)contexts;
-    (void)bars;
-    (void)rng;
 }
 
 void DrillHatGenerator::renderMidi(TrackState& track,
@@ -2094,7 +2144,7 @@ void DrillHatGenerator::generate(TrackState& track,
     assignHatAccents(hats, segments, barContext, features, style, motion, blueprint, bars, rng);
     applyHardCapsCleanup(hats, segments, barContext, style, motion, blueprint, bars);
     applyVelocityShape(hats, segments, style, spec, bars, rng);
-    applyMicroTiming(hats, segments, style, spec, barContext, bars, rng);
+    applyMicroTiming(hats, segments, style, motion, spec, barContext, bars, rng);
 
     {
         std::vector<HatEvent> prioritized = hats;

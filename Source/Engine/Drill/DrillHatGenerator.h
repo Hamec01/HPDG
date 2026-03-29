@@ -247,6 +247,7 @@ private:
     void applyMicroTiming(std::vector<HatEvent>& hats,
                           const std::vector<RollSegmentState>& segments,
                           const DrillStyleProfile& style,
+                          const MotionProfile& motion,
                           const DrillHatBaseSpec& spec,
                           const std::vector<BarContext>& contexts,
                           int bars,

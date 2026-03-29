@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../Core/ProjectLaneAccess.h"
 #include "../Core/Sub808TrackAccess.h"
 
 #include "PluginEditor.h"
 #include "../Core/PatternProjectSerialization.h"
+#include "../Core/ProjectStateController.h"
 #include "../Core/TrackRegistry.h"
 #include "../Engine/MidiExportEngine.h"
 #include "../Engine/StyleDefaults.h"
@@ -613,14 +615,13 @@ float BoomBapGeneratorAudioProcessor::getPreviewPlayheadStep() const
 void BoomBapGeneratorAudioProcessor::setPreviewStartStep(int step)
 {
     std::scoped_lock lock(projectMutex);
-    const int maxStep = juce::jmax(0, project.params.bars * 16 - 1);
-    project.previewStartStep = juce::jlimit(0, maxStep, step);
+    ProjectStateController::setPreviewStartStep(project, step);
 }
 
 void BoomBapGeneratorAudioProcessor::setPreviewPlaybackMode(PreviewPlaybackMode mode)
 {
     std::scoped_lock lock(projectMutex);
-    project.previewPlaybackMode = mode;
+    ProjectStateController::setPreviewPlaybackMode(project, mode);
     if (previewPlaying)
     {
         startPreviewFromCurrentStartStepLocked();
@@ -637,29 +638,14 @@ PreviewPlaybackMode BoomBapGeneratorAudioProcessor::getPreviewPlaybackMode() con
 void BoomBapGeneratorAudioProcessor::restoreEditorProjectSnapshot(const PatternProject& snapshot)
 {
     std::scoped_lock lock(projectMutex);
-    project = snapshot;
-    project.params = buildParamsFromState(lastTransport);
-    PatternProjectSerialization::validate(project);
+    ProjectStateController::restoreEditorProjectSnapshot(project, snapshot, buildParamsFromState(lastTransport));
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setPreviewLoopRegion(const std::optional<juce::Range<int>>& tickRange)
 {
     std::scoped_lock lock(projectMutex);
-    if (tickRange.has_value() && tickRange->getLength() > 0)
-    {
-        const int totalTicks = juce::jmax(1, project.params.bars * 16 * ticksPerStep());
-        const int startTick = juce::jlimit(0, totalTicks - 1, tickRange->getStart());
-        const int endTick = juce::jlimit(startTick + 1, totalTicks, tickRange->getEnd());
-        if (endTick > startTick)
-            project.previewLoopTicks = juce::Range<int>(startTick, endTick);
-        else
-            project.previewLoopTicks.reset();
-    }
-    else
-    {
-        project.previewLoopTicks.reset();
-    }
+    ProjectStateController::setPreviewLoopRegion(project, tickRange);
 
     if (previewPlaying && project.previewPlaybackMode == PreviewPlaybackMode::LoopRange)
     {
@@ -822,241 +808,129 @@ void BoomBapGeneratorAudioProcessor::auditionSub808Note(int pitch, int velocity,
 void BoomBapGeneratorAudioProcessor::setSub808TrackNotes(TrackType track, const std::vector<Sub808NoteEvent>& notes)
 {
     std::scoped_lock lock(projectMutex);
-    auto* state = findTrackState(track);
-    if (state == nullptr || state->locked || !state->enabled || track != TrackType::Sub808)
-        return;
-
-    state->sub808Notes = notes;
-    state->notes = toLegacyNoteEvents(state->sub808Notes);
-
-    const int bars = juce::jmax(1, project.params.bars);
-    const int maxTicks = bars * 16 * ticksPerStep();
-
-    for (auto& note : state->sub808Notes)
-    {
-        note.pitch = juce::jlimit(0, 127, note.pitch);
-        note.velocity = juce::jlimit(1, 127, note.velocity);
-        note.length = juce::jlimit(1, 64, note.length);
-
-        int ticks = note.step * ticksPerStep() + note.microOffset;
-        ticks = juce::jlimit(0, juce::jmax(0, maxTicks - 1), ticks);
-
-        int step = floorDiv(ticks, ticksPerStep());
-        int micro = ticks - step * ticksPerStep();
-        if (micro > ticksPerStep() / 2)
-        {
-            micro -= ticksPerStep();
-            ++step;
-        }
-
-        note.step = juce::jlimit(0, bars * 16 - 1, step);
-        note.microOffset = juce::jlimit(-960, 960, micro);
-        note.semanticRole = note.semanticRole.trim();
-    }
-
-    std::sort(state->sub808Notes.begin(), state->sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
-    {
-        if (a.step != b.step)
-            return a.step < b.step;
-        return a.pitch < b.pitch;
-    });
-
-    state->notes = toLegacyNoteEvents(state->sub808Notes);
+    ProjectStateController::setSub808TrackNotes(project, track, notes);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setSub808TrackNotes(const RuntimeLaneId& laneId, const std::vector<Sub808NoteEvent>& notes)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setSub808TrackNotes(*type, notes);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setSub808TrackNotes(project, laneId, notes);
+    rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setSub808LaneSettings(TrackType track, const Sub808LaneSettings& settings)
 {
     std::scoped_lock lock(projectMutex);
-    auto* state = findTrackState(track);
-    if (state == nullptr || track != TrackType::Sub808)
-        return;
-
-    state->sub808Settings.mono = settings.mono;
-    state->sub808Settings.cutItself = settings.cutItself;
-    state->sub808Settings.glideTimeMs = juce::jlimit(0, 4000, settings.glideTimeMs);
-    state->sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0, 2, static_cast<int>(settings.overlapMode)));
-    state->sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0, 2, static_cast<int>(settings.scaleSnapPolicy)));
+    ProjectStateController::setSub808LaneSettings(project, track, settings);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setSub808LaneSettings(const RuntimeLaneId& laneId, const Sub808LaneSettings& settings)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setSub808LaneSettings(*type, settings);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setSub808LaneSettings(project, laneId, settings);
+    rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackSolo(TrackType track, bool value)
 {
     std::scoped_lock lock(projectMutex);
-    if (auto* state = findTrackState(track))
-        state->solo = value;
-
+    ProjectStateController::setTrackSolo(project, track, value);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackSolo(const RuntimeLaneId& laneId, bool value)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setTrackSolo(*type, value);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackSolo(project, laneId, value);
+    rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackMuted(TrackType track, bool value)
 {
     std::scoped_lock lock(projectMutex);
-    if (auto* state = findTrackState(track))
-        state->muted = value;
-
+    ProjectStateController::setTrackMuted(project, track, value);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackMuted(const RuntimeLaneId& laneId, bool value)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setTrackMuted(*type, value);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackMuted(project, laneId, value);
+    rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackLocked(TrackType track, bool value)
 {
     std::scoped_lock lock(projectMutex);
-    if (auto* state = findTrackState(track))
-        state->locked = value;
+    ProjectStateController::setTrackLocked(project, track, value);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackLocked(const RuntimeLaneId& laneId, bool value)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setTrackLocked(*type, value);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackLocked(project, laneId, value);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackEnabled(TrackType track, bool value)
 {
     std::scoped_lock lock(projectMutex);
-    if (auto* state = findTrackState(track))
-        state->enabled = value;
-
+    ProjectStateController::setTrackEnabled(project, track, value);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackEnabled(const RuntimeLaneId& laneId, bool value)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setTrackEnabled(*type, value);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackEnabled(project, laneId, value);
+    rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(TrackType track, float volume)
 {
     std::scoped_lock lock(projectMutex);
-    if (auto* state = findTrackState(track))
-        state->laneVolume = juce::jlimit(0.0f, 1.5f, volume);
-
+    ProjectStateController::setTrackLaneVolume(project, track, volume);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(const RuntimeLaneId& laneId, float volume)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setTrackLaneVolume(*type, volume);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackLaneVolume(project, laneId, volume);
+    rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackNotes(TrackType track, const std::vector<NoteEvent>& notes)
 {
-    if (track == TrackType::Sub808)
-    {
-        setSub808TrackNotes(track, toSub808NoteEvents(notes));
-        return;
-    }
-
     std::scoped_lock lock(projectMutex);
-    auto* state = findTrackState(track);
-    if (state == nullptr || state->locked || !state->enabled)
-        return;
-
-    state->notes = notes;
-    const int bars = juce::jmax(1, project.params.bars);
-    const int maxTicks = bars * 16 * ticksPerStep();
-
-    for (auto& note : state->notes)
-    {
-        note.pitch = juce::jlimit(0, 127, note.pitch);
-        note.velocity = juce::jlimit(1, 127, note.velocity);
-        note.length = juce::jlimit(1, 64, note.length);
-
-        int ticks = note.step * ticksPerStep() + note.microOffset;
-        ticks = juce::jlimit(0, juce::jmax(0, maxTicks - 1), ticks);
-
-        int step = floorDiv(ticks, ticksPerStep());
-        int micro = ticks - step * ticksPerStep();
-        if (micro > ticksPerStep() / 2)
-        {
-            micro -= ticksPerStep();
-            ++step;
-        }
-
-        note.step = juce::jlimit(0, bars * 16 - 1, step);
-        note.microOffset = juce::jlimit(-960, 960, micro);
-    }
-
-    std::sort(state->notes.begin(), state->notes.end(), [](const NoteEvent& a, const NoteEvent& b)
-    {
-        if (a.step != b.step)
-            return a.step < b.step;
-        return a.pitch < b.pitch;
-    });
-
+    ProjectStateController::setTrackNotes(project, track, notes);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackNotes(const RuntimeLaneId& laneId, const std::vector<NoteEvent>& notes)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setTrackNotes(*type, notes);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackNotes(project, laneId, notes);
+    rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setSelectedTrack(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
-    for (size_t i = 0; i < project.tracks.size(); ++i)
-    {
-        if (project.tracks[i].type == track)
-        {
-            project.selectedTrackIndex = static_cast<int>(i);
-            return;
-        }
-    }
+    ProjectStateController::setSelectedTrack(project, track);
 }
 
 void BoomBapGeneratorAudioProcessor::setSelectedTrack(const RuntimeLaneId& laneId)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setSelectedTrack(*type);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setSelectedTrack(project, laneId);
 }
 
 void BoomBapGeneratorAudioProcessor::setSoundModuleTrack(const std::optional<TrackType>& track)
 {
     std::scoped_lock lock(projectMutex);
-    if (!track.has_value())
-    {
-        project.soundModuleTrackIndex = -1;
-        return;
-    }
-
-    for (size_t i = 0; i < project.tracks.size(); ++i)
-    {
-        if (project.tracks[i].type == *track)
-        {
-            project.soundModuleTrackIndex = static_cast<int>(i);
-            return;
-        }
-    }
-
-    project.soundModuleTrackIndex = -1;
+    ProjectStateController::setSoundModuleTrack(project, track);
 }
 
 std::optional<TrackType> BoomBapGeneratorAudioProcessor::getSoundModuleTrack() const
@@ -1071,20 +945,19 @@ std::optional<TrackType> BoomBapGeneratorAudioProcessor::getSoundModuleTrack() c
 void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(TrackType track, const SoundLayerState& state)
 {
     std::scoped_lock lock(projectMutex);
-    if (auto* trackState = findTrackState(track))
-        trackState->sound = state;
+    ProjectStateController::setTrackSoundLayer(project, track, state);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(const RuntimeLaneId& laneId, const SoundLayerState& state)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        setTrackSoundLayer(*type, state);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackSoundLayer(project, laneId, state);
 }
 
 void BoomBapGeneratorAudioProcessor::setGlobalSoundLayer(const SoundLayerState& state)
 {
     std::scoped_lock lock(projectMutex);
-    project.globalSound = state;
+    ProjectStateController::setGlobalSoundLayer(project, state);
 }
 
 void BoomBapGeneratorAudioProcessor::setHatFxDragDensity(float density, bool lockDragDensity)
@@ -1109,16 +982,15 @@ bool BoomBapGeneratorAudioProcessor::isHatFxDragDensityLocked() const
 void BoomBapGeneratorAudioProcessor::clearTrack(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
-    if (auto* state = findTrackState(track))
-        state->notes.clear();
-
+    ProjectStateController::clearTrack(project, track);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::clearTrack(const RuntimeLaneId& laneId)
 {
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        clearTrack(*type);
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::clearTrack(project, laneId);
+    rebuildMidiCache();
 }
 
 juce::File BoomBapGeneratorAudioProcessor::getLaneSampleDirectory(TrackType track) const
@@ -1756,61 +1628,27 @@ int BoomBapGeneratorAudioProcessor::getPatternLengthSamples() const
 
 TrackState* BoomBapGeneratorAudioProcessor::findTrackState(TrackType track)
 {
-    for (auto& state : project.tracks)
-    {
-        if (state.type == track)
-            return &state;
-    }
-
-    return nullptr;
+    return ProjectLaneAccess::findTrackState(project, track);
 }
 
 const TrackState* BoomBapGeneratorAudioProcessor::findTrackState(TrackType track) const
 {
-    for (const auto& state : project.tracks)
-    {
-        if (state.type == track)
-            return &state;
-    }
-
-    return nullptr;
+    return ProjectLaneAccess::findTrackState(project, track);
 }
 
 TrackState* BoomBapGeneratorAudioProcessor::findTrackState(const RuntimeLaneId& laneId)
 {
-    for (auto& state : project.tracks)
-    {
-        if (state.laneId.isNotEmpty() && state.laneId == laneId)
-            return &state;
-    }
-
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        return findTrackState(*type);
-
-    return nullptr;
+    return ProjectLaneAccess::findTrackState(project, laneId);
 }
 
 const TrackState* BoomBapGeneratorAudioProcessor::findTrackState(const RuntimeLaneId& laneId) const
 {
-    for (const auto& state : project.tracks)
-    {
-        if (state.laneId.isNotEmpty() && state.laneId == laneId)
-            return &state;
-    }
-
-    if (const auto type = resolveTrackTypeForLaneId(laneId); type.has_value())
-        return findTrackState(*type);
-
-    return nullptr;
+    return ProjectLaneAccess::findTrackState(project, laneId);
 }
 
 std::optional<TrackType> BoomBapGeneratorAudioProcessor::resolveTrackTypeForLaneId(const RuntimeLaneId& laneId) const
 {
-    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
-    if (lane == nullptr || !lane->runtimeTrackType.has_value())
-        return std::nullopt;
-
-    return lane->runtimeTrackType;
+    return ProjectLaneAccess::backingTrackTypeForLaneId(project, laneId);
 }
 
 void BoomBapGeneratorAudioProcessor::serializePatternProjectToState(juce::ValueTree& state) const
