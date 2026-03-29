@@ -4,6 +4,8 @@
 #include <cmath>
 #include <map>
 
+#include "../Core/ProjectLaneAccess.h"
+
 namespace bbg::GridEditActions
 {
 namespace
@@ -66,22 +68,12 @@ void sortTrackNotes(TrackState& track)
 
 TrackState* findMutableTrack(ModelContext context, const RuntimeLaneId& laneId)
 {
-    auto it = std::find_if(context.project.tracks.begin(), context.project.tracks.end(), [&laneId](const TrackState& track)
-    {
-        return track.laneId == laneId;
-    });
-
-    return (it != context.project.tracks.end()) ? &(*it) : nullptr;
+    return ProjectLaneAccess::findTrackState(context.project, laneId);
 }
 
 const TrackState* findTrack(const PatternProject& project, const RuntimeLaneId& laneId)
 {
-    auto it = std::find_if(project.tracks.begin(), project.tracks.end(), [&laneId](const TrackState& track)
-    {
-        return track.laneId == laneId;
-    });
-
-    return (it != project.tracks.end()) ? &(*it) : nullptr;
+    return ProjectLaneAccess::findTrackState(project, laneId);
 }
 
 int noteStartTick(const NoteEvent& note, int ticksPerStep)

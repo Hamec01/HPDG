@@ -226,6 +226,7 @@ private:
     GridEditActions::ModelContext makeModelContext();
     GridEditActions::TimelineContext makeTimelineContext();
     std::vector<RuntimeLaneId> orderedVisibleLaneIds() const;
+    RuntimeLaneId resolvedEditableLaneId(const RuntimeLaneId& laneId) const;
 
     bool isVisibleLane(const RuntimeLaneId& laneId) const;
     int visibleLaneIndex(const RuntimeLaneId& laneId) const;

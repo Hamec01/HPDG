@@ -5,6 +5,7 @@
 #include <limits>
 #include <set>
 
+#include "../Core/ProjectLaneAccess.h"
 #include "../Core/TrackRegistry.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -198,18 +199,7 @@ juce::String semanticRoleBadge(const juce::String& role)
 void GridEditorComponent::setProject(const PatternProject& value)
 {
     project = value;
-    if (selectedTrack.isEmpty() || !isVisibleLane(selectedTrack))
-    {
-        selectedTrack = {};
-        for (const auto& track : project.tracks)
-        {
-            if (!isVisibleLane(track.laneId))
-                continue;
-
-            selectedTrack = track.laneId;
-            break;
-        }
-    }
+    selectedTrack = resolvedEditableLaneId(selectedTrack);
     previewStartStep = std::max(0, project.previewStartStep);
     previewStartTick = previewStartStep * ticksPerStep();
     normalizeSelection();
@@ -256,25 +246,15 @@ void GridEditorComponent::setGridResolution(GridResolution resolution)
 void GridEditorComponent::setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order)
 {
     laneDisplayOrder = order;
+    selectedTrack = resolvedEditableLaneId(selectedTrack);
+    refreshEditorRegionState();
     invalidateStaticCache();
     repaint();
 }
 
 void GridEditorComponent::setSelectedTrack(const RuntimeLaneId& laneId)
 {
-    RuntimeLaneId nextSelectedTrack = laneId;
-    if (!nextSelectedTrack.isEmpty() && !isVisibleLane(nextSelectedTrack))
-    {
-        nextSelectedTrack = {};
-        for (const auto& track : project.tracks)
-        {
-            if (!isVisibleLane(track.laneId))
-                continue;
-
-            nextSelectedTrack = track.laneId;
-            break;
-        }
-    }
+    const RuntimeLaneId nextSelectedTrack = resolvedEditableLaneId(laneId);
 
     if (selectedTrack == nextSelectedTrack)
         return;
@@ -306,12 +286,8 @@ int GridEditorComponent::velocityFromY(int y, const RuntimeLaneId& laneId) const
 
 bool GridEditorComponent::beginVelocityEditGesture(const SelectedNoteRef& ref, juce::Point<int> position)
 {
-    const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
-    {
-        return track.laneId == ref.laneId;
-    });
-
-    if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
+    const auto* track = findTrack(ref.laneId);
+    if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
         return false;
 
     if (!isSelected(ref))
@@ -321,7 +297,7 @@ bool GridEditorComponent::beginVelocityEditGesture(const SelectedNoteRef& ref, j
 
     dragStartX = position.x;
     dragStartY = position.y;
-    dragOriginalVelocity = trackIt->notes[static_cast<size_t>(ref.index)].velocity;
+    dragOriginalVelocity = track->notes[static_cast<size_t>(ref.index)].velocity;
     collectDragSnapshots();
     editMode = EditMode::Velocity;
     velocityWaveModeActive = false;
@@ -336,10 +312,11 @@ bool GridEditorComponent::beginVelocityEditGesture(const SelectedNoteRef& ref, j
 
 void GridEditorComponent::refreshEditorRegionState()
 {
+    selectedTrack = resolvedEditableLaneId(selectedTrack);
+
     EditorRegionState nextState;
     nextState.loopTickRange = loopRegionTicks;
     nextState.previewStartTick = previewStartTick;
-    nextState.primaryLaneId = selectedTrack;
 
     int minTick = std::numeric_limits<int>::max();
     int maxTick = std::numeric_limits<int>::min();
@@ -367,8 +344,19 @@ void GridEditorComponent::refreshEditorRegionState()
     }
     else
     {
-        nextState.activeLaneIds.assign(activeLanes.begin(), activeLanes.end());
+        for (const auto& laneId : orderedVisibleLaneIds())
+        {
+            if (activeLanes.count(laneId) != 0)
+                nextState.activeLaneIds.push_back(laneId);
+        }
     }
+
+    if (selectedTrack.isEmpty() && !nextState.activeLaneIds.empty())
+        selectedTrack = nextState.activeLaneIds.front();
+
+    nextState.primaryLaneId = selectedTrack.isNotEmpty()
+        ? selectedTrack
+        : (nextState.activeLaneIds.empty() ? RuntimeLaneId{} : nextState.activeLaneIds.front());
 
     editorRegionState = std::move(nextState);
     if (onEditorRegionStateChanged)
@@ -605,13 +593,14 @@ bool GridEditorComponent::selectAllNotes()
 {
     clearSelectionInternal();
 
-    for (const auto& track : project.tracks)
+    for (const auto& laneId : orderedVisibleLaneIds())
     {
-        if (!isVisibleLane(track.laneId) || !canEditLaneInGrid(track.laneId))
+        const auto* track = findTrack(laneId);
+        if (track == nullptr)
             continue;
 
-        for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
-            selectedNotes.push_back({ track.laneId, i });
+        for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
+            selectedNotes.push_back({ laneId, i });
     }
 
     if (!selectedNotes.empty())
@@ -687,17 +676,18 @@ bool GridEditorComponent::selectNotesBySemanticRole(const juce::String& role)
     selectedNotes.clear();
     primarySelectedNote.reset();
 
-    for (const auto& track : project.tracks)
+    for (const auto& laneId : orderedVisibleLaneIds())
     {
-        if (!canEditLaneInGrid(track.laneId))
+        const auto* track = findTrack(laneId);
+        if (track == nullptr)
             continue;
 
-        for (int index = 0; index < static_cast<int>(track.notes.size()); ++index)
+        for (int index = 0; index < static_cast<int>(track->notes.size()); ++index)
         {
-            if (normalizedSemanticRole(track.notes[static_cast<size_t>(index)].semanticRole) != normalizedRole)
+            if (normalizedSemanticRole(track->notes[static_cast<size_t>(index)].semanticRole) != normalizedRole)
                 continue;
 
-            selectedNotes.push_back({ track.laneId, index });
+            selectedNotes.push_back({ laneId, index });
         }
     }
 
@@ -760,14 +750,7 @@ int GridEditorComponent::getGridWidth() const
 
 int GridEditorComponent::getGridHeight() const
 {
-    int visibleRows = 0;
-    for (const auto& track : project.tracks)
-    {
-        if (isVisibleLane(track.laneId))
-            ++visibleRows;
-    }
-
-    return rulerHeight + visibleRows * laneHeight;
+    return rulerHeight + static_cast<int>(orderedVisibleLaneIds().size()) * laneHeight;
 }
 
 void GridEditorComponent::paint(juce::Graphics& g)
@@ -819,19 +802,23 @@ void GridEditorComponent::paint(juce::Graphics& g)
                    false);
     }
 
-    for (const auto& track : project.tracks)
+    for (const auto& laneId : orderedVisibleLaneIds())
     {
-        const int row = visibleLaneIndex(track.laneId);
+        const auto* track = findTrack(laneId);
+        if (track == nullptr)
+            continue;
+
+        const int row = visibleLaneIndex(laneId);
         if (row < 0)
             continue;
 
-        for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
+        for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
         {
-            const auto& note = track.notes[static_cast<size_t>(i)];
+            const auto& note = track->notes[static_cast<size_t>(i)];
             const auto boundsInt = noteBounds(note, row);
             const auto noteRect = boundsInt.toFloat();
-            const bool noteIsSelected = isSelected(SelectedNoteRef{ track.laneId, i });
-            const bool renderVelocityWave = velocityPreviewActive && (track.laneId == velocityPreviewTrack || noteIsSelected);
+            const bool noteIsSelected = isSelected(SelectedNoteRef{ laneId, i });
+            const bool renderVelocityWave = velocityPreviewActive && (laneId == velocityPreviewTrack || noteIsSelected);
 
             const float normVel = juce::jlimit(0.0f, 1.0f, static_cast<float>(note.velocity) / 127.0f);
             const auto color = note.isGhost
@@ -888,7 +875,7 @@ void GridEditorComponent::paint(juce::Graphics& g)
                                false);
                 }
 
-                const auto capabilities = laneEditorCapabilitiesForLane(track.laneId);
+                const auto capabilities = laneEditorCapabilitiesForLane(laneId);
                 if (capabilities.rendersNotePitchInGrid && noteRect.getWidth() > 24.0f)
                 {
                     g.setColour(juce::Colour::fromRGBA(206, 224, 255, 210));
@@ -914,7 +901,7 @@ void GridEditorComponent::paint(juce::Graphics& g)
             }
 
             const bool isHovered = hoverNote.has_value()
-                && hoverNote->laneId == track.laneId
+                && hoverNote->laneId == laneId
                 && hoverNote->index == i;
 
             const auto semanticRole = normalizedSemanticRole(note.semanticRole);
@@ -988,23 +975,17 @@ void GridEditorComponent::paint(juce::Graphics& g)
     {
         for (const auto& ref : selectedNotes)
         {
-            for (const auto& track : project.tracks)
-            {
-                if (track.laneId != ref.laneId)
-                    continue;
-                if (ref.index < 0 || ref.index >= static_cast<int>(track.notes.size()))
-                    continue;
+            const auto* track = findTrack(ref.laneId);
+            if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
+                continue;
 
-                const int row = visibleLaneIndex(track.laneId);
-                if (row < 0)
-                    continue;
+            const int row = visibleLaneIndex(ref.laneId);
+            if (row < 0)
+                continue;
 
-                auto bounds = noteBounds(track.notes[static_cast<size_t>(ref.index)], row).expanded(1);
-                g.setColour(juce::Colour::fromRGB(255, 236, 178).withAlpha(0.98f));
-                g.drawRoundedRectangle(bounds.toFloat(), 2.5f, 2.0f);
-
-                break;
-            }
+            auto bounds = noteBounds(track->notes[static_cast<size_t>(ref.index)], row).expanded(1);
+            g.setColour(juce::Colour::fromRGB(255, 236, 178).withAlpha(0.98f));
+            g.drawRoundedRectangle(bounds.toFloat(), 2.5f, 2.0f);
         }
     }
 
@@ -1052,28 +1033,22 @@ void GridEditorComponent::paint(juce::Graphics& g)
             {
                 for (const auto& ref : selectedNotes)
                 {
-                    const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
-                    {
-                        return track.laneId == ref.laneId;
-                    });
-                    if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
+                    const auto* track = findTrack(ref.laneId);
+                    if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
                         continue;
 
-                    velocitySum += trackIt->notes[static_cast<size_t>(ref.index)].velocity;
+                    velocitySum += track->notes[static_cast<size_t>(ref.index)].velocity;
                     ++velocityCount;
                 }
             }
             else if (hoverNote.has_value())
             {
-                const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [this](const TrackState& track)
-                {
-                    return hoverNote.has_value() && track.laneId == hoverNote->laneId;
-                });
-                if (trackIt != project.tracks.end()
+                const auto* track = findTrack(hoverNote->laneId);
+                if (track != nullptr
                     && hoverNote->index >= 0
-                    && hoverNote->index < static_cast<int>(trackIt->notes.size()))
+                    && hoverNote->index < static_cast<int>(track->notes.size()))
                 {
-                    velocitySum = trackIt->notes[static_cast<size_t>(hoverNote->index)].velocity;
+                    velocitySum = track->notes[static_cast<size_t>(hoverNote->index)].velocity;
                     velocityCount = 1;
                 }
             }
@@ -1455,19 +1430,14 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
             dragStartY = p.y;
             dragResizeAnchorTick = quantizedTickAtX(p.x, true);
 
-            for (const auto& track : project.tracks)
+            if (const auto* track = findTrack(hit->laneId);
+                track != nullptr && hit->index >= 0 && hit->index < static_cast<int>(track->notes.size()))
             {
-                if (track.laneId != hit->laneId)
-                    continue;
-                if (hit->index < 0 || hit->index >= static_cast<int>(track.notes.size()))
-                    break;
-
-                const auto& note = track.notes[static_cast<size_t>(hit->index)];
+                const auto& note = track->notes[static_cast<size_t>(hit->index)];
                 dragOriginalTicks = note.step * ticksPerStep() + note.microOffset;
                 dragOriginalLength = std::max(1, note.length);
                 dragOriginalEndTick = dragOriginalTicks + dragOriginalLength * ticksPerStep();
                 dragOriginalVelocity = note.velocity;
-                break;
             }
 
             collectDragSnapshots();
@@ -1521,19 +1491,14 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
         dragStartY = p.y;
         dragResizeAnchorTick = quantizedTickAtX(p.x, true);
 
-        for (const auto& track : project.tracks)
+        if (const auto* track = findTrack(hit->laneId);
+            track != nullptr && hit->index >= 0 && hit->index < static_cast<int>(track->notes.size()))
         {
-            if (track.laneId != hit->laneId)
-                continue;
-            if (hit->index < 0 || hit->index >= static_cast<int>(track.notes.size()))
-                break;
-
-            const auto& note = track.notes[static_cast<size_t>(hit->index)];
+            const auto& note = track->notes[static_cast<size_t>(hit->index)];
             dragOriginalTicks = note.step * ticksPerStep() + note.microOffset;
             dragOriginalLength = std::max(1, note.length);
             dragOriginalEndTick = dragOriginalTicks + dragOriginalLength * ticksPerStep();
             dragOriginalVelocity = note.velocity;
-            break;
         }
 
         collectDragSnapshots();
@@ -1628,15 +1593,19 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
         marqueeRect = marqueeRect.getIntersection(getLocalBounds().withTrimmedTop(rulerHeight));
 
         std::vector<SelectedNoteRef> picks;
-        for (const auto& track : project.tracks)
+        for (const auto& laneId : orderedVisibleLaneIds())
         {
-            const int row = visibleLaneIndex(track.laneId);
-            if (row < 0 || !canEditLaneInGrid(track.laneId))
+            const auto* track = findTrack(laneId);
+            if (track == nullptr)
                 continue;
-            for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
+
+            const int row = visibleLaneIndex(laneId);
+            if (row < 0)
+                continue;
+            for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
             {
-                if (marqueeRect.intersects(noteBounds(track.notes[static_cast<size_t>(i)], row)))
-                    picks.push_back({ track.laneId, i });
+                if (marqueeRect.intersects(noteBounds(track->notes[static_cast<size_t>(i)], row)))
+                    picks.push_back({ laneId, i });
             }
         }
 
@@ -1817,36 +1786,32 @@ std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findClo
                                                                                             const RuntimeLaneId& laneId,
                                                                                             int maxDistancePx) const
 {
-    for (const auto& track : project.tracks)
+    const auto* track = findTrack(laneId);
+    if (track == nullptr)
+        return std::nullopt;
+
+    int bestIndex = -1;
+    int bestDistance = std::numeric_limits<int>::max();
+    const int row = visibleLaneIndex(laneId);
+    if (row < 0)
+        return std::nullopt;
+
+    for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
     {
-        if (track.laneId != laneId)
+        const auto b = noteBounds(track->notes[static_cast<size_t>(i)], row).expanded(3, 3);
+        if (!b.contains(position))
             continue;
 
-        int bestIndex = -1;
-        int bestDistance = std::numeric_limits<int>::max();
-        const int row = visibleLaneIndex(track.laneId);
-        if (row < 0)
-            return std::nullopt;
-
-        for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
+        const int centerDistance = std::abs(b.getCentreX() - position.x);
+        if (centerDistance < bestDistance)
         {
-            const auto b = noteBounds(track.notes[static_cast<size_t>(i)], row).expanded(3, 3);
-            if (!b.contains(position))
-                continue;
-
-            const int centerDistance = std::abs(b.getCentreX() - position.x);
-            if (centerDistance < bestDistance)
-            {
-                bestDistance = centerDistance;
-                bestIndex = i;
-            }
+            bestDistance = centerDistance;
+            bestIndex = i;
         }
-
-        if (bestIndex >= 0 && bestDistance <= maxDistancePx)
-            return SelectedNoteRef { laneId, bestIndex };
-
-        break;
     }
+
+    if (bestIndex >= 0 && bestDistance <= maxDistancePx)
+        return SelectedNoteRef { laneId, bestIndex };
 
     return std::nullopt;
 }
@@ -2097,18 +2062,14 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
     }
 
     hoverNote = hit;
-    for (const auto& track : project.tracks)
+    if (const auto* track = findTrack(hit->laneId);
+        track != nullptr && hit->index >= 0 && hit->index < static_cast<int>(track->notes.size()))
     {
-        if (track.laneId != hit->laneId)
-            continue;
-        if (hit->index < 0 || hit->index >= static_cast<int>(track.notes.size()))
-            break;
-
-        const int row = visibleLaneIndex(track.laneId);
+        const int row = visibleLaneIndex(hit->laneId);
         if (row < 0)
-            break;
+            return;
 
-        const auto& note = track.notes[static_cast<size_t>(hit->index)];
+        const auto& note = track->notes[static_cast<size_t>(hit->index)];
         const auto bounds = noteBounds(note, row);
         hoverZone = HoverZone::NoteBody;
 
@@ -2120,7 +2081,6 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
             else if (position.x >= bounds.getRight() - handleWidth)
                 hoverZone = HoverZone::ResizeRight;
         }
-        break;
     }
 
     applyCursorForHover();
@@ -2200,15 +2160,12 @@ void GridEditorComponent::normalizeSelection()
 
     for (const auto& ref : selectedNotes)
     {
-        const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& t)
-        {
-            return t.laneId == ref.laneId;
-        });
-        if (trackIt == project.tracks.end())
+        const auto* track = findTrack(ref.laneId);
+        if (track == nullptr)
             continue;
         if (!canEditLaneInGrid(ref.laneId))
             continue;
-        if (ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
+        if (ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
             continue;
 
         const auto key = std::make_pair(ref.laneId, ref.index);
@@ -2546,10 +2503,16 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
         if (laneHint.has_value())
             menu.addSubMenu("Fill Notes", fillMenu, true);
         menu.addSubMenu("Select By Role", selectRoleMenu, true);
-        menu.addItem(kActionSelectAll, "Select All", std::any_of(project.tracks.begin(), project.tracks.end(), [](const TrackState& track)
+        bool hasAnyNotes = false;
+        for (const auto& laneId : orderedVisibleLaneIds())
         {
-            return !track.notes.empty();
-        }));
+            if (const auto* track = findTrack(laneId); track != nullptr && !track->notes.empty())
+            {
+                hasAnyNotes = true;
+                break;
+            }
+        }
+        menu.addItem(kActionSelectAll, "Select All", hasAnyNotes);
         menu.addItem(kActionDeselect, "Deselect", !selectedNotes.empty());
     }
     else if (target == ContextMenuTarget::SingleNote)
@@ -2710,12 +2673,8 @@ std::vector<int> GridEditorComponent::availableAdvancedRollDivisions() const
 
     for (const auto& ref : selectedNotes)
     {
-        const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
-        {
-            return track.laneId == ref.laneId;
-        });
-
-        if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
+        const auto* track = findTrack(ref.laneId);
+        if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
             continue;
 
         validSelection.push_back(ref);
@@ -2732,17 +2691,14 @@ std::vector<int> GridEditorComponent::availableAdvancedRollDivisions() const
         bool validForAll = true;
         for (const auto& ref : validSelection)
         {
-            const auto trackIt = std::find_if(project.tracks.begin(), project.tracks.end(), [&ref](const TrackState& track)
-            {
-                return track.laneId == ref.laneId;
-            });
-            if (trackIt == project.tracks.end() || ref.index < 0 || ref.index >= static_cast<int>(trackIt->notes.size()))
+            const auto* track = findTrack(ref.laneId);
+            if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
             {
                 validForAll = false;
                 break;
             }
 
-            const auto& note = trackIt->notes[static_cast<size_t>(ref.index)];
+            const auto& note = track->notes[static_cast<size_t>(ref.index)];
             if (note.length < division || (note.length % division) != 0)
             {
                 validForAll = false;
@@ -2869,25 +2825,28 @@ bool GridEditorComponent::isStretchEditKeyDown() const
 
 bool GridEditorComponent::isVisibleLane(const RuntimeLaneId& laneId) const
 {
-    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
-    return lane != nullptr && lane->isVisibleInEditor && canEditLaneInGrid(laneId);
+    return ProjectLaneAccess::isVisibleInEditor(project, laneId) && canEditLaneInGrid(laneId);
 }
 
 std::vector<RuntimeLaneId> GridEditorComponent::orderedVisibleLaneIds() const
 {
     std::vector<RuntimeLaneId> ordered;
-    ordered.reserve(project.tracks.size());
-
-    for (const auto& lane : laneDisplayOrder)
-        if (isVisibleLane(lane))
-            ordered.push_back(lane);
-
-    for (const auto& track : project.tracks)
-        if (isVisibleLane(track.laneId)
-            && std::find(ordered.begin(), ordered.end(), track.laneId) == ordered.end())
-            ordered.push_back(track.laneId);
+    for (const auto& laneId : ProjectLaneAccess::orderedLaneIds(project, laneDisplayOrder, true))
+    {
+        if (canEditLaneInGrid(laneId))
+            ordered.push_back(laneId);
+    }
 
     return ordered;
+}
+
+RuntimeLaneId GridEditorComponent::resolvedEditableLaneId(const RuntimeLaneId& laneId) const
+{
+    if (laneId.isNotEmpty() && isVisibleLane(laneId))
+        return laneId;
+
+    const auto ordered = orderedVisibleLaneIds();
+    return ordered.empty() ? RuntimeLaneId{} : ordered.front();
 }
 
 int GridEditorComponent::visibleLaneIndex(const RuntimeLaneId& laneId) const
@@ -3030,19 +2989,20 @@ void GridEditorComponent::ensureStaticCache()
 
 std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNoteAt(juce::Point<int> position) const
 {
-    for (const auto& track : project.tracks)
+    for (const auto& laneId : orderedVisibleLaneIds())
     {
-        if (!canEditLaneInGrid(track.laneId))
+        const auto* track = findTrack(laneId);
+        if (track == nullptr)
             continue;
 
-        const int row = visibleLaneIndex(track.laneId);
+        const int row = visibleLaneIndex(laneId);
         if (row < 0)
             continue;
 
-        for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
+        for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
         {
-            if (noteBounds(track.notes[static_cast<size_t>(i)], row).expanded(3, 3).contains(position))
-                return SelectedNoteRef { track.laneId, i };
+            if (noteBounds(track->notes[static_cast<size_t>(i)], row).expanded(3, 3).contains(position))
+                return SelectedNoteRef { laneId, i };
         }
     }
 
@@ -3054,22 +3014,18 @@ std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNot
     if (!canEditLaneInGrid(laneId))
         return std::nullopt;
 
-    for (const auto& track : project.tracks)
+    const auto* track = findTrack(laneId);
+    if (track == nullptr)
+        return std::nullopt;
+
+    const int row = visibleLaneIndex(laneId);
+    if (row < 0)
+        return std::nullopt;
+
+    for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
     {
-        if (track.laneId != laneId)
-            continue;
-
-        const int row = visibleLaneIndex(track.laneId);
-        if (row < 0)
-            return std::nullopt;
-
-        for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
-        {
-            if (noteBounds(track.notes[static_cast<size_t>(i)], row).expanded(3, 3).contains(position))
-                return SelectedNoteRef { track.laneId, i };
-        }
-
-        break;
+        if (noteBounds(track->notes[static_cast<size_t>(i)], row).expanded(3, 3).contains(position))
+            return SelectedNoteRef { laneId, i };
     }
 
     return std::nullopt;
@@ -3080,21 +3036,17 @@ std::optional<GridEditorComponent::SelectedNoteRef> GridEditorComponent::findNot
     if (!canEditLaneInGrid(laneId))
         return std::nullopt;
 
-    for (const auto& track : project.tracks)
+    const auto* track = findTrack(laneId);
+    if (track == nullptr)
+        return std::nullopt;
+
+    for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
     {
-        if (track.laneId != laneId)
-            continue;
-
-        for (int i = 0; i < static_cast<int>(track.notes.size()); ++i)
-        {
-            const auto& note = track.notes[static_cast<size_t>(i)];
-            const int startTick = noteStartTick(note);
-            const int endTick = noteEditorEndTick(note);
-            if (tick >= startTick && tick < endTick)
-                return SelectedNoteRef { laneId, i };
-        }
-
-        break;
+        const auto& note = track->notes[static_cast<size_t>(i)];
+        const int startTick = noteStartTick(note);
+        const int endTick = noteEditorEndTick(note);
+        if (tick >= startTick && tick < endTick)
+            return SelectedNoteRef { laneId, i };
     }
 
     return std::nullopt;

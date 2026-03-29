@@ -16,6 +16,7 @@
 #include "../Source/Core/ProjectLaneAccess.h"
 #include "../Source/Core/ProjectStateController.h"
 #include "../Source/Core/RuntimeLaneLifecycle.h"
+#include "../Source/Core/SoundTargetDescriptor.h"
 #include "../Source/Core/TrackRegistry.h"
 #include "../Source/Engine/Drill/DrillHatGenerator.h"
 #include "../Source/Engine/Drill/DrillStyleProfile.h"
@@ -24,6 +25,8 @@
 #include "../Source/Services/StyleLabReferenceService.h"
 #include "../Source/UI/EditorHistoryController.h"
 #include "../Source/UI/EditorLayoutController.h"
+#include "../Source/UI/GridEditActions.h"
+#include "../Source/UI/GridEditorComponent.h"
 #include "../Source/UI/HotkeyController.h"
 #include "../Source/Utils/TimingHelpers.h"
 
@@ -594,6 +597,70 @@ std::vector<RuntimeLaneId> backedLaneOrder(const PatternProject& project)
     return laneIds;
 }
 
+GridEditActions::ModelContext makeGridModelContext(PatternProject& project)
+{
+    return { project, ticksPerStep() };
+}
+
+std::vector<RuntimeLaneId> editableVisibleLaneOrder(const PatternProject& project)
+{
+    std::vector<RuntimeLaneId> laneIds;
+    for (const auto& laneId : ProjectLaneAccess::orderedLaneIds(project, {}, true))
+    {
+        const auto* lane = ProjectLaneAccess::findLaneDefinition(project, laneId);
+        if (lane != nullptr && !lane->editorCapabilities.usesAlternateEditor())
+            laneIds.push_back(laneId);
+    }
+
+    return laneIds;
+}
+
+GridEditActions::DragSnapshot makeGridDragSnapshot(const PatternProject& project, const GridEditActions::SelectedNoteRef& ref)
+{
+    const auto* track = ProjectLaneAccess::findTrackState(project, ref.laneId);
+    expect(track != nullptr, "Grid drag snapshot requires a live lane.");
+    expect(ref.index >= 0 && ref.index < static_cast<int>(track->notes.size()), "Grid drag snapshot requires a live note index.");
+
+    const auto& note = track->notes[static_cast<size_t>(ref.index)];
+    GridEditActions::DragSnapshot snapshot;
+    snapshot.laneId = ref.laneId;
+    snapshot.index = ref.index;
+    snapshot.sourceNote = note;
+    snapshot.startTick = GridEditActions::noteStartTick(note, ticksPerStep());
+    snapshot.startLength = std::max(1, note.length);
+    snapshot.startEndTick = snapshot.startTick + snapshot.startLength * ticksPerStep();
+    snapshot.startVelocity = note.velocity;
+    snapshot.startMicroOffset = note.microOffset;
+    snapshot.startPitch = note.pitch;
+    return snapshot;
+}
+
+void expectEditorRegionStateValid(const PatternProject& project,
+                                  const GridEditorComponent::EditorRegionState& state,
+                                  const juce::String& label)
+{
+    if (state.selectedTickRange.has_value())
+        expect(state.selectedTickRange->getEnd() > state.selectedTickRange->getStart(),
+               label + ": selectedTickRange must remain non-empty.");
+
+    if (state.loopTickRange.has_value())
+        expect(state.loopTickRange->getEnd() > state.loopTickRange->getStart(),
+               label + ": loopTickRange must remain non-empty.");
+
+    if (state.primaryLaneId.isNotEmpty())
+        expect(ProjectLaneAccess::containsLaneId(project, state.primaryLaneId),
+               label + ": primaryLaneId must resolve to a live lane.");
+
+    std::set<RuntimeLaneId> seenActiveLaneIds;
+    for (const auto& laneId : state.activeLaneIds)
+    {
+        expect(ProjectLaneAccess::containsLaneId(project, laneId),
+               label + ": activeLaneIds must contain only live lanes.");
+        expect(seenActiveLaneIds.insert(laneId).second,
+               label + ": activeLaneIds must not contain duplicates.");
+    }
+}
+
 void testSerializationRoundTripSmoke()
 {
     auto project = createDefaultProject();
@@ -833,6 +900,329 @@ void testSerializationRoundTripSmoke()
         expect(!reconciledSub->sub808Notes.empty() && reconciledSub->sub808Notes.front().semanticRole == "sub_payload",
             "Sub808 payload must follow its runtime lane during reconciliation.");
     }
+
+        void testSoundTargetResolution()
+        {
+            auto project = createDefaultProject();
+
+            const auto globalTarget = SoundTargetController::resolveProjectSelection(project);
+            expect(globalTarget.isGlobal(), "Default sound target must resolve to global when no track is selected.");
+
+            const auto backedKickTarget = SoundTargetController::resolveLegacySelection(project, TrackType::Kick);
+            expect(backedKickTarget.kind == SoundTargetDescriptorKind::BackedRuntimeLane,
+                "Legacy Kick target must resolve to a backed runtime lane descriptor.");
+            expect(backedKickTarget.laneId == TrackRegistry::defaultRuntimeLaneId(TrackType::Kick),
+                "Backed Kick target must resolve to the canonical Kick lane.");
+            expect(backedKickTarget.runtimeTrackType.has_value() && *backedKickTarget.runtimeTrackType == TrackType::Kick,
+                "Backed Kick target must preserve runtime track type.");
+
+            auto missingKickProject = project;
+            expect(RuntimeLaneLifecycle::deleteLane(missingKickProject, TrackRegistry::defaultRuntimeLaneId(TrackType::Kick)),
+                "Kick lane removal must succeed for missing-lane fallback test.");
+            PatternProjectSerialization::validate(missingKickProject);
+
+            const auto legacyFallback = SoundTargetController::resolveLegacySelection(missingKickProject, TrackType::Kick);
+            expect(legacyFallback.kind == SoundTargetDescriptorKind::LegacyTrackTypeAlias,
+                "Missing backed lane must fall back to legacy TrackType alias descriptor.");
+            expect(legacyFallback.legacyTrackTypeAlias.has_value() && *legacyFallback.legacyTrackTypeAlias == TrackType::Kick,
+                "Legacy fallback must preserve requested TrackType alias.");
+
+            auto staleTargetProject = project;
+            ProjectStateController::setSoundModuleTarget(staleTargetProject,
+                                    SoundTargetDescriptor::makeBackedRuntimeLane("missing:lane", TrackType::Kick));
+            PatternProjectSerialization::validate(staleTargetProject);
+            const auto staleResolved = SoundTargetController::resolveProjectSelection(staleTargetProject);
+                expect(staleResolved.kind == SoundTargetDescriptorKind::BackedRuntimeLane,
+                    "Missing selected sound lane must safely fall back to a live backed target.");
+                expect(staleResolved.laneId == TrackRegistry::defaultRuntimeLaneId(TrackType::Kick),
+                    "Missing selected sound lane must resolve back to the canonical Kick lane when available.");
+
+            expect(SoundTargetController::toLegacyTrackTypeAlias(backedKickTarget).has_value()
+                 && *SoundTargetController::toLegacyTrackTypeAlias(backedKickTarget) == TrackType::Kick,
+                "Legacy TrackType alias mapping must remain compatible for backed lanes.");
+            expect(SoundTargetController::toLegacyTrackTypeAlias(legacyFallback).has_value()
+                 && *SoundTargetController::toLegacyTrackTypeAlias(legacyFallback) == TrackType::Kick,
+                "Legacy TrackType alias mapping must remain compatible for alias fallback.");
+        }
+
+        void testSoundStatePersistence()
+        {
+            auto project = createDefaultProject();
+            project.globalSound.pan = -0.35f;
+            project.globalSound.width = 1.45f;
+            project.globalSound.eqTone = 0.22f;
+            project.globalSound.compression = 0.58f;
+            project.globalSound.reverb = 0.31f;
+            project.globalSound.gate = 0.14f;
+            project.globalSound.transient = 0.41f;
+            project.globalSound.drive = 0.27f;
+
+            auto* kick = findTrackByType(project, TrackType::Kick);
+            expect(kick != nullptr, "Sound persistence test requires Kick track.");
+            kick->sound.pan = 0.4f;
+            kick->sound.width = 1.3f;
+            kick->sound.eqTone = -0.18f;
+            kick->sound.compression = 0.49f;
+            kick->sound.reverb = 0.21f;
+            kick->sound.gate = 0.11f;
+            kick->sound.transient = 0.39f;
+            kick->sound.drive = 0.19f;
+
+            const auto kickTarget = SoundTargetController::resolveLegacySelection(project, TrackType::Kick);
+            ProjectStateController::setSoundModuleTarget(project, kickTarget);
+
+            auto restored = roundTrip(project);
+            const auto* restoredKick = findTrackByType(restored, TrackType::Kick);
+            expect(restoredKick != nullptr, "Round-tripped project must retain Kick track.");
+
+            expect(nearlyEqual(restored.globalSound.pan, project.globalSound.pan), "Global pan must persist across serialization.");
+            expect(nearlyEqual(restored.globalSound.width, project.globalSound.width), "Global width must persist across serialization.");
+            expect(nearlyEqual(restored.globalSound.eqTone, project.globalSound.eqTone), "Global EQ tone must persist across serialization.");
+            expect(nearlyEqual(restored.globalSound.compression, project.globalSound.compression), "Global compression must persist across serialization.");
+            expect(nearlyEqual(restored.globalSound.reverb, project.globalSound.reverb), "Global reverb must persist across serialization.");
+            expect(nearlyEqual(restored.globalSound.gate, project.globalSound.gate), "Global gate must persist across serialization.");
+            expect(nearlyEqual(restored.globalSound.transient, project.globalSound.transient), "Global transient must persist across serialization.");
+            expect(nearlyEqual(restored.globalSound.drive, project.globalSound.drive), "Global drive must persist across serialization.");
+
+            expect(nearlyEqual(restoredKick->sound.pan, kick->sound.pan), "Track pan must persist across serialization.");
+            expect(nearlyEqual(restoredKick->sound.width, kick->sound.width), "Track width must persist across serialization.");
+            expect(nearlyEqual(restoredKick->sound.eqTone, kick->sound.eqTone), "Track EQ tone must persist across serialization.");
+            expect(nearlyEqual(restoredKick->sound.compression, kick->sound.compression), "Track compression must persist across serialization.");
+            expect(nearlyEqual(restoredKick->sound.reverb, kick->sound.reverb), "Track reverb must persist across serialization.");
+            expect(nearlyEqual(restoredKick->sound.gate, kick->sound.gate), "Track gate must persist across serialization.");
+            expect(nearlyEqual(restoredKick->sound.transient, kick->sound.transient), "Track transient must persist across serialization.");
+            expect(nearlyEqual(restoredKick->sound.drive, kick->sound.drive), "Track drive must persist across serialization.");
+
+            const auto restoredTarget = SoundTargetController::resolveProjectSelection(restored);
+            expect(restoredTarget.kind == SoundTargetDescriptorKind::BackedRuntimeLane,
+                "Restored selected sound target must resolve to a live backed lane.");
+            expect(restoredTarget.laneId == kick->laneId,
+                "Restored selected sound target must continue to point at Kick lane.");
+
+            restored.soundModuleTrackIndex = 999;
+            PatternProjectSerialization::validate(restored);
+            const auto recoveredTarget = SoundTargetController::resolveProjectSelection(restored);
+                expect(!recoveredTarget.isGlobal(),
+                    "Validated selected sound target must recover to a live target instead of pointing into void.");
+                expect(restored.soundModuleTrackIndex >= 0 && restored.soundModuleTrackIndex < static_cast<int>(restored.tracks.size()),
+                    "Validated soundModuleTrackIndex must clamp into a live track range.");
+                const auto& recoveredTrack = restored.tracks[static_cast<size_t>(restored.soundModuleTrackIndex)];
+                const auto recoveredSound = SoundTargetController::resolveSoundState(restored, recoveredTarget);
+                expect(nearlyEqual(recoveredSound.pan, recoveredTrack.sound.pan)
+                     && nearlyEqual(recoveredSound.width, recoveredTrack.sound.width)
+                     && nearlyEqual(recoveredSound.eqTone, recoveredTrack.sound.eqTone)
+                     && nearlyEqual(recoveredSound.compression, recoveredTrack.sound.compression)
+                     && nearlyEqual(recoveredSound.reverb, recoveredTrack.sound.reverb)
+                     && nearlyEqual(recoveredSound.gate, recoveredTrack.sound.gate)
+                     && nearlyEqual(recoveredSound.transient, recoveredTrack.sound.transient)
+                     && nearlyEqual(recoveredSound.drive, recoveredTrack.sound.drive),
+                    "Recovered selected sound target must resolve to the actual live selected track sound state after validate.");
+        }
+
+             void testGridModelIntegrity()
+             {
+                 auto project = createDefaultProject();
+                 project.params.bars = 4;
+
+                 const auto kickLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Kick);
+                 const auto snareLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Snare);
+                 auto* kick = ProjectLaneAccess::findTrackState(project, kickLaneId);
+                 auto* snare = ProjectLaneAccess::findTrackState(project, snareLaneId);
+                 expect(kick != nullptr && snare != nullptr, "Grid integrity test requires Kick and Snare lanes.");
+
+                 kick->notes.clear();
+                 snare->notes.clear();
+
+                 const NoteEvent kickNote { 36, 0, 1, 104, 0, false, "anchor", false, false, false };
+                 const NoteEvent snareNote { 38, 4, 1, 108, 0, false, "backbeat", false, false, false };
+                 auto context = makeGridModelContext(project);
+
+                 expect(GridEditActions::addNote(context, kickLaneId, kickNote),
+                     "Grid addNote must insert into the requested laneId.");
+                 expect(GridEditActions::addNote(context, snareLaneId, snareNote),
+                     "Grid addNote must allow inserting into a neighboring lane.");
+                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes.size()) == 1,
+                     "Kick lane must receive its inserted note.");
+                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
+                     "Snare lane must receive its inserted note.");
+
+                 expect(GridEditActions::removeNotes(context, { { kickLaneId, 0 } }),
+                     "Grid removeNotes must delete the targeted lane note.");
+                 expect(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes.empty(),
+                     "Kick lane note removal must not leave stale payload.");
+                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
+                     "Deleting Kick notes must not affect neighboring Snare lane notes.");
+
+                 expect(GridEditActions::addNote(context, kickLaneId, kickNote),
+                     "Kick lane note must be restorable for duplicate/nudge tests.");
+
+                 std::reverse(project.tracks.begin(), project.tracks.end());
+
+                 std::vector<GridEditActions::ClipboardNote> clipboard {
+                  { kickLaneId, kickNote, 0, 0 }
+                 };
+                 std::vector<GridEditActions::SelectedNoteRef> insertedSelection;
+                 expect(GridEditActions::pasteNotes(context,
+                                     clipboard,
+                                     16 * ticksPerStep(),
+                                     editableVisibleLaneOrder(project),
+                                     std::nullopt,
+                                     &insertedSelection),
+                     "Grid pasteNotes duplicate path must succeed for a live laneId.");
+                 expect(insertedSelection.size() == 1 && insertedSelection.front().laneId == kickLaneId,
+                     "Duplicate path must preserve lane identity even when track storage order changes.");
+                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes.size()) == 2,
+                     "Duplicate path must insert the copied note into the source lane.");
+                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
+                     "Duplicate path must not spill into neighboring lanes.");
+
+                 auto movedSelection = insertedSelection;
+                 expect(!movedSelection.empty(), "Duplicate path must return a live inserted selection.");
+                 const auto movedSnapshot = makeGridDragSnapshot(project, movedSelection.front());
+                 const auto sourceKickStep = ProjectLaneAccess::findTrackState(project, kickLaneId)->notes[static_cast<size_t>(movedSelection.front().index)].step;
+
+                 std::vector<GridEditActions::SelectedNoteRef> nudgeResult;
+                 expect(GridEditActions::moveSelection(context,
+                                     movedSelection,
+                                     { movedSnapshot },
+                                     editableVisibleLaneOrder(project),
+                                     1,
+                                     0,
+                                     0,
+                                     &nudgeResult),
+                     "Grid moveSelection must nudge notes using laneId-based lookup.");
+                 expect(nudgeResult.size() == 1 && nudgeResult.front().laneId == kickLaneId,
+                     "Nudge path must preserve lane identity.");
+                 expect(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes[static_cast<size_t>(nudgeResult.front().index)].step == sourceKickStep + 1,
+                     "Nudge path must move the target note within its original lane.");
+                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
+                     "Nudge path must not mutate neighboring lanes.");
+
+                 const auto velocitySnapshot = makeGridDragSnapshot(project, nudgeResult.front());
+                 expect(GridEditActions::changeVelocityAbsolute(context, { velocitySnapshot }, 73),
+                     "Grid velocity edit path must resolve the selected note by laneId.");
+                 expect(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes[static_cast<size_t>(nudgeResult.front().index)].velocity == 73,
+                     "Velocity edits must apply to the targeted lane note only.");
+
+                 const auto stableCounts = noteCountsByLane(project);
+                 const RuntimeLaneId missingLaneId = "missing:lane";
+                 expect(!GridEditActions::addNote(context, missingLaneId, kickNote),
+                     "Invalid laneId addNote must fail safely.");
+                 expect(!GridEditActions::removeNotes(context, { { missingLaneId, 0 } }),
+                     "Invalid laneId removeNotes must fail safely.");
+                 expect(!GridEditActions::pasteNotes(context,
+                                      { { missingLaneId, kickNote, 0, 0 } },
+                                      24 * ticksPerStep(),
+                                      editableVisibleLaneOrder(project)),
+                     "Invalid laneId pasteNotes must fail safely.");
+
+                 GridEditActions::DragSnapshot invalidSnapshot;
+                 invalidSnapshot.laneId = missingLaneId;
+                 invalidSnapshot.index = 0;
+                 invalidSnapshot.sourceNote = kickNote;
+                 invalidSnapshot.startTick = 0;
+                 invalidSnapshot.startLength = 1;
+                 invalidSnapshot.startEndTick = ticksPerStep();
+                 invalidSnapshot.startVelocity = kickNote.velocity;
+                 invalidSnapshot.startMicroOffset = kickNote.microOffset;
+                 invalidSnapshot.startPitch = kickNote.pitch;
+
+                 std::vector<GridEditActions::SelectedNoteRef> invalidMovedSelection;
+                 expect(!GridEditActions::moveSelection(context,
+                                      { { missingLaneId, 0 } },
+                                      { invalidSnapshot },
+                                      editableVisibleLaneOrder(project),
+                                      1,
+                                      0,
+                                      0,
+                                      &invalidMovedSelection),
+                     "Invalid laneId moveSelection must fail safely.");
+                 expect(!GridEditActions::changeVelocityDelta(context, { invalidSnapshot }, 9),
+                     "Invalid laneId velocity edits must fail safely.");
+                 expect(noteCountsByLane(project) == stableCounts,
+                     "Invalid laneId handling must not corrupt neighboring lane note counts.");
+             }
+
+             void testGridRegionStateConsistency()
+             {
+                 auto project = createDefaultProject();
+                 project.params.bars = 4;
+
+                 const auto kickLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Kick);
+                 const auto snareLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Snare);
+                 auto* kick = ProjectLaneAccess::findTrackState(project, kickLaneId);
+                 auto* snare = ProjectLaneAccess::findTrackState(project, snareLaneId);
+                 expect(kick != nullptr && snare != nullptr, "Grid region consistency test requires Kick and Snare lanes.");
+
+                 kick->notes = {
+                  NoteEvent { 36, 0, 1, 112, 0, false, "anchor", false, false, false },
+                  NoteEvent { 36, 8, 1, 96, 0, false, "support", false, false, false }
+                 };
+                 snare->notes = {
+                  NoteEvent { 38, 4, 1, 108, 0, false, "backbeat", false, false, false }
+                 };
+                 const auto savedKickNotes = kick->notes;
+
+                 GridEditorComponent grid;
+                 const auto expectedLoop = juce::Range<int>(0, 16 * ticksPerStep());
+
+                 grid.setLaneDisplayOrder(project.runtimeLaneOrder);
+                 grid.setProject(project);
+                 grid.setSelectedTrack(kickLaneId);
+                 grid.setLoopRegion(expectedLoop);
+                 expect(grid.selectAllNotesInLane(kickLaneId), "Kick lane must be selectable before reorder.");
+
+                 auto state = grid.getEditorRegionState();
+                 expectEditorRegionStateValid(project, state, "grid_region_initial");
+                 expect(state.primaryLaneId == kickLaneId, "Initial primaryLaneId must match the selected Kick lane.");
+                 expect(state.selectedTickRange.has_value(), "Initial selectedTickRange must exist for selected Kick notes.");
+                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
+                     "Initial loopTickRange must remain aligned with the configured loop region.");
+
+                 auto reordered = project;
+                 std::rotate(reordered.runtimeLaneOrder.begin(), reordered.runtimeLaneOrder.begin() + 2, reordered.runtimeLaneOrder.end());
+                 std::reverse(reordered.tracks.begin(), reordered.tracks.end());
+
+                 grid.setLaneDisplayOrder(reordered.runtimeLaneOrder);
+                 grid.setProject(reordered);
+                 state = grid.getEditorRegionState();
+                 expectEditorRegionStateValid(reordered, state, "grid_region_reordered");
+                 expect(state.primaryLaneId == kickLaneId, "Lane reorder must not invalidate primaryLaneId when the selected lane still exists.");
+                 expect(state.selectedTickRange.has_value(), "Lane reorder must preserve selectedTickRange for live notes.");
+                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
+                     "Lane reorder must preserve loopTickRange.");
+
+                 auto deleted = reordered;
+                 expect(RuntimeLaneLifecycle::deleteLane(deleted, kickLaneId), "Kick lane delete must succeed for region consistency test.");
+                 grid.setLaneDisplayOrder(deleted.runtimeLaneOrder);
+                 grid.setProject(deleted);
+                 state = grid.getEditorRegionState();
+                 expectEditorRegionStateValid(deleted, state, "grid_region_deleted");
+                 expect(state.primaryLaneId != kickLaneId, "Deleted lane must not survive as primaryLaneId.");
+                 expect(std::none_of(state.activeLaneIds.begin(), state.activeLaneIds.end(), [&kickLaneId](const RuntimeLaneId& laneId)
+                 {
+                  return laneId == kickLaneId;
+                 }), "Deleted lane must not survive inside activeLaneIds.");
+                 expect(!state.selectedTickRange.has_value(), "selectedTickRange must clear when its selected lane is deleted.");
+                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
+                     "Loop region must remain valid after lane deletion.");
+
+                 auto restored = deleted;
+                 expect(RuntimeLaneLifecycle::addRegistryLane(restored, TrackType::Kick, 1), "Kick lane restore must succeed for region consistency test.");
+                 if (auto* restoredKick = ProjectLaneAccess::findTrackState(restored, kickLaneId))
+                  restoredKick->notes = savedKickNotes;
+
+                 grid.setLaneDisplayOrder(restored.runtimeLaneOrder);
+                 grid.setProject(restored);
+                 grid.setSelectedTrack(kickLaneId);
+                 expect(grid.selectAllNotesInLane(kickLaneId), "Restored Kick lane must become selectable again.");
+                 state = grid.getEditorRegionState();
+                 expectEditorRegionStateValid(restored, state, "grid_region_restored");
+                 expect(state.primaryLaneId == kickLaneId, "Restored Kick lane must become a valid primaryLaneId again.");
+                 expect(state.selectedTickRange.has_value(), "selectedTickRange must recover when the lane is restored with notes.");
+                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
+                     "Loop region must remain valid after lane restore.");
+             }
 
 void testRuntimeLaneLifecycle()
 {
@@ -1786,6 +2176,10 @@ int main()
     failures += runTest("Legacy serialization roundtrip regression", testLegacySerializationRoundTripRegression);
     failures += runTest("Corrupted serialization state recovery", testCorruptedSerializationStateRecovery);
     failures += runTest("Serialization lane reconciliation", testSerializationLaneReconciliation);
+    failures += runTest("Sound target resolution", testSoundTargetResolution);
+    failures += runTest("Sound state persistence", testSoundStatePersistence);
+    failures += runTest("Grid model integrity", testGridModelIntegrity);
+    failures += runTest("Grid region state consistency", testGridRegionStateConsistency);
     failures += runTest("Editor history controller undo redo", testEditorHistoryControllerUndoRedo);
     failures += runTest("Hotkey controller maps and persistence", testHotkeyControllerMapsAndPersistence);
     failures += runTest("Editor layout controller persistence smoke", testEditorLayoutControllerPersistenceSmoke);

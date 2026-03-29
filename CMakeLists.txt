@@ -189,6 +189,8 @@ add_executable(HPDG_CoreTests
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/StyleLabReferenceService.cpp
     Source/Services/StyleLabReferenceBrowserService.cpp
+    Source/UI/GridEditActions.cpp
+    Source/UI/GridEditorComponent.cpp
 )
 
 target_include_directories(HPDG_CoreTests
@@ -200,6 +202,7 @@ target_link_libraries(HPDG_CoreTests
     PRIVATE
         juce::juce_audio_formats
         juce::juce_data_structures
+        juce::juce_gui_basics
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags

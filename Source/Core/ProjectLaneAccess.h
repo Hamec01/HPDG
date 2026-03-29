@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
 #include "PatternProject.h"
 
@@ -28,6 +29,19 @@ inline const RuntimeLaneDefinition* findLaneDefinition(const PatternProject& pro
     }
 
     return nullptr;
+}
+
+inline bool containsLaneId(const PatternProject& project, const RuntimeLaneId& laneId)
+{
+    return findLaneDefinition(project, laneId) != nullptr;
+}
+
+inline bool isVisibleInEditor(const PatternProject& project, const RuntimeLaneId& laneId)
+{
+    if (const auto* lane = findLaneDefinition(project, laneId))
+        return lane->isVisibleInEditor;
+
+    return false;
 }
 
 inline RuntimeLaneDefinition* findLaneDefinitionForTrack(PatternProject& project, TrackType type)
@@ -133,6 +147,38 @@ inline const TrackState* findTrackState(const PatternProject& project, const Run
         return findTrackState(project, *type);
 
     return nullptr;
+}
+
+inline std::vector<RuntimeLaneId> orderedLaneIds(const PatternProject& project,
+                                                 const std::vector<RuntimeLaneId>& preferredOrder = {},
+                                                 bool visibleOnly = false)
+{
+    std::vector<RuntimeLaneId> ordered;
+    ordered.reserve(project.runtimeLaneProfile.lanes.size());
+
+    auto appendLane = [&](const RuntimeLaneId& laneId)
+    {
+        const auto* lane = findLaneDefinition(project, laneId);
+        if (lane == nullptr)
+            return;
+
+        if (visibleOnly && !lane->isVisibleInEditor)
+            return;
+
+        if (std::find(ordered.begin(), ordered.end(), laneId) == ordered.end())
+            ordered.push_back(laneId);
+    };
+
+    for (const auto& laneId : preferredOrder)
+        appendLane(laneId);
+
+    for (const auto& laneId : project.runtimeLaneOrder)
+        appendLane(laneId);
+
+    for (const auto& lane : project.runtimeLaneProfile.lanes)
+        appendLane(lane.laneId);
+
+    return ordered;
 }
 }
 } // namespace bbg
