@@ -84,6 +84,26 @@ public:
         juce::ignoreUnused(parent);
     }
 
+    void exportTrack(const RuntimeLaneId& laneId, juce::Component* parent) const
+    {
+        auto chooser = std::make_shared<juce::FileChooser>(
+            "Export track MIDI",
+            juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Track", ".mid"),
+            "*.mid");
+
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+                             [this, chooser, laneId](const juce::FileChooser& fc)
+                             {
+                                 const auto result = fc.getResult();
+                                 if (result == juce::File())
+                                     return;
+
+                                 audioProcessor.exportTrackToFile(laneId, result);
+                             });
+
+        juce::ignoreUnused(parent);
+    }
+
     void dragFullPatternTempMidi(const std::function<void(const juce::String&)>& logDrag) const
     {
         logDrag("dragFullPatternTempMidi click");
@@ -142,6 +162,20 @@ public:
         file.revealToUser();
     }
 
+    void dragTrackTempMidi(const RuntimeLaneId& laneId, const std::function<void(const juce::String&)>& logDrag) const
+    {
+        logDrag("dragTrackTempMidi click lane=" + laneId);
+        const auto file = audioProcessor.createTemporaryTrackMidiFile(laneId);
+        if (!file.existsAsFile())
+        {
+            logDrag("dragTrackTempMidi no file lane=" + laneId);
+            return;
+        }
+
+        logDrag("dragTrackTempMidi reveal " + file.getFullPathName());
+        file.revealToUser();
+    }
+
     void dragTrackExternal(TrackType type, juce::Component* parent, const std::function<void(const juce::String&)>& logDrag) const
     {
         logDrag("dragTrackExternal gesture start type=" + juce::String(static_cast<int>(type)));
@@ -169,6 +203,39 @@ public:
         catch (...)
         {
             logDrag("dragTrackExternal exception fallback reveal type=" + juce::String(static_cast<int>(type)));
+            file.revealToUser();
+        }
+    }
+
+    void dragTrackExternal(const RuntimeLaneId& laneId,
+                           juce::Component* parent,
+                           const std::function<void(const juce::String&)>& logDrag) const
+    {
+        logDrag("dragTrackExternal gesture start lane=" + laneId);
+        const auto file = audioProcessor.createTemporaryTrackMidiFile(laneId);
+        if (!file.existsAsFile())
+        {
+            logDrag("dragTrackExternal no file lane=" + laneId);
+            return;
+        }
+
+        try
+        {
+            const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() },
+                                                                                             false,
+                                                                                             parent,
+                                                                                             [logDrag]
+                                                                                             {
+                                                                                                 logDrag("dragTrackExternal callback end");
+                                                                                             });
+            logDrag("dragTrackExternal performExternalDragDropOfFiles started=" + juce::String(started ? "1" : "0")
+                    + " lane=" + laneId);
+            if (!started)
+                file.revealToUser();
+        }
+        catch (...)
+        {
+            logDrag("dragTrackExternal exception fallback reveal lane=" + laneId);
             file.revealToUser();
         }
     }
@@ -241,6 +308,80 @@ public:
                                if (choice == 3)
                                {
                                    const auto folder = audioProcessor.getLaneSampleDirectory(type);
+                                   folder.createDirectory();
+                                   folder.revealToUser();
+                               }
+
+                               juce::ignoreUnused(parent);
+                           });
+    }
+
+    template <typename PushHistoryFn, typename RefreshFn>
+    void showSampleMenu(const RuntimeLaneId& laneId,
+                        juce::Component* parent,
+                        PushHistoryFn&& pushHistory,
+                        RefreshFn&& refreshFromProcessor,
+                        const std::function<void(const juce::String&)>& logDrag) const
+    {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Load new sample (.wav)");
+        menu.addItem(2, "Delete selected sample");
+        menu.addSeparator();
+        menu.addItem(3, "Open lane sample folder");
+
+        const auto mousePos = juce::Desktop::getInstance().getMainMouseSource().getScreenPosition().roundToInt();
+        const juce::Rectangle<int> targetArea(mousePos.x, mousePos.y, 1, 1);
+
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(targetArea).withParentComponent(parent),
+                           [this,
+                            parent,
+                            laneId,
+                            pushHistory = std::forward<PushHistoryFn>(pushHistory),
+                            refreshFromProcessor = std::forward<RefreshFn>(refreshFromProcessor),
+                            logDrag](int choice) mutable
+                           {
+                               if (choice == 1)
+                               {
+                                   auto chooser = std::make_shared<juce::FileChooser>(
+                                       "Select WAV sample",
+                                       juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+                                       "*.wav");
+
+                                   chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                                        [this, chooser, laneId, pushHistory = std::move(pushHistory), refreshFromProcessor = std::move(refreshFromProcessor), logDrag](const juce::FileChooser& fc) mutable
+                                                        {
+                                                            const auto result = fc.getResult();
+                                                            if (result == juce::File())
+                                                                return;
+
+                                                            const auto before = audioProcessor.getProjectSnapshot();
+                                                            juce::String error;
+                                                            const bool ok = audioProcessor.importLaneSample(laneId, result, &error);
+                                                            const auto after = audioProcessor.getProjectSnapshot();
+                                                            pushHistory(before, after);
+                                                            refreshFromProcessor();
+                                                            if (!ok && error.isNotEmpty())
+                                                                logDrag("importLaneSample error: " + error);
+                                                        });
+                                   return;
+                               }
+
+                               if (choice == 2)
+                               {
+                                   const auto before = audioProcessor.getProjectSnapshot();
+                                   juce::String error;
+                                   const bool ok = audioProcessor.deleteSelectedLaneSample(laneId, &error);
+                                   const auto after = audioProcessor.getProjectSnapshot();
+                                   pushHistory(before, after);
+                                   refreshFromProcessor();
+                                   if (!ok && error.isNotEmpty())
+                                       logDrag("deleteSelectedLaneSample error: " + error);
+                                   return;
+                               }
+
+                               if (choice == 3)
+                               {
+                                   const auto folder = audioProcessor.getLaneSampleDirectory(laneId);
                                    folder.createDirectory();
                                    folder.revealToUser();
                                }

@@ -2336,16 +2336,6 @@ void BoomBGeneratorAudioProcessorEditor::exportFullPattern()
     commandController.exportFullPattern(this);
 }
 
-std::optional<TrackType> BoomBGeneratorAudioProcessorEditor::legacyTrackTypeForLane(const RuntimeLaneId& laneId) const
-{
-    const auto project = audioProcessor.getProjectSnapshot();
-    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
-    if (lane == nullptr || !lane->runtimeTrackType.has_value())
-        return std::nullopt;
-
-    return lane->runtimeTrackType;
-}
-
 bool BoomBGeneratorAudioProcessorEditor::isHatFxLane(const RuntimeLaneId& laneId) const
 {
     const auto project = audioProcessor.getProjectSnapshot();
@@ -2356,21 +2346,6 @@ bool BoomBGeneratorAudioProcessorEditor::isHatFxLane(const RuntimeLaneId& laneId
 void BoomBGeneratorAudioProcessorEditor::exportLoopWav()
 {
     commandController.exportLoopWav(this, logDrag);
-}
-
-void BoomBGeneratorAudioProcessorEditor::showSampleMenu(TrackType type)
-{
-    commandController.showSampleMenu(type,
-                                     this,
-                                     [this](const PatternProject& before, const PatternProject& after)
-                                     {
-                                         pushProjectHistoryState(before, after);
-                                     },
-                                     [this]()
-                                     {
-                                         refreshFromProcessor();
-                                     },
-                                     logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::dragFullPatternTempMidi()
@@ -2385,53 +2360,32 @@ void BoomBGeneratorAudioProcessorEditor::dragFullPatternExternal()
 
 void BoomBGeneratorAudioProcessorEditor::exportTrack(const RuntimeLaneId& laneId)
 {
-    const auto type = legacyTrackTypeForLane(laneId);
-    if (!type.has_value())
-        return;
-
-    exportTrack(*type);
+    commandController.exportTrack(laneId, this);
 }
 
 void BoomBGeneratorAudioProcessorEditor::showSampleMenu(const RuntimeLaneId& laneId)
 {
-    const auto type = legacyTrackTypeForLane(laneId);
-    if (!type.has_value())
-        return;
-
-    showSampleMenu(*type);
+    commandController.showSampleMenu(laneId,
+                                     this,
+                                     [this](const PatternProject& before, const PatternProject& after)
+                                     {
+                                         pushProjectHistoryState(before, after);
+                                     },
+                                     [this]()
+                                     {
+                                         refreshFromProcessor();
+                                     },
+                                     logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::dragTrackTempMidi(const RuntimeLaneId& laneId)
 {
-    const auto type = legacyTrackTypeForLane(laneId);
-    if (!type.has_value())
-        return;
-
-    dragTrackTempMidi(*type);
+    commandController.dragTrackTempMidi(laneId, logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::dragTrackExternal(const RuntimeLaneId& laneId)
 {
-    const auto type = legacyTrackTypeForLane(laneId);
-    if (!type.has_value())
-        return;
-
-    dragTrackExternal(*type);
-}
-
-void BoomBGeneratorAudioProcessorEditor::exportTrack(TrackType type)
-{
-    commandController.exportTrack(type, this);
-}
-
-void BoomBGeneratorAudioProcessorEditor::dragTrackTempMidi(TrackType type)
-{
-    commandController.dragTrackTempMidi(type, logDrag);
-}
-
-void BoomBGeneratorAudioProcessorEditor::dragTrackExternal(TrackType type)
-{
-    commandController.dragTrackExternal(type, this, logDrag);
+    commandController.dragTrackExternal(laneId, this, logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::updateGridGeometry()

@@ -67,16 +67,11 @@ private:
     void exportLoopWav();
     void dragFullPatternTempMidi();
     void dragFullPatternExternal();
-    std::optional<TrackType> legacyTrackTypeForLane(const RuntimeLaneId& laneId) const;
     bool isHatFxLane(const RuntimeLaneId& laneId) const;
     void exportTrack(const RuntimeLaneId& laneId);
     void showSampleMenu(const RuntimeLaneId& laneId);
     void dragTrackTempMidi(const RuntimeLaneId& laneId);
     void dragTrackExternal(const RuntimeLaneId& laneId);
-    void exportTrack(TrackType type);
-    void showSampleMenu(TrackType type);
-    void dragTrackTempMidi(TrackType type);
-    void dragTrackExternal(TrackType type);
     void updateGridGeometry();
     void adjustGridHorizontalZoom(float delta, int anchorViewportX);
     void adjustGridVerticalZoom(float delta, int anchorViewportY);

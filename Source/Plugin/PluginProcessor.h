@@ -153,14 +153,19 @@ public:
     void clearTrack(const RuntimeLaneId& laneId);
 
     juce::File getLaneSampleDirectory(TrackType track) const;
+    juce::File getLaneSampleDirectory(const RuntimeLaneId& laneId) const;
     bool importLaneSample(TrackType track, const juce::File& sourceFile, juce::String* errorMessage = nullptr);
+    bool importLaneSample(const RuntimeLaneId& laneId, const juce::File& sourceFile, juce::String* errorMessage = nullptr);
     bool deleteSelectedLaneSample(TrackType track, juce::String* errorMessage = nullptr);
+    bool deleteSelectedLaneSample(const RuntimeLaneId& laneId, juce::String* errorMessage = nullptr);
 
     bool exportFullPatternToFile(const juce::File& targetFile) const;
     bool exportTrackToFile(TrackType track, const juce::File& targetFile) const;
+    bool exportTrackToFile(const RuntimeLaneId& laneId, const juce::File& targetFile) const;
     bool exportLoopWavToFile(const juce::File& targetFile) const;
     juce::File createTemporaryFullPatternMidiFile() const;
     juce::File createTemporaryTrackMidiFile(TrackType track) const;
+    juce::File createTemporaryTrackMidiFile(const RuntimeLaneId& laneId) const;
 
     PatternProject getProjectSnapshot() const;
     TransportSnapshot getLastTransportSnapshot() const;

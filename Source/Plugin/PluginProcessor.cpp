@@ -1039,6 +1039,12 @@ juce::File BoomBapGeneratorAudioProcessor::getLaneSampleDirectory(TrackType trac
         .getChildFile(SampleLibraryManager::folderNameForTrack(track));
 }
 
+juce::File BoomBapGeneratorAudioProcessor::getLaneSampleDirectory(const RuntimeLaneId& laneId) const
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    return type.has_value() ? getLaneSampleDirectory(*type) : juce::File {};
+}
+
 bool BoomBapGeneratorAudioProcessor::importLaneSample(TrackType track, const juce::File& sourceFile, juce::String* errorMessage)
 {
     if (!sourceFile.existsAsFile())
@@ -1079,6 +1085,21 @@ bool BoomBapGeneratorAudioProcessor::importLaneSample(TrackType track, const juc
     return true;
 }
 
+bool BoomBapGeneratorAudioProcessor::importLaneSample(const RuntimeLaneId& laneId,
+                                                      const juce::File& sourceFile,
+                                                      juce::String* errorMessage)
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    if (!type.has_value())
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Lane does not have a backing track.";
+        return false;
+    }
+
+    return importLaneSample(*type, sourceFile, errorMessage);
+}
+
 bool BoomBapGeneratorAudioProcessor::deleteSelectedLaneSample(TrackType track, juce::String* errorMessage)
 {
     std::scoped_lock lock(projectMutex);
@@ -1109,6 +1130,19 @@ bool BoomBapGeneratorAudioProcessor::deleteSelectedLaneSample(TrackType track, j
     return true;
 }
 
+bool BoomBapGeneratorAudioProcessor::deleteSelectedLaneSample(const RuntimeLaneId& laneId, juce::String* errorMessage)
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    if (!type.has_value())
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Lane does not have a backing track.";
+        return false;
+    }
+
+    return deleteSelectedLaneSample(*type, errorMessage);
+}
+
 bool BoomBapGeneratorAudioProcessor::exportFullPatternToFile(const juce::File& targetFile) const
 {
     logDrag("exportFullPatternToFile begin file=" + targetFile.getFullPathName());
@@ -1135,6 +1169,12 @@ bool BoomBapGeneratorAudioProcessor::exportTrackToFile(TrackType track, const ju
     const bool ok = MidiExportEngine::saveMidiFile(snapshot, targetFile, track, 960, false, false);
     logDrag("exportTrackToFile done ok=" + juce::String(ok ? "1" : "0") + " track=" + juce::String(static_cast<int>(track)));
     return ok;
+}
+
+bool BoomBapGeneratorAudioProcessor::exportTrackToFile(const RuntimeLaneId& laneId, const juce::File& targetFile) const
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    return type.has_value() ? exportTrackToFile(*type, targetFile) : false;
 }
 
 bool BoomBapGeneratorAudioProcessor::exportLoopWavToFile(const juce::File& targetFile) const
@@ -1191,6 +1231,12 @@ juce::File BoomBapGeneratorAudioProcessor::createTemporaryTrackMidiFile(TrackTyp
         logDrag("createTemporaryTrackMidiFile exception track=" + juce::String(static_cast<int>(track)));
         return {};
     }
+}
+
+juce::File BoomBapGeneratorAudioProcessor::createTemporaryTrackMidiFile(const RuntimeLaneId& laneId) const
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    return type.has_value() ? createTemporaryTrackMidiFile(*type) : juce::File {};
 }
 
 PatternProject BoomBapGeneratorAudioProcessor::getProjectSnapshot() const
