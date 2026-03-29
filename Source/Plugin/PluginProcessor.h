@@ -260,7 +260,7 @@ private:
     const TrackState* findTrackState(TrackType track) const;
     TrackState* findTrackState(const RuntimeLaneId& laneId);
     const TrackState* findTrackState(const RuntimeLaneId& laneId) const;
-    std::optional<TrackType> resolveTrackTypeForLaneId(const RuntimeLaneId& laneId) const;
+    std::optional<TrackType> resolveTrackTypeFromLane(const RuntimeLaneId& laneId) const;
     void serializePatternProjectToState(juce::ValueTree& state) const;
     void restorePatternProjectFromState(const juce::ValueTree& state);
 
