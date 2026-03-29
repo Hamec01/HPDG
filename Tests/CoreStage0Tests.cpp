@@ -22,6 +22,9 @@
 #include "../Source/Engine/StyleDefinitionLoader.h"
 #include "../Source/Engine/StyleInfluence.h"
 #include "../Source/Services/StyleLabReferenceService.h"
+#include "../Source/UI/EditorHistoryController.h"
+#include "../Source/UI/EditorLayoutController.h"
+#include "../Source/UI/HotkeyController.h"
 #include "../Source/Utils/TimingHelpers.h"
 
 namespace bbg
@@ -281,6 +284,316 @@ std::map<RuntimeLaneId, int> noteCountsByLane(const PatternProject& project)
     return counts;
 }
 
+std::vector<juce::String> laneStructureSignature(const PatternProject& project)
+{
+    std::vector<juce::String> signature;
+    signature.reserve(project.runtimeLaneProfile.lanes.size());
+    for (const auto& lane : project.runtimeLaneProfile.lanes)
+    {
+        signature.push_back(lane.laneId
+                            + "|" + lane.laneName
+                            + "|" + lane.groupName
+                            + "|" + juce::String(lane.runtimeTrackType.has_value() ? static_cast<int>(*lane.runtimeTrackType) : -1));
+    }
+    return signature;
+}
+
+int totalNoteCount(const PatternProject& project)
+{
+    int total = 0;
+    for (const auto& [laneId, count] : noteCountsByLane(project))
+    {
+        juce::ignoreUnused(laneId);
+        total += count;
+    }
+    return total;
+}
+
+juce::ValueTree makeLegacySerializedProjectFixture()
+{
+    juce::ValueTree root("ROOT");
+    juce::ValueTree pattern("PATTERN_PROJECT");
+    pattern.setProperty("schema_version", PatternProjectSerialization::kPatternSchemaVersion, nullptr);
+    pattern.setProperty("selected_track_index", 2, nullptr);
+    pattern.setProperty("sound_module_track_index", 0, nullptr);
+    pattern.setProperty("generation_counter", 3, nullptr);
+    pattern.setProperty("mutation_counter", 1, nullptr);
+    pattern.setProperty("phrase_length_bars", 4, nullptr);
+    pattern.setProperty("phrase_role_summary", "legacy fixture", nullptr);
+    pattern.setProperty("preview_start_step", 4, nullptr);
+    pattern.setProperty("preview_playback_mode", 1, nullptr);
+    pattern.setProperty("preview_loop_start_tick", 0, nullptr);
+    pattern.setProperty("preview_loop_end_tick", 64 * ticksPerStep(), nullptr);
+    pattern.setProperty("bars", 4, nullptr);
+    pattern.setProperty("global_sound_pan", -0.2f, nullptr);
+    pattern.setProperty("global_sound_width", 1.2f, nullptr);
+    pattern.setProperty("global_sound_eq_tone", 0.15f, nullptr);
+    pattern.setProperty("global_sound_compression", 0.4f, nullptr);
+    pattern.setProperty("global_sound_reverb", 0.25f, nullptr);
+    pattern.setProperty("global_sound_gate", 0.1f, nullptr);
+    pattern.setProperty("global_sound_transient", 0.3f, nullptr);
+    pattern.setProperty("global_sound_drive", 0.2f, nullptr);
+
+    juce::ValueTree profile("RUNTIME_LANE_PROFILE");
+    profile.setProperty("genre", "Rap", nullptr);
+    profile.setProperty("substyle", "Legacy", nullptr);
+
+    auto addLane = [&profile](TrackType type,
+                              const juce::String& laneId,
+                              const juce::String& laneName,
+                              const juce::String& groupName,
+                              int defaultMidiNote,
+                              bool enabledByDefault)
+    {
+        juce::ValueTree lane("RUNTIME_LANE");
+        lane.setProperty("lane_id", laneId, nullptr);
+        lane.setProperty("lane_name", laneName, nullptr);
+        lane.setProperty("group_name", groupName, nullptr);
+        lane.setProperty("dependency_name", "", nullptr);
+        lane.setProperty("generation_priority", 80, nullptr);
+        lane.setProperty("is_core", true, nullptr);
+        lane.setProperty("is_visible_in_editor", true, nullptr);
+        lane.setProperty("enabled_by_default", enabledByDefault, nullptr);
+        lane.setProperty("supports_drag_export", true, nullptr);
+        lane.setProperty("is_ghost_track", false, nullptr);
+        lane.setProperty("default_midi_note", defaultMidiNote, nullptr);
+        lane.setProperty("is_runtime_registry_lane", true, nullptr);
+        lane.setProperty("runtime_track_type", static_cast<int>(type), nullptr);
+        profile.addChild(lane, -1, nullptr);
+    };
+
+    addLane(TrackType::Sub808, "fixture:sub", "Fixture Sub", "Bass", 34, false);
+    addLane(TrackType::Kick, "fixture:kick", "Fixture Kick", "Kick", 36, true);
+    addLane(TrackType::Snare, "fixture:snare", "Fixture Snare", "Snare", 38, true);
+    pattern.addChild(profile, -1, nullptr);
+
+    juce::ValueTree order("RUNTIME_LANE_ORDER");
+    for (const auto& laneId : { juce::String("fixture:sub"), juce::String("fixture:kick"), juce::String("fixture:snare") })
+    {
+        juce::ValueTree entry("RUNTIME_LANE_ORDER_ENTRY");
+        entry.setProperty("lane_id", laneId, nullptr);
+        order.addChild(entry, -1, nullptr);
+    }
+    pattern.addChild(order, -1, nullptr);
+
+    auto addTrack = [&pattern](TrackType type,
+                               const juce::String& laneId,
+                               bool enabled,
+                               float laneVolume,
+                               std::initializer_list<NoteEvent> notes)
+    {
+        juce::ValueTree track("TRACK");
+        track.setProperty("type", static_cast<int>(type), nullptr);
+        track.setProperty("lane_id", laneId, nullptr);
+        track.setProperty("enabled", enabled, nullptr);
+        track.setProperty("muted", false, nullptr);
+        track.setProperty("solo", false, nullptr);
+        track.setProperty("locked", false, nullptr);
+        track.setProperty("template_id", 0, nullptr);
+        track.setProperty("variation_id", 0, nullptr);
+        track.setProperty("mutation_depth", 0.0f, nullptr);
+        track.setProperty("sub_profile", "", nullptr);
+        track.setProperty("lane_role", "fixture", nullptr);
+        track.setProperty("lane_volume", laneVolume, nullptr);
+        track.setProperty("selected_sample_index", 0, nullptr);
+        track.setProperty("selected_sample_name", "", nullptr);
+        track.setProperty("sub808_mono", true, nullptr);
+        track.setProperty("sub808_cut_itself", true, nullptr);
+        track.setProperty("sub808_glide_time_ms", 120, nullptr);
+        track.setProperty("sub808_overlap_mode", 0, nullptr);
+        track.setProperty("sub808_scale_snap_policy", 2, nullptr);
+        track.setProperty("sound_pan", 0.0f, nullptr);
+        track.setProperty("sound_width", 1.0f, nullptr);
+        track.setProperty("sound_eq_tone", 0.0f, nullptr);
+        track.setProperty("sound_compression", 0.0f, nullptr);
+        track.setProperty("sound_reverb", 0.0f, nullptr);
+        track.setProperty("sound_gate", 0.0f, nullptr);
+        track.setProperty("sound_transient", 0.0f, nullptr);
+        track.setProperty("sound_drive", 0.0f, nullptr);
+
+        for (const auto& note : notes)
+        {
+            juce::ValueTree noteNode("NOTE");
+            noteNode.setProperty("pitch", note.pitch, nullptr);
+            noteNode.setProperty("step", note.step, nullptr);
+            noteNode.setProperty("length", note.length, nullptr);
+            noteNode.setProperty("velocity", note.velocity, nullptr);
+            noteNode.setProperty("micro_offset", note.microOffset, nullptr);
+            noteNode.setProperty("is_ghost", note.isGhost, nullptr);
+            noteNode.setProperty("semantic_role", note.semanticRole, nullptr);
+            noteNode.setProperty("is_slide", note.isSlide, nullptr);
+            noteNode.setProperty("is_legato", note.isLegato, nullptr);
+            noteNode.setProperty("glide_to_next", note.glideToNext, nullptr);
+            track.addChild(noteNode, -1, nullptr);
+        }
+
+        pattern.addChild(track, -1, nullptr);
+    };
+
+    addTrack(TrackType::Kick,
+             "fixture:kick",
+             true,
+             1.0f,
+             {
+                 NoteEvent { 36, 0, 1, 112, 0, false, "anchor", false, false, false },
+                 NoteEvent { 36, 8, 2, 100, -12, false, "support", false, false, false }
+             });
+    addTrack(TrackType::Snare,
+             "fixture:snare",
+             true,
+             0.9f,
+             {
+                 NoteEvent { 38, 4, 1, 108, 0, false, "backbeat", false, false, false }
+             });
+    addTrack(TrackType::Sub808,
+             "fixture:sub",
+             false,
+             0.85f,
+             {
+                 NoteEvent { 34, 0, 8, 104, 0, false, "root", true, false, true },
+                 NoteEvent { 37, 8, 4, 96, 24, false, "lift", true, true, true }
+             });
+
+    root.addChild(pattern, -1, nullptr);
+    return root;
+}
+
+juce::ValueTree makeCorruptedSerializedProjectFixture()
+{
+    juce::ValueTree root("ROOT");
+    juce::ValueTree pattern("PATTERN_PROJECT");
+    pattern.setProperty("schema_version", PatternProjectSerialization::kPatternSchemaVersion, nullptr);
+    pattern.setProperty("selected_track_index", 999, nullptr);
+    pattern.setProperty("sound_module_track_index", -999, nullptr);
+    pattern.setProperty("generation_counter", -10, nullptr);
+    pattern.setProperty("mutation_counter", -4, nullptr);
+    pattern.setProperty("phrase_length_bars", 99, nullptr);
+    pattern.setProperty("preview_start_step", -64, nullptr);
+    pattern.setProperty("preview_playback_mode", 9, nullptr);
+    pattern.setProperty("preview_loop_start_tick", 999999, nullptr);
+    pattern.setProperty("preview_loop_end_tick", -5, nullptr);
+    pattern.setProperty("bars", 2, nullptr);
+    pattern.setProperty("global_sound_pan", 4.0f, nullptr);
+    pattern.setProperty("global_sound_width", -3.0f, nullptr);
+    pattern.setProperty("global_sound_eq_tone", 7.0f, nullptr);
+    pattern.setProperty("global_sound_compression", 5.0f, nullptr);
+    pattern.setProperty("global_sound_reverb", -1.0f, nullptr);
+    pattern.setProperty("global_sound_gate", 9.0f, nullptr);
+    pattern.setProperty("global_sound_transient", 9.0f, nullptr);
+    pattern.setProperty("global_sound_drive", -5.0f, nullptr);
+
+    juce::ValueTree profile("RUNTIME_LANE_PROFILE");
+    juce::ValueTree kickLane("RUNTIME_LANE");
+    kickLane.setProperty("lane_id", "", nullptr);
+    kickLane.setProperty("lane_name", "", nullptr);
+    kickLane.setProperty("group_name", " Kick ", nullptr);
+    kickLane.setProperty("dependency_name", "", nullptr);
+    kickLane.setProperty("generation_priority", 200, nullptr);
+    kickLane.setProperty("is_core", true, nullptr);
+    kickLane.setProperty("is_visible_in_editor", true, nullptr);
+    kickLane.setProperty("enabled_by_default", true, nullptr);
+    kickLane.setProperty("supports_drag_export", true, nullptr);
+    kickLane.setProperty("is_ghost_track", false, nullptr);
+    kickLane.setProperty("default_midi_note", -10, nullptr);
+    kickLane.setProperty("is_runtime_registry_lane", true, nullptr);
+    kickLane.setProperty("runtime_track_type", static_cast<int>(TrackType::Kick), nullptr);
+    profile.addChild(kickLane, -1, nullptr);
+
+    juce::ValueTree snareLane("RUNTIME_LANE");
+    snareLane.setProperty("lane_id", "", nullptr);
+    snareLane.setProperty("lane_name", "", nullptr);
+    snareLane.setProperty("group_name", " Snare ", nullptr);
+    snareLane.setProperty("dependency_name", "", nullptr);
+    snareLane.setProperty("generation_priority", -50, nullptr);
+    snareLane.setProperty("is_core", true, nullptr);
+    snareLane.setProperty("is_visible_in_editor", true, nullptr);
+    snareLane.setProperty("enabled_by_default", true, nullptr);
+    snareLane.setProperty("supports_drag_export", true, nullptr);
+    snareLane.setProperty("is_ghost_track", false, nullptr);
+    snareLane.setProperty("default_midi_note", 400, nullptr);
+    snareLane.setProperty("is_runtime_registry_lane", true, nullptr);
+    snareLane.setProperty("runtime_track_type", static_cast<int>(TrackType::Snare), nullptr);
+    profile.addChild(snareLane, -1, nullptr);
+    pattern.addChild(profile, -1, nullptr);
+
+    juce::ValueTree order("RUNTIME_LANE_ORDER");
+    for (const auto& laneId : { juce::String("missing"), juce::String("missing") })
+    {
+        juce::ValueTree entry("RUNTIME_LANE_ORDER_ENTRY");
+        entry.setProperty("lane_id", laneId, nullptr);
+        order.addChild(entry, -1, nullptr);
+    }
+    pattern.addChild(order, -1, nullptr);
+
+    juce::ValueTree authoring("AUTHORING");
+    juce::ValueTree trackPrefs("TRACK_PREFERENCES");
+    juce::ValueTree emptyPref("TRACK_PREFERENCE");
+    emptyPref.setProperty("lane_id", "", nullptr);
+    emptyPref.setProperty("preferred_density", 3.0f, nullptr);
+    trackPrefs.addChild(emptyPref, -1, nullptr);
+    authoring.addChild(trackPrefs, -1, nullptr);
+
+    juce::ValueTree noteMetadata("NOTE_METADATA");
+    juce::ValueTree laneMetadata("LANE_NOTE_METADATA");
+    laneMetadata.setProperty("lane_id", "corrupt:kick", nullptr);
+    juce::ValueTree noteAuthoring("NOTE_AUTHORING");
+    noteAuthoring.setProperty("step", -8, nullptr);
+    noteAuthoring.setProperty("micro_offset", 9999, nullptr);
+    noteAuthoring.setProperty("pitch", -3, nullptr);
+    noteAuthoring.setProperty("length", -2, nullptr);
+    noteAuthoring.setProperty("is_ghost", false, nullptr);
+    noteAuthoring.setProperty("anchor_locked", false, nullptr);
+    noteAuthoring.setProperty("importance_weight", 999, nullptr);
+    laneMetadata.addChild(noteAuthoring, -1, nullptr);
+    noteMetadata.addChild(laneMetadata, -1, nullptr);
+    authoring.addChild(noteMetadata, -1, nullptr);
+    pattern.addChild(authoring, -1, nullptr);
+
+    juce::ValueTree kickTrack("TRACK");
+    kickTrack.setProperty("type", static_cast<int>(TrackType::Kick), nullptr);
+    kickTrack.setProperty("lane_id", "", nullptr);
+    kickTrack.setProperty("enabled", true, nullptr);
+    kickTrack.setProperty("lane_volume", 9.0f, nullptr);
+    kickTrack.setProperty("selected_sample_index", -10, nullptr);
+    kickTrack.setProperty("sub808_glide_time_ms", 9000, nullptr);
+    kickTrack.setProperty("sub808_overlap_mode", 99, nullptr);
+    kickTrack.setProperty("sub808_scale_snap_policy", 99, nullptr);
+    kickTrack.setProperty("sound_pan", -9.0f, nullptr);
+    kickTrack.setProperty("sound_width", 9.0f, nullptr);
+    kickTrack.setProperty("sound_eq_tone", 9.0f, nullptr);
+    kickTrack.setProperty("sound_compression", -1.0f, nullptr);
+    kickTrack.setProperty("sound_reverb", 2.0f, nullptr);
+    kickTrack.setProperty("sound_gate", -1.0f, nullptr);
+    kickTrack.setProperty("sound_transient", 2.0f, nullptr);
+    kickTrack.setProperty("sound_drive", -1.0f, nullptr);
+    juce::ValueTree badKickNote("NOTE");
+    badKickNote.setProperty("pitch", 0, nullptr);
+    badKickNote.setProperty("step", -10, nullptr);
+    badKickNote.setProperty("length", 0, nullptr);
+    badKickNote.setProperty("velocity", 999, nullptr);
+    badKickNote.setProperty("micro_offset", 2000, nullptr);
+    badKickNote.setProperty("semantic_role", " bad ", nullptr);
+    badKickNote.setProperty("is_slide", true, nullptr);
+    badKickNote.setProperty("is_legato", true, nullptr);
+    badKickNote.setProperty("glide_to_next", true, nullptr);
+    kickTrack.addChild(badKickNote, -1, nullptr);
+    pattern.addChild(kickTrack, -1, nullptr);
+
+    root.addChild(pattern, -1, nullptr);
+    return root;
+}
+
+std::vector<RuntimeLaneId> backedLaneOrder(const PatternProject& project)
+{
+    std::vector<RuntimeLaneId> laneIds;
+    for (const auto& lane : project.runtimeLaneProfile.lanes)
+    {
+        if (lane.runtimeTrackType.has_value())
+            laneIds.push_back(lane.laneId);
+    }
+    return laneIds;
+}
+
 void testSerializationRoundTripSmoke()
 {
     auto project = createDefaultProject();
@@ -360,6 +673,166 @@ void testSerializationRoundTripSmoke()
     expect(nearlyEqual(restored.globalSound.drive, project.globalSound.drive), "Global sound drive changed after roundtrip.");
     expect(nearlyEqual(restored.globalSound.reverb, project.globalSound.reverb), "Global sound reverb changed after roundtrip.");
 }
+
+    void testLegacySerializationRoundTripRegression()
+    {
+        PatternProject restored;
+        expect(PatternProjectSerialization::deserialize(makeLegacySerializedProjectFixture(), restored),
+            "Legacy fixture must deserialize successfully.");
+        expectRuntimeLaneIntegrity(restored, "legacy_roundtrip_initial");
+
+        const auto originalLaneStructure = laneStructureSignature(restored);
+        const auto originalLaneOrder = restored.runtimeLaneOrder;
+        const auto originalNoteCounts = noteCountsByLane(restored);
+        const int originalTotalNotes = totalNoteCount(restored);
+
+        PatternProject rerestored;
+        expect(PatternProjectSerialization::deserialize(wrapSerializedProject(restored), rerestored),
+            "Reserialized legacy fixture must deserialize successfully.");
+        expectRuntimeLaneIntegrity(rerestored, "legacy_roundtrip_rerestored");
+
+        expect(laneStructureSignature(rerestored) == originalLaneStructure,
+            "Legacy roundtrip must preserve runtime lane structure.");
+        expect(rerestored.runtimeLaneOrder == originalLaneOrder,
+            "Legacy roundtrip must preserve runtime lane order.");
+        expect(noteCountsByLane(rerestored) == originalNoteCounts,
+            "Legacy roundtrip must not lose per-lane note counts.");
+        expect(totalNoteCount(rerestored) == originalTotalNotes,
+            "Legacy roundtrip must not lose notes.");
+    }
+
+    void testCorruptedSerializationStateRecovery()
+    {
+        PatternProject restored;
+        expect(PatternProjectSerialization::deserialize(makeCorruptedSerializedProjectFixture(), restored),
+            "Corrupted fixture should still deserialize into a recoverable project.");
+        expectRuntimeLaneIntegrity(restored, "corrupted_recovery");
+
+        expect(restored.generationCounter == 0, "Corrupted generationCounter must clamp to zero.");
+        expect(restored.mutationCounter == 0, "Corrupted mutationCounter must clamp to zero.");
+        expect(restored.phraseLengthBars == 16, "Corrupted phraseLengthBars must clamp to 16.");
+        expect(restored.previewStartStep == 0, "Corrupted previewStartStep must clamp to zero.");
+        expect(static_cast<int>(restored.previewPlaybackMode) == 1, "Corrupted previewPlaybackMode must clamp.");
+        expect(!restored.previewLoopTicks.has_value(), "Invalid preview loop must be cleared.");
+        expect(restored.selectedTrackIndex >= 0 && restored.selectedTrackIndex < static_cast<int>(restored.tracks.size()),
+            "selectedTrackIndex must recover into valid range.");
+        expect(restored.soundModuleTrackIndex == -1, "Invalid soundModuleTrackIndex must clamp to -1.");
+
+        expect(nearlyEqual(restored.globalSound.pan, 1.0f), "Corrupted global pan must clamp.");
+        expect(nearlyEqual(restored.globalSound.width, 0.0f), "Corrupted global width must clamp.");
+        expect(nearlyEqual(restored.globalSound.eqTone, 1.0f), "Corrupted global eq tone must clamp.");
+        expect(nearlyEqual(restored.globalSound.compression, 1.0f), "Corrupted global compression must clamp.");
+        expect(nearlyEqual(restored.globalSound.reverb, 0.0f), "Corrupted global reverb must clamp.");
+        expect(nearlyEqual(restored.globalSound.gate, 1.0f), "Corrupted global gate must clamp.");
+        expect(nearlyEqual(restored.globalSound.transient, 1.0f), "Corrupted global transient must clamp.");
+        expect(nearlyEqual(restored.globalSound.drive, 0.0f), "Corrupted global drive must clamp.");
+
+        const auto* kick = findTrackByType(restored, TrackType::Kick);
+        expect(kick != nullptr, "Recovered project must contain Kick track.");
+        expect(static_cast<int>(kick->notes.size()) == 1, "Recovered Kick track must retain note payload.");
+        expect(kick->notes.front().pitch == TrackRegistry::find(TrackType::Kick)->defaultMidiNote,
+            "Recovered Kick note pitch must normalize to default MIDI note.");
+        expect(kick->notes.front().step == 0, "Recovered Kick note step must clamp.");
+        expect(kick->notes.front().length == 1, "Recovered Kick note length must clamp.");
+        expect(kick->notes.front().velocity == 127, "Recovered Kick note velocity must clamp.");
+        expect(kick->notes.front().microOffset == 960, "Recovered Kick note microOffset must clamp.");
+        expect(kick->notes.front().semanticRole == "bad", "Recovered Kick semanticRole must trim.");
+        expect(!kick->notes.front().isSlide && !kick->notes.front().isLegato && !kick->notes.front().glideToNext,
+            "Recovered non-Sub808 note articulation flags must reset.");
+        expect(kick->selectedSampleIndex == 0, "Recovered selectedSampleIndex must clamp to zero.");
+        expect(nearlyEqual(kick->laneVolume, 1.5f), "Recovered laneVolume must clamp.");
+
+        const auto authoringIt = restored.authoring.noteMetadataByLane.find("corrupt:kick");
+        expect(authoringIt != restored.authoring.noteMetadataByLane.end(),
+            "Recovered authoring note metadata should keep a live sanitized lane entry.");
+        expect(authoringIt->second.size() == 1, "Recovered authoring note metadata should keep one sanitized note.");
+        expect(authoringIt->second.front().noteKey.step == 0, "Recovered authoring note step must clamp.");
+        expect(authoringIt->second.front().noteKey.length == 1, "Recovered authoring note length must clamp.");
+        expect(authoringIt->second.front().importanceWeight == 100, "Recovered authoring importanceWeight must clamp.");
+    }
+
+    void testSerializationLaneReconciliation()
+    {
+        PatternProject project;
+        project.params.bars = 2;
+
+        RuntimeLaneDefinition subLane;
+        subLane.laneId = "canon:sub";
+        subLane.laneName = "Canon Sub";
+        subLane.groupName = "Bass";
+        subLane.generationPriority = 82;
+        subLane.isCore = true;
+        subLane.isVisibleInEditor = true;
+        subLane.enabledByDefault = false;
+        subLane.supportsDragExport = true;
+        subLane.defaultMidiNote = 34;
+        subLane.isRuntimeRegistryLane = true;
+        subLane.runtimeTrackType = TrackType::Sub808;
+
+        RuntimeLaneDefinition kickLane;
+        kickLane.laneId = "canon:kick";
+        kickLane.laneName = "Canon Kick";
+        kickLane.groupName = "Kick";
+        kickLane.generationPriority = 96;
+        kickLane.isCore = true;
+        kickLane.isVisibleInEditor = true;
+        kickLane.enabledByDefault = true;
+        kickLane.supportsDragExport = true;
+        kickLane.defaultMidiNote = 36;
+        kickLane.isRuntimeRegistryLane = true;
+        kickLane.runtimeTrackType = TrackType::Kick;
+
+        RuntimeLaneDefinition snareLane;
+        snareLane.laneId = "canon:snare";
+        snareLane.laneName = "Canon Snare";
+        snareLane.groupName = "Snare";
+        snareLane.generationPriority = 92;
+        snareLane.isCore = true;
+        snareLane.isVisibleInEditor = true;
+        snareLane.enabledByDefault = true;
+        snareLane.supportsDragExport = true;
+        snareLane.defaultMidiNote = 38;
+        snareLane.isRuntimeRegistryLane = true;
+        snareLane.runtimeTrackType = TrackType::Snare;
+
+        project.runtimeLaneProfile.lanes = { subLane, kickLane, snareLane };
+        project.runtimeLaneOrder = { "canon:sub", "canon:kick", "canon:snare" };
+
+        TrackState kick = makeTrack(TrackType::Kick);
+        kick.notes = { NoteEvent { 36, 0, 1, 110, 0, false, "kick_payload", false, false, false } };
+
+        TrackState snare = makeTrack(TrackType::Snare);
+        snare.notes = { NoteEvent { 38, 4, 1, 108, 0, false, "snare_payload", false, false, false } };
+
+        TrackState sub = makeTrack(TrackType::Sub808);
+        sub.notes = { NoteEvent { 34, 0, 8, 104, 0, false, "sub_payload", true, false, true } };
+        sub.sub808Notes.clear();
+
+        project.tracks = { kick, snare, sub };
+
+        PatternProjectSerialization::validate(project);
+        expectRuntimeLaneIntegrity(project, "lane_reconciliation");
+
+        std::vector<RuntimeLaneId> canonicalTrackLaneIds;
+        canonicalTrackLaneIds.reserve(project.tracks.size());
+        for (const auto& track : project.tracks)
+         canonicalTrackLaneIds.push_back(track.laneId);
+
+        expect(canonicalTrackLaneIds == backedLaneOrder(project),
+            "Track order must reconcile to runtime lane profile order.");
+
+        const auto* reconciledKick = findTrackByLaneId(project, "canon:kick");
+        const auto* reconciledSnare = findTrackByLaneId(project, "canon:snare");
+        const auto* reconciledSub = findTrackByLaneId(project, "canon:sub");
+        expect(reconciledKick != nullptr && reconciledSnare != nullptr && reconciledSub != nullptr,
+            "All backed runtime lanes must reconcile to canonical tracks.");
+        expect(reconciledKick->notes.front().semanticRole == "kick_payload",
+            "Kick payload must follow its runtime lane during reconciliation.");
+        expect(reconciledSnare->notes.front().semanticRole == "snare_payload",
+            "Snare payload must follow its runtime lane during reconciliation.");
+        expect(!reconciledSub->sub808Notes.empty() && reconciledSub->sub808Notes.front().semanticRole == "sub_payload",
+            "Sub808 payload must follow its runtime lane during reconciliation.");
+    }
 
 void testRuntimeLaneLifecycle()
 {
@@ -1165,6 +1638,114 @@ void testStyleLabMetadataExportConsistency()
                         "Higher Drill hat motion must increase total hat microtiming displacement.");
                 }
 
+                      void testEditorHistoryControllerUndoRedo()
+                      {
+                          EditorHistoryController controller;
+                          auto before = createDefaultProject();
+                          auto after = before;
+
+                          auto* kick = findTrackByType(after, TrackType::Kick);
+                          expect(kick != nullptr, "History controller test requires Kick track.");
+                        NoteEvent note;
+                        note.pitch = 36;
+                        note.step = 0;
+                        note.length = 4;
+                        note.velocity = 100;
+                        note.semanticRole = "anchor";
+                        kick->notes.push_back(note);
+
+                          bool scheduled = false;
+                          controller.pushProjectHistoryState(before, after, [&scheduled]()
+                          {
+                           scheduled = true;
+                          });
+
+                          expect(scheduled, "History controller must schedule pending commit.");
+                          controller.commitPendingProjectHistoryState();
+                          expect(controller.getUndoHistory().size() == 1, "History controller must record undo snapshot.");
+
+                          PatternProject undoSnapshot;
+                          expect(controller.performUndo(after, undoSnapshot), "Undo should succeed after recording history.");
+                          expect(controller.projectsEquivalent(undoSnapshot, before), "Undo snapshot must match pre-change project.");
+                          controller.endSuppressedHistoryAction();
+
+                          PatternProject redoSnapshot;
+                          expect(controller.performRedo(before, redoSnapshot), "Redo should succeed after undo.");
+                          expect(controller.projectsEquivalent(redoSnapshot, after), "Redo snapshot must match post-change project.");
+                          controller.endSuppressedHistoryAction();
+
+                          auto generationOnly = after;
+                          generationOnly.generationCounter += 99;
+                          scheduled = false;
+                          controller.pushProjectHistoryState(after, generationOnly, [&scheduled]()
+                          {
+                           scheduled = true;
+                          });
+                          expect(!scheduled, "Generation counter changes alone must not create history entries.");
+                      }
+
+                      void testHotkeyControllerMapsAndPersistence()
+                      {
+                          HotkeyController controller;
+                          controller.setupDefaults();
+
+                          expect(controller.matchesKeyAction(HotkeyController::kActionUndo,
+                                             juce::KeyPress('Z', juce::ModifierKeys::ctrlModifier, 0)),
+                              "Undo hotkey default must remain Ctrl+Z.");
+
+                          const auto bindings = controller.makeGridInputBindings();
+                          expect(bindings.drawModeModifier == juce::ModifierKeys::shiftModifier,
+                              "Draw mode modifier must default to Shift.");
+                          expect(bindings.velocityEditKeyCode == 'V',
+                              "Velocity edit key must default to V.");
+
+                          expect(controller.tryRebindKeyAction(HotkeyController::kActionZoomToPattern,
+                                             juce::KeyPress('Q'),
+                                             [](const juce::String&, const juce::String&, const juce::String&)
+                                             {
+                                                 return true;
+                                             }),
+                              "Hotkey controller must allow rebinding non-conflicting actions.");
+
+                          juce::ValueTree state("STATE");
+                          controller.save(state);
+
+                          HotkeyController restored;
+                          restored.setupDefaults();
+                          restored.load(state);
+                          expect(restored.matchesKeyAction(HotkeyController::kActionZoomToPattern, juce::KeyPress('Q')),
+                              "Saved hotkey bindings must load back into controller state.");
+
+                          restored.restoreDefaults();
+                          expect(restored.matchesKeyAction(HotkeyController::kActionZoomToPattern,
+                                           juce::KeyPress('P', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0)),
+                              "Restoring defaults must recover original hotkey mapping.");
+                      }
+
+                      void testEditorLayoutControllerPersistenceSmoke()
+                      {
+                          EditorLayoutController controller;
+                          controller.getState().leftPanelWidth = 512;
+                          controller.getState().headerControlsMode = MainHeaderComponent::HeaderControlsMode::Hidden;
+
+                          juce::ValueTree state("STATE");
+                          controller.save(state);
+
+                          EditorLayoutController restored;
+                          restored.load(state);
+                          expect(restored.getState().leftPanelWidth == 512,
+                              "Layout controller must persist left panel width.");
+                          expect(restored.getState().headerControlsMode == MainHeaderComponent::HeaderControlsMode::Hidden,
+                              "Layout controller must persist header controls mode.");
+
+                          restored.getState().leftPanelWidth = 120;
+                          expect(restored.clampLeftPanelWidth(480) == EditorLayoutController::rackMinWidth,
+                              "Layout controller must clamp left panel width to minimum rack width.");
+                          restored.getState().leftPanelWidth = 720;
+                          expect(restored.clampLeftPanelWidth(480) == 480,
+                              "Layout controller must clamp left panel width to available rack maximum.");
+                      }
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -1202,6 +1783,12 @@ int main()
     failures += runTest("Project state lane safety", testProjectStateLaneSafety);
     failures += runTest("Drill reference roll cluster preservation", testDrillReferenceRollClusterPreservation);
     failures += runTest("Drill hat motion microtiming response", testDrillHatMotionMicroTimingResponse);
+    failures += runTest("Legacy serialization roundtrip regression", testLegacySerializationRoundTripRegression);
+    failures += runTest("Corrupted serialization state recovery", testCorruptedSerializationStateRecovery);
+    failures += runTest("Serialization lane reconciliation", testSerializationLaneReconciliation);
+    failures += runTest("Editor history controller undo redo", testEditorHistoryControllerUndoRedo);
+    failures += runTest("Hotkey controller maps and persistence", testHotkeyControllerMapsAndPersistence);
+    failures += runTest("Editor layout controller persistence smoke", testEditorLayoutControllerPersistenceSmoke);
 
     if (failures == 0)
     {

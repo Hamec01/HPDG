@@ -396,6 +396,303 @@ void normalizeRuntimeLaneOrder(const RuntimeLaneProfile& profile, std::vector<Ru
 
     order.swap(normalized);
 }
+
+void sanitizeSoundLayerState(SoundLayerState& sound)
+{
+    sound.pan = std::clamp(sound.pan, -1.0f, 1.0f);
+    sound.width = std::clamp(sound.width, 0.0f, 2.0f);
+    sound.eqTone = std::clamp(sound.eqTone, -1.0f, 1.0f);
+    sound.compression = std::clamp(sound.compression, 0.0f, 1.0f);
+    sound.reverb = std::clamp(sound.reverb, 0.0f, 1.0f);
+    sound.gate = std::clamp(sound.gate, 0.0f, 1.0f);
+    sound.transient = std::clamp(sound.transient, 0.0f, 1.0f);
+    sound.drive = std::clamp(sound.drive, 0.0f, 1.0f);
+}
+
+void sanitizeStyleInfluenceState(PatternProject& project)
+{
+    for (auto& laneBias : project.styleInfluence.laneBiases)
+    {
+        laneBias.activityWeight = std::clamp(laneBias.activityWeight, 0.0f, 2.0f);
+        laneBias.balanceWeight = std::clamp(laneBias.balanceWeight, 0.0f, 2.0f);
+    }
+
+    project.styleInfluence.supportAccentWeight = std::clamp(project.styleInfluence.supportAccentWeight, 0.0f, 2.0f);
+    project.styleInfluence.lowEndCouplingWeight = std::clamp(project.styleInfluence.lowEndCouplingWeight, 0.0f, 2.0f);
+    project.styleInfluence.hatMotionWeight = std::clamp(project.styleInfluence.hatMotionWeight, 0.0f, 2.0f);
+    project.styleInfluence.bounceWeight = std::clamp(project.styleInfluence.bounceWeight, 0.0f, 2.0f);
+    project.styleInfluence.anchorRigidityWeight = std::clamp(project.styleInfluence.anchorRigidityWeight, 0.0f, 2.0f);
+    project.styleInfluence.drillHatRollLengthWeight = std::clamp(project.styleInfluence.drillHatRollLengthWeight, 0.0f, 2.0f);
+    project.styleInfluence.drillHatDensityVariationWeight = std::clamp(project.styleInfluence.drillHatDensityVariationWeight, 0.0f, 2.0f);
+    project.styleInfluence.drillHatAccentPatternWeight = std::clamp(project.styleInfluence.drillHatAccentPatternWeight, 0.0f, 2.0f);
+    project.styleInfluence.drillHatGapIntentWeight = std::clamp(project.styleInfluence.drillHatGapIntentWeight, 0.0f, 2.0f);
+    project.styleInfluence.drillHatBurstWeight = std::clamp(project.styleInfluence.drillHatBurstWeight, 0.0f, 2.0f);
+    project.styleInfluence.drillHatTripletWeight = std::clamp(project.styleInfluence.drillHatTripletWeight, 0.0f, 2.0f);
+}
+
+void reconcileTracksWithRuntimeLanes(PatternProject& project)
+{
+    if (project.tracks.empty() && !project.runtimeLaneProfile.lanes.empty())
+        project.tracks = TrackRegistry::createDefaultTrackStates(project.runtimeLaneProfile);
+
+    // Current runtime/editor path still supports only lanes backed by TrackType.
+    std::map<juce::String, TrackState> incomingByLaneId;
+    std::unordered_map<TrackType, TrackState> incomingByType;
+    for (auto& track : project.tracks)
+    {
+        if (track.laneId.isEmpty())
+        {
+            if (const auto* lane = findRuntimeLaneForTrack(project.runtimeLaneProfile, track.type); lane != nullptr)
+                track.laneId = lane->laneId;
+            else
+                track.laneId = TrackRegistry::defaultRuntimeLaneId(track.type);
+        }
+
+        if (!track.runtimeTrackType.has_value())
+            track.runtimeTrackType = track.type;
+
+        incomingByLaneId.emplace(track.laneId, track);
+        incomingByType.emplace(track.type, track);
+    }
+
+    std::vector<TrackState> canonical;
+    canonical.reserve(project.runtimeLaneProfile.lanes.size());
+
+    for (const auto& lane : project.runtimeLaneProfile.lanes)
+    {
+        if (!lane.runtimeTrackType.has_value())
+            continue;
+
+        auto itByLaneId = incomingByLaneId.find(lane.laneId);
+        if (itByLaneId != incomingByLaneId.end())
+        {
+            canonical.push_back(std::move(itByLaneId->second));
+            continue;
+        }
+
+        auto itByType = incomingByType.find(*lane.runtimeTrackType);
+        if (itByType != incomingByType.end())
+        {
+            auto restored = std::move(itByType->second);
+            restored.laneId = lane.laneId;
+            restored.runtimeTrackType = lane.runtimeTrackType;
+            canonical.push_back(std::move(restored));
+            continue;
+        }
+
+        TrackState fallback;
+        fallback.type = *lane.runtimeTrackType;
+        fallback.laneId = lane.laneId;
+        fallback.runtimeTrackType = lane.runtimeTrackType;
+        fallback.enabled = lane.enabledByDefault;
+        canonical.push_back(std::move(fallback));
+    }
+
+    project.tracks = std::move(canonical);
+}
+
+void sanitizeGlobalSoundState(PatternProject& project)
+{
+    project.generationCounter = std::max(0, project.generationCounter);
+    project.mutationCounter = std::max(0, project.mutationCounter);
+    project.phraseLengthBars = std::clamp(project.phraseLengthBars, 1, 16);
+    sanitizeSoundLayerState(project.globalSound);
+}
+
+void sanitizeTrackStates(PatternProject& project)
+{
+    for (auto& track : project.tracks)
+    {
+        if (track.laneId.isEmpty())
+        {
+            if (const auto* lane = findRuntimeLaneForTrack(project.runtimeLaneProfile, track.type); lane != nullptr)
+                track.laneId = lane->laneId;
+            else
+                track.laneId = TrackRegistry::defaultRuntimeLaneId(track.type);
+        }
+
+        if (!track.runtimeTrackType.has_value())
+            track.runtimeTrackType = track.type;
+
+        track.sub808Settings.glideTimeMs = std::clamp(track.sub808Settings.glideTimeMs, 0, 4000);
+        track.sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0,
+                                                                                        2,
+                                                                                        static_cast<int>(track.sub808Settings.overlapMode)));
+        track.sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0,
+                                                                                                2,
+                                                                                                static_cast<int>(track.sub808Settings.scaleSnapPolicy)));
+        track.templateId = std::max(0, track.templateId);
+        track.variationId = std::max(0, track.variationId);
+        track.mutationDepth = std::clamp(track.mutationDepth, 0.0f, 1.0f);
+        track.laneVolume = std::clamp(track.laneVolume, 0.0f, 1.5f);
+        track.selectedSampleIndex = std::max(0, track.selectedSampleIndex);
+        sanitizeSoundLayerState(track.sound);
+    }
+}
+
+void sanitizeTrackNotes(PatternProject& project)
+{
+    const int maxStep = 16 * 16 - 1;
+
+    for (auto& track : project.tracks)
+    {
+        const auto* info = TrackRegistry::find(track.type);
+
+        for (auto& note : track.notes)
+        {
+            note.pitch = std::clamp(note.pitch, 0, 127);
+            if (note.pitch == 0 && info != nullptr)
+                note.pitch = info->defaultMidiNote;
+
+            note.step = std::clamp(note.step, 0, maxStep);
+            note.length = std::clamp(note.length, 1, 64);
+            note.velocity = std::clamp(note.velocity, 1, 127);
+            note.microOffset = std::clamp(note.microOffset, -960, 960);
+            note.semanticRole = note.semanticRole.trim();
+            if (track.type != TrackType::Sub808)
+            {
+                note.isSlide = false;
+                note.isLegato = false;
+                note.glideToNext = false;
+            }
+        }
+
+        if (track.type == TrackType::Sub808)
+        {
+            if (track.sub808Notes.empty() && !track.notes.empty())
+                track.sub808Notes = toSub808NoteEvents(track.notes);
+
+            for (auto& note : track.sub808Notes)
+            {
+                note.pitch = std::clamp(note.pitch, 0, 127);
+                note.step = std::clamp(note.step, 0, maxStep);
+                note.length = std::clamp(note.length, 1, 64);
+                note.velocity = std::clamp(note.velocity, 1, 127);
+                note.microOffset = std::clamp(note.microOffset, -960, 960);
+                note.semanticRole = note.semanticRole.trim();
+            }
+
+            std::sort(track.sub808Notes.begin(), track.sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
+            {
+                if (a.step != b.step)
+                    return a.step < b.step;
+                return a.pitch < b.pitch;
+            });
+
+            track.notes = toLegacyNoteEvents(track.sub808Notes);
+        }
+        else
+        {
+            track.sub808Notes.clear();
+        }
+
+        std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+        {
+            if (a.step != b.step)
+                return a.step < b.step;
+            return a.pitch < b.pitch;
+        });
+    }
+}
+
+void sanitizeAuthoringState(PatternProject& project)
+{
+    const int maxStep = 16 * 16 - 1;
+    const int totalTicks = std::max(1, project.params.bars * 16 * ticksPerStep());
+
+    for (auto it = project.authoring.trackPreferencesByLane.begin(); it != project.authoring.trackPreferencesByLane.end();)
+    {
+        if (it->first.isEmpty())
+        {
+            it = project.authoring.trackPreferencesByLane.erase(it);
+            continue;
+        }
+
+        auto& prefs = it->second;
+        prefs.preferredDensity = std::clamp(prefs.preferredDensity, 0.0f, 1.0f);
+        prefs.anchorPreserveRatio = std::clamp(prefs.anchorPreserveRatio, 0.0f, 1.0f);
+        prefs.allowedSilence = std::clamp(prefs.allowedSilence, 0.0f, 1.0f);
+        prefs.humanizeAmount = std::clamp(prefs.humanizeAmount, 0.0f, 1.0f);
+        prefs.repetitionTolerance = std::clamp(prefs.repetitionTolerance, 0.0f, 1.0f);
+        prefs.fillAggressiveness = std::clamp(prefs.fillAggressiveness, 0.0f, 1.0f);
+        ++it;
+    }
+
+    for (auto it = project.authoring.noteMetadataByLane.begin(); it != project.authoring.noteMetadataByLane.end();)
+    {
+        if (it->first.isEmpty())
+        {
+            it = project.authoring.noteMetadataByLane.erase(it);
+            continue;
+        }
+
+        auto& noteStates = it->second;
+        for (auto& state : noteStates)
+        {
+            state.noteKey.step = std::clamp(state.noteKey.step, 0, maxStep);
+            state.noteKey.microOffset = std::clamp(state.noteKey.microOffset, -960, 960);
+            state.noteKey.pitch = std::clamp(state.noteKey.pitch, 0, 127);
+            state.noteKey.length = std::clamp(state.noteKey.length, 1, 64);
+            state.importanceWeight = std::clamp(state.importanceWeight, 0, 100);
+        }
+
+        noteStates.erase(std::remove_if(noteStates.begin(), noteStates.end(), [](const NoteAuthoringState& state)
+        {
+            return state.noteKey.length <= 0;
+        }),
+                         noteStates.end());
+
+        if (noteStates.empty())
+            it = project.authoring.noteMetadataByLane.erase(it);
+        else
+            ++it;
+    }
+
+    project.authoring.phraseBlocks.erase(std::remove_if(project.authoring.phraseBlocks.begin(),
+                                                        project.authoring.phraseBlocks.end(),
+                                                        [totalTicks](PhraseBlock& block)
+    {
+        const int startTick = juce::jlimit(0, juce::jmax(0, totalTicks - 1), block.tickRange.getStart());
+        const int endTick = juce::jlimit(startTick + 1, totalTicks, block.tickRange.getEnd());
+        block.tickRange = juce::Range<int>(startTick, endTick);
+        block.role = block.role.trim();
+        return block.tickRange.getLength() <= 0;
+    }),
+                                        project.authoring.phraseBlocks.end());
+}
+
+void sanitizePreviewState(PatternProject& project)
+{
+    project.previewStartStep = std::max(0, project.previewStartStep);
+    project.previewPlaybackMode = static_cast<PreviewPlaybackMode>(juce::jlimit(0,
+                                                                                1,
+                                                                                static_cast<int>(project.previewPlaybackMode)));
+
+    const int totalTicks = std::max(1, project.params.bars * 16 * ticksPerStep());
+    if (project.previewLoopTicks.has_value())
+    {
+        const int startTick = juce::jlimit(0, totalTicks - 1, project.previewLoopTicks->getStart());
+        const int endTick = juce::jlimit(startTick + 1, totalTicks, project.previewLoopTicks->getEnd());
+        if (endTick > startTick)
+            project.previewLoopTicks = juce::Range<int>(startTick, endTick);
+        else
+            project.previewLoopTicks.reset();
+    }
+}
+
+void sanitizeSelectionIndices(PatternProject& project)
+{
+    if (project.tracks.empty())
+    {
+        project.selectedTrackIndex = -1;
+        project.soundModuleTrackIndex = -1;
+    }
+    else
+    {
+        project.selectedTrackIndex = std::clamp(project.selectedTrackIndex, 0, static_cast<int>(project.tracks.size()) - 1);
+        project.soundModuleTrackIndex = std::clamp(project.soundModuleTrackIndex, -1, static_cast<int>(project.tracks.size()) - 1);
+    }
+}
 } // namespace
 
 juce::ValueTree PatternProjectSerialization::serialize(const PatternProject& project)
@@ -569,274 +866,14 @@ void PatternProjectSerialization::validate(PatternProject& project)
     else
         normalizeRuntimeLaneOrder(project.runtimeLaneProfile, project.runtimeLaneOrder);
 
-    for (auto& laneBias : project.styleInfluence.laneBiases)
-    {
-        laneBias.activityWeight = std::clamp(laneBias.activityWeight, 0.0f, 2.0f);
-        laneBias.balanceWeight = std::clamp(laneBias.balanceWeight, 0.0f, 2.0f);
-    }
-
-    project.styleInfluence.supportAccentWeight = std::clamp(project.styleInfluence.supportAccentWeight, 0.0f, 2.0f);
-    project.styleInfluence.lowEndCouplingWeight = std::clamp(project.styleInfluence.lowEndCouplingWeight, 0.0f, 2.0f);
-    project.styleInfluence.hatMotionWeight = std::clamp(project.styleInfluence.hatMotionWeight, 0.0f, 2.0f);
-    project.styleInfluence.bounceWeight = std::clamp(project.styleInfluence.bounceWeight, 0.0f, 2.0f);
-    project.styleInfluence.anchorRigidityWeight = std::clamp(project.styleInfluence.anchorRigidityWeight, 0.0f, 2.0f);
-    project.styleInfluence.drillHatRollLengthWeight = std::clamp(project.styleInfluence.drillHatRollLengthWeight, 0.0f, 2.0f);
-    project.styleInfluence.drillHatDensityVariationWeight = std::clamp(project.styleInfluence.drillHatDensityVariationWeight, 0.0f, 2.0f);
-    project.styleInfluence.drillHatAccentPatternWeight = std::clamp(project.styleInfluence.drillHatAccentPatternWeight, 0.0f, 2.0f);
-    project.styleInfluence.drillHatGapIntentWeight = std::clamp(project.styleInfluence.drillHatGapIntentWeight, 0.0f, 2.0f);
-    project.styleInfluence.drillHatBurstWeight = std::clamp(project.styleInfluence.drillHatBurstWeight, 0.0f, 2.0f);
-    project.styleInfluence.drillHatTripletWeight = std::clamp(project.styleInfluence.drillHatTripletWeight, 0.0f, 2.0f);
-
-    if (project.tracks.empty() && !project.runtimeLaneProfile.lanes.empty())
-        project.tracks = TrackRegistry::createDefaultTrackStates(project.runtimeLaneProfile);
-
-    // Current runtime/editor path still supports only lanes backed by TrackType.
-    std::map<juce::String, TrackState> incomingByLaneId;
-    std::unordered_map<TrackType, TrackState> incomingByType;
-    for (auto& track : project.tracks)
-    {
-        if (track.laneId.isEmpty())
-        {
-            if (const auto* lane = findRuntimeLaneForTrack(project.runtimeLaneProfile, track.type); lane != nullptr)
-                track.laneId = lane->laneId;
-            else
-                track.laneId = TrackRegistry::defaultRuntimeLaneId(track.type);
-        }
-
-        if (!track.runtimeTrackType.has_value())
-            track.runtimeTrackType = track.type;
-
-        incomingByLaneId.emplace(track.laneId, track);
-        incomingByType.emplace(track.type, track);
-    }
-
-    std::vector<TrackState> canonical;
-    canonical.reserve(project.runtimeLaneProfile.lanes.size());
-
-    for (const auto& lane : project.runtimeLaneProfile.lanes)
-    {
-        if (!lane.runtimeTrackType.has_value())
-            continue;
-
-        auto itByLaneId = incomingByLaneId.find(lane.laneId);
-        if (itByLaneId != incomingByLaneId.end())
-        {
-            canonical.push_back(std::move(itByLaneId->second));
-            continue;
-        }
-
-        auto itByType = incomingByType.find(*lane.runtimeTrackType);
-        if (itByType != incomingByType.end())
-        {
-            auto restored = std::move(itByType->second);
-            restored.laneId = lane.laneId;
-            restored.runtimeTrackType = lane.runtimeTrackType;
-            canonical.push_back(std::move(restored));
-            continue;
-        }
-
-        TrackState fallback;
-        fallback.type = *lane.runtimeTrackType;
-        fallback.laneId = lane.laneId;
-        fallback.runtimeTrackType = lane.runtimeTrackType;
-        fallback.enabled = lane.enabledByDefault;
-        canonical.push_back(std::move(fallback));
-    }
-
-    project.tracks = std::move(canonical);
-
-    const int maxStep = 16 * 16 - 1;
-
-    project.generationCounter = std::max(0, project.generationCounter);
-    project.mutationCounter = std::max(0, project.mutationCounter);
-    project.phraseLengthBars = std::clamp(project.phraseLengthBars, 1, 16);
-    project.previewStartStep = std::max(0, project.previewStartStep);
-    project.previewPlaybackMode = static_cast<PreviewPlaybackMode>(juce::jlimit(0,
-                                                                                1,
-                                                                                static_cast<int>(project.previewPlaybackMode)));
-    project.globalSound.pan = std::clamp(project.globalSound.pan, -1.0f, 1.0f);
-    project.globalSound.width = std::clamp(project.globalSound.width, 0.0f, 2.0f);
-    project.globalSound.eqTone = std::clamp(project.globalSound.eqTone, -1.0f, 1.0f);
-    project.globalSound.compression = std::clamp(project.globalSound.compression, 0.0f, 1.0f);
-    project.globalSound.reverb = std::clamp(project.globalSound.reverb, 0.0f, 1.0f);
-    project.globalSound.gate = std::clamp(project.globalSound.gate, 0.0f, 1.0f);
-    project.globalSound.transient = std::clamp(project.globalSound.transient, 0.0f, 1.0f);
-    project.globalSound.drive = std::clamp(project.globalSound.drive, 0.0f, 1.0f);
-
-    const int totalTicks = std::max(1, project.params.bars * 16 * ticksPerStep());
-    if (project.previewLoopTicks.has_value())
-    {
-        const int startTick = juce::jlimit(0, totalTicks - 1, project.previewLoopTicks->getStart());
-        const int endTick = juce::jlimit(startTick + 1, totalTicks, project.previewLoopTicks->getEnd());
-        if (endTick > startTick)
-            project.previewLoopTicks = juce::Range<int>(startTick, endTick);
-        else
-            project.previewLoopTicks.reset();
-    }
-
-    for (auto it = project.authoring.trackPreferencesByLane.begin(); it != project.authoring.trackPreferencesByLane.end();)
-    {
-        if (it->first.isEmpty())
-        {
-            it = project.authoring.trackPreferencesByLane.erase(it);
-            continue;
-        }
-
-        auto& prefs = it->second;
-        prefs.preferredDensity = std::clamp(prefs.preferredDensity, 0.0f, 1.0f);
-        prefs.anchorPreserveRatio = std::clamp(prefs.anchorPreserveRatio, 0.0f, 1.0f);
-        prefs.allowedSilence = std::clamp(prefs.allowedSilence, 0.0f, 1.0f);
-        prefs.humanizeAmount = std::clamp(prefs.humanizeAmount, 0.0f, 1.0f);
-        prefs.repetitionTolerance = std::clamp(prefs.repetitionTolerance, 0.0f, 1.0f);
-        prefs.fillAggressiveness = std::clamp(prefs.fillAggressiveness, 0.0f, 1.0f);
-        ++it;
-    }
-
-    for (auto it = project.authoring.noteMetadataByLane.begin(); it != project.authoring.noteMetadataByLane.end();)
-    {
-        if (it->first.isEmpty())
-        {
-            it = project.authoring.noteMetadataByLane.erase(it);
-            continue;
-        }
-
-        auto& noteStates = it->second;
-        for (auto& state : noteStates)
-        {
-            state.noteKey.step = std::clamp(state.noteKey.step, 0, maxStep);
-            state.noteKey.microOffset = std::clamp(state.noteKey.microOffset, -960, 960);
-            state.noteKey.pitch = std::clamp(state.noteKey.pitch, 0, 127);
-            state.noteKey.length = std::clamp(state.noteKey.length, 1, 64);
-            state.importanceWeight = std::clamp(state.importanceWeight, 0, 100);
-        }
-
-        noteStates.erase(std::remove_if(noteStates.begin(), noteStates.end(), [](const NoteAuthoringState& state)
-        {
-            return state.noteKey.length <= 0;
-        }),
-                         noteStates.end());
-
-        if (noteStates.empty())
-            it = project.authoring.noteMetadataByLane.erase(it);
-        else
-            ++it;
-    }
-
-    project.authoring.phraseBlocks.erase(std::remove_if(project.authoring.phraseBlocks.begin(),
-                                                        project.authoring.phraseBlocks.end(),
-                                                        [totalTicks](PhraseBlock& block)
-    {
-        const int startTick = juce::jlimit(0, juce::jmax(0, totalTicks - 1), block.tickRange.getStart());
-        const int endTick = juce::jlimit(startTick + 1, totalTicks, block.tickRange.getEnd());
-        block.tickRange = juce::Range<int>(startTick, endTick);
-        block.role = block.role.trim();
-        return block.tickRange.getLength() <= 0;
-    }),
-                                        project.authoring.phraseBlocks.end());
-
-    for (auto& track : project.tracks)
-    {
-        const auto* info = TrackRegistry::find(track.type);
-
-        if (track.laneId.isEmpty())
-        {
-            if (const auto* lane = findRuntimeLaneForTrack(project.runtimeLaneProfile, track.type); lane != nullptr)
-                track.laneId = lane->laneId;
-            else
-                track.laneId = TrackRegistry::defaultRuntimeLaneId(track.type);
-        }
-
-        if (!track.runtimeTrackType.has_value())
-            track.runtimeTrackType = track.type;
-
-        for (auto& note : track.notes)
-        {
-            note.pitch = std::clamp(note.pitch, 0, 127);
-            if (note.pitch == 0 && info != nullptr)
-                note.pitch = info->defaultMidiNote;
-
-            note.step = std::clamp(note.step, 0, maxStep);
-            note.length = std::clamp(note.length, 1, 64);
-            note.velocity = std::clamp(note.velocity, 1, 127);
-            note.microOffset = std::clamp(note.microOffset, -960, 960);
-            note.semanticRole = note.semanticRole.trim();
-            if (track.type != TrackType::Sub808)
-            {
-                note.isSlide = false;
-                note.isLegato = false;
-                note.glideToNext = false;
-            }
-        }
-
-        track.sub808Settings.glideTimeMs = std::clamp(track.sub808Settings.glideTimeMs, 0, 4000);
-        track.sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0,
-                                                                                        2,
-                                                                                        static_cast<int>(track.sub808Settings.overlapMode)));
-        track.sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0,
-                                                                                                2,
-                                                                                                static_cast<int>(track.sub808Settings.scaleSnapPolicy)));
-
-        if (track.type == TrackType::Sub808)
-        {
-            if (track.sub808Notes.empty() && !track.notes.empty())
-                track.sub808Notes = toSub808NoteEvents(track.notes);
-
-            for (auto& note : track.sub808Notes)
-            {
-                note.pitch = std::clamp(note.pitch, 0, 127);
-                note.step = std::clamp(note.step, 0, maxStep);
-                note.length = std::clamp(note.length, 1, 64);
-                note.velocity = std::clamp(note.velocity, 1, 127);
-                note.microOffset = std::clamp(note.microOffset, -960, 960);
-                note.semanticRole = note.semanticRole.trim();
-            }
-
-            std::sort(track.sub808Notes.begin(), track.sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
-            {
-                if (a.step != b.step)
-                    return a.step < b.step;
-                return a.pitch < b.pitch;
-            });
-
-            track.notes = toLegacyNoteEvents(track.sub808Notes);
-        }
-        else
-        {
-            track.sub808Notes.clear();
-        }
-
-        track.templateId = std::max(0, track.templateId);
-        track.variationId = std::max(0, track.variationId);
-        track.mutationDepth = std::clamp(track.mutationDepth, 0.0f, 1.0f);
-        track.laneVolume = std::clamp(track.laneVolume, 0.0f, 1.5f);
-        track.selectedSampleIndex = std::max(0, track.selectedSampleIndex);
-        track.sound.pan = std::clamp(track.sound.pan, -1.0f, 1.0f);
-        track.sound.width = std::clamp(track.sound.width, 0.0f, 2.0f);
-        track.sound.eqTone = std::clamp(track.sound.eqTone, -1.0f, 1.0f);
-        track.sound.compression = std::clamp(track.sound.compression, 0.0f, 1.0f);
-        track.sound.reverb = std::clamp(track.sound.reverb, 0.0f, 1.0f);
-        track.sound.gate = std::clamp(track.sound.gate, 0.0f, 1.0f);
-        track.sound.transient = std::clamp(track.sound.transient, 0.0f, 1.0f);
-        track.sound.drive = std::clamp(track.sound.drive, 0.0f, 1.0f);
-
-        std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
-        {
-            if (a.step != b.step)
-                return a.step < b.step;
-            return a.pitch < b.pitch;
-        });
-    }
-
-    if (project.tracks.empty())
-    {
-        project.selectedTrackIndex = -1;
-        project.soundModuleTrackIndex = -1;
-    }
-    else
-    {
-        project.selectedTrackIndex = std::clamp(project.selectedTrackIndex, 0, static_cast<int>(project.tracks.size()) - 1);
-        project.soundModuleTrackIndex = std::clamp(project.soundModuleTrackIndex, -1, static_cast<int>(project.tracks.size()) - 1);
-    }
+    sanitizeStyleInfluenceState(project);
+    reconcileTracksWithRuntimeLanes(project);
+    sanitizeGlobalSoundState(project);
+    sanitizeTrackStates(project);
+    sanitizeTrackNotes(project);
+    sanitizeAuthoringState(project);
+    sanitizePreviewState(project);
+    sanitizeSelectionIndices(project);
 }
 
 juce::ValueTree PatternProjectSerialization::serializeTrack(const TrackState& track)
