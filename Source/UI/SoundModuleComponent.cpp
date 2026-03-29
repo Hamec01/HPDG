@@ -55,12 +55,12 @@ SoundModuleComponent::SoundModuleComponent()
     targetCombo.onChange = [this]
     {
         const int id = targetCombo.getSelectedId();
-        std::optional<TrackType> target;
+        SoundTargetDescriptor target = SoundTargetDescriptor::makeGlobal();
         if (id >= 2)
         {
             const int index = id - 2;
-            if (index >= 0 && index < static_cast<int>(targetTracks.size()))
-                target = targetTracks[static_cast<size_t>(index)];
+            if (index >= 0 && index < static_cast<int>(targetDescriptors.size()))
+                target = targetDescriptors[static_cast<size_t>(index)];
         }
 
         currentTarget = target;
@@ -117,10 +117,10 @@ void SoundModuleComponent::resized()
 }
 
 void SoundModuleComponent::setState(const std::vector<TrackState>& tracks,
-                                    const std::optional<TrackType>& selectedTarget,
+                                    const SoundTargetDescriptor& selectedTarget,
                                     const SoundLayerState& soundState)
 {
-    targetTracks.clear();
+    targetDescriptors.clear();
     targetCombo.clear(juce::dontSendNotification);
     targetCombo.addItem("All Tracks (Global)", 1);
 
@@ -132,9 +132,13 @@ void SoundModuleComponent::setState(const std::vector<TrackState>& tracks,
         if (info == nullptr || !info->visibleInUI)
             continue;
 
-        targetTracks.push_back(track.type);
+        const auto descriptor = track.runtimeTrackType.has_value() && track.laneId.isNotEmpty()
+            ? SoundTargetDescriptor::makeBackedRuntimeLane(track.laneId, *track.runtimeTrackType)
+            : SoundTargetDescriptor::makeLegacyTrackTypeAlias(track.type);
+
+        targetDescriptors.push_back(descriptor);
         targetCombo.addItem(info->displayName, itemId);
-        if (selectedTarget.has_value() && selectedTarget.value() == track.type)
+        if (selectedTarget == descriptor)
             selectedId = itemId;
         ++itemId;
     }

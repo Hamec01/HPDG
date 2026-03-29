@@ -8,7 +8,11 @@
 
 #include "PluginProcessor.h"
 #include "../Services/StyleLabReferenceService.h"
+#include "../UI/EditorCommandController.h"
+#include "../UI/EditorHistoryController.h"
+#include "../UI/EditorLayoutController.h"
 #include "../UI/GridEditorComponent.h"
+#include "../UI/HotkeyController.h"
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
 #include "../UI/SoundModuleComponent.h"
@@ -22,23 +26,8 @@ class BoomBGeneratorAudioProcessorEditor final : public juce::AudioProcessorEdit
                                                  private juce::Timer
 {
 public:
-    struct HotkeyBinding
-    {
-        juce::String actionId;
-        juce::String displayName;
-        juce::KeyPress keyPress;
-        bool usesMouseModifier = false;
-        juce::ModifierKeys::Flags mouseModifier = juce::ModifierKeys::noModifiers;
-        juce::KeyPress defaultKeyPress;
-        juce::ModifierKeys::Flags defaultMouseModifier = juce::ModifierKeys::noModifiers;
-    };
-
-    struct UiLayoutState
-    {
-        int leftPanelWidth = 420;
-        juce::Viewport sub808Viewport;
-        MainHeaderComponent::HeaderControlsMode headerControlsMode = MainHeaderComponent::HeaderControlsMode::Expanded;
-    };
+    using HotkeyBinding = HotkeyController::Binding;
+    using UiLayoutState = EditorLayoutController::State;
 
     struct AlternateEditorSession
     {
@@ -165,31 +154,21 @@ private:
     float horizontalZoom = 1.0f;
     int laneHeight = 30;
     AlternateEditorSession alternateEditorSession;
-    bool pianoRollFullscreenMode = false;
-    bool gridEditorFullscreenMode = false;
     std::unique_ptr<juce::DocumentWindow> sub808DetachedWindow;
     int lastGenerationCounter = -1;
     juce::Rectangle<int> standaloneRestoreBounds;
-    UiLayoutState uiLayoutState;
+    EditorLayoutController layoutController;
+    EditorCommandController commandController;
+    EditorHistoryController historyController;
+    HotkeyController hotkeyController;
     juce::Rectangle<int> splitterBounds;
     std::unique_ptr<juce::Component> splitterHandle;
-    bool splitterDragging = false;
-    int splitterDragStartX = 0;
-    int splitterStartWidth = 420;
     float currentUiScale = 1.0f;
     float currentUiOffsetX = 0.0f;
     float currentUiOffsetY = 0.0f;
     float hatFxDragDensityUi = 1.0f;
     bool hatFxDragLockedUi = false;
-    std::vector<HotkeyBinding> hotkeyBindings;
-    std::vector<PatternProject> undoHistory;
-    std::vector<PatternProject> redoHistory;
-    std::optional<PatternProject> pendingHistoryBefore;
-    std::optional<PatternProject> pendingHistoryAfter;
-    std::optional<PatternProject> lastObservedProjectState;
     std::optional<StyleLabState> styleLabState;
-    bool pendingHistoryCommitScheduled = false;
-    bool suppressHistory = false;
     std::vector<RuntimeLaneId> laneDisplayOrder;
     GridEditorComponent::EditorRegionState editorRegionState;
 

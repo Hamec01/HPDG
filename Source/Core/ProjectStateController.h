@@ -5,6 +5,7 @@
 
 #include "PatternProjectSerialization.h"
 #include "ProjectLaneAccess.h"
+#include "SoundTargetDescriptor.h"
 #include "TrackRegistry.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -284,6 +285,30 @@ inline void setSoundModuleTrack(PatternProject& project, const std::optional<Tra
     project.soundModuleTrackIndex = -1;
 }
 
+inline void setSoundModuleTarget(PatternProject& project, const SoundTargetDescriptor& descriptor)
+{
+    const auto resolved = SoundTargetController::sanitizeDescriptor(project, descriptor);
+    if (resolved.isGlobal())
+    {
+        project.soundModuleTrackIndex = -1;
+        return;
+    }
+
+    if (resolved.kind == SoundTargetDescriptorKind::BackedRuntimeLane)
+    {
+        for (size_t index = 0; index < project.tracks.size(); ++index)
+        {
+            if (project.tracks[index].laneId == resolved.laneId)
+            {
+                project.soundModuleTrackIndex = static_cast<int>(index);
+                return;
+            }
+        }
+    }
+
+    setSoundModuleTrack(project, SoundTargetController::toLegacyTrackTypeAlias(resolved));
+}
+
 inline void setTrackSoundLayer(PatternProject& project, TrackType trackType, const SoundLayerState& state)
 {
     if (auto* trackState = ProjectLaneAccess::findTrackState(project, trackType))
@@ -299,6 +324,28 @@ inline void setTrackSoundLayer(PatternProject& project, const RuntimeLaneId& lan
 inline void setGlobalSoundLayer(PatternProject& project, const SoundLayerState& state)
 {
     project.globalSound = state;
+}
+
+inline void setSoundLayerForTarget(PatternProject& project, const SoundTargetDescriptor& descriptor, const SoundLayerState& state)
+{
+    const auto resolved = SoundTargetController::sanitizeDescriptor(project, descriptor);
+    if (resolved.isGlobal())
+    {
+        setGlobalSoundLayer(project, state);
+        return;
+    }
+
+    if (resolved.kind == SoundTargetDescriptorKind::BackedRuntimeLane)
+    {
+        if (auto* trackState = ProjectLaneAccess::findTrackState(project, resolved.laneId))
+        {
+            trackState->sound = state;
+            return;
+        }
+    }
+
+    if (const auto legacyTrackType = SoundTargetController::toLegacyTrackTypeAlias(resolved); legacyTrackType.has_value())
+        setTrackSoundLayer(project, *legacyTrackType, state);
 }
 
 inline void clearTrack(PatternProject& project, TrackType trackType)

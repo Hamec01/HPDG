@@ -936,10 +936,19 @@ void BoomBapGeneratorAudioProcessor::setSoundModuleTrack(const std::optional<Tra
 std::optional<TrackType> BoomBapGeneratorAudioProcessor::getSoundModuleTrack() const
 {
     std::scoped_lock lock(projectMutex);
-    if (project.soundModuleTrackIndex < 0 || project.soundModuleTrackIndex >= static_cast<int>(project.tracks.size()))
-        return std::nullopt;
+    return SoundTargetController::toLegacyTrackTypeAlias(SoundTargetController::resolveProjectSelection(project));
+}
 
-    return project.tracks[static_cast<size_t>(project.soundModuleTrackIndex)].type;
+void BoomBapGeneratorAudioProcessor::setSoundModuleTarget(const SoundTargetDescriptor& descriptor)
+{
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setSoundModuleTarget(project, descriptor);
+}
+
+SoundTargetDescriptor BoomBapGeneratorAudioProcessor::getSoundModuleTarget() const
+{
+    std::scoped_lock lock(projectMutex);
+    return SoundTargetController::resolveProjectSelection(project);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(TrackType track, const SoundLayerState& state)
@@ -958,6 +967,12 @@ void BoomBapGeneratorAudioProcessor::setGlobalSoundLayer(const SoundLayerState& 
 {
     std::scoped_lock lock(projectMutex);
     ProjectStateController::setGlobalSoundLayer(project, state);
+}
+
+void BoomBapGeneratorAudioProcessor::setSoundLayerForTarget(const SoundTargetDescriptor& descriptor, const SoundLayerState& state)
+{
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setSoundLayerForTarget(project, descriptor, state);
 }
 
 void BoomBapGeneratorAudioProcessor::setHatFxDragDensity(float density, bool lockDragDensity)

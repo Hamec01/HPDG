@@ -622,6 +622,7 @@ private:
 BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGeneratorAudioProcessor& processor)
     : juce::AudioProcessorEditor(&processor)
     , audioProcessor(processor)
+    , commandController(processor)
 {
     setWantsKeyboardFocus(true);
     setMouseClickGrabsKeyboardFocus(true);
@@ -643,25 +644,23 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     auto* splitter = new SplitterHandleComponent();
     splitter->onPress = [this](const juce::MouseEvent& event)
     {
-        splitterDragging = true;
-        splitterDragStartX = static_cast<int>(event.getEventRelativeTo(&laneSurface).position.x);
-        splitterStartWidth = uiLayoutState.leftPanelWidth;
+        layoutController.beginSplitterDrag(static_cast<int>(event.getEventRelativeTo(&laneSurface).position.x));
     };
     splitter->onDragMove = [this](const juce::MouseEvent& event)
     {
-        if (!splitterDragging)
+        if (!layoutController.isSplitterDragging())
             return;
 
         const int currentX = static_cast<int>(event.getEventRelativeTo(&laneSurface).position.x);
-        uiLayoutState.leftPanelWidth = splitterStartWidth + (currentX - splitterDragStartX);
+        layoutController.updateSplitterDrag(currentX);
         resized();
     };
     splitter->onRelease = [this](const juce::MouseEvent&)
     {
-        if (!splitterDragging)
+        if (!layoutController.isSplitterDragging())
             return;
 
-        splitterDragging = false;
+        layoutController.endSplitterDrag();
         saveUiLayoutState();
     };
     splitterHandle.reset(splitter);
@@ -753,8 +752,8 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     trackList.setShowAnalysisPanel(false);
     trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
     loadUiLayoutState();
-    header.setHeaderControlsMode(uiLayoutState.headerControlsMode);
-    trackList.setDisplayMode(laneRackModeForWidth(uiLayoutState.leftPanelWidth));
+    header.setHeaderControlsMode(layoutController.getState().headerControlsMode);
+    trackList.setDisplayMode(laneRackModeForWidth(layoutController.getState().leftPanelWidth));
 
     editorToolBar.addAndMakeVisible(editorToolLabel);
     editorToolBar.addAndMakeVisible(pencilToolButton);
@@ -943,7 +942,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
     header.onHeaderControlsModeChanged = [this](MainHeaderComponent::HeaderControlsMode mode)
     {
-        uiLayoutState.headerControlsMode = mode;
+        layoutController.getState().headerControlsMode = mode;
         saveUiLayoutState();
         resized();
     };
@@ -1048,12 +1047,12 @@ bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, j
     // Handle ESC to exit fullscreen modes
     if (key == juce::KeyPress::escapeKey)
     {
-        if (gridEditorFullscreenMode)
+        if (layoutController.isGridEditorFullscreenMode())
         {
             toggleGridEditorFullscreen();
             return true;
         }
-        if (pianoRollFullscreenMode || (sub808DetachedWindow != nullptr && sub808DetachedWindow->isVisible()))
+        if (layoutController.isPianoRollFullscreenMode() || (sub808DetachedWindow != nullptr && sub808DetachedWindow->isVisible()))
         {
             toggleSub808PianoRollFullscreen();
             return true;
@@ -1062,22 +1061,13 @@ bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, j
 
     auto isKeyForAction = [this, &key](const juce::String& actionId)
     {
-        auto it = std::find_if(hotkeyBindings.begin(), hotkeyBindings.end(), [&actionId](const HotkeyBinding& binding)
-        {
-            return binding.actionId == actionId;
-        });
-
-        if (it == hotkeyBindings.end() || it->usesMouseModifier || !it->keyPress.isValid())
-            return false;
-
-        return key.getKeyCode() == it->keyPress.getKeyCode()
-            && key.getModifiers().getRawFlags() == it->keyPress.getModifiers().getRawFlags();
+        return hotkeyController.matchesKeyAction(actionId, key);
     };
 
-    if (isKeyForAction(kActionUndo))
+    if (isKeyForAction(HotkeyController::kActionUndo))
         return performUndo();
 
-    const bool redoHotkeyPressed = isKeyForAction(kActionRedo)
+    const bool redoHotkeyPressed = isKeyForAction(HotkeyController::kActionRedo)
         || key == juce::KeyPress('Y', juce::ModifierKeys::ctrlModifier, 0);
 
     if (redoHotkeyPressed)
@@ -1093,7 +1083,7 @@ bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, j
 
     auto* focusedComponent = juce::Component::getCurrentlyFocusedComponent();
     const bool routeToPianoRoll = isPianoRollEditorVisible()
-        && (pianoRollFullscreenMode || focusIsWithin(sub808PianoRoll, focusedComponent, originatingComponent));
+        && (layoutController.isPianoRollFullscreenMode() || focusIsWithin(sub808PianoRoll, focusedComponent, originatingComponent));
 
     auto isPlainLetter = [&key](juce::juce_wchar upperCaseLetter)
     {
@@ -1332,6 +1322,9 @@ void BoomBGeneratorAudioProcessorEditor::resized()
     const int virtualHeight = juce::jmax(1, static_cast<int>(std::round(static_cast<float>(outer.getHeight()) / uiScale)));
 
     juce::Rectangle<int> area(0, 0, virtualWidth, virtualHeight);
+    auto& layoutState = layoutController.getState();
+    const bool gridEditorFullscreenMode = layoutController.isGridEditorFullscreenMode();
+    const bool pianoRollFullscreenMode = layoutController.isPianoRollFullscreenMode();
 
 #if JUCE_STANDALONE_APPLICATION
     if (auto* top = findParentComponentOfClass<juce::TopLevelWindow>())
@@ -1373,7 +1366,7 @@ void BoomBGeneratorAudioProcessorEditor::resized()
 
         const int maxRackByAvailableSpace = juce::jmax(kRackMinWidth, area.getWidth() - kGridMinWidth - kSplitterHitWidth - kPaneGap);
         const int rackMax = juce::jmax(kRackMinWidth, juce::jmin(kRackMaxWidth, maxRackByAvailableSpace));
-        uiLayoutState.leftPanelWidth = juce::jlimit(kRackMinWidth, rackMax, uiLayoutState.leftPanelWidth);
+        layoutState.leftPanelWidth = juce::jlimit(kRackMinWidth, rackMax, layoutState.leftPanelWidth);
 
         const int visibleRows = juce::jmax(1, trackList.getVisibleRowCount());
         const int fullscreenLaneHeight = juce::jlimit(22,
@@ -1383,12 +1376,12 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         trackList.setRowHeight(fullscreenLaneHeight);
         grid.setLaneHeight(fullscreenLaneHeight);
 
-        trackList.setDisplayMode(laneRackModeForWidth(uiLayoutState.leftPanelWidth));
+        trackList.setDisplayMode(laneRackModeForWidth(layoutState.leftPanelWidth));
         const int laneSurfaceHeight = juce::jmax(1, trackList.getLaneSectionHeight());
         laneSurface.setBounds(area.removeFromTop(laneSurfaceHeight));
 
         auto laneArea = laneSurface.getLocalBounds();
-        trackList.setBounds(laneArea.removeFromLeft(uiLayoutState.leftPanelWidth));
+        trackList.setBounds(laneArea.removeFromLeft(layoutState.leftPanelWidth));
         laneArea.removeFromLeft(kPaneGap);
         auto splitterLocalArea = juce::Rectangle<int>(laneArea.getX(), laneArea.getY(), kSplitterHitWidth, laneSurface.getHeight());
         splitterBounds = splitterLocalArea.translated(laneSurface.getX(), laneSurface.getY());
@@ -1468,9 +1461,9 @@ void BoomBGeneratorAudioProcessorEditor::resized()
 
         const int maxRackByAvailableSpace = juce::jmax(kRackMinWidth, area.getWidth() - kGridMinWidth - kSplitterHitWidth - kPaneGap);
         const int rackMax = juce::jmax(kRackMinWidth, juce::jmin(kRackMaxWidth, maxRackByAvailableSpace));
-        uiLayoutState.leftPanelWidth = juce::jlimit(kRackMinWidth, rackMax, uiLayoutState.leftPanelWidth);
+        layoutState.leftPanelWidth = juce::jlimit(kRackMinWidth, rackMax, layoutState.leftPanelWidth);
 
-        trackList.setDisplayMode(laneRackModeForWidth(uiLayoutState.leftPanelWidth));
+        trackList.setDisplayMode(laneRackModeForWidth(layoutState.leftPanelWidth));
         const bool showGlobalTools = !alternateEditorVisible;
         const int toolsHeight = showGlobalTools ? kEditorToolBarHeight : 0;
         const int toolsToBottomGap = 10;
@@ -1492,7 +1485,7 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         laneSurface.setBounds(area.removeFromTop(laneSurfaceHeight));
 
         auto laneArea = laneSurface.getLocalBounds();
-        trackList.setBounds(laneArea.removeFromLeft(uiLayoutState.leftPanelWidth));
+        trackList.setBounds(laneArea.removeFromLeft(layoutState.leftPanelWidth));
         laneArea.removeFromLeft(kPaneGap);
         auto splitterLocalArea = juce::Rectangle<int>(laneArea.getX(), laneArea.getY(), kSplitterHitWidth, laneSurface.getHeight());
         splitterBounds = splitterLocalArea.translated(laneSurface.getX(), laneSurface.getY());
@@ -1529,7 +1522,7 @@ void BoomBGeneratorAudioProcessorEditor::resized()
             area.removeFromTop(juce::jmin(toolsToBottomGap, area.getHeight()));
 
         auto bottomArea = area;
-        auto leftColumn = bottomArea.removeFromLeft(uiLayoutState.leftPanelWidth);
+        auto leftColumn = bottomArea.removeFromLeft(layoutState.leftPanelWidth);
         bottomArea.removeFromLeft(kPaneGap + kSplitterHitWidth + kPaneGap);
         analysisPanel.setBounds(leftColumn);
 
@@ -1609,18 +1602,18 @@ void BoomBGeneratorAudioProcessorEditor::resized()
 
 void BoomBGeneratorAudioProcessorEditor::timerCallback()
 {
-    const auto before = lastObservedProjectState.has_value()
-        ? *lastObservedProjectState
+    const auto before = historyController.getLastObservedProjectState().has_value()
+        ? *historyController.getLastObservedProjectState()
         : audioProcessor.getProjectSnapshot();
 
     refreshSubstyleBindingForGenre();
     audioProcessor.applySelectedStylePreset(false);
 
     const auto after = audioProcessor.getProjectSnapshot();
-    if (lastObservedProjectState.has_value())
+    if (historyController.getLastObservedProjectState().has_value())
         pushProjectHistoryState(before, after);
     else
-        lastObservedProjectState = after;
+        historyController.observeProjectState(after);
 
     refreshFromProcessor(false);
 }
@@ -1628,8 +1621,8 @@ void BoomBGeneratorAudioProcessorEditor::timerCallback()
 void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackRows)
 {
     auto project = audioProcessor.getProjectSnapshot();
-    if (!lastObservedProjectState.has_value())
-        lastObservedProjectState = project;
+    if (!historyController.getLastObservedProjectState().has_value())
+        historyController.observeProjectState(project);
 
     syncLaneDisplayOrder(project);
     const auto transport = audioProcessor.getLastTransportSnapshot();
@@ -1660,19 +1653,8 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
     }
     grid.setLaneDisplayOrder(laneDisplayOrder);
 
-    const auto soundTarget = audioProcessor.getSoundModuleTrack();
-    SoundLayerState panelSound = project.globalSound;
-    if (soundTarget.has_value())
-    {
-        for (const auto& track : project.tracks)
-        {
-            if (track.type == *soundTarget)
-            {
-                panelSound = track.sound;
-                break;
-            }
-        }
-    }
+    const auto soundTarget = audioProcessor.getSoundModuleTarget();
+    const auto panelSound = SoundTargetController::resolveSoundState(project, soundTarget);
     soundModule.setState(project.tracks, soundTarget, panelSound);
 
     header.setPreviewPlaying(audioProcessor.isPreviewPlaying());
@@ -2209,20 +2191,17 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         showAddLaneMenu();
     };
 
-    soundModule.onSoundTargetChanged = [this](const std::optional<TrackType>& target)
+    soundModule.onSoundTargetChanged = [this](const SoundTargetDescriptor& target)
     {
-        audioProcessor.setSoundModuleTrack(target);
+        audioProcessor.setSoundModuleTarget(target);
         refreshFromProcessor(false);
     };
 
-    soundModule.onSoundLayerChanged = [this](const std::optional<TrackType>& target, const SoundLayerState& state)
+    soundModule.onSoundLayerChanged = [this](const SoundTargetDescriptor& target, const SoundLayerState& state)
     {
         applyProcessorProjectMutation([this, target, state]
         {
-            if (target.has_value())
-                audioProcessor.setTrackSoundLayer(*target, state);
-            else
-                audioProcessor.setGlobalSoundLayer(state);
+            audioProcessor.setSoundLayerForTarget(target, state);
         }, false);
     };
 
@@ -2400,250 +2379,86 @@ void BoomBGeneratorAudioProcessorEditor::mouseDown(const juce::MouseEvent& event
     const auto virtualPos = toVirtualPoint(event.position);
     if (splitterBounds.contains(static_cast<int>(virtualPos.x), static_cast<int>(virtualPos.y)))
     {
-        splitterDragging = true;
-        splitterDragStartX = static_cast<int>(virtualPos.x);
-        splitterStartWidth = uiLayoutState.leftPanelWidth;
+        layoutController.beginSplitterDrag(static_cast<int>(virtualPos.x));
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
     }
 }
 
 void BoomBGeneratorAudioProcessorEditor::mouseDrag(const juce::MouseEvent& event)
 {
-    if (!splitterDragging)
+    if (!layoutController.isSplitterDragging())
         return;
 
     const auto virtualPos = toVirtualPoint(event.position);
-    const int delta = static_cast<int>(virtualPos.x) - splitterDragStartX;
-    uiLayoutState.leftPanelWidth = splitterStartWidth + delta;
+    layoutController.updateSplitterDrag(static_cast<int>(virtualPos.x));
     resized();
 }
 
 void BoomBGeneratorAudioProcessorEditor::mouseUp(const juce::MouseEvent& event)
 {
     juce::ignoreUnused(event);
-    if (!splitterDragging)
+    if (!layoutController.isSplitterDragging())
         return;
 
-    splitterDragging = false;
+    layoutController.endSplitterDrag();
     saveUiLayoutState();
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 void BoomBGeneratorAudioProcessorEditor::exportFullPattern()
 {
-    auto chooser = std::make_shared<juce::FileChooser>(
-        "Export full pattern MIDI",
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Full", ".mid"),
-        "*.mid");
-
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                         [this, chooser](const juce::FileChooser& fc)
-                         {
-                             const auto result = fc.getResult();
-                             if (result == juce::File())
-                                 return;
-
-                             audioProcessor.exportFullPatternToFile(result);
-                         });
+    commandController.exportFullPattern(this);
 }
 
 void BoomBGeneratorAudioProcessorEditor::exportLoopWav()
 {
-    auto chooser = std::make_shared<juce::FileChooser>(
-        "Export loop WAV",
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Loop", ".wav"),
-        "*.wav");
-
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                         [this, chooser](const juce::FileChooser& fc)
-                         {
-                             const auto result = fc.getResult();
-                             if (result == juce::File())
-                                 return;
-
-                             const bool ok = audioProcessor.exportLoopWavToFile(result);
-                             if (!ok)
-                                 logDrag("exportLoopWav failed path=" + result.getFullPathName());
-                         });
+    commandController.exportLoopWav(this, logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::showSampleMenu(TrackType type)
 {
-    juce::PopupMenu menu;
-    menu.addItem(1, "Load new sample (.wav)");
-    menu.addItem(2, "Delete selected sample");
-    menu.addSeparator();
-    menu.addItem(3, "Open lane sample folder");
-
-    const auto mousePos = juce::Desktop::getInstance().getMainMouseSource().getScreenPosition().roundToInt();
-    const juce::Rectangle<int> targetArea(mousePos.x, mousePos.y, 1, 1);
-
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(targetArea).withParentComponent(this),
-                       [this, type](int choice)
-                       {
-                           if (choice == 1)
-                           {
-                               auto chooser = std::make_shared<juce::FileChooser>(
-                                   "Select WAV sample",
-                                   juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-                                   "*.wav");
-
-                               chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                                                    [this, chooser, type](const juce::FileChooser& fc)
-                                                    {
-                                                        const auto result = fc.getResult();
-                                                        if (result == juce::File())
-                                                            return;
-
-                                                        const auto before = audioProcessor.getProjectSnapshot();
-                                                        juce::String error;
-                                                        auto trackType = type;
-                                                        const bool ok = audioProcessor.importLaneSample(trackType, result, &error);
-                                                        const auto after = audioProcessor.getProjectSnapshot();
-                                                        pushProjectHistoryState(before, after);
-                                                        refreshFromProcessor();
-                                                        if (!ok && error.isNotEmpty())
-                                                            logDrag("importLaneSample error: " + error);
-                                                    });
-                               return;
-                           }
-
-                           if (choice == 2)
-                           {
-                               const auto before = audioProcessor.getProjectSnapshot();
-                               juce::String error;
-                               auto trackType = type;
-                               const bool ok = audioProcessor.deleteSelectedLaneSample(trackType, &error);
-                               const auto after = audioProcessor.getProjectSnapshot();
-                               pushProjectHistoryState(before, after);
-                               refreshFromProcessor();
-                               if (!ok && error.isNotEmpty())
-                                   logDrag("deleteSelectedLaneSample error: " + error);
-                               return;
-                           }
-
-                           if (choice == 3)
-                           {
-                               const auto folder = audioProcessor.getLaneSampleDirectory(type);
-                               folder.createDirectory();
-                               folder.revealToUser();
-                           }
-                       });
+    commandController.showSampleMenu(type,
+                                     this,
+                                     [this](const PatternProject& before, const PatternProject& after)
+                                     {
+                                         pushProjectHistoryState(before, after);
+                                     },
+                                     [this]()
+                                     {
+                                         refreshFromProcessor();
+                                     },
+                                     logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::dragFullPatternTempMidi()
 {
-    logDrag("dragFullPatternTempMidi click");
-    const auto file = audioProcessor.createTemporaryFullPatternMidiFile();
-    if (!file.existsAsFile())
-    {
-        logDrag("dragFullPatternTempMidi no file");
-        return;
-    }
-
-    // Click path stays safe across hosts: expose file in shell.
-    logDrag("dragFullPatternTempMidi reveal " + file.getFullPathName());
-    file.revealToUser();
+    commandController.dragFullPatternTempMidi(logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::dragFullPatternExternal()
 {
-    logDrag("dragFullPatternExternal gesture start");
-    const auto file = audioProcessor.createTemporaryFullPatternMidiFile();
-    if (!file.existsAsFile())
-    {
-        logDrag("dragFullPatternExternal no file");
-        return;
-    }
-
-    try
-    {
-        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() },
-                                                                                         false,
-                                                                                         this,
-                                                                                         []
-                                                                                         {
-                                                                                             logDrag("dragFullPatternExternal callback end");
-                                                                                         });
-        logDrag("dragFullPatternExternal performExternalDragDropOfFiles started=" + juce::String(started ? "1" : "0"));
-        if (!started)
-            file.revealToUser();
-    }
-    catch (...)
-    {
-        logDrag("dragFullPatternExternal exception fallback reveal");
-        file.revealToUser();
-    }
+    commandController.dragFullPatternExternal(this, logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::exportTrack(TrackType type)
 {
-    auto chooser = std::make_shared<juce::FileChooser>(
-        "Export track MIDI",
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Track", ".mid"),
-        "*.mid");
-
-    chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                         [this, chooser, type](const juce::FileChooser& fc)
-                         {
-                             const auto result = fc.getResult();
-                             if (result == juce::File())
-                                 return;
-
-                             audioProcessor.exportTrackToFile(type, result);
-                         });
+    commandController.exportTrack(type, this);
 }
 
 void BoomBGeneratorAudioProcessorEditor::dragTrackTempMidi(TrackType type)
 {
-    logDrag("dragTrackTempMidi click type=" + juce::String(static_cast<int>(type)));
-    const auto file = audioProcessor.createTemporaryTrackMidiFile(type);
-    if (!file.existsAsFile())
-    {
-        logDrag("dragTrackTempMidi no file type=" + juce::String(static_cast<int>(type)));
-        return;
-    }
-
-    // Click path stays safe across hosts: expose file in shell.
-    logDrag("dragTrackTempMidi reveal " + file.getFullPathName());
-    file.revealToUser();
+    commandController.dragTrackTempMidi(type, logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::dragTrackExternal(TrackType type)
 {
-    logDrag("dragTrackExternal gesture start type=" + juce::String(static_cast<int>(type)));
-    const auto file = audioProcessor.createTemporaryTrackMidiFile(type);
-    if (!file.existsAsFile())
-    {
-        logDrag("dragTrackExternal no file type=" + juce::String(static_cast<int>(type)));
-        return;
-    }
-
-    try
-    {
-        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() },
-                                                                                         false,
-                                                                                         this,
-                                                                                         []
-                                                                                         {
-                                                                                             logDrag("dragTrackExternal callback end");
-                                                                                         });
-        logDrag("dragTrackExternal performExternalDragDropOfFiles started=" + juce::String(started ? "1" : "0")
-                + " type=" + juce::String(static_cast<int>(type)));
-        if (!started)
-            file.revealToUser();
-    }
-    catch (...)
-    {
-        logDrag("dragTrackExternal exception fallback reveal type=" + juce::String(static_cast<int>(type)));
-        file.revealToUser();
-    }
+    commandController.dragTrackExternal(type, this, logDrag);
 }
 
 void BoomBGeneratorAudioProcessorEditor::updateGridGeometry()
 {
     const int width = juce::jmax(1, grid.getGridWidth());
-    const int targetTrackHeight = (gridEditorFullscreenMode || pianoRollFullscreenMode)
+    const int targetTrackHeight = (layoutController.isGridEditorFullscreenMode() || layoutController.isPianoRollFullscreenMode())
         ? trackList.getLaneSectionHeight()
         : trackList.getContentHeight();
     const int height = juce::jmax(gridViewport.getHeight(), targetTrackHeight);
@@ -2869,7 +2684,9 @@ void BoomBGeneratorAudioProcessorEditor::setAlternateEditorVisible(bool shouldSh
     alternateEditorSession.editorType = nextType;
     alternateEditorSession.trackType = nextTrack;
     alternateEditorSession.laneId = nextLaneId;
-    gridEditorFullscreenMode = false;
+    layoutController.setGridEditorFullscreenMode(false);
+    if (!shouldShow)
+        layoutController.setPianoRollFullscreenMode(false);
     gridEditorFullscreenButton.setToggleState(false, juce::dontSendNotification);
 
     if (!isPianoRollEditorVisible())
@@ -2892,144 +2709,31 @@ void BoomBGeneratorAudioProcessorEditor::setAlternateEditorVisible(bool shouldSh
 
 void BoomBGeneratorAudioProcessorEditor::setupHotkeys()
 {
-    hotkeyBindings = {
-        { kActionDrawMode, "Draw Mode", {}, true, defaultModifierForAction(kActionDrawMode), {}, defaultModifierForAction(kActionDrawMode) },
-        { kActionVelocityEdit, "Velocity Edit", defaultKeyForAction(kActionVelocityEdit), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionVelocityEdit), juce::ModifierKeys::noModifiers },
-        { kActionPanView, "Pan View", {}, true, defaultModifierForAction(kActionPanView), {}, defaultModifierForAction(kActionPanView) },
-        { kActionHorizontalZoomModifier, "Horizontal Zoom modifier", {}, true, defaultModifierForAction(kActionHorizontalZoomModifier), {}, defaultModifierForAction(kActionHorizontalZoomModifier) },
-        { kActionLaneHeightZoomModifier, "Lane Height Zoom modifier", {}, true, defaultModifierForAction(kActionLaneHeightZoomModifier), {}, defaultModifierForAction(kActionLaneHeightZoomModifier) },
-        { kActionPencilTool, "Pencil Tool", defaultKeyForAction(kActionPencilTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionPencilTool), juce::ModifierKeys::noModifiers },
-        { kActionBrushTool, "Brush Tool", defaultKeyForAction(kActionBrushTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionBrushTool), juce::ModifierKeys::noModifiers },
-        { kActionSelectTool, "Select Tool", defaultKeyForAction(kActionSelectTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionSelectTool), juce::ModifierKeys::noModifiers },
-        { kActionCutTool, "Cut Tool", defaultKeyForAction(kActionCutTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionCutTool), juce::ModifierKeys::noModifiers },
-        { kActionEraseTool, "Erase Tool", defaultKeyForAction(kActionEraseTool), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionEraseTool), juce::ModifierKeys::noModifiers },
-        { kActionStretchResize, "Resize notes", defaultKeyForAction(kActionStretchResize), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionStretchResize), juce::ModifierKeys::noModifiers },
-        { kActionMicrotimingEdit, "Microtiming Edit modifier", {}, true, defaultModifierForAction(kActionMicrotimingEdit), {}, defaultModifierForAction(kActionMicrotimingEdit) },
-        { kActionDeleteNote, "Delete Note", defaultKeyForAction(kActionDeleteNote), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionDeleteNote), juce::ModifierKeys::noModifiers },
-        { kActionCopySelection, "Copy", defaultKeyForAction(kActionCopySelection), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionCopySelection), juce::ModifierKeys::noModifiers },
-        { kActionCutSelection, "Cut selection", defaultKeyForAction(kActionCutSelection), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionCutSelection), juce::ModifierKeys::noModifiers },
-        { kActionPasteSelection, "Paste", defaultKeyForAction(kActionPasteSelection), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionPasteSelection), juce::ModifierKeys::noModifiers },
-        { kActionDuplicateSelection, "Duplicate", defaultKeyForAction(kActionDuplicateSelection), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionDuplicateSelection), juce::ModifierKeys::noModifiers },
-        { kActionSelectAllNotes, "Select all notes", defaultKeyForAction(kActionSelectAllNotes), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionSelectAllNotes), juce::ModifierKeys::noModifiers },
-        { kActionDeselectAll, "Deselect all", defaultKeyForAction(kActionDeselectAll), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionDeselectAll), juce::ModifierKeys::noModifiers },
-        { kActionUndo, "Undo", defaultKeyForAction(kActionUndo), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionUndo), juce::ModifierKeys::noModifiers },
-        { kActionRedo, "Redo", defaultKeyForAction(kActionRedo), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionRedo), juce::ModifierKeys::noModifiers },
-        { kActionRoleAnchor, "Semantic role: Anchor", defaultKeyForAction(kActionRoleAnchor), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionRoleAnchor), juce::ModifierKeys::noModifiers },
-        { kActionRoleSupport, "Semantic role: Support", defaultKeyForAction(kActionRoleSupport), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionRoleSupport), juce::ModifierKeys::noModifiers },
-        { kActionRoleFill, "Semantic role: Fill", defaultKeyForAction(kActionRoleFill), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionRoleFill), juce::ModifierKeys::noModifiers },
-        { kActionRoleAccent, "Semantic role: Accent", defaultKeyForAction(kActionRoleAccent), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionRoleAccent), juce::ModifierKeys::noModifiers },
-        { kActionRoleClear, "Semantic role: Clear", defaultKeyForAction(kActionRoleClear), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionRoleClear), juce::ModifierKeys::noModifiers },
-        { kActionZoomToSelection, "Zoom to selection", defaultKeyForAction(kActionZoomToSelection), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionZoomToSelection), juce::ModifierKeys::noModifiers },
-        { kActionZoomToPattern, "Zoom to pattern", defaultKeyForAction(kActionZoomToPattern), false, juce::ModifierKeys::noModifiers, defaultKeyForAction(kActionZoomToPattern), juce::ModifierKeys::noModifiers }
-    };
-
+    hotkeyController.setupDefaults();
     loadHotkeys();
     applyHotkeysToGrid();
 }
 
 void BoomBGeneratorAudioProcessorEditor::applyHotkeysToGrid()
 {
-    GridEditorComponent::InputBindings bindings;
-
-    for (const auto& binding : hotkeyBindings)
-    {
-        if (binding.actionId == kActionDrawMode && binding.usesMouseModifier)
-            bindings.drawModeModifier = binding.mouseModifier;
-        else if (binding.actionId == kActionPanView && binding.usesMouseModifier)
-            bindings.panViewModifier = binding.mouseModifier;
-        else if (binding.actionId == kActionHorizontalZoomModifier && binding.usesMouseModifier)
-            bindings.horizontalZoomModifier = binding.mouseModifier;
-        else if (binding.actionId == kActionLaneHeightZoomModifier && binding.usesMouseModifier)
-            bindings.laneHeightZoomModifier = binding.mouseModifier;
-        else if (binding.actionId == kActionMicrotimingEdit && binding.usesMouseModifier)
-            bindings.microtimingEditModifier = binding.mouseModifier;
-        else if (binding.actionId == kActionVelocityEdit && !binding.usesMouseModifier && binding.keyPress.isValid())
-            bindings.velocityEditKeyCode = binding.keyPress.getKeyCode();
-        else if (binding.actionId == kActionStretchResize && !binding.usesMouseModifier && binding.keyPress.isValid())
-        {
-            bindings.stretchNoteKeyCode = binding.keyPress.getKeyCode();
-            bindings.stretchNoteModifiers = static_cast<juce::ModifierKeys::Flags>(binding.keyPress.getModifiers().getRawFlags());
-        }
-    }
-
+    const auto bindings = hotkeyController.makeGridInputBindings();
     grid.setInputBindings(bindings);
     sub808PianoRoll.setInputBindings(bindings);
 }
 
 void BoomBGeneratorAudioProcessorEditor::loadHotkeys()
 {
-    auto& state = audioProcessor.getApvts().state;
-    for (auto& binding : hotkeyBindings)
-    {
-        if (binding.usesMouseModifier)
-        {
-            const auto path = hotkeyPropertyPath(binding.actionId, "modifier");
-            if (state.hasProperty(path))
-                binding.mouseModifier = static_cast<juce::ModifierKeys::Flags>(static_cast<int>(state.getProperty(path)));
-            else
-                binding.mouseModifier = binding.defaultMouseModifier;
-            continue;
-        }
-
-        const auto keyPath = hotkeyPropertyPath(binding.actionId, "keyCode");
-        const auto modsPath = hotkeyPropertyPath(binding.actionId, "modifiers");
-        if (state.hasProperty(keyPath))
-        {
-            const int keyCode = static_cast<int>(state.getProperty(keyPath));
-            const int mods = state.hasProperty(modsPath) ? static_cast<int>(state.getProperty(modsPath)) : 0;
-            const bool migrateStretchResize = binding.actionId == kActionStretchResize
-                && keyCode == binding.defaultKeyPress.getKeyCode()
-                && mods == 0
-                && binding.defaultKeyPress.getModifiers().getRawFlags() != 0;
-            const bool migrateLegacyUndo = binding.actionId == kActionUndo
-                && keyCode == 'U'
-                && mods == juce::ModifierKeys::ctrlModifier;
-            const bool migrateLegacyRedo = binding.actionId == kActionRedo
-                && keyCode == 'R'
-                && mods == juce::ModifierKeys::ctrlModifier;
-
-            if (migrateStretchResize || migrateLegacyUndo || migrateLegacyRedo)
-            {
-                binding.keyPress = binding.defaultKeyPress;
-                state.setProperty(keyPath, binding.keyPress.getKeyCode(), nullptr);
-                state.setProperty(modsPath, binding.keyPress.getModifiers().getRawFlags(), nullptr);
-            }
-            else
-            {
-                binding.keyPress = keyCode > 0 ? juce::KeyPress(keyCode, juce::ModifierKeys(mods), 0) : juce::KeyPress();
-            }
-        }
-        else
-        {
-            binding.keyPress = binding.defaultKeyPress;
-        }
-    }
+    hotkeyController.load(audioProcessor.getApvts().state);
 }
 
 void BoomBGeneratorAudioProcessorEditor::saveHotkeys()
 {
-    auto& state = audioProcessor.getApvts().state;
-    for (const auto& binding : hotkeyBindings)
-    {
-        if (binding.usesMouseModifier)
-        {
-            state.setProperty(hotkeyPropertyPath(binding.actionId, "modifier"), static_cast<int>(binding.mouseModifier), nullptr);
-            continue;
-        }
-
-        state.setProperty(hotkeyPropertyPath(binding.actionId, "keyCode"), binding.keyPress.getKeyCode(), nullptr);
-        state.setProperty(hotkeyPropertyPath(binding.actionId, "modifiers"), binding.keyPress.getModifiers().getRawFlags(), nullptr);
-    }
+    hotkeyController.save(audioProcessor.getApvts().state);
 }
 
 void BoomBGeneratorAudioProcessorEditor::restoreDefaultHotkeys()
 {
-    for (auto& binding : hotkeyBindings)
-    {
-        binding.keyPress = binding.defaultKeyPress;
-        binding.mouseModifier = binding.defaultMouseModifier;
-    }
-
+    hotkeyController.restoreDefaults();
     saveHotkeys();
     applyHotkeysToGrid();
 }
@@ -3059,320 +2763,97 @@ void BoomBGeneratorAudioProcessorEditor::applyProcessorProjectMutation(const std
 
 bool BoomBGeneratorAudioProcessorEditor::clearLaneNotes(const RuntimeLaneId& laneId)
 {
-    if (laneId.isEmpty())
-        return false;
-
-    const auto before = audioProcessor.getProjectSnapshot();
-    auto after = before;
-    bool changed = false;
-
-    for (auto& track : after.tracks)
-    {
-        if (track.laneId != laneId)
-            continue;
-
-        changed = changed || !track.notes.empty() || !track.sub808Notes.empty();
-        track.notes.clear();
-        track.sub808Notes.clear();
-        break;
-    }
-
-    if (!changed)
-        return false;
-
-    applyProjectSnapshotChange(before, after, true);
-    grid.clearNoteSelection();
-    sub808PianoRoll.clearNoteSelection();
-    return true;
+    return commandController.clearLaneNotes(laneId,
+                                            [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                            {
+                                                applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                            },
+                                            [this]()
+                                            {
+                                                grid.clearNoteSelection();
+                                                sub808PianoRoll.clearNoteSelection();
+                                            });
 }
 
 bool BoomBGeneratorAudioProcessorEditor::clearAllPatternNotes()
 {
-    const auto before = audioProcessor.getProjectSnapshot();
-    auto after = before;
-    bool changed = false;
-
-    for (auto& track : after.tracks)
-    {
-        changed = changed || !track.notes.empty() || !track.sub808Notes.empty();
-        track.notes.clear();
-        track.sub808Notes.clear();
-    }
-
-    if (!changed)
-    {
-        grid.clearNoteSelection();
-        sub808PianoRoll.clearNoteSelection();
-        return false;
-    }
-
-    applyProjectSnapshotChange(before, after, true);
-    grid.clearNoteSelection();
-    sub808PianoRoll.clearNoteSelection();
-    return true;
+    return commandController.clearAllPatternNotes([this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                                  {
+                                                      applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                                  },
+                                                  [this]()
+                                                  {
+                                                      grid.clearNoteSelection();
+                                                      sub808PianoRoll.clearNoteSelection();
+                                                  });
 }
 
 void BoomBGeneratorAudioProcessorEditor::showImportMidiToLaneDialog(const RuntimeLaneId& laneId)
 {
-    auto chooser = std::make_shared<juce::FileChooser>(
-        "Import MIDI to lane",
-        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
-        "*.mid;*.midi");
-
-    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                         [this, chooser, laneId](const juce::FileChooser& fc)
-                         {
-                             const auto result = fc.getResult();
-                             if (result == juce::File())
-                                 return;
-
-                             const auto before = audioProcessor.getProjectSnapshot();
-                             const auto* lane = findRuntimeLaneById(before.runtimeLaneProfile, laneId);
-                             if (lane == nullptr || !lane->runtimeTrackType.has_value())
-                             {
-                                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                                        "Lane Import",
-                                                                        "This lane is not backed by an instrument track, so MIDI import is unavailable.",
-                                                                        "OK",
-                                                                        this);
-                                 return;
-                             }
-
-                             const auto importResult = MidiImportService::importLaneFromFile(result,
-                                                                                             *lane->runtimeTrackType,
-                                                                                             before.params.bars);
-                             if (!importResult.success)
-                             {
-                                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                                        "Lane Import",
-                                                                        importResult.errorMessage.isNotEmpty() ? importResult.errorMessage : "Failed to import MIDI into this lane.",
-                                                                        "OK",
-                                                                        this);
-                                 return;
-                             }
-
-                             auto after = before;
-                             bool updatedLane = false;
-                             for (auto& track : after.tracks)
-                             {
-                                 if (track.laneId == laneId)
-                                 {
-                                     track.notes = importResult.notes;
-                                     updatedLane = true;
-                                     break;
-                                 }
-                             }
-
-                             if (!updatedLane)
-                             {
-                                 for (auto& track : after.tracks)
-                                 {
-                                     if (track.type == *lane->runtimeTrackType)
-                                     {
-                                         track.notes = importResult.notes;
-                                         updatedLane = true;
-                                         break;
-                                     }
-                                 }
-                             }
-
-                             if (!updatedLane)
-                             {
-                                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                                        "Lane Import",
-                                                                        "Lane track state could not be resolved for MIDI import.",
-                                                                        "OK",
-                                                                        this);
-                                 return;
-                             }
-
-                             applyProjectSnapshotChange(before, after, true);
-
-                             if (importResult.requiredBars > before.params.bars)
-                             {
-                                 juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
-                                                                        "Lane Import",
-                                                                        importResult.summary + "\n\nImported MIDI is longer than the current pattern. Increase Bars to at least "
-                                                                            + juce::String(importResult.requiredBars) + " to view the full lane.",
-                                                                        "OK",
-                                                                        this);
-                             }
-                         });
+    commandController.showImportMidiToLaneDialog(laneId,
+                                                 this,
+                                                 [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                                 {
+                                                     applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                                 });
 }
 
 void BoomBGeneratorAudioProcessorEditor::showRenameLaneDialog(const RuntimeLaneId& laneId)
 {
-    const auto before = audioProcessor.getProjectSnapshot();
-    const auto* lane = findRuntimeLaneById(before.runtimeLaneProfile, laneId);
-    if (lane == nullptr)
-        return;
-
-    auto component = std::make_unique<LaneNameDialogComponent>(lane->laneName);
-    component->onSubmit = [this, laneId](const juce::String& submittedName)
-    {
-        const auto current = audioProcessor.getProjectSnapshot();
-        auto after = current;
-        const auto newLaneName = submittedName.trim();
-        if (!RuntimeLaneLifecycle::renameLane(after, laneId, newLaneName))
-        {
-            juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                                   "Rename Lane",
-                                                   newLaneName.isEmpty() ? "Lane name cannot be empty." : "Lane rename failed.",
-                                                   "OK",
-                                                   this);
-            return;
-        }
-
-        applyProjectSnapshotChange(current, after, true);
-    };
-
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "Rename Lane";
-    options.content.setOwned(component.release());
-    options.componentToCentreAround = this;
-    options.dialogBackgroundColour = juce::Colour::fromRGB(22, 25, 31);
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
-
-    if (auto* window = options.launchAsync())
-        window->setSize(380, 150);
+    commandController.showRenameLaneDialog(laneId,
+                                           this,
+                                           [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                           {
+                                               applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                           });
 }
 
 void BoomBGeneratorAudioProcessorEditor::requestDeleteLane(const RuntimeLaneId& laneId)
 {
-    const auto before = audioProcessor.getProjectSnapshot();
-    const auto* lane = findRuntimeLaneById(before.runtimeLaneProfile, laneId);
-    if (lane == nullptr)
-        return;
-
-    const bool confirmed = juce::NativeMessageBox::showOkCancelBox(juce::MessageBoxIconType::WarningIcon,
-                                                                   "Delete Lane",
-                                                                   "Delete lane '" + lane->laneName + "'?",
-                                                                   this,
-                                                                   nullptr);
-    if (!confirmed)
-        return;
-
-    auto after = before;
-    if (!RuntimeLaneLifecycle::deleteLane(after, laneId))
-        return;
-
-    applyProjectSnapshotChange(before, after, true);
+    commandController.requestDeleteLane(laneId,
+                                        this,
+                                        [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                        {
+                                            applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                        });
 }
 
 void BoomBGeneratorAudioProcessorEditor::showAddLaneMenu()
 {
-    const auto project = audioProcessor.getProjectSnapshot();
-    const auto availableRegistryTypes = RuntimeLaneLifecycle::listAvailableRegistryLaneTypes(project);
-
-    juce::PopupMenu menu;
-    menu.addItem(1, "Add Custom Lane");
-
-    std::vector<TrackType> menuTrackTypes;
-    if (!availableRegistryTypes.empty())
-    {
-        menu.addSeparator();
-        int itemId = 100;
-        for (const auto type : availableRegistryTypes)
-        {
-            const auto* info = TrackRegistry::find(type);
-            menu.addItem(itemId, info != nullptr ? "Add " + info->displayName : "Add Lane");
-            menuTrackTypes.push_back(type);
-            ++itemId;
-        }
-    }
-
-    const auto mousePos = juce::Desktop::getInstance().getMainMouseSource().getScreenPosition().roundToInt();
-    const juce::Rectangle<int> targetArea(mousePos.x, mousePos.y, 1, 1);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(targetArea).withParentComponent(this),
-                       [this, menuTrackTypes](int choice)
-                       {
-                           if (choice <= 0)
-                               return;
-
-                           const auto before = audioProcessor.getProjectSnapshot();
-                           auto after = before;
-                           bool changed = false;
-
-                           if (choice == 1)
-                           {
-                               auto lane = RuntimeLaneLifecycle::createCustomLaneDefinition(after);
-                               changed = RuntimeLaneLifecycle::addLane(after, std::move(lane));
-                           }
-                           else if (choice >= 100)
-                           {
-                               const auto index = static_cast<size_t>(choice - 100);
-                               if (index < menuTrackTypes.size())
-                                   changed = RuntimeLaneLifecycle::addRegistryLane(after, menuTrackTypes[index]);
-                           }
-
-                           if (!changed)
-                               return;
-
-                           applyProjectSnapshotChange(before, after, true);
-                       });
+    commandController.showAddLaneMenu(this,
+                                      [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                      {
+                                          applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                      });
 }
 
 void BoomBGeneratorAudioProcessorEditor::pushProjectHistoryState(const PatternProject& before, const PatternProject& after)
 {
-    lastObservedProjectState = after;
-
-    if (suppressHistory || projectsEquivalent(before, after))
-        return;
-
-    if (!pendingHistoryBefore.has_value())
-        pendingHistoryBefore = before;
-    pendingHistoryAfter = after;
-
-    if (pendingHistoryCommitScheduled)
-        return;
-
-    pendingHistoryCommitScheduled = true;
-    juce::MessageManager::callAsync([safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)]
+    auto safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this);
+    historyController.pushProjectHistoryState(before, after, [safeEditor]
     {
-        if (safeEditor != nullptr)
-            safeEditor->commitPendingProjectHistoryState();
+        juce::MessageManager::callAsync([safeEditor]
+        {
+            if (safeEditor != nullptr)
+                safeEditor->commitPendingProjectHistoryState();
+        });
     });
 }
 
 void BoomBGeneratorAudioProcessorEditor::commitPendingProjectHistoryState()
 {
-    pendingHistoryCommitScheduled = false;
-    if (!pendingHistoryBefore.has_value() || !pendingHistoryAfter.has_value())
-        return;
-
-    const auto before = *pendingHistoryBefore;
-    const auto after = *pendingHistoryAfter;
-    pendingHistoryBefore.reset();
-    pendingHistoryAfter.reset();
-
-    if (suppressHistory || projectsEquivalent(before, after))
-        return;
-
-    undoHistory.push_back(before);
-    redoHistory.clear();
-
-    constexpr size_t kMaxHistoryEntries = 128;
-    if (undoHistory.size() > kMaxHistoryEntries)
-        undoHistory.erase(undoHistory.begin(), undoHistory.begin() + static_cast<std::ptrdiff_t>(undoHistory.size() - kMaxHistoryEntries));
+    historyController.commitPendingProjectHistoryState();
 }
 
 bool BoomBGeneratorAudioProcessorEditor::performUndo()
 {
     commitPendingProjectHistoryState();
-    if (undoHistory.empty())
+    PatternProject snapshot;
+    if (!historyController.performUndo(audioProcessor.getProjectSnapshot(), snapshot))
         return false;
 
-    const auto current = audioProcessor.getProjectSnapshot();
-    auto snapshot = undoHistory.back();
-    undoHistory.pop_back();
-    redoHistory.push_back(current);
-
-    suppressHistory = true;
     audioProcessor.restoreEditorProjectSnapshot(snapshot);
-    suppressHistory = false;
-    lastObservedProjectState = snapshot;
+    historyController.endSuppressedHistoryAction();
     refreshFromProcessor(true);
     return true;
 }
@@ -3380,50 +2861,24 @@ bool BoomBGeneratorAudioProcessorEditor::performUndo()
 bool BoomBGeneratorAudioProcessorEditor::performRedo()
 {
     commitPendingProjectHistoryState();
-    if (redoHistory.empty())
+    PatternProject snapshot;
+    if (!historyController.performRedo(audioProcessor.getProjectSnapshot(), snapshot))
         return false;
 
-    const auto current = audioProcessor.getProjectSnapshot();
-    auto snapshot = redoHistory.back();
-    redoHistory.pop_back();
-    undoHistory.push_back(current);
-
-    suppressHistory = true;
     audioProcessor.restoreEditorProjectSnapshot(snapshot);
-    suppressHistory = false;
-    lastObservedProjectState = snapshot;
+    historyController.endSuppressedHistoryAction();
     refreshFromProcessor(true);
     return true;
 }
 
 bool BoomBGeneratorAudioProcessorEditor::projectsEquivalent(const PatternProject& lhs, const PatternProject& rhs) const
 {
-    auto left = lhs;
-    auto right = rhs;
-    left.generationCounter = 0;
-    right.generationCounter = 0;
-    return PatternProjectSerialization::serialize(left).isEquivalentTo(PatternProjectSerialization::serialize(right));
+    return historyController.projectsEquivalent(lhs, rhs);
 }
 
 juce::String BoomBGeneratorAudioProcessorEditor::hotkeyToDisplayText(const HotkeyBinding& binding) const
 {
-    if (binding.usesMouseModifier)
-    {
-        if (binding.mouseModifier == juce::ModifierKeys::shiftModifier)
-            return "Shift + mouse";
-        if (binding.mouseModifier == juce::ModifierKeys::ctrlModifier)
-            return "Ctrl + mouse";
-        if (binding.mouseModifier == juce::ModifierKeys::altModifier)
-            return "Alt + mouse";
-        if (binding.mouseModifier == juce::ModifierKeys::commandModifier)
-            return "Cmd + mouse";
-        return "(none)";
-    }
-
-    if (!binding.keyPress.isValid())
-        return "(none)";
-
-    return binding.keyPress.getTextDescription();
+    return hotkeyController.hotkeyToDisplayText(binding);
 }
 
 bool BoomBGeneratorAudioProcessorEditor::confirmReplaceConflict(const juce::String& actionName,
@@ -3440,32 +2895,12 @@ bool BoomBGeneratorAudioProcessorEditor::confirmReplaceConflict(const juce::Stri
 
 bool BoomBGeneratorAudioProcessorEditor::tryRebindKeyAction(const juce::String& actionId, const juce::KeyPress& keyPress)
 {
-    auto targetIt = std::find_if(hotkeyBindings.begin(), hotkeyBindings.end(), [&actionId](const HotkeyBinding& binding)
-    {
-        return binding.actionId == actionId;
-    });
-
-    if (targetIt == hotkeyBindings.end() || targetIt->usesMouseModifier)
+    if (!hotkeyController.tryRebindKeyAction(actionId, keyPress, [this](const juce::String& actionName, const juce::String& conflictedActionName, const juce::String& shortcutText)
+        {
+            return confirmReplaceConflict(actionName, conflictedActionName, shortcutText);
+        }))
         return false;
 
-    auto conflictIt = std::find_if(hotkeyBindings.begin(), hotkeyBindings.end(), [&actionId, &keyPress](const HotkeyBinding& binding)
-    {
-        return binding.actionId != actionId
-            && !binding.usesMouseModifier
-            && binding.keyPress.isValid()
-            && binding.keyPress.getKeyCode() == keyPress.getKeyCode()
-            && binding.keyPress.getModifiers().getRawFlags() == keyPress.getModifiers().getRawFlags();
-    });
-
-    if (conflictIt != hotkeyBindings.end())
-    {
-        if (!confirmReplaceConflict(targetIt->displayName, conflictIt->displayName, keyPress.getTextDescription()))
-            return false;
-
-        conflictIt->keyPress = conflictIt->defaultKeyPress;
-    }
-
-    targetIt->keyPress = keyPress;
     saveHotkeys();
     applyHotkeysToGrid();
     return true;
@@ -3473,31 +2908,12 @@ bool BoomBGeneratorAudioProcessorEditor::tryRebindKeyAction(const juce::String& 
 
 bool BoomBGeneratorAudioProcessorEditor::tryRebindMouseModifierAction(const juce::String& actionId, juce::ModifierKeys::Flags modifier)
 {
-    auto targetIt = std::find_if(hotkeyBindings.begin(), hotkeyBindings.end(), [&actionId](const HotkeyBinding& binding)
-    {
-        return binding.actionId == actionId;
-    });
-
-    if (targetIt == hotkeyBindings.end() || !targetIt->usesMouseModifier)
+    if (!hotkeyController.tryRebindMouseModifierAction(actionId, modifier, [this](const juce::String& actionName, const juce::String& conflictedActionName, const juce::String& shortcutText)
+        {
+            return confirmReplaceConflict(actionName, conflictedActionName, shortcutText);
+        }))
         return false;
 
-    auto conflictIt = std::find_if(hotkeyBindings.begin(), hotkeyBindings.end(), [&actionId, modifier](const HotkeyBinding& binding)
-    {
-        return binding.actionId != actionId
-            && binding.usesMouseModifier
-            && binding.mouseModifier == modifier;
-    });
-
-    if (conflictIt != hotkeyBindings.end())
-    {
-        const auto shortcut = hotkeyToDisplayText(*targetIt).replace("(none)", "mouse modifier");
-        if (!confirmReplaceConflict(targetIt->displayName, conflictIt->displayName, shortcut))
-            return false;
-
-        conflictIt->mouseModifier = conflictIt->defaultMouseModifier;
-    }
-
-    targetIt->mouseModifier = modifier;
     saveHotkeys();
     applyHotkeysToGrid();
     return true;
@@ -3505,18 +2921,8 @@ bool BoomBGeneratorAudioProcessorEditor::tryRebindMouseModifierAction(const juce
 
 bool BoomBGeneratorAudioProcessorEditor::resetHotkeyActionToDefault(const juce::String& actionId)
 {
-    auto it = std::find_if(hotkeyBindings.begin(), hotkeyBindings.end(), [&actionId](const HotkeyBinding& binding)
-    {
-        return binding.actionId == actionId;
-    });
-
-    if (it == hotkeyBindings.end())
+    if (!hotkeyController.resetActionToDefault(actionId))
         return false;
-
-    if (it->usesMouseModifier)
-        it->mouseModifier = it->defaultMouseModifier;
-    else
-        it->keyPress = it->defaultKeyPress;
 
     saveHotkeys();
     applyHotkeysToGrid();
@@ -3671,7 +3077,7 @@ void BoomBGeneratorAudioProcessorEditor::showHotkeysMenu()
     auto manager = std::make_unique<HotkeysManagerComponent>();
     manager->requestRows = [this]()
     {
-        return hotkeyBindings;
+        return hotkeyController.getBindings();
     };
     manager->formatShortcut = [this](const HotkeyBinding& binding)
     {
@@ -3718,12 +3124,13 @@ void BoomBGeneratorAudioProcessorEditor::showHotkeysMenu()
 
 void BoomBGeneratorAudioProcessorEditor::showHotkeyActionMenu(const juce::String& actionId, std::function<void()> onDone)
 {
-    auto it = std::find_if(hotkeyBindings.begin(), hotkeyBindings.end(), [&actionId](const HotkeyBinding& binding)
+    const auto& bindings = hotkeyController.getBindings();
+    auto it = std::find_if(bindings.begin(), bindings.end(), [&actionId](const HotkeyBinding& binding)
     {
         return binding.actionId == actionId;
     });
 
-    if (it == hotkeyBindings.end())
+    if (it == bindings.end())
         return;
 
     // ── Mouse-modifier actions: popup with Shift / Ctrl / Alt options ──────────
@@ -3784,43 +3191,17 @@ void BoomBGeneratorAudioProcessorEditor::showHotkeyActionMenu(const juce::String
 
 LaneRackDisplayMode BoomBGeneratorAudioProcessorEditor::laneRackModeForWidth(int width) const
 {
-    if (width <= kRackCompactThreshold)
-        return LaneRackDisplayMode::Minimal;
-    if (width <= kRackFullThreshold)
-        return LaneRackDisplayMode::Compact;
-    return LaneRackDisplayMode::Full;
+    return layoutController.laneRackModeForWidth(width);
 }
 
 void BoomBGeneratorAudioProcessorEditor::loadUiLayoutState()
 {
-    auto& state = audioProcessor.getApvts().state;
-    if (state.hasProperty(kUiLeftWidthProp))
-        uiLayoutState.leftPanelWidth = static_cast<int>(state.getProperty(kUiLeftWidthProp));
-
-    if (state.hasProperty(kUiHeaderModeProp))
-    {
-        const int stored = static_cast<int>(state.getProperty(kUiHeaderModeProp));
-        if (stored == 1)
-            uiLayoutState.headerControlsMode = MainHeaderComponent::HeaderControlsMode::Compact;
-        else if (stored == 2)
-            uiLayoutState.headerControlsMode = MainHeaderComponent::HeaderControlsMode::Hidden;
-        else
-            uiLayoutState.headerControlsMode = MainHeaderComponent::HeaderControlsMode::Expanded;
-    }
+    layoutController.load(audioProcessor.getApvts().state);
 }
 
 void BoomBGeneratorAudioProcessorEditor::saveUiLayoutState()
 {
-    auto& state = audioProcessor.getApvts().state;
-    state.setProperty(kUiLeftWidthProp, uiLayoutState.leftPanelWidth, nullptr);
-
-    int modeValue = 0;
-    if (uiLayoutState.headerControlsMode == MainHeaderComponent::HeaderControlsMode::Compact)
-        modeValue = 1;
-    else if (uiLayoutState.headerControlsMode == MainHeaderComponent::HeaderControlsMode::Hidden)
-        modeValue = 2;
-
-    state.setProperty(kUiHeaderModeProp, modeValue, nullptr);
+    layoutController.save(audioProcessor.getApvts().state);
 }
 
 juce::Point<float> BoomBGeneratorAudioProcessorEditor::toVirtualPoint(juce::Point<float> point) const
@@ -3836,7 +3217,7 @@ void BoomBGeneratorAudioProcessorEditor::setActiveEditorTool(GridEditorComponent
 {
     auto* focusedComponent = juce::Component::getCurrentlyFocusedComponent();
     const bool pianoRollFocused = isPianoRollEditorVisible()
-        && (pianoRollFullscreenMode
+        && (layoutController.isPianoRollFullscreenMode()
             || focusedComponent == &sub808PianoRoll
             || (focusedComponent != nullptr && sub808PianoRoll.isParentOf(focusedComponent)));
 
@@ -3862,8 +3243,8 @@ void BoomBGeneratorAudioProcessorEditor::toggleGridEditorFullscreen()
     if (isAlternateEditorVisible())
         return;
 
-    gridEditorFullscreenMode = !gridEditorFullscreenMode;
-    gridEditorFullscreenButton.setToggleState(gridEditorFullscreenMode, juce::dontSendNotification);
+    layoutController.toggleGridEditorFullscreenMode();
+    gridEditorFullscreenButton.setToggleState(layoutController.isGridEditorFullscreenMode(), juce::dontSendNotification);
     resized();
 }
 
@@ -3875,6 +3256,7 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
 
     if (!shouldShow)
     {
+        layoutController.setPianoRollFullscreenMode(false);
         pianoRollFullscreenButton.setToggleState(false, juce::dontSendNotification);
 
         if (sub808DetachedWindow != nullptr)
@@ -3904,6 +3286,7 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
         sub808DetachedWindow = std::move(window);
     }
 
+    layoutController.setPianoRollFullscreenMode(true);
     pianoRollFullscreenButton.setToggleState(true, juce::dontSendNotification);
 
     if (sub808Viewport.getParentComponent() == this)
@@ -3924,7 +3307,7 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
 
 void BoomBGeneratorAudioProcessorEditor::updateCursorForMousePosition(juce::Point<float> point)
 {
-    if (splitterDragging)
+    if (layoutController.isSplitterDragging())
         return;
 
     const auto virtualPos = toVirtualPoint(point);

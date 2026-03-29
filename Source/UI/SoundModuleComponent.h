@@ -7,6 +7,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "../Core/SoundLayerState.h"
+#include "../Core/SoundTargetDescriptor.h"
 #include "../Core/TrackRegistry.h"
 
 namespace bbg
@@ -20,11 +21,11 @@ public:
     void resized() override;
 
     void setState(const std::vector<TrackState>& tracks,
-                  const std::optional<TrackType>& selectedTarget,
+                  const SoundTargetDescriptor& selectedTarget,
                   const SoundLayerState& soundState);
 
-    std::function<void(const std::optional<TrackType>&)> onSoundTargetChanged;
-    std::function<void(const std::optional<TrackType>&, const SoundLayerState&)> onSoundLayerChanged;
+    std::function<void(const SoundTargetDescriptor&)> onSoundTargetChanged;
+    std::function<void(const SoundTargetDescriptor&, const SoundLayerState&)> onSoundLayerChanged;
 
 private:
     juce::Label titleLabel;
@@ -45,8 +46,8 @@ private:
     juce::Slider transientSlider;
     juce::Slider driveSlider;
 
-    std::vector<TrackType> targetTracks;
-    std::optional<TrackType> currentTarget;
+    std::vector<SoundTargetDescriptor> targetDescriptors;
+    SoundTargetDescriptor currentTarget;
     SoundLayerState currentSoundState;
 
     void setupSlider(juce::Slider& slider,

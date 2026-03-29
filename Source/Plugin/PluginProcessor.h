@@ -9,6 +9,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "../Core/PatternProject.h"
+#include "../Core/SoundTargetDescriptor.h"
 #include "../Core/TransportSnapshot.h"
 #include "../Engine/BoomBapEngine.h"
 #include "../Engine/DrillEngine.h"
@@ -139,9 +140,12 @@ public:
     void setSelectedTrack(const RuntimeLaneId& laneId);
     void setSoundModuleTrack(const std::optional<TrackType>& track);
     std::optional<TrackType> getSoundModuleTrack() const;
+    void setSoundModuleTarget(const SoundTargetDescriptor& descriptor);
+    SoundTargetDescriptor getSoundModuleTarget() const;
     void setTrackSoundLayer(TrackType track, const SoundLayerState& state);
     void setTrackSoundLayer(const RuntimeLaneId& laneId, const SoundLayerState& state);
     void setGlobalSoundLayer(const SoundLayerState& state);
+    void setSoundLayerForTarget(const SoundTargetDescriptor& descriptor, const SoundLayerState& state);
     void setHatFxDragDensity(float density, bool lockDragDensity);
     float getHatFxDragDensity() const;
     bool isHatFxDragDensityLocked() const;
