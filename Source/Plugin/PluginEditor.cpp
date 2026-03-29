@@ -1911,113 +1911,72 @@ void BoomBGeneratorAudioProcessorEditor::refreshSubstyleBindingForGenre()
 
 void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
 {
-    const auto resolveTrackType = [this](const RuntimeLaneId& laneId) -> std::optional<TrackType>
+    trackList.onRegenerateTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto project = audioProcessor.getProjectSnapshot();
-        const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
-        if (lane == nullptr || !lane->runtimeTrackType.has_value())
-            return std::nullopt;
-
-        return lane->runtimeTrackType;
-    };
-
-    trackList.onRegenerateTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
-    {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type]
+        applyProcessorProjectMutation([this, laneId]
         {
-            audioProcessor.regenerateTrack(*type);
+            audioProcessor.regenerateTrack(laneId);
         });
     };
 
-    trackList.onSoloTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
+    trackList.onSoloTrack = [this](const RuntimeLaneId& laneId, bool value)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type, value]
+        applyProcessorProjectMutation([this, laneId, value]
         {
-            audioProcessor.setTrackSolo(*type, value);
+            audioProcessor.setTrackSolo(laneId, value);
         });
     };
 
-    trackList.onMuteTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
+    trackList.onMuteTrack = [this](const RuntimeLaneId& laneId, bool value)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type, value]
+        applyProcessorProjectMutation([this, laneId, value]
         {
-            audioProcessor.setTrackMuted(*type, value);
+            audioProcessor.setTrackMuted(laneId, value);
         });
     };
 
-    trackList.onClearTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onClearTrack = [this](const RuntimeLaneId& laneId)
     {
-        juce::ignoreUnused(resolveTrackType);
         clearLaneNotes(laneId);
     };
 
-    trackList.onLockTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
+    trackList.onLockTrack = [this](const RuntimeLaneId& laneId, bool value)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type, value]
+        applyProcessorProjectMutation([this, laneId, value]
         {
-            audioProcessor.setTrackLocked(*type, value);
+            audioProcessor.setTrackLocked(laneId, value);
         });
     };
 
-    trackList.onEnableTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool value)
+    trackList.onEnableTrack = [this](const RuntimeLaneId& laneId, bool value)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type, value]
+        applyProcessorProjectMutation([this, laneId, value]
         {
-            audioProcessor.setTrackEnabled(*type, value);
+            audioProcessor.setTrackEnabled(laneId, value);
         });
     };
 
-    trackList.onDragTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onDragTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        dragTrackTempMidi(*type);
+        dragTrackTempMidi(laneId);
     };
 
-    trackList.onDragTrackGesture = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onDragTrackGesture = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        dragTrackExternal(*type);
+        dragTrackExternal(laneId);
     };
 
-    trackList.onDragDensityTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, float density)
+    trackList.onDragDensityTrack = [this](const RuntimeLaneId& laneId, float density)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value() || *type != TrackType::HatFX)
+        if (!isHatFxLane(laneId))
             return;
 
         applyHatFxDragDensityFromUi(density, false);
     };
 
-    trackList.onDragDensityLockTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, bool locked)
+    trackList.onDragDensityLockTrack = [this](const RuntimeLaneId& laneId, bool locked)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value() || *type != TrackType::HatFX)
+        if (!isHatFxLane(laneId))
             return;
 
         hatFxDragLockedUi = locked;
@@ -2027,46 +1986,30 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         });
     };
 
-    trackList.onExportTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onExportTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        exportTrack(*type);
+        exportTrack(laneId);
     };
 
-    trackList.onPrevSampleTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onPrevSampleTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type]
+        applyProcessorProjectMutation([this, laneId]
         {
-            audioProcessor.selectPreviousLaneSample(*type);
+            audioProcessor.selectPreviousLaneSample(laneId);
         });
     };
 
-    trackList.onNextSampleTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onNextSampleTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type]
+        applyProcessorProjectMutation([this, laneId]
         {
-            audioProcessor.selectNextLaneSample(*type);
+            audioProcessor.selectNextLaneSample(laneId);
         });
     };
 
-    trackList.onSampleMenuTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onSampleMenuTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        showSampleMenu(*type);
+        showSampleMenu(laneId);
     };
 
     trackList.onImportMidiLaneTrack = [this](const RuntimeLaneId& laneId)
@@ -2074,39 +2017,30 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         showImportMidiToLaneDialog(laneId);
     };
 
-    trackList.onTrackNameClicked = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onTrackNameClicked = [this](const RuntimeLaneId& laneId)
     {
         const auto project = audioProcessor.getProjectSnapshot();
-        juce::ignoreUnused(resolveTrackType);
         audioProcessor.setSelectedTrack(laneId);
         grid.setSelectedTrack(laneId);
         syncAlternateEditorForLane(project, laneId);
     };
 
-    trackList.onLaneVolumeTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, float volume)
+    trackList.onLaneVolumeTrack = [this](const RuntimeLaneId& laneId, float volume)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
-        applyProcessorProjectMutation([this, type, volume]
+        applyProcessorProjectMutation([this, laneId, volume]
         {
-            audioProcessor.setTrackLaneVolume(*type, volume);
+            audioProcessor.setTrackLaneVolume(laneId, volume);
         }, false);
     };
 
-    trackList.onLaneSoundTrack = [this, resolveTrackType](const RuntimeLaneId& laneId, const SoundLayerState& state)
+    trackList.onLaneSoundTrack = [this](const RuntimeLaneId& laneId, const SoundLayerState& state)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
         auto project = audioProcessor.getProjectSnapshot();
         SoundLayerState nextState = state;
 
         for (const auto& track : project.tracks)
         {
-            if (track.type != *type)
+            if (track.laneId != laneId)
                 continue;
 
             nextState.eqTone = track.sound.eqTone;
@@ -2118,9 +2052,9 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
             break;
         }
 
-        applyProcessorProjectMutation([this, type, nextState]
+        applyProcessorProjectMutation([this, laneId, nextState]
         {
-            audioProcessor.setTrackSoundLayer(*type, nextState);
+            audioProcessor.setTrackSoundLayer(laneId, nextState);
         }, false);
     };
 
@@ -2134,21 +2068,13 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         requestDeleteLane(laneId);
     };
 
-    trackList.onLaneMoveUpTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onLaneMoveUpTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
         moveLaneDisplayOrder(laneId, -1);
     };
 
-    trackList.onLaneMoveDownTrack = [this, resolveTrackType](const RuntimeLaneId& laneId)
+    trackList.onLaneMoveDownTrack = [this](const RuntimeLaneId& laneId)
     {
-        const auto type = resolveTrackType(laneId);
-        if (!type.has_value())
-            return;
-
         moveLaneDisplayOrder(laneId, 1);
     };
 
@@ -2410,6 +2336,23 @@ void BoomBGeneratorAudioProcessorEditor::exportFullPattern()
     commandController.exportFullPattern(this);
 }
 
+std::optional<TrackType> BoomBGeneratorAudioProcessorEditor::legacyTrackTypeForLane(const RuntimeLaneId& laneId) const
+{
+    const auto project = audioProcessor.getProjectSnapshot();
+    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+    if (lane == nullptr || !lane->runtimeTrackType.has_value())
+        return std::nullopt;
+
+    return lane->runtimeTrackType;
+}
+
+bool BoomBGeneratorAudioProcessorEditor::isHatFxLane(const RuntimeLaneId& laneId) const
+{
+    const auto project = audioProcessor.getProjectSnapshot();
+    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+    return lane != nullptr && lane->runtimeTrackType == TrackType::HatFX;
+}
+
 void BoomBGeneratorAudioProcessorEditor::exportLoopWav()
 {
     commandController.exportLoopWav(this, logDrag);
@@ -2438,6 +2381,42 @@ void BoomBGeneratorAudioProcessorEditor::dragFullPatternTempMidi()
 void BoomBGeneratorAudioProcessorEditor::dragFullPatternExternal()
 {
     commandController.dragFullPatternExternal(this, logDrag);
+}
+
+void BoomBGeneratorAudioProcessorEditor::exportTrack(const RuntimeLaneId& laneId)
+{
+    const auto type = legacyTrackTypeForLane(laneId);
+    if (!type.has_value())
+        return;
+
+    exportTrack(*type);
+}
+
+void BoomBGeneratorAudioProcessorEditor::showSampleMenu(const RuntimeLaneId& laneId)
+{
+    const auto type = legacyTrackTypeForLane(laneId);
+    if (!type.has_value())
+        return;
+
+    showSampleMenu(*type);
+}
+
+void BoomBGeneratorAudioProcessorEditor::dragTrackTempMidi(const RuntimeLaneId& laneId)
+{
+    const auto type = legacyTrackTypeForLane(laneId);
+    if (!type.has_value())
+        return;
+
+    dragTrackTempMidi(*type);
+}
+
+void BoomBGeneratorAudioProcessorEditor::dragTrackExternal(const RuntimeLaneId& laneId)
+{
+    const auto type = legacyTrackTypeForLane(laneId);
+    if (!type.has_value())
+        return;
+
+    dragTrackExternal(*type);
 }
 
 void BoomBGeneratorAudioProcessorEditor::exportTrack(TrackType type)
