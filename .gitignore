@@ -17,6 +17,14 @@ cmake_install.cmake
 # JUCE generated binaries
 **/*_artefacts/
 
+# Runtime/generated artifacts
+StyleLabReferences/**
+TempMidi/**
+Logs/*.log
+drag.log
+contract-out.txt
+contract-err.txt
+
 # OS
 Thumbs.db
 .DS_Store

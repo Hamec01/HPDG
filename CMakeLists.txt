@@ -209,3 +209,22 @@ target_link_libraries(HPDG_CoreTests
 )
 
 add_test(NAME HPDG_CoreTests COMMAND HPDG_CoreTests)
+
+add_executable(HPDG_LaneBoundaryTests
+    Tests/LaneBoundaryRegressionTests.cpp
+)
+
+target_link_libraries(HPDG_LaneBoundaryTests
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_test(NAME HPDG_LaneBoundaryTests COMMAND HPDG_LaneBoundaryTests)
