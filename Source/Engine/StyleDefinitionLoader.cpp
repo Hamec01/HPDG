@@ -8,6 +8,7 @@
 #include "StyleDefaults.h"
 #include "Trap/TrapStyleProfile.h"
 #include "HiResTiming.h"
+#include "../Core/TrackSemantics.h"
 #include "../Core/TrackRegistry.h"
 
 namespace bbg
@@ -33,27 +34,6 @@ juce::String sanitizePathSegment(const juce::String& input)
 
     cleaned = cleaned.trimCharactersAtStart("_").trimCharactersAtEnd("_");
     return cleaned.isEmpty() ? "Unsorted" : cleaned;
-}
-
-juce::String defaultLaneRoleForTrack(TrackType type)
-{
-    switch (type)
-    {
-        case TrackType::Kick: return "core_pulse";
-        case TrackType::Snare: return "backbeat";
-        case TrackType::HiHat: return "carrier";
-        case TrackType::OpenHat: return "accent";
-        case TrackType::ClapGhostSnare: return "support";
-        case TrackType::GhostKick: return "support";
-        case TrackType::HatFX: return "accent_fx";
-        case TrackType::Ride: return "support";
-        case TrackType::Cymbal: return "crash";
-        case TrackType::Perc: return "texture";
-        case TrackType::Sub808: return "bass_anchor";
-        default: break;
-    }
-
-    return "lane";
 }
 
 std::optional<TrackType> parseTrackTypeToken(const juce::String& text)
@@ -936,7 +916,7 @@ StyleDefinition StyleDefinitionLoader::buildFallback(GenreType genre, int substy
             lane.laneParams.available = true;
             lane.laneParams.enabled = laneDefaults.enabledByDefault;
             lane.laneParams.laneVolume = laneDefaults.volumeDefault;
-            lane.laneParams.laneRole = defaultLaneRoleForTrack(*runtimeLane.runtimeTrackType);
+            lane.laneParams.laneRole = defaultLaneRoleForTrackType(*runtimeLane.runtimeTrackType);
             populateLaneHints(lane, laneDefaults, *runtimeLane.runtimeTrackType);
         }
 

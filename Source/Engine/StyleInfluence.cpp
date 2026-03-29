@@ -1,5 +1,6 @@
 #include "StyleInfluence.h"
 
+#include "../Core/TrackSemantics.h"
 #include "../Core/PatternProjectSerialization.h"
 
 namespace bbg
@@ -235,26 +236,6 @@ TrackState* findTrackByRuntimeType(PatternProject& project, TrackType type)
     return nullptr;
 }
 
-juce::String defaultLaneRoleForTrack(TrackType type)
-{
-    switch (type)
-    {
-        case TrackType::Kick: return "core_pulse";
-        case TrackType::Snare: return "backbeat";
-        case TrackType::HiHat: return "carrier";
-        case TrackType::OpenHat: return "accent";
-        case TrackType::ClapGhostSnare: return "support";
-        case TrackType::GhostKick: return "support";
-        case TrackType::HatFX: return "accent_fx";
-        case TrackType::Ride: return "support";
-        case TrackType::Cymbal: return "crash";
-        case TrackType::Perc: return "texture";
-        case TrackType::Sub808: return "bass_anchor";
-        default: break;
-    }
-
-    return "lane";
-}
 }
 
 ResolvedStyleDefinition StyleInfluenceHelpers::resolveForProject(GenreType genre,
@@ -352,12 +333,12 @@ bool StyleInfluenceHelpers::applyToProject(const ResolvedStyleDefinition& defini
             {
                 track->laneRole = sourceLane.laneParams.laneRole.isNotEmpty()
                     ? sourceLane.laneParams.laneRole
-                    : defaultLaneRoleForTrack(*sourceLane.runtimeTrackType);
+                    : defaultLaneRoleForTrackType(*sourceLane.runtimeTrackType);
             }
         }
         else if (!referenceInfluenceOnly && options.applyLaneRole && track->laneRole.isEmpty())
         {
-            track->laneRole = defaultLaneRoleForTrack(*sourceLane.runtimeTrackType);
+            track->laneRole = defaultLaneRoleForTrackType(*sourceLane.runtimeTrackType);
         }
     }
 

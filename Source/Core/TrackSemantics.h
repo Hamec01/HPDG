@@ -93,4 +93,23 @@ constexpr bool isBassFamily(TrackType type)
 {
     return familyFromTrackType(type) == TrackFamily::BassFamily;
 }
+
+constexpr const char* defaultLaneRoleForTrackType(TrackType type)
+{
+    switch (type)
+    {
+        case TrackType::Kick:           return "core_pulse";
+        case TrackType::Snare:          return "backbeat";
+        case TrackType::HiHat:          return "carrier";
+        case TrackType::OpenHat:        return "accent";
+        case TrackType::ClapGhostSnare: return "support";
+        case TrackType::GhostKick:      return "support";
+        case TrackType::HatFX:          return "accent_fx";
+        case TrackType::Ride:           return "support";
+        case TrackType::Cymbal:         return "crash";
+        case TrackType::Perc:           return "texture";
+        case TrackType::Sub808:         return "bass_anchor";
+        default:                        return "lane";
+    }
+}
 } // namespace bbg

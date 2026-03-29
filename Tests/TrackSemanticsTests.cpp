@@ -2,6 +2,7 @@
 #include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <string_view>
 
 #include "../Source/Core/TrackSemantics.h"
 
@@ -86,6 +87,22 @@ void testHelperParity()
     }
 }
 
+void testDefaultLaneRoleLabels()
+{
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::Kick)) == "core_pulse", "Kick lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::Snare)) == "backbeat", "Snare lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::HiHat)) == "carrier", "HiHat lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::OpenHat)) == "accent", "OpenHat lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::ClapGhostSnare)) == "support", "Clap/GhostSnare lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::GhostKick)) == "support", "GhostKick lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::HatFX)) == "accent_fx", "HatFX lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::Ride)) == "support", "Ride lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::Cymbal)) == "crash", "Cymbal lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::Perc)) == "texture", "Perc lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(TrackType::Sub808)) == "bass_anchor", "Sub808 lane-role label mismatch.");
+    expect(std::string_view(defaultLaneRoleForTrackType(static_cast<TrackType>(kTrackTypeCount))) == "lane", "Default lane-role label mismatch.");
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -111,6 +128,7 @@ int main()
     failures += runTest("Track role mapping", testRoleMapping);
     failures += runTest("Track family mapping", testFamilyMapping);
     failures += runTest("Helper parity", testHelperParity);
+    failures += runTest("Default lane-role labels", testDefaultLaneRoleLabels);
 
     if (failures == 0)
     {
