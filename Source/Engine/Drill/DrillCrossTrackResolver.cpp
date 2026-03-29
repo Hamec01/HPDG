@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <iterator>
 
+#include "../../Core/TrackSemantics.h"
+
 namespace bbg
 {
 namespace
@@ -27,14 +29,6 @@ bool stepHasNote(const TrackState* track, int step, bool nonGhostOnly = false)
     {
         return n.step == step && (!nonGhostOnly || !n.isGhost);
     });
-}
-
-bool isHatFamily(TrackType type)
-{
-    return type == TrackType::HiHat
-        || type == TrackType::HatFX
-        || type == TrackType::OpenHat
-        || type == TrackType::Perc;
 }
 
 int eventWindowIndex(int step)
@@ -69,7 +63,7 @@ void DrillCrossTrackResolver::resolve(PatternProject& project,
         if (mutableTracks.count(track.type) == 0 || track.locked)
             continue;
 
-        if (!isHatFamily(track.type) && track.type != TrackType::Sub808 && track.type != TrackType::GhostKick)
+        if (!bbg::isHatFamily(track.type) && track.type != TrackType::Sub808 && track.type != TrackType::GhostKick)
             continue;
 
         track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)

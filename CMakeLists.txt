@@ -228,3 +228,9 @@ target_link_libraries(HPDG_LaneBoundaryTests
 )
 
 add_test(NAME HPDG_LaneBoundaryTests COMMAND HPDG_LaneBoundaryTests)
+
+add_executable(HPDG_TrackSemanticsTests
+    Tests/TrackSemanticsTests.cpp
+)
+
+add_test(NAME HPDG_TrackSemanticsTests COMMAND HPDG_TrackSemanticsTests)
