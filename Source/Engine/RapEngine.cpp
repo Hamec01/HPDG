@@ -4,6 +4,7 @@
 #include <cmath>
 #include <utility>
 
+#include "../Core/TrackSemantics.h"
 #include "../Core/TrackRegistry.h"
 #include "Rap/LofiRapStyleSpec.h"
 #include "Rap/RapStyleSpec.h"
@@ -67,11 +68,13 @@ const StepFeature* featureAtStep(const AudioFeatureMap& map, int step)
 
 bool isRapHatFamily(TrackType type)
 {
-    return type == TrackType::HiHat
-        || type == TrackType::OpenHat
-        || type == TrackType::Perc
-        || type == TrackType::Ride
-        || type == TrackType::Cymbal;
+    const auto role = roleFromTrackType(type);
+    const auto family = familyFromTrackType(type);
+
+    return role == TrackRole::HiHat
+        || role == TrackRole::OpenHat
+        || role == TrackRole::Perc
+        || family == TrackFamily::CymbalFamily;
 }
 
 void applySampleAwareRapFlavor(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks)
