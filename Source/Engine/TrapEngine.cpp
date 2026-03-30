@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "../Core/TrackSemantics.h"
 #include "../Core/TrackRegistry.h"
 #include "HiResTiming.h"
 #include "StyleInfluence.h"
@@ -53,12 +54,8 @@ const StepFeature* featureAtStep(const AudioFeatureMap& map, int step)
 
 bool isTrapHatFamily(TrackType type)
 {
-    return type == TrackType::HiHat
-        || type == TrackType::HatFX
-        || type == TrackType::OpenHat
-        || type == TrackType::Perc
-        || type == TrackType::Ride
-        || type == TrackType::Cymbal;
+    const auto family = familyFromTrackType(type);
+    return family == TrackFamily::HatFamily || family == TrackFamily::CymbalFamily;
 }
 
 void applySampleAwareTrapFlavor(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks)
