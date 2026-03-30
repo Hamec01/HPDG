@@ -41,6 +41,41 @@ juce::String formatWidthValue(double value)
 {
     return juce::String(static_cast<int>(std::round(value))) + "%";
 }
+
+juce::String helperRoleNameForLane(const RuntimeLaneRowState& state)
+{
+    if (state.runtimeTrackType.has_value())
+    {
+        switch (*state.runtimeTrackType)
+        {
+            case TrackType::GhostKick: return "Kick Ghost";
+            case TrackType::ClapGhostSnare: return "Ghost Snare";
+            case TrackType::HatFX: return "Hat FX";
+            default: break;
+        }
+    }
+
+    if (state.isGhostTrack)
+        return "Ghost";
+
+    if (!state.isCore || state.dependencyName.isNotEmpty())
+        return "Helper";
+
+    return {};
+}
+
+juce::String laneRolePhraseForLane(const RuntimeLaneRowState& state)
+{
+    const auto helperRole = helperRoleNameForLane(state);
+    if (helperRole.isNotEmpty())
+    {
+        if (state.dependencyName.isNotEmpty())
+            return helperRole + " for " + state.dependencyName;
+        return helperRole;
+    }
+
+    return state.isCore ? "Main lane" : "Optional lane";
+}
 }
 
 TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
@@ -74,6 +109,7 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     roleLabel.setJustificationType(juce::Justification::centredLeft);
     roleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(152, 160, 172));
     addAndMakeVisible(roleLabel);
+    helperBadgeText = helperBadgeTextForLane(initialState);
 
     addAndMakeVisible(rgButton);
     addAndMakeVisible(soloButton);
@@ -334,11 +370,7 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     };
 
     updateParameterValueLabels();
-    juce::String tooltip = initialState.groupName;
-    if (initialState.dependencyName.isNotEmpty())
-        tooltip += (tooltip.isNotEmpty() ? " | " : "") + juce::String("Depends on: ") + initialState.dependencyName;
-    tooltip += (tooltip.isNotEmpty() ? " | " : "") + juce::String("Priority: ") + juce::String(initialState.generationPriority);
-    setTooltip(tooltip);
+    setTooltip(tooltipTextForLane(initialState));
     applyDisplayModeVisibility();
 }
 
@@ -356,14 +388,15 @@ void TrackRowComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
     g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f, 1.0f), 6.0f, 1.0f);
 
-    if (displayMode != LaneRackDisplayMode::Minimal && dependencyName.isNotEmpty())
+    if (displayMode != LaneRackDisplayMode::Minimal && helperBadgeText.isNotEmpty())
     {
-        const auto badgeBounds = juce::Rectangle<float>(r.getRight() - 92.0f, r.getY() + 5.0f, 86.0f, 14.0f);
-        g.setColour(juce::Colour::fromRGBA(108, 156, 220, 70));
-        g.fillRoundedRectangle(badgeBounds, 4.0f);
-        g.setColour(juce::Colour::fromRGBA(214, 232, 255, 208));
         g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
-        g.drawText("DEP " + dependencyName.substring(0, 10), badgeBounds.toNearestInt(), juce::Justification::centred, false);
+        const auto badgeWidth = juce::jlimit(52.0f, 112.0f, g.getCurrentFont().getStringWidthFloat(helperBadgeText) + 18.0f);
+        const auto badgeBounds = juce::Rectangle<float>(r.getRight() - badgeWidth - 6.0f, r.getY() + 5.0f, badgeWidth, 14.0f);
+        g.setColour(juce::Colour::fromRGBA(104, 148, 196, 48));
+        g.fillRoundedRectangle(badgeBounds, 4.0f);
+        g.setColour(juce::Colour::fromRGBA(216, 230, 246, 196));
+        g.drawText(helperBadgeText, badgeBounds.toNearestInt(), juce::Justification::centred, false);
     }
 
     if (displayMode == LaneRackDisplayMode::Full && generationPriority > 0)
@@ -597,6 +630,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     isCore = state.isCore;
     supportsDragExport = state.supportsDragExport;
     isGhostTrack = state.isGhostTrack;
+    helperBadgeText = helperBadgeTextForLane(state);
 
     nameLabel.setText(state.laneName, juce::dontSendNotification);
     roleLabel.setText(roleLabelForLane(state), juce::dontSendNotification);
@@ -631,11 +665,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     dragDensitySlider.setEnabled(false);
     dragDensityLockButton.setEnabled(false);
 
-    juce::String tooltip = state.groupName;
-    if (state.dependencyName.isNotEmpty())
-        tooltip += (tooltip.isNotEmpty() ? " | " : "") + juce::String("Depends on: ") + state.dependencyName;
-    tooltip += (tooltip.isNotEmpty() ? " | " : "") + juce::String("Priority: ") + juce::String(state.generationPriority);
-    setTooltip(tooltip);
+    setTooltip(tooltipTextForLane(state));
 }
 
 void TrackRowComponent::setBassControls(int keyRootChoice, int scaleModeChoice)
@@ -886,9 +916,29 @@ juce::String TrackRowComponent::roleLabelForLane(const RuntimeLaneRowState& stat
     juce::StringArray parts;
     if (state.groupName.isNotEmpty())
         parts.add(state.groupName);
-    parts.add(state.isCore ? "Core" : "Optional");
-    if (state.dependencyName.isNotEmpty())
-        parts.add("Depends: " + state.dependencyName);
+    parts.add(laneRolePhraseForLane(state));
+    return parts.joinIntoString(" | ");
+}
+
+juce::String TrackRowComponent::helperBadgeTextForLane(const RuntimeLaneRowState& state)
+{
+    auto badge = helperRoleNameForLane(state);
+    if (badge.isEmpty() && state.dependencyName.isNotEmpty())
+        badge = "For " + state.dependencyName;
+    return badge;
+}
+
+juce::String TrackRowComponent::tooltipTextForLane(const RuntimeLaneRowState& state)
+{
+    juce::StringArray parts;
+    if (state.groupName.isNotEmpty())
+        parts.add(state.groupName);
+
+    parts.add(laneRolePhraseForLane(state));
+
+    if (state.generationPriority > 0)
+        parts.add("Generation order " + juce::String(state.generationPriority));
+
     return parts.joinIntoString(" | ");
 }
 } // namespace bbg

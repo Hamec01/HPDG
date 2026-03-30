@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 
 #include "../Core/PatternProject.h"
+#include "../UI/StyleLabDraftState.h"
 
 namespace bbg
 {
@@ -54,6 +55,9 @@ public:
     static juce::String buildReferenceMetadataJson(const PatternProject& project,
                                                    const StyleLabState& state,
                                                    juce::String* conflictMessage = nullptr);
+
+    static StyleLabReferenceExportResult saveReferencePattern(const StyleLabDraftState& draftState,
+                                                              const StyleLabState& state);
 
     static StyleLabReferenceExportResult saveReferencePattern(const PatternProject& project,
                                                               const StyleLabState& state);

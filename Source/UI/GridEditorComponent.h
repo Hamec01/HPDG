@@ -56,6 +56,13 @@ public:
         OneSixtyFourthTriplet
     };
 
+    enum class LaneHeightPreset
+    {
+        Compact,
+        Normal,
+        Large
+    };
+
     struct EditorRegionState
     {
         std::optional<juce::Range<int>> selectedTickRange;
@@ -162,6 +169,8 @@ private:
     void toggleSelection(const SelectedNoteRef& ref);
     void normalizeSelection();
     void collectDragSnapshots();
+    void updateMarqueeSelection();
+    bool applySelectionVelocityDeltaWithNotify(int deltaVel);
     bool applySelectionVelocityDelta(int deltaVel);
     bool applySelectionVelocityAbsolute(int targetVelocity);
     bool applySelectionVelocityWave(int deltaVel, int currentMouseX);
@@ -219,12 +228,36 @@ private:
     int snapThresholdTicks() const;
     juce::String effectiveSnapLabel() const;
     juce::String currentGridModeLabel() const;
+    void applyLaneHeightPreset(LaneHeightPreset preset);
+    bool toggleLaneCollapsed(const RuntimeLaneId& laneId, std::optional<bool> collapsed = std::nullopt);
+    bool isLaneCollapsed(const RuntimeLaneId& laneId) const;
+    int collapsedLaneHeightPx() const;
+    int laneVisualHeight(const RuntimeLaneId& laneId) const;
+    juce::Rectangle<int> laneRowBounds(int laneIndex) const;
+    std::optional<int> visibleLaneIndexAtY(int y) const;
+    std::optional<RuntimeLaneId> trackForYPosition(int y) const;
+    bool isLanePinned(const RuntimeLaneId& laneId) const;
+    bool toggleLanePinned(const RuntimeLaneId& laneId, std::optional<bool> pinned = std::nullopt);
+    void clearPinnedLanes();
+    bool isLaneEditorMuted(const RuntimeLaneId& laneId) const;
+    bool toggleLaneEditorMuted(const RuntimeLaneId& laneId, std::optional<bool> muted = std::nullopt);
+    void clearEditorMutedLanes();
+    bool setFocusedLane(const std::optional<RuntimeLaneId>& laneId);
+    bool isLaneDimmedByFocus(const RuntimeLaneId& laneId) const;
+    void pruneLocalLaneState();
+    juce::String laneDisplayLabel(const RuntimeLaneId& laneId) const;
+    juce::String laneCompactLabel(const RuntimeLaneId& laneId) const;
+    juce::String laneGroupLabel(const RuntimeLaneId& laneId) const;
+    juce::Colour laneTintColour(const RuntimeLaneId& laneId) const;
+    bool isHelperLane(const RuntimeLaneId& laneId) const;
+    bool applyAutoCollapseHelperLanesNow();
     void notifyGridModeDisplayChanged();
     int snapTicksForCurrentResolution() const;
     int ticksForGridResolution() const;
     GridGeometry makeGeometry() const;
     GridEditActions::ModelContext makeModelContext();
     GridEditActions::TimelineContext makeTimelineContext();
+    std::vector<RuntimeLaneId> baseVisibleLaneIds() const;
     std::vector<RuntimeLaneId> orderedVisibleLaneIds() const;
     RuntimeLaneId resolvedEditableLaneId(const RuntimeLaneId& laneId) const;
 
@@ -239,6 +272,14 @@ private:
     float stepWidth = 20.0f;
     int laneHeight = 30;
     int rulerHeight = 24;
+    LaneHeightPreset laneHeightPreset = LaneHeightPreset::Normal;
+    bool laneGroupTintEnabled = true;
+    bool autoCollapseHelperLanes = false;
+    bool strongBarBeatAccents = false;
+    std::set<RuntimeLaneId> pinnedLaneIds;
+    std::set<RuntimeLaneId> editorMutedLaneIds;
+    std::optional<RuntimeLaneId> focusedLaneId;
+    std::set<RuntimeLaneId> collapsedLaneIds;
     GridResolution gridResolution = GridResolution::OneSixteenth;
     std::vector<RuntimeLaneId> laneDisplayOrder;
     RuntimeLaneId selectedTrack;

@@ -90,6 +90,18 @@ constexpr auto kActionRoleClear = "semantic_role_clear";
 constexpr auto kActionZoomToSelection = "zoom_to_selection";
 constexpr auto kActionZoomToPattern = "zoom_to_pattern";
 
+juce::String sub808ViewModeName(BoomBGeneratorAudioProcessorEditor::Sub808ViewMode mode)
+{
+    switch (mode)
+    {
+        case BoomBGeneratorAudioProcessorEditor::Sub808ViewMode::Docked: return "Dock";
+        case BoomBGeneratorAudioProcessorEditor::Sub808ViewMode::Split: return "Split";
+        case BoomBGeneratorAudioProcessorEditor::Sub808ViewMode::Detached: return "Detach";
+        case BoomBGeneratorAudioProcessorEditor::Sub808ViewMode::Hidden:
+        default: return "Hide";
+    }
+}
+
 class SplitterHandleComponent final : public juce::Component
 {
 public:
@@ -638,6 +650,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     addAndMakeVisible(editorToolBar);
     addAndMakeVisible(optionsToolButton);
     addAndMakeVisible(hotkeysToolButton);
+    addAndMakeVisible(sub808ViewModeButton);
     addAndMakeVisible(pianoRollFullscreenButton);
     addAndMakeVisible(gridEditorFullscreenButton);
 
@@ -796,6 +809,12 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     {
         showHotkeysMenu();
     };
+    sub808ViewModeButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(48, 56, 68));
+    sub808ViewModeButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(215, 223, 235));
+    sub808ViewModeButton.onClick = [this]
+    {
+        showSub808ViewModeMenu();
+    };
     pianoRollFullscreenButton.setButtonText("Window");
     pianoRollFullscreenButton.setClickingTogglesState(true);
     pianoRollFullscreenButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(98, 152, 220));
@@ -816,6 +835,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     grid.setEditorTool(GridEditorComponent::EditorTool::Pencil);
     syncEditorToolButtons(GridEditorComponent::EditorTool::Pencil);
     setupHotkeys();
+    updateSub808ViewVisibility();
 
     header.onGeneratePressed = [this]
     {
@@ -1249,6 +1269,26 @@ bool BoomBGeneratorAudioProcessorEditor::keyPressed(const juce::KeyPress& key, j
     if (isKeyForAction(kActionRoleClear) && grid.setSelectionSemanticRole({}))
         return true;
 
+    const bool plainFitKey = (key.getKeyCode() == 'F' || key.getKeyCode() == 'f')
+        && !key.getModifiers().isCtrlDown()
+        && !key.getModifiers().isAltDown()
+        && !key.getModifiers().isCommandDown();
+    if (plainFitKey)
+    {
+        if (dynamic_cast<juce::TextEditor*>(juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+            return false;
+
+        if (key.getModifiers().isShiftDown())
+        {
+            if (!zoomGridToSelection())
+                zoomGridToPattern();
+            return true;
+        }
+
+        zoomGridToPattern();
+        return true;
+    }
+
     if (isKeyForAction(kActionZoomToSelection) && zoomGridToSelection())
         return true;
 
@@ -1526,11 +1566,24 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         bottomArea.removeFromLeft(kPaneGap + kSplitterHitWidth + kPaneGap);
         analysisPanel.setBounds(leftColumn);
 
-        if (alternateEditorVisible)
+        const bool inlineSub808Visible = canShowSub808Editor()
+            && !sub808DetachedVisible
+            && (sub808ViewMode == Sub808ViewMode::Docked || sub808ViewMode == Sub808ViewMode::Split);
+
+        if (inlineSub808Visible)
         {
-            soundModule.setVisible(false);
-            soundModule.setBounds({});
-            sub808Viewport.setBounds(bottomArea);
+            auto soundArea = bottomArea;
+            const int requestedSub808Height = sub808ViewMode == Sub808ViewMode::Split
+                ? juce::jmax(160, bottomArea.getHeight() / 2)
+                : juce::jmax(130, bottomArea.getHeight() / 4);
+            const int sub808Height = juce::jlimit(120, juce::jmax(120, bottomArea.getHeight() - 120), requestedSub808Height);
+
+            soundArea.removeFromBottom(sub808Height + kPaneGap);
+            auto sub808Area = bottomArea.removeFromBottom(sub808Height);
+            soundModule.setBounds(soundArea);
+            soundModule.setVisible(!soundArea.isEmpty());
+            sub808Viewport.setBounds(sub808Area);
+            sub808Viewport.setVisible(!sub808Area.isEmpty());
         }
         else
         {
@@ -1539,6 +1592,7 @@ void BoomBGeneratorAudioProcessorEditor::resized()
                 sub808Viewport.setVisible(false);
                 sub808Viewport.setBounds({});
             }
+
             soundModule.setBounds(bottomArea);
             soundModule.setVisible(!bottomArea.isEmpty());
         }
@@ -1557,19 +1611,25 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         hotkeysToolButton.setVisible(false);
     }
 
+    const int modeButtonWidth = 42;
     const int fullscreenButtonWidth = 60;
     const int fullscreenButtonHeight = 24;
     const auto gridViewportInEditor = gridViewport.getBounds().translated(laneSurface.getX(), laneSurface.getY());
     const auto pianoViewportInEditor = sub808DetachedVisible ? juce::Rectangle<int>{} : sub808Viewport.getBounds();
+    const auto sub808ButtonAnchor = !pianoViewportInEditor.isEmpty() ? pianoViewportInEditor : soundModule.getBounds();
     const int gridFullscreenButtonX = juce::jmax(0, gridViewportInEditor.getRight() - fullscreenButtonWidth - 8);
     const int gridFullscreenButtonY = juce::jmax(0, gridViewportInEditor.getY() + 6);
-    const int pianoFullscreenButtonX = juce::jmax(0, pianoViewportInEditor.getRight() - fullscreenButtonWidth - 8);
-    const int pianoFullscreenButtonY = juce::jmax(0, pianoViewportInEditor.getY() + 6);
+    const int pianoFullscreenButtonX = juce::jmax(0, sub808ButtonAnchor.getRight() - fullscreenButtonWidth - 8);
+    const int pianoFullscreenButtonY = juce::jmax(0, sub808ButtonAnchor.getY() + 6);
+    const int sub808ModeButtonX = juce::jmax(0, sub808ButtonAnchor.getRight() - modeButtonWidth - fullscreenButtonWidth - 12);
+    const int sub808ModeButtonY = juce::jmax(0, sub808ButtonAnchor.getY() + 6);
 
     gridEditorFullscreenButton.setBounds(gridFullscreenButtonX, gridFullscreenButtonY, fullscreenButtonWidth, fullscreenButtonHeight);
     pianoRollFullscreenButton.setBounds(pianoFullscreenButtonX, pianoFullscreenButtonY, fullscreenButtonWidth, fullscreenButtonHeight);
+    sub808ViewModeButton.setBounds(sub808ModeButtonX, sub808ModeButtonY, modeButtonWidth, fullscreenButtonHeight);
     gridEditorFullscreenButton.setVisible(laneSurface.isVisible() && !gridViewportInEditor.isEmpty() && !pianoRollFullscreenMode);
     pianoRollFullscreenButton.setVisible(isPianoRollEditorVisible() && (sub808DetachedVisible || !pianoViewportInEditor.isEmpty()));
+    sub808ViewModeButton.setVisible(canShowSub808Editor() && (!sub808ButtonAnchor.isEmpty() || sub808DetachedVisible));
 
     updateGridGeometry();
 
@@ -1594,6 +1654,7 @@ void BoomBGeneratorAudioProcessorEditor::resized()
     editorToolBar.setTransform(transform);
     optionsToolButton.setTransform(transform);
     hotkeysToolButton.setTransform(transform);
+    sub808ViewModeButton.setTransform(transform);
     pianoRollFullscreenButton.setTransform(transform);
     gridEditorFullscreenButton.setTransform(transform);
 
@@ -2555,6 +2616,11 @@ bool BoomBGeneratorAudioProcessorEditor::isAlternateEditorVisible() const
 
 bool BoomBGeneratorAudioProcessorEditor::isPianoRollEditorVisible() const
 {
+    return canShowSub808Editor() && sub808ViewMode != Sub808ViewMode::Hidden;
+}
+
+bool BoomBGeneratorAudioProcessorEditor::canShowSub808Editor() const
+{
     return alternateEditorSession.isVisible && alternateEditorSession.editorType == AlternateLaneEditor::PianoRoll;
 }
 
@@ -2622,22 +2688,19 @@ void BoomBGeneratorAudioProcessorEditor::setAlternateEditorVisible(bool shouldSh
         layoutController.setPianoRollFullscreenMode(false);
     gridEditorFullscreenButton.setToggleState(false, juce::dontSendNotification);
 
-    if (!isPianoRollEditorVisible())
+    if (!canShowSub808Editor())
         setSub808DetachedWindowVisible(false);
 
-    sub808Viewport.setVisible(isPianoRollEditorVisible());
+    updateSub808ViewVisibility();
 
     if (auto* component = activeAlternateEditorComponent())
     {
         component->setWantsKeyboardFocus(true);
-        component->grabKeyboardFocus();
+        if (isPianoRollEditorVisible())
+            component->grabKeyboardFocus();
     }
 
-    editorToolBar.setVisible(!isPianoRollEditorVisible());
-    optionsToolButton.setVisible(!isPianoRollEditorVisible());
-    hotkeysToolButton.setVisible(!isPianoRollEditorVisible());
-    pianoRollFullscreenButton.setVisible(isPianoRollEditorVisible());
-    resized();
+    updateSub808Layout();
 }
 
 void BoomBGeneratorAudioProcessorEditor::setupHotkeys()
@@ -2955,38 +3018,56 @@ void BoomBGeneratorAudioProcessorEditor::showStyleLabWindow()
     if (!styleLabState.has_value())
         styleLabState = buildDefaultStyleLabState();
 
-    auto component = std::make_unique<StyleLabComponent>(*styleLabState);
+    if (!styleLabDraftState.has_value())
+        styleLabDraftState = StyleLabDraftState {};
+
+    auto component = std::make_unique<StyleLabComponent>(*styleLabState, *styleLabDraftState);
     component->onStateChanged = [this](const StyleLabState& state)
     {
         styleLabState = state;
     };
-    component->onSaveReferencePattern = [this, safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)](const StyleLabState& state)
+    component->onDraftStateChanged = [this](const StyleLabDraftState& draftState)
+    {
+        styleLabDraftState = draftState;
+    };
+    component->onCaptureCurrentPattern = [this]() -> std::optional<PatternProject>
+    {
+        return audioProcessor.getProjectSnapshot();
+    };
+    component->onSaveReferencePattern = [this, safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)](const StyleLabState& state,
+                                                                                                                               const StyleLabDraftState& draftState,
+                                                                                                                               juce::String& statusMessage) -> bool
     {
         styleLabState = state;
+        styleLabDraftState = draftState;
 
-        const auto result = StyleLabReferenceService::saveReferencePattern(audioProcessor.getProjectSnapshot(), state);
+        const auto result = StyleLabReferenceService::saveReferencePattern(draftState, state);
         if (safeEditor == nullptr)
-            return;
+            return result.success;
 
         if (!result.success)
         {
+            statusMessage = result.errorMessage.isNotEmpty() ? result.errorMessage : "Failed to save Style Lab reference draft.";
             juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                    "Style Lab",
-                                                   result.errorMessage.isNotEmpty() ? result.errorMessage : "Failed to save Style Lab reference pattern.",
+                                                   statusMessage,
                                                    "OK",
                                                    safeEditor.getComponent());
-            return;
+            return false;
         }
 
-        juce::String message = "Reference saved to:\n" + result.directory.getFullPathName();
+        juce::String message = "Reference saved from the captured draft to:\n" + result.directory.getFullPathName();
         if (result.conflictMessage.isNotEmpty())
             message << "\n\n" << result.conflictMessage;
+
+        statusMessage = message;
 
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::InfoIcon,
                                                "Style Lab",
                                                message,
                                                "OK",
                                                safeEditor.getComponent());
+        return true;
     };
 
     juce::DialogWindow::LaunchOptions options;
@@ -3162,13 +3243,79 @@ void BoomBGeneratorAudioProcessorEditor::setActiveEditorTool(GridEditorComponent
     syncEditorToolButtons(tool);
 }
 
+void BoomBGeneratorAudioProcessorEditor::setSub808ViewMode(Sub808ViewMode mode)
+{
+    if (mode == Sub808ViewMode::Docked || mode == Sub808ViewMode::Split)
+        sub808LastInlineViewMode = mode;
+
+    sub808ViewMode = mode;
+    updateSub808ViewVisibility();
+    updateSub808Layout();
+}
+
+void BoomBGeneratorAudioProcessorEditor::updateSub808ViewVisibility()
+{
+    const bool wantDetached = canShowSub808Editor() && sub808ViewMode == Sub808ViewMode::Detached;
+    setSub808DetachedWindowVisible(wantDetached);
+
+    if (!wantDetached)
+    {
+        if (sub808Viewport.getParentComponent() != this)
+            addAndMakeVisible(sub808Viewport);
+
+        const bool wantInline = canShowSub808Editor()
+            && (sub808ViewMode == Sub808ViewMode::Docked || sub808ViewMode == Sub808ViewMode::Split);
+        sub808Viewport.setVisible(wantInline);
+    }
+
+    sub808ViewModeButton.setTooltip("Sub808 view: " + sub808ViewModeName(sub808ViewMode));
+    pianoRollFullscreenButton.setTooltip(sub808ViewMode == Sub808ViewMode::Detached
+                                             ? "Restore previous Sub808 inline mode"
+                                             : "Open Sub808 in a detached window");
+}
+
+void BoomBGeneratorAudioProcessorEditor::updateSub808Layout()
+{
+    resized();
+}
+
+void BoomBGeneratorAudioProcessorEditor::showSub808ViewModeMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, "Hide", true, sub808ViewMode == Sub808ViewMode::Hidden);
+    menu.addItem(2, "Dock", true, sub808ViewMode == Sub808ViewMode::Docked);
+    menu.addItem(3, "Split", true, sub808ViewMode == Sub808ViewMode::Split);
+    menu.addItem(4, "Detach", true, sub808ViewMode == Sub808ViewMode::Detached);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&sub808ViewModeButton).withParentComponent(this),
+                       [this](int choice)
+                       {
+                           switch (choice)
+                           {
+                               case 2: setSub808ViewMode(Sub808ViewMode::Docked); break;
+                               case 3: setSub808ViewMode(Sub808ViewMode::Split); break;
+                               case 4: setSub808ViewMode(Sub808ViewMode::Detached); break;
+                               case 1:
+                               default: setSub808ViewMode(Sub808ViewMode::Hidden); break;
+                           }
+                       });
+}
+
 void BoomBGeneratorAudioProcessorEditor::toggleSub808PianoRollFullscreen()
 {
-    if (!isPianoRollEditorVisible())
+    if (!canShowSub808Editor())
         return;
 
-    const bool shouldShow = !(sub808DetachedWindow != nullptr && sub808DetachedWindow->isVisible());
-    setSub808DetachedWindowVisible(shouldShow);
+    if (sub808ViewMode == Sub808ViewMode::Detached)
+    {
+        setSub808ViewMode(sub808LastInlineViewMode);
+        return;
+    }
+
+    if (sub808ViewMode == Sub808ViewMode::Docked || sub808ViewMode == Sub808ViewMode::Split)
+        sub808LastInlineViewMode = sub808ViewMode;
+
+    setSub808ViewMode(Sub808ViewMode::Detached);
 }
 
 void BoomBGeneratorAudioProcessorEditor::toggleGridEditorFullscreen()
@@ -3194,6 +3341,7 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
 
         if (sub808DetachedWindow != nullptr)
         {
+            sub808DetachedWindowBounds = sub808DetachedWindow->getBounds();
             sub808DetachedWindow->clearContentComponent();
             sub808DetachedWindow->setVisible(false);
         }
@@ -3201,12 +3349,13 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
         if (sub808Viewport.getParentComponent() != this)
             addAndMakeVisible(sub808Viewport);
 
-        sub808Viewport.setVisible(isPianoRollEditorVisible());
+        sub808Viewport.setVisible(canShowSub808Editor()
+                                  && (sub808ViewMode == Sub808ViewMode::Docked || sub808ViewMode == Sub808ViewMode::Split));
         resized();
         return;
     }
 
-    if (!isPianoRollEditorVisible())
+    if (!canShowSub808Editor())
         return;
 
     if (sub808DetachedWindow == nullptr)
@@ -3214,7 +3363,7 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
         auto window = std::make_unique<DetachedSub808Window>();
         window->onCloseRequested = [this]
         {
-            setSub808DetachedWindowVisible(false);
+            setSub808ViewMode(sub808LastInlineViewMode);
         };
         sub808DetachedWindow = std::move(window);
     }
@@ -3228,9 +3377,16 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
         parent->removeChildComponent(&sub808Viewport);
 
     sub808DetachedWindow->setContentNonOwned(&sub808Viewport, false);
-    sub808DetachedWindow->centreAroundComponent(this,
-                                                juce::jmax(720, getWidth() - 80),
-                                                juce::jmax(520, getHeight() - 60));
+    if (sub808DetachedWindowBounds.isEmpty())
+    {
+        sub808DetachedWindow->centreAroundComponent(this,
+                                                    juce::jmax(720, getWidth() - 80),
+                                                    juce::jmax(520, getHeight() - 60));
+    }
+    else
+    {
+        sub808DetachedWindow->setBounds(sub808DetachedWindowBounds);
+    }
     sub808DetachedWindow->setVisible(true);
     sub808DetachedWindow->toFront(true);
     sub808Viewport.setVisible(true);

@@ -16,6 +16,7 @@
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
 #include "../UI/SoundModuleComponent.h"
+#include "../UI/StyleLabDraftState.h"
 #include "../UI/Sub808PianoRollComponent.h"
 #include "../UI/TrackListComponent.h"
 
@@ -28,6 +29,14 @@ class BoomBGeneratorAudioProcessorEditor final : public juce::AudioProcessorEdit
 public:
     using HotkeyBinding = HotkeyController::Binding;
     using UiLayoutState = EditorLayoutController::State;
+
+    enum class Sub808ViewMode
+    {
+        Hidden,
+        Docked,
+        Split,
+        Detached
+    };
 
     struct AlternateEditorSession
     {
@@ -121,12 +130,17 @@ private:
     void setActiveEditorTool(GridEditorComponent::EditorTool tool);
     void toggleSub808PianoRollFullscreen();
     void toggleGridEditorFullscreen();
+    void setSub808ViewMode(Sub808ViewMode mode);
+    void updateSub808ViewVisibility();
+    void updateSub808Layout();
     void setSub808DetachedWindowVisible(bool shouldShow);
+    void showSub808ViewModeMenu();
     void updateCursorForMousePosition(juce::Point<float> point);
     bool isStandaloneWindowMaximized() const;
     void toggleStandaloneWindowMaximize();
     bool isAlternateEditorVisible() const;
     bool isPianoRollEditorVisible() const;
+    bool canShowSub808Editor() const;
     juce::Component* activeAlternateEditorComponent();
     const juce::Component* activeAlternateEditorComponent() const;
 
@@ -146,6 +160,7 @@ private:
     juce::TextButton eraseToolButton { "Erase" };
     juce::TextButton optionsToolButton { "Options" };
     juce::TextButton hotkeysToolButton { "Hotkeys" };
+    juce::TextButton sub808ViewModeButton { "808" };
     juce::TextButton pianoRollFullscreenButton { "Full" };
     juce::TextButton gridEditorFullscreenButton { "Full" };
     juce::Viewport gridViewport;
@@ -154,8 +169,11 @@ private:
     Sub808PianoRollComponent sub808PianoRoll;
     float horizontalZoom = 1.0f;
     int laneHeight = 30;
+    Sub808ViewMode sub808ViewMode = Sub808ViewMode::Hidden;
+    Sub808ViewMode sub808LastInlineViewMode = Sub808ViewMode::Hidden;
     AlternateEditorSession alternateEditorSession;
     std::unique_ptr<juce::DocumentWindow> sub808DetachedWindow;
+    juce::Rectangle<int> sub808DetachedWindowBounds;
     int lastGenerationCounter = -1;
     juce::Rectangle<int> standaloneRestoreBounds;
     EditorLayoutController layoutController;
@@ -170,6 +188,7 @@ private:
     float hatFxDragDensityUi = 1.0f;
     bool hatFxDragLockedUi = false;
     std::optional<StyleLabState> styleLabState;
+    std::optional<StyleLabDraftState> styleLabDraftState;
     std::vector<RuntimeLaneId> laneDisplayOrder;
     GridEditorComponent::EditorRegionState editorRegionState;
 

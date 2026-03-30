@@ -199,6 +199,7 @@ juce::String semanticRoleBadge(const juce::String& role)
 void GridEditorComponent::setProject(const PatternProject& value)
 {
     project = value;
+    pruneLocalLaneState();
     selectedTrack = resolvedEditableLaneId(selectedTrack);
     previewStartStep = std::max(0, project.previewStartStep);
     previewStartTick = previewStartStep * ticksPerStep();
@@ -228,6 +229,13 @@ void GridEditorComponent::setLaneHeight(int height)
         return;
 
     laneHeight = next;
+    if (laneHeight <= 26)
+        laneHeightPreset = LaneHeightPreset::Compact;
+    else if (laneHeight >= 38)
+        laneHeightPreset = LaneHeightPreset::Large;
+    else
+        laneHeightPreset = LaneHeightPreset::Normal;
+
     invalidateStaticCache();
     repaint();
 }
@@ -246,6 +254,7 @@ void GridEditorComponent::setGridResolution(GridResolution resolution)
 void GridEditorComponent::setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order)
 {
     laneDisplayOrder = order;
+    pruneLocalLaneState();
     selectedTrack = resolvedEditableLaneId(selectedTrack);
     refreshEditorRegionState();
     invalidateStaticCache();
@@ -277,10 +286,11 @@ int GridEditorComponent::velocityFromY(int y, const RuntimeLaneId& laneId) const
     if (row < 0)
         return 100;
 
-    const int laneTop = rulerHeight + row * laneHeight;
-    const int laneBottom = laneTop + laneHeight - 1;
+    const auto rowBounds = laneRowBounds(row);
+    const int laneTop = rowBounds.getY();
+    const int laneBottom = rowBounds.getBottom() - 1;
     const float normalized = 1.0f - (static_cast<float>(juce::jlimit(laneTop, laneBottom, y) - laneTop)
-        / static_cast<float>(juce::jmax(1, laneHeight - 1)));
+        / static_cast<float>(juce::jmax(1, rowBounds.getHeight() - 1)));
     return juce::jlimit(1, 127, static_cast<int>(std::round(1.0f + normalized * 126.0f)));
 }
 
@@ -750,7 +760,10 @@ int GridEditorComponent::getGridWidth() const
 
 int GridEditorComponent::getGridHeight() const
 {
-    return rulerHeight + static_cast<int>(orderedVisibleLaneIds().size()) * laneHeight;
+    int height = rulerHeight;
+    for (const auto& laneId : orderedVisibleLaneIds())
+        height += laneVisualHeight(laneId);
+    return height;
 }
 
 void GridEditorComponent::paint(juce::Graphics& g)
@@ -762,7 +775,8 @@ void GridEditorComponent::paint(juce::Graphics& g)
     auto area = getLocalBounds();
     const int bars = std::max(1, project.params.bars);
     const int steps = bars * 16;
-    const int tracksCount = (getGridHeight() - rulerHeight) / laneHeight;
+    const auto laneIds = orderedVisibleLaneIds();
+    const int tracksCount = static_cast<int>(laneIds.size());
 
     if (steps <= 0 || tracksCount <= 0)
         return;
@@ -794,15 +808,9 @@ void GridEditorComponent::paint(juce::Graphics& g)
         g.drawLine(loopStartX, 1.0f, loopStartX, static_cast<float>(getHeight()), 1.4f);
         g.drawLine(loopEndX, 1.0f, loopEndX, static_cast<float>(getHeight()), 1.4f);
 
-        g.setColour(juce::Colour::fromRGB(236, 248, 255));
-        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        g.drawText("LOOP",
-                   loopRuler.toNearestInt().reduced(8, 0),
-                   juce::Justification::centredLeft,
-                   false);
     }
 
-    for (const auto& laneId : orderedVisibleLaneIds())
+    for (const auto& laneId : laneIds)
     {
         const auto* track = findTrack(laneId);
         if (track == nullptr)
@@ -812,6 +820,10 @@ void GridEditorComponent::paint(juce::Graphics& g)
         if (row < 0)
             continue;
 
+        const auto rowBounds = laneRowBounds(row);
+        const bool laneCollapsed = isLaneCollapsed(laneId);
+        juce::ignoreUnused(rowBounds, laneCollapsed);
+
         for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
         {
             const auto& note = track->notes[static_cast<size_t>(i)];
@@ -819,22 +831,41 @@ void GridEditorComponent::paint(juce::Graphics& g)
             const auto noteRect = boundsInt.toFloat();
             const bool noteIsSelected = isSelected(SelectedNoteRef{ laneId, i });
             const bool renderVelocityWave = velocityPreviewActive && (laneId == velocityPreviewTrack || noteIsSelected);
+            const bool laneDimmed = isLaneDimmedByFocus(laneId);
+            const bool laneMuted = isLaneEditorMuted(laneId);
+            const float laneNoteAlpha = laneDimmed ? 0.34f : (laneMuted ? 0.52f : 1.0f);
 
             const float normVel = juce::jlimit(0.0f, 1.0f, static_cast<float>(note.velocity) / 127.0f);
             const auto color = note.isGhost
                 ? juce::Colour::fromRGB(120, 176, 255).withAlpha(0.45f + 0.45f * normVel)
                 : juce::Colour::fromRGB(255, 164, 74).withAlpha(0.4f + 0.5f * normVel);
-            const auto fillColour = noteIsSelected
+            auto fillColour = noteIsSelected
                 ? color.brighter(0.28f).withAlpha(0.92f)
                 : color;
-            const auto outlineColour = noteIsSelected
+            auto outlineColour = noteIsSelected
                 ? juce::Colour::fromRGB(255, 236, 178).withAlpha(0.98f)
                 : color.brighter(0.35f).withAlpha(0.72f);
 
+            if (laneMuted)
+            {
+                fillColour = fillColour.interpolatedWith(juce::Colour::fromRGB(132, 138, 148), 0.45f);
+                outlineColour = outlineColour.interpolatedWith(juce::Colour::fromRGB(156, 164, 176), 0.4f);
+            }
+
+            fillColour = fillColour.withMultipliedAlpha(laneNoteAlpha);
+            outlineColour = outlineColour.withMultipliedAlpha(laneDimmed ? 0.48f : (laneMuted ? 0.68f : 1.0f));
+
+            if (noteIsSelected)
+            {
+                g.setColour(fillColour.withAlpha(laneCollapsed ? 0.18f : 0.24f));
+                g.fillRoundedRectangle(noteRect.expanded(2.0f, laneCollapsed ? 0.5f : 1.5f), laneCollapsed ? 2.0f : 3.5f);
+            }
+
             if (renderVelocityWave)
             {
-                const float laneBottom = static_cast<float>(rulerHeight + row * laneHeight + laneHeight - 3);
-                const float waveHeight = juce::jmax(4.0f, normVel * static_cast<float>(laneHeight - 6));
+                const float laneBottom = static_cast<float>(rowBounds.getBottom() - 2);
+                const float waveHeight = juce::jmax(laneCollapsed ? 3.0f : 4.0f,
+                                                    normVel * static_cast<float>(juce::jmax(4, rowBounds.getHeight() - (laneCollapsed ? 3 : 6))));
                 const auto waveRect = juce::Rectangle<float>(noteRect.getX(), laneBottom - waveHeight, noteRect.getWidth(), waveHeight);
                 g.setColour(fillColour.withAlpha(noteIsSelected ? 0.94f : 0.8f));
                 g.fillRoundedRectangle(waveRect, 2.0f);
@@ -848,9 +879,17 @@ void GridEditorComponent::paint(juce::Graphics& g)
                 g.setColour(fillColour);
                 g.fillRoundedRectangle(noteRect, 2.0f);
 
+                g.setColour(noteIsSelected ? juce::Colour::fromRGBA(255, 252, 232, 92)
+                                           : juce::Colour::fromRGBA(255, 255, 255, laneCollapsed ? 18 : 26));
+                g.fillRoundedRectangle(juce::Rectangle<float>(noteRect.getX() + 1.0f,
+                                                              noteRect.getY() + 1.0f,
+                                                              juce::jmax(1.0f, juce::jmin(6.0f, noteRect.getWidth() - 2.0f)),
+                                                              juce::jmax(3.0f, noteRect.getHeight() - 2.0f)),
+                                       1.6f);
+
                 if (noteIsSelected)
                 {
-                    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
+                    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 34));
                     g.fillRoundedRectangle(noteRect.reduced(1.0f, 1.0f), 2.0f);
                 }
 
@@ -865,36 +904,8 @@ void GridEditorComponent::paint(juce::Graphics& g)
                     g.drawLine(noteRect.getX() + 1.0f, noteRect.getY() + 1.5f, noteRect.getRight() - 1.0f, noteRect.getY() + 1.5f, 1.8f);
                 }
 
-                if (note.length > 1 && noteRect.getWidth() > 14.0f)
-                {
-                    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 188));
-                    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-                    g.drawText(juce::String(note.length),
-                               noteRect.withTrimmedTop(1.0f).withTrimmedBottom(4.0f).toNearestInt(),
-                               juce::Justification::centredRight,
-                               false);
-                }
-
                 const auto capabilities = laneEditorCapabilitiesForLane(laneId);
-                if (capabilities.rendersNotePitchInGrid && noteRect.getWidth() > 24.0f)
-                {
-                    g.setColour(juce::Colour::fromRGBA(206, 224, 255, 210));
-                    g.setFont(juce::Font(juce::FontOptions(9.0f)));
-                    g.drawText(juce::String(note.pitch),
-                               noteRect.withTrimmedLeft(3.0f).withTrimmedBottom(4.0f).toNearestInt(),
-                               juce::Justification::centredLeft,
-                               false);
-                }
-
-                if (noteRect.getWidth() > 24.0f && noteRect.getHeight() > 11.0f)
-                {
-                    g.setColour(juce::Colour::fromRGBA(20, 24, 30, noteIsSelected ? 210 : 164));
-                    g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
-                    g.drawText(juce::String(note.velocity),
-                               noteRect.withTrimmedLeft(3.0f).withTrimmedRight(3.0f).withTrimmedTop(2.0f).toNearestInt(),
-                               juce::Justification::centredRight,
-                               false);
-                }
+                juce::ignoreUnused(capabilities);
 
                 g.setColour(outlineColour.withAlpha(noteIsSelected ? 0.98f : 0.62f));
                 g.drawRoundedRectangle(noteRect, 2.0f, noteIsSelected ? 1.8f : 1.0f);
@@ -903,21 +914,6 @@ void GridEditorComponent::paint(juce::Graphics& g)
             const bool isHovered = hoverNote.has_value()
                 && hoverNote->laneId == laneId
                 && hoverNote->index == i;
-
-            const auto semanticRole = normalizedSemanticRole(note.semanticRole);
-            if (semanticRole.isNotEmpty())
-            {
-                const auto badgeBounds = juce::Rectangle<float>(noteRect.getX() + 3.0f,
-                                                               noteRect.getY() + 3.0f,
-                                                               juce::jmax(10.0f, juce::jmin(16.0f, noteRect.getWidth() - 6.0f)),
-                                                               10.0f);
-                const auto badgeColour = semanticRoleColour(semanticRole);
-                g.setColour(badgeColour.withAlpha(noteIsSelected ? 0.94f : 0.82f));
-                g.fillRoundedRectangle(badgeBounds, 3.0f);
-                g.setColour(juce::Colour::fromRGBA(18, 20, 24, 220));
-                g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
-                g.drawText(semanticRoleBadge(semanticRole), badgeBounds.toNearestInt(), juce::Justification::centred, false);
-            }
 
             if (isHovered && !noteIsSelected)
             {
@@ -937,11 +933,13 @@ void GridEditorComponent::paint(juce::Graphics& g)
                                                      0.0f,
                                                      juce::jmax(1.0f, loopRight - loopX),
                                                      static_cast<float>(getHeight()));
-        g.setColour(juce::Colour::fromRGBA(84, 184, 255, 30));
+        g.setColour(juce::Colour::fromRGBA(84, 184, 255, 24));
         g.fillRect(loopRect);
         g.setColour(juce::Colour::fromRGBA(112, 208, 255, 180));
         g.drawLine(loopX, 0.0f, loopX, static_cast<float>(getHeight()), 1.2f);
         g.drawLine(loopRight, 0.0f, loopRight, static_cast<float>(getHeight()), 1.2f);
+        g.setColour(juce::Colour::fromRGBA(196, 236, 255, 28));
+        g.drawRoundedRectangle(loopRect.reduced(1.0f, 1.0f), 5.0f, 1.0f);
         g.fillRect(juce::Rectangle<float>(loopX, 0.0f, juce::jmax(1.0f, loopRight - loopX), static_cast<float>(rulerHeight)));
     }
 
@@ -984,6 +982,8 @@ void GridEditorComponent::paint(juce::Graphics& g)
                 continue;
 
             auto bounds = noteBounds(track->notes[static_cast<size_t>(ref.index)], row).expanded(1);
+            g.setColour(juce::Colour::fromRGBA(255, 246, 198, 34));
+            g.fillRoundedRectangle(bounds.toFloat().expanded(2.0f, 1.0f), 3.0f);
             g.setColour(juce::Colour::fromRGB(255, 236, 178).withAlpha(0.98f));
             g.drawRoundedRectangle(bounds.toFloat(), 2.5f, 2.0f);
         }
@@ -992,8 +992,17 @@ void GridEditorComponent::paint(juce::Graphics& g)
     if (playheadStep >= 0.0f)
     {
         const float x = playheadStep * stepWidth;
+        g.setColour(juce::Colour::fromRGBA(255, 92, 92, 28));
+        g.fillRect(juce::Rectangle<float>(x - 2.0f, static_cast<float>(rulerHeight), 4.0f, static_cast<float>(getHeight() - rulerHeight)));
         g.setColour(juce::Colour::fromRGB(255, 92, 92).withAlpha(0.88f));
-        g.drawLine(x, static_cast<float>(rulerHeight), x, static_cast<float>(getHeight()), 1.8f);
+        g.drawLine(x, 0.0f, x, static_cast<float>(getHeight()), 2.0f);
+
+        juce::Path playheadMarker;
+        playheadMarker.startNewSubPath(x, static_cast<float>(rulerHeight) - 1.0f);
+        playheadMarker.lineTo(x - 6.0f, 3.0f);
+        playheadMarker.lineTo(x + 6.0f, 3.0f);
+        playheadMarker.closeSubPath();
+        g.fillPath(playheadMarker);
     }
 
     const float markerX = (static_cast<float>(previewStartTick) / static_cast<float>(ticksPerStep())) * stepWidth;
@@ -1021,59 +1030,7 @@ void GridEditorComponent::paint(juce::Graphics& g)
     const bool showVelocityOverlay = editMode == EditMode::Velocity
         || velocityWaveModeActive
         || (isVelocityEditKeyDown() && (!selectedNotes.empty() || hoverNote.has_value()));
-    if (showVelocityOverlay)
-    {
-        int overlayPercent = velocityOverlayPercent;
-        int overlayDelta = velocityOverlayDelta;
-        if (editMode != EditMode::Velocity && !velocityWaveModeActive && isVelocityEditKeyDown())
-        {
-            int velocitySum = 0;
-            int velocityCount = 0;
-            if (!selectedNotes.empty())
-            {
-                for (const auto& ref : selectedNotes)
-                {
-                    const auto* track = findTrack(ref.laneId);
-                    if (track == nullptr || ref.index < 0 || ref.index >= static_cast<int>(track->notes.size()))
-                        continue;
-
-                    velocitySum += track->notes[static_cast<size_t>(ref.index)].velocity;
-                    ++velocityCount;
-                }
-            }
-            else if (hoverNote.has_value())
-            {
-                const auto* track = findTrack(hoverNote->laneId);
-                if (track != nullptr
-                    && hoverNote->index >= 0
-                    && hoverNote->index < static_cast<int>(track->notes.size()))
-                {
-                    velocitySum = track->notes[static_cast<size_t>(hoverNote->index)].velocity;
-                    velocityCount = 1;
-                }
-            }
-
-            if (velocityCount > 0)
-                overlayPercent = static_cast<int>(std::round((static_cast<float>(velocitySum) / static_cast<float>(velocityCount)) * 100.0f / 127.0f));
-            overlayDelta = 0;
-        }
-
-        const auto overlay = juce::Rectangle<int>(juce::jmax(8, getWidth() - 168), rulerHeight + 8, 156, 24);
-        g.setColour(juce::Colour::fromRGBA(18, 22, 28, 230));
-        g.fillRoundedRectangle(overlay.toFloat(), 5.0f);
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 28));
-        g.drawRoundedRectangle(overlay.toFloat(), 5.0f, 1.0f);
-        g.setColour(juce::Colour::fromRGB(210, 222, 238));
-        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
-        juce::String label = velocityWaveModeActive ? "Velocity Wave: " : "Velocity: ";
-        juce::String value = juce::String(overlayPercent) + "%";
-        if (overlayDelta != 0)
-            value += " (" + juce::String(overlayDelta > 0 ? "+" : "") + juce::String(overlayDelta) + ")";
-        g.drawText(label + value,
-                   overlay,
-                   juce::Justification::centred,
-                   false);
-    }
+    juce::ignoreUnused(showVelocityOverlay);
 }
 
 void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
@@ -1126,8 +1083,7 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
         }
 
         const auto p = event.getPosition();
-        const int laneIndex = makeGeometry().yToLane(p.y);
-        const auto lane = trackForVisibleLaneIndex(laneIndex);
+        const auto lane = trackForYPosition(p.y);
         if (lane.has_value())
         {
             if (auto hit = findNoteAt(p, *lane); hit.has_value())
@@ -1208,7 +1164,7 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
     updateHoverState(p);
 
     const bool velocityEditActive = isVelocityEditKeyDown() && p.y >= rulerHeight;
-    const int velocityLaneIndex = velocityEditActive ? makeGeometry().yToLane(p.y) : -1;
+    const int velocityLaneIndex = velocityEditActive ? visibleLaneIndexAtY(p.y).value_or(-1) : -1;
     const auto velocityTrack = velocityEditActive ? trackForVisibleLaneIndex(velocityLaneIndex) : std::optional<RuntimeLaneId>{};
     const auto velocityHit = (velocityEditActive && velocityTrack.has_value())
         ? findNoteAt(event.getPosition(), *velocityTrack)
@@ -1265,8 +1221,7 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
             return;
         }
 
-        const int laneIndex = (p.y - rulerHeight) / laneHeight;
-        const auto clickedTrack = trackForVisibleLaneIndex(laneIndex);
+        const auto clickedTrack = trackForYPosition(p.y);
         if (clickedTrack.has_value())
         {
             selectedTrack = *clickedTrack;
@@ -1326,8 +1281,7 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
         }
     }
 
-    const int laneIndex = makeGeometry().yToLane(p.y);
-    const auto clickedTrack = trackForVisibleLaneIndex(laneIndex);
+    const auto clickedTrack = trackForYPosition(p.y);
     if (!clickedTrack.has_value())
         return;
     selectedTrack = *clickedTrack;
@@ -1422,7 +1376,7 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
             }
 
             if (!isSelected(*hit))
-                addSelection(*hit);
+                setSingleSelection(*hit);
             else
                 primarySelectedNote = *hit;
 
@@ -1592,29 +1546,7 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
 
         marqueeRect = marqueeRect.getIntersection(getLocalBounds().withTrimmedTop(rulerHeight));
 
-        std::vector<SelectedNoteRef> picks;
-        for (const auto& laneId : orderedVisibleLaneIds())
-        {
-            const auto* track = findTrack(laneId);
-            if (track == nullptr)
-                continue;
-
-            const int row = visibleLaneIndex(laneId);
-            if (row < 0)
-                continue;
-            for (int i = 0; i < static_cast<int>(track->notes.size()); ++i)
-            {
-                if (marqueeRect.intersects(noteBounds(track->notes[static_cast<size_t>(i)], row)))
-                    picks.push_back({ laneId, i });
-            }
-        }
-
-        selectedNotes = marqueeAdditive ? marqueeBaseSelection : std::vector<SelectedNoteRef>{};
-        for (const auto& r : picks)
-            if (!isSelected(r))
-                selectedNotes.push_back(r);
-
-        normalizeSelection();
+        updateMarqueeSelection();
         movedDuringDrag = true;
         repaint();
         return;
@@ -1671,7 +1603,9 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
     deltaTicks = quantizeTick(deltaTicks);
     const int deltaSteps = deltaTicks / ticksPerStep();
     const int deltaMicro = deltaTicks - deltaSteps * ticksPerStep();
-    const int deltaLanes = static_cast<int>(std::round(static_cast<float>(p.y - dragStartY) / static_cast<float>(juce::jmax(1, laneHeight))));
+    const int dragStartLaneIndex = visibleLaneIndexAtY(dragStartY).value_or(visibleLaneIndex(ref.laneId));
+    const int currentLaneIndex = visibleLaneIndexAtY(juce::jlimit(rulerHeight, juce::jmax(rulerHeight, getHeight() - 1), p.y)).value_or(dragStartLaneIndex);
+    const int deltaLanes = selectedNotes.size() > 1 ? 0 : (currentLaneIndex - dragStartLaneIndex);
     applySelectionMoveDelta(deltaSteps, deltaLanes, deltaMicro);
     movedDuringDrag = true;
 
@@ -1732,6 +1666,9 @@ void GridEditorComponent::mouseUp(const juce::MouseEvent& event)
 
     if (editMode == EditMode::Marquee)
     {
+        if (!marqueeRect.isEmpty())
+            updateMarqueeSelection();
+
         marqueeRect = {};
         marqueeBaseSelection.clear();
     }
@@ -1950,10 +1887,10 @@ bool GridEditorComponent::applyStrokeAlongSegment(juce::Point<int> from, juce::P
 
     const int startLaneIndex = fixedLane.has_value()
         ? visibleLaneIndex(*fixedLane)
-        : juce::jlimit(0, maxLaneIndex, makeGeometry().yToLane(startPoint.y));
+        : juce::jlimit(0, maxLaneIndex, visibleLaneIndexAtY(startPoint.y).value_or(0));
     const int endLaneIndex = fixedLane.has_value()
         ? visibleLaneIndex(*fixedLane)
-        : juce::jlimit(0, maxLaneIndex, makeGeometry().yToLane(endPoint.y));
+        : juce::jlimit(0, maxLaneIndex, visibleLaneIndexAtY(endPoint.y).value_or(maxLaneIndex));
 
     if (startLaneIndex < 0 || endLaneIndex < 0)
         return false;
@@ -2039,8 +1976,7 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
     hoverDrawTick = -1;
     hoverZone = HoverZone::None;
 
-    const int laneIndex = (position.y - rulerHeight) / laneHeight;
-    const auto lane = trackForVisibleLaneIndex(laneIndex);
+    const auto lane = trackForYPosition(position.y);
     if (!lane.has_value())
     {
         applyCursorForHover();
@@ -2152,6 +2088,37 @@ void GridEditorComponent::toggleSelection(const SelectedNoteRef& ref)
     refreshEditorRegionState();
 }
 
+void GridEditorComponent::updateMarqueeSelection()
+{
+    std::vector<SelectedNoteRef> picks;
+
+    for (const auto& laneId : orderedVisibleLaneIds())
+    {
+        const auto* track = findTrack(laneId);
+        if (track == nullptr)
+            continue;
+
+        const int row = visibleLaneIndex(laneId);
+        if (row < 0)
+            continue;
+
+        for (int index = 0; index < static_cast<int>(track->notes.size()); ++index)
+        {
+            if (marqueeRect.intersects(noteBounds(track->notes[static_cast<size_t>(index)], row)))
+                picks.push_back({ laneId, index });
+        }
+    }
+
+    selectedNotes = marqueeAdditive ? marqueeBaseSelection : std::vector<SelectedNoteRef>{};
+    for (const auto& ref : picks)
+    {
+        if (!isSelected(ref))
+            selectedNotes.push_back(ref);
+    }
+
+    normalizeSelection();
+}
+
 void GridEditorComponent::normalizeSelection()
 {
     std::vector<SelectedNoteRef> valid;
@@ -2215,6 +2182,26 @@ void GridEditorComponent::collectDragSnapshots()
         snap.startPitch = n.pitch;
         dragSnapshots.push_back(snap);
     }
+}
+
+bool GridEditorComponent::applySelectionVelocityDeltaWithNotify(int deltaVel)
+{
+    normalizeSelection();
+    if (selectedNotes.empty())
+        return false;
+
+    collectDragSnapshots();
+    if (!applySelectionVelocityDelta(deltaVel))
+        return false;
+
+    std::set<RuntimeLaneId> changedLaneIds;
+    for (const auto& ref : selectedNotes)
+        changedLaneIds.insert(ref.laneId);
+    for (const auto& laneId : changedLaneIds)
+        emitTrackEdited(laneId);
+
+    repaint();
+    return true;
 }
 
 bool GridEditorComponent::applySelectionVelocityDelta(int deltaVel)
@@ -2465,6 +2452,11 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
     constexpr int kActionPaste = 7;
     constexpr int kActionSplit = 8;
     constexpr int kActionQuickRoll = 9;
+    constexpr int kActionRepeatX2 = 10;
+    constexpr int kActionVelocityPlus = 11;
+    constexpr int kActionVelocityMinus = 12;
+    constexpr int kActionNudgeLeft = 13;
+    constexpr int kActionNudgeRight = 14;
     constexpr int kActionAdvancedRollBase = 100;
     constexpr int kActionFillBase = 200;
     constexpr int kActionRoleAnchor = 300;
@@ -2476,6 +2468,21 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
     constexpr int kActionSelectRoleSupport = 321;
     constexpr int kActionSelectRoleFill = 322;
     constexpr int kActionSelectRoleAccent = 323;
+    constexpr int kActionLaneHeightCompact = 400;
+    constexpr int kActionLaneHeightNormal = 401;
+    constexpr int kActionLaneHeightLarge = 402;
+    constexpr int kActionToggleLaneCollapse = 410;
+    constexpr int kActionExpandAllLanes = 411;
+    constexpr int kActionToggleLaneTint = 412;
+    constexpr int kActionToggleAutoCollapseHelpers = 413;
+    constexpr int kActionApplyAutoCollapseHelpers = 414;
+    constexpr int kActionToggleStrongBarBeatAccents = 415;
+    constexpr int kActionTogglePinLane = 416;
+    constexpr int kActionUnpinAllLanes = 417;
+    constexpr int kActionFocusLane = 418;
+    constexpr int kActionClearLaneFocus = 419;
+    constexpr int kActionToggleEditorMuteLane = 420;
+    constexpr int kActionClearAllEditorMutes = 421;
 
     juce::PopupMenu fillMenu;
     fillMenu.addItem(kActionFillBase + 2, "Fill every 2");
@@ -2497,11 +2504,61 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
     selectRoleMenu.addItem(kActionSelectRoleFill, "Select Fill");
     selectRoleMenu.addItem(kActionSelectRoleAccent, "Select Accent");
 
+    const auto laneViewTarget = laneHint.value_or(selectedTrack);
+    juce::PopupMenu laneViewMenu;
+    if (laneViewTarget.isNotEmpty())
+    {
+        laneViewMenu.addItem(kActionLaneHeightCompact, "Compact", true, laneHeightPreset == LaneHeightPreset::Compact);
+        laneViewMenu.addItem(kActionLaneHeightNormal, "Normal", true, laneHeightPreset == LaneHeightPreset::Normal);
+        laneViewMenu.addItem(kActionLaneHeightLarge, "Large", true, laneHeightPreset == LaneHeightPreset::Large);
+        laneViewMenu.addSeparator();
+        laneViewMenu.addItem(kActionToggleLaneCollapse,
+                             isLaneCollapsed(laneViewTarget) ? "Expand Lane" : "Collapse Lane",
+                             true,
+                             false);
+        laneViewMenu.addItem(kActionTogglePinLane,
+                     isLanePinned(laneViewTarget) ? "Unpin Lane" : "Pin Lane to Top",
+                     true,
+                     false);
+        laneViewMenu.addItem(kActionExpandAllLanes, "Expand All Lanes", !collapsedLaneIds.empty());
+        laneViewMenu.addItem(kActionUnpinAllLanes, "Unpin All Lanes", !pinnedLaneIds.empty());
+        laneViewMenu.addSeparator();
+        laneViewMenu.addItem(kActionFocusLane,
+                     (focusedLaneId.has_value() && *focusedLaneId == laneViewTarget) ? "Focus This Lane" : "Focus This Lane",
+                     true,
+                     focusedLaneId.has_value() && *focusedLaneId == laneViewTarget);
+        laneViewMenu.addItem(kActionClearLaneFocus, "Clear Lane Focus", focusedLaneId.has_value());
+        laneViewMenu.addSeparator();
+        laneViewMenu.addItem(kActionToggleEditorMuteLane,
+                     isLaneEditorMuted(laneViewTarget) ? "Unmute Lane" : "Mute Lane (Editor Only)",
+                     true,
+                     false);
+        laneViewMenu.addItem(kActionClearAllEditorMutes, "Clear All Editor Mutes", !editorMutedLaneIds.empty());
+        laneViewMenu.addSeparator();
+        laneViewMenu.addItem(kActionToggleAutoCollapseHelpers, "Auto-Collapse Helper Lanes", true, autoCollapseHelperLanes);
+        laneViewMenu.addItem(kActionApplyAutoCollapseHelpers, "Apply Auto-Collapse Now", true);
+        laneViewMenu.addSeparator();
+        laneViewMenu.addItem(kActionToggleStrongBarBeatAccents, "Strong Bar/Beat Accents", true, strongBarBeatAccents);
+        laneViewMenu.addItem(kActionToggleLaneTint, "Group Tint", true, laneGroupTintEnabled);
+    }
+
     if (target == ContextMenuTarget::Empty)
     {
         menu.addItem(kActionPaste, "Paste", !clipboardNotes.empty());
+        if (!selectedNotes.empty())
+        {
+            menu.addSeparator();
+            menu.addItem(kActionDuplicate, "Duplicate");
+            menu.addItem(kActionRepeatX2, "Repeat x2");
+            menu.addItem(kActionVelocityPlus, "Velocity +10");
+            menu.addItem(kActionVelocityMinus, "Velocity -10");
+            menu.addItem(kActionNudgeLeft, "Nudge Left");
+            menu.addItem(kActionNudgeRight, "Nudge Right");
+        }
         if (laneHint.has_value())
             menu.addSubMenu("Fill Notes", fillMenu, true);
+        if (laneViewTarget.isNotEmpty())
+            menu.addSubMenu("Lane View", laneViewMenu, true);
         menu.addSubMenu("Select By Role", selectRoleMenu, true);
         bool hasAnyNotes = false;
         for (const auto& laneId : orderedVisibleLaneIds())
@@ -2519,6 +2576,12 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
     {
         menu.addItem(kActionCut, "Cut");
         menu.addItem(kActionCopy, "Copy");
+        menu.addItem(kActionDuplicate, "Duplicate");
+        menu.addItem(kActionRepeatX2, "Repeat x2");
+        menu.addItem(kActionVelocityPlus, "Velocity +10");
+        menu.addItem(kActionVelocityMinus, "Velocity -10");
+        menu.addItem(kActionNudgeLeft, "Nudge Left");
+        menu.addItem(kActionNudgeRight, "Nudge Right");
         menu.addItem(kActionDelete, "Delete");
         menu.addItem(kActionSplit, "Split", hit.has_value());
 
@@ -2528,6 +2591,8 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
         menu.addSubMenu("Semantic Role", semanticRoleMenu, true);
         menu.addSubMenu("Select By Role", selectRoleMenu, true);
         menu.addSubMenu("Fill Notes", fillMenu, laneHint.has_value());
+        if (laneViewTarget.isNotEmpty())
+            menu.addSubMenu("Lane View", laneViewMenu, true);
         menu.addItem(kActionQuickRoll, "Create Roll", quickRollEnabled);
 
         juce::PopupMenu advancedRollMenu;
@@ -2540,6 +2605,11 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
         menu.addItem(kActionCut, "Cut");
         menu.addItem(kActionCopy, "Copy");
         menu.addItem(kActionDuplicate, "Duplicate");
+        menu.addItem(kActionRepeatX2, "Repeat x2");
+        menu.addItem(kActionVelocityPlus, "Velocity +10");
+        menu.addItem(kActionVelocityMinus, "Velocity -10");
+        menu.addItem(kActionNudgeLeft, "Nudge Left");
+        menu.addItem(kActionNudgeRight, "Nudge Right");
         menu.addItem(kActionDelete, "Delete");
 
         const bool quickRollEnabled = canQuickRollSelection();
@@ -2548,6 +2618,8 @@ void GridEditorComponent::showNoteContextMenu(juce::Point<int> p, std::optional<
         menu.addSubMenu("Semantic Role", semanticRoleMenu, true);
         menu.addSubMenu("Select By Role", selectRoleMenu, true);
         menu.addSubMenu("Fill Notes", fillMenu, laneHint.has_value());
+        if (laneViewTarget.isNotEmpty())
+            menu.addSubMenu("Lane View", laneViewMenu, true);
         menu.addItem(kActionQuickRoll, "Create Roll", quickRollEnabled);
 
         juce::PopupMenu advancedRollMenu;
@@ -2576,6 +2648,94 @@ bool GridEditorComponent::applyContextMenuAction(int actionId, std::optional<Run
     constexpr int kActionSelectRoleSupport = 321;
     constexpr int kActionSelectRoleFill = 322;
     constexpr int kActionSelectRoleAccent = 323;
+    constexpr int kActionLaneHeightCompact = 400;
+    constexpr int kActionLaneHeightNormal = 401;
+    constexpr int kActionLaneHeightLarge = 402;
+    constexpr int kActionToggleLaneCollapse = 410;
+    constexpr int kActionExpandAllLanes = 411;
+    constexpr int kActionToggleLaneTint = 412;
+    constexpr int kActionToggleAutoCollapseHelpers = 413;
+    constexpr int kActionApplyAutoCollapseHelpers = 414;
+    constexpr int kActionToggleStrongBarBeatAccents = 415;
+    constexpr int kActionTogglePinLane = 416;
+    constexpr int kActionUnpinAllLanes = 417;
+    constexpr int kActionFocusLane = 418;
+    constexpr int kActionClearLaneFocus = 419;
+    constexpr int kActionToggleEditorMuteLane = 420;
+    constexpr int kActionClearAllEditorMutes = 421;
+
+    if (actionId == kActionLaneHeightCompact)
+    {
+        applyLaneHeightPreset(LaneHeightPreset::Compact);
+        return true;
+    }
+    if (actionId == kActionLaneHeightNormal)
+    {
+        applyLaneHeightPreset(LaneHeightPreset::Normal);
+        return true;
+    }
+    if (actionId == kActionLaneHeightLarge)
+    {
+        applyLaneHeightPreset(LaneHeightPreset::Large);
+        return true;
+    }
+    if (actionId == kActionToggleLaneCollapse)
+        return toggleLaneCollapsed(laneHint.value_or(selectedTrack));
+    if (actionId == kActionExpandAllLanes)
+    {
+        if (collapsedLaneIds.empty())
+            return false;
+
+        collapsedLaneIds.clear();
+        invalidateStaticCache();
+        repaint();
+        return true;
+    }
+    if (actionId == kActionToggleLaneTint)
+    {
+        laneGroupTintEnabled = !laneGroupTintEnabled;
+        invalidateStaticCache();
+        repaint();
+        return true;
+    }
+    if (actionId == kActionToggleAutoCollapseHelpers)
+    {
+        autoCollapseHelperLanes = !autoCollapseHelperLanes;
+        return true;
+    }
+    if (actionId == kActionApplyAutoCollapseHelpers)
+        return applyAutoCollapseHelperLanesNow();
+    if (actionId == kActionToggleStrongBarBeatAccents)
+    {
+        strongBarBeatAccents = !strongBarBeatAccents;
+        invalidateStaticCache();
+        repaint();
+        return true;
+    }
+    if (actionId == kActionTogglePinLane)
+        return toggleLanePinned(laneHint.value_or(selectedTrack));
+    if (actionId == kActionUnpinAllLanes)
+    {
+        if (pinnedLaneIds.empty())
+            return false;
+
+        clearPinnedLanes();
+        return true;
+    }
+    if (actionId == kActionFocusLane)
+        return setFocusedLane(laneHint.value_or(selectedTrack));
+    if (actionId == kActionClearLaneFocus)
+        return setFocusedLane(std::nullopt);
+    if (actionId == kActionToggleEditorMuteLane)
+        return toggleLaneEditorMuted(laneHint.value_or(selectedTrack));
+    if (actionId == kActionClearAllEditorMutes)
+    {
+        if (editorMutedLaneIds.empty())
+            return false;
+
+        clearEditorMutedLanes();
+        return true;
+    }
 
     if (actionId >= 100)
     {
@@ -2655,6 +2815,16 @@ bool GridEditorComponent::applyContextMenuAction(int actionId, std::optional<Run
     }
     if (actionId == 9)
         return rollSelectionQuick();
+    if (actionId == 10)
+        return duplicateSelectionRepeated(2);
+    if (actionId == 11)
+        return applySelectionVelocityDeltaWithNotify(10);
+    if (actionId == 12)
+        return applySelectionVelocityDeltaWithNotify(-10);
+    if (actionId == 13)
+        return nudgeSelectionBySnap(-1);
+    if (actionId == 14)
+        return nudgeSelectionBySnap(1);
 
     juce::ignoreUnused(p);
     return false;
@@ -2828,12 +2998,33 @@ bool GridEditorComponent::isVisibleLane(const RuntimeLaneId& laneId) const
     return ProjectLaneAccess::isVisibleInEditor(project, laneId) && canEditLaneInGrid(laneId);
 }
 
-std::vector<RuntimeLaneId> GridEditorComponent::orderedVisibleLaneIds() const
+std::vector<RuntimeLaneId> GridEditorComponent::baseVisibleLaneIds() const
 {
     std::vector<RuntimeLaneId> ordered;
     for (const auto& laneId : ProjectLaneAccess::orderedLaneIds(project, laneDisplayOrder, true))
     {
         if (canEditLaneInGrid(laneId))
+            ordered.push_back(laneId);
+    }
+
+    return ordered;
+}
+
+std::vector<RuntimeLaneId> GridEditorComponent::orderedVisibleLaneIds() const
+{
+    const auto base = baseVisibleLaneIds();
+    std::vector<RuntimeLaneId> ordered;
+    ordered.reserve(base.size());
+
+    for (const auto& laneId : base)
+    {
+        if (isLanePinned(laneId))
+            ordered.push_back(laneId);
+    }
+
+    for (const auto& laneId : base)
+    {
+        if (!isLanePinned(laneId))
             ordered.push_back(laneId);
     }
 
@@ -2894,12 +3085,28 @@ void GridEditorComponent::ensureStaticCache()
 
     auto area = getLocalBounds();
     const int bars = std::max(1, project.params.bars);
-    const int steps = bars * 16;
-    const int tracksCount = (getGridHeight() - rulerHeight) / laneHeight;
+    const auto laneIds = orderedVisibleLaneIds();
+    const int tracksCount = static_cast<int>(laneIds.size());
+    const auto rulerLineColour = strongBarBeatAccents ? juce::Colour::fromRGBA(255, 255, 255, 28)
+                                                      : juce::Colour::fromRGBA(255, 255, 255, 18);
+    const auto evenBarFill = strongBarBeatAccents ? juce::Colour::fromRGBA(255, 255, 255, 7)
+                                                  : juce::Colour::fromRGBA(255, 255, 255, 4);
+    const auto oddBarFill = strongBarBeatAccents ? juce::Colour::fromRGBA(0, 0, 0, 14)
+                                                 : juce::Colour::fromRGBA(0, 0, 0, 10);
+    const auto barLineColour = strongBarBeatAccents ? juce::Colour::fromRGB(162, 174, 194)
+                                                     : juce::Colour::fromRGB(148, 158, 178);
+    const auto beatLineColour = strongBarBeatAccents ? juce::Colour::fromRGBA(132, 146, 168, 232)
+                                                      : juce::Colour::fromRGBA(116, 128, 146, 204);
+    const auto beatRulerColour = strongBarBeatAccents ? juce::Colour::fromRGBA(214, 222, 236, 126)
+                                                       : juce::Colour::fromRGBA(206, 214, 228, 94);
+    const auto subdivisionColour = strongBarBeatAccents ? juce::Colour::fromRGBA(88, 98, 114, 174)
+                                                         : juce::Colour::fromRGBA(86, 94, 108, 160);
+    const auto fineSubdivisionColour = strongBarBeatAccents ? juce::Colour::fromRGBA(160, 172, 192, 12)
+                                                             : juce::Colour::fromRGBA(160, 172, 192, 16);
 
     g.setColour(juce::Colour::fromRGB(30, 34, 40));
     g.fillRect(0, 0, area.getWidth(), rulerHeight);
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
+    g.setColour(rulerLineColour);
     g.drawLine(0.0f, static_cast<float>(rulerHeight), static_cast<float>(area.getWidth()), static_cast<float>(rulerHeight));
 
     for (int bar = 0; bar < bars; ++bar)
@@ -2907,24 +3114,71 @@ void GridEditorComponent::ensureStaticCache()
         const int x = static_cast<int>(std::round(static_cast<float>(bar * 16) * stepWidth));
         const int width = static_cast<int>(std::round(stepWidth * 16.0f));
         const auto barArea = juce::Rectangle<int>(x, rulerHeight, juce::jmax(1, width), juce::jmax(1, area.getHeight() - rulerHeight));
-        g.setColour((bar % 2 == 0) ? juce::Colour::fromRGBA(255, 255, 255, 4)
-                                   : juce::Colour::fromRGBA(0, 0, 0, 10));
+        g.setColour((bar % 2 == 0) ? evenBarFill : oddBarFill);
         g.fillRect(barArea);
     }
 
     for (int row = 0; row < tracksCount; ++row)
     {
-        const auto rowArea = area.withTop(rulerHeight + row * laneHeight).withHeight(laneHeight);
-        g.setColour((row % 2 == 0) ? juce::Colour::fromRGB(27, 30, 35)
-                                   : juce::Colour::fromRGB(22, 25, 30));
+        const auto rowArea = laneRowBounds(row);
+        const auto laneId = laneIds[static_cast<size_t>(row)];
+        const bool laneCollapsed = isLaneCollapsed(laneId);
+        const bool lanePinned = isLanePinned(laneId);
+        const bool laneFocused = focusedLaneId.has_value() && *focusedLaneId == laneId;
+        const bool laneDimmed = isLaneDimmedByFocus(laneId);
+        const bool laneMuted = isLaneEditorMuted(laneId);
+
+        auto rowColour = (row % 2 == 0) ? juce::Colour::fromRGB(27, 30, 35)
+                                        : juce::Colour::fromRGB(22, 25, 30);
+        if (laneMuted)
+            rowColour = rowColour.interpolatedWith(juce::Colour::fromRGB(30, 32, 36), 0.55f);
+        if (laneDimmed)
+            rowColour = rowColour.darker(0.55f).withMultipliedAlpha(0.92f);
+
+        g.setColour(rowColour);
         g.fillRect(rowArea);
+
+        const auto tint = laneTintColour(laneId);
+        if (tint.getAlpha() > 0)
+        {
+            auto tintColour = tint;
+            if (laneMuted)
+                tintColour = tintColour.interpolatedWith(juce::Colour::fromRGB(124, 130, 138), 0.5f).withMultipliedAlpha(0.55f);
+            if (laneDimmed)
+                tintColour = tintColour.withMultipliedAlpha(0.35f);
+
+            g.setColour(tintColour);
+            g.fillRect(rowArea.reduced(0, laneCollapsed ? 1 : 0));
+        }
+
+        if (laneFocused)
+        {
+            g.setColour(juce::Colour::fromRGBA(120, 208, 255, 42));
+            g.fillRect(rowArea);
+            g.setColour(juce::Colour::fromRGBA(176, 228, 255, 168));
+            g.drawRoundedRectangle(rowArea.toFloat().reduced(1.0f, 0.5f), 4.0f, 1.2f);
+        }
+
+        if (lanePinned)
+        {
+            g.setColour(juce::Colour::fromRGBA(255, 224, 148, laneDimmed ? 88 : 132));
+            g.fillRect(juce::Rectangle<int>(0, rowArea.getY(), 3, rowArea.getHeight()));
+        }
+
+        if (laneCollapsed)
+        {
+            g.setColour(juce::Colour::fromRGBA(255, 255, 255, 14));
+            g.fillRect(juce::Rectangle<int>(0, rowArea.getY(), area.getWidth(), 1));
+            g.setColour(juce::Colour::fromRGBA(228, 236, 248, 120));
+            g.drawHorizontalLine(rowArea.getCentreY(), 0.0f, static_cast<float>(area.getRight()));
+        }
     }
 
     const int selectedRow = visibleLaneIndex(selectedTrack);
     if (selectedRow >= 0)
     {
         g.setColour(juce::Colour::fromRGBA(90, 180, 255, 30));
-        g.fillRect(area.withTop(rulerHeight + selectedRow * laneHeight).withHeight(laneHeight));
+        g.fillRect(laneRowBounds(selectedRow));
     }
 
     const int totalTicks = bars * 16 * ticksPerStep();
@@ -2938,50 +3192,34 @@ void GridEditorComponent::ensureStaticCache()
 
         if (tick % (ticksPerStep() * 16) == 0)
         {
-            g.setColour(juce::Colour::fromRGB(148, 158, 178));
+            g.setColour(barLineColour);
             g.fillRect(juce::Rectangle<float>(x - 1.0f, 0.0f, 2.0f, static_cast<float>(area.getHeight())));
             continue;
         }
         else if (tick % beatTicks == 0)
         {
-            g.setColour(juce::Colour::fromRGBA(116, 128, 146, 204));
+            g.setColour(beatLineColour);
             g.fillRect(juce::Rectangle<float>(x, static_cast<float>(rulerHeight), 1.2f, static_cast<float>(area.getHeight() - rulerHeight)));
-            g.setColour(juce::Colour::fromRGBA(206, 214, 228, 94));
+            g.setColour(beatRulerColour);
             g.fillRect(juce::Rectangle<float>(x, 0.0f, 1.2f, static_cast<float>(rulerHeight)));
             continue;
         }
         else if (tick % visualTicks == 0)
-            g.setColour(juce::Colour::fromRGBA(86, 94, 108, 160));
+            g.setColour(subdivisionColour);
         else
-            g.setColour(juce::Colour::fromRGBA(160, 172, 192, 16));
+            g.setColour(fineSubdivisionColour);
 
         g.drawVerticalLine(static_cast<int>(std::round(x)), static_cast<float>(rulerHeight), static_cast<float>(area.getBottom()));
     }
 
-    for (int s = 0; s <= steps; ++s)
-    {
-        const float x = static_cast<float>(s) * stepWidth;
-        if (s % 16 == 0)
-        {
-            const int barNumber = s / 16 + 1;
-            g.setColour(juce::Colour::fromRGB(182, 189, 201));
-            g.setFont(juce::Font(juce::FontOptions(11.0f)));
-            g.drawText(juce::String(barNumber), static_cast<int>(x) + 4, 2, 20, rulerHeight - 4, juce::Justification::centredLeft);
-        }
-        else if ((s % 4 == 0) && stepWidth >= 12.0f)
-        {
-            g.setColour(juce::Colour::fromRGBA(218, 224, 235, 112));
-            g.setFont(juce::Font(juce::FontOptions(9.0f)));
-            g.drawText(juce::String((s / 4) % 4 + 1), static_cast<int>(x) - 6, 8, 12, rulerHeight - 10, juce::Justification::centred, false);
-        }
-    }
-
     g.setColour(juce::Colour::fromRGB(58, 64, 78));
-    const float rowHeight = static_cast<float>(laneHeight);
     for (int r = 0; r <= tracksCount; ++r)
     {
-        const float y = static_cast<float>(rulerHeight) + static_cast<float>(r) * rowHeight;
+        const float y = (r == tracksCount)
+            ? static_cast<float>(getGridHeight())
+            : static_cast<float>(laneRowBounds(r).getY());
         g.drawHorizontalLine(static_cast<int>(y), 0.0f, static_cast<float>(area.getRight()));
+
     }
 
     staticCacheDirty = false;
@@ -3146,7 +3384,32 @@ bool GridEditorComponent::placeDrawNoteAt(const RuntimeLaneId& laneId, int tick)
 
 juce::Rectangle<int> GridEditorComponent::noteBounds(const NoteEvent& note, int row) const
 {
-    return makeGeometry().noteRect(note, row);
+    const auto rowBounds = laneRowBounds(row);
+    if (rowBounds.isEmpty())
+        return {};
+
+    const float microStep = static_cast<float>(note.microOffset) / static_cast<float>(ticksPerStep());
+    const float microShiftPx = juce::jlimit(-0.98f * stepWidth, 0.98f * stepWidth, microStep * stepWidth);
+    const float x = static_cast<float>(note.step) * stepWidth + microShiftPx;
+    const float resolutionWidth = stepWidth * (static_cast<float>(isSnapEnabled() ? effectiveSnapTicks() : visualSubdivisionTicks())
+                                               / static_cast<float>(ticksPerStep()));
+    const int defaultResolutionSteps = juce::jmax(1,
+                                                  static_cast<int>(std::ceil(static_cast<double>(isSnapEnabled() ? effectiveSnapTicks() : visualSubdivisionTicks())
+                                                                             / static_cast<double>(ticksPerStep()))));
+
+    float width = stepWidth * static_cast<float>(std::max(1, note.length));
+    if (std::max(1, note.length) == defaultResolutionSteps)
+        width = juce::jmax(2.0f, resolutionWidth - 1.0f);
+
+    const int rowHeight = rowBounds.getHeight();
+    const float insetY = rowHeight <= 14 ? 1.0f : 2.0f;
+    const int noteHeight = rowHeight <= 14 ? juce::jmax(5, rowHeight - 2)
+                                           : juce::jmax(6, rowHeight - 4);
+
+    return juce::Rectangle<int>(static_cast<int>(std::floor(x + 1.0f)),
+                                rowBounds.getY() + static_cast<int>(std::floor(insetY)),
+                                static_cast<int>(std::ceil(juce::jmax(2.0f, width - 2.0f))),
+                                noteHeight);
 }
 
 int GridEditorComponent::snapTicksForCurrentResolution() const
@@ -3310,6 +3573,344 @@ juce::String GridEditorComponent::currentGridModeLabel() const
     if (gridResolution == GridResolution::Micro)
         return "Snap: Micro";
     return "Snap: " + effectiveSnapLabel();
+}
+
+void GridEditorComponent::applyLaneHeightPreset(LaneHeightPreset preset)
+{
+    laneHeightPreset = preset;
+
+    int targetHeight = 30;
+    switch (preset)
+    {
+        case LaneHeightPreset::Compact: targetHeight = 24; break;
+        case LaneHeightPreset::Normal:  targetHeight = 30; break;
+        case LaneHeightPreset::Large:   targetHeight = 42; break;
+    }
+
+    if (targetHeight == laneHeight)
+    {
+        invalidateStaticCache();
+        repaint();
+        return;
+    }
+
+    laneHeight = targetHeight;
+    invalidateStaticCache();
+    repaint();
+}
+
+bool GridEditorComponent::toggleLaneCollapsed(const RuntimeLaneId& laneId, std::optional<bool> collapsed)
+{
+    if (laneId.isEmpty())
+        return false;
+
+    const bool nextCollapsed = collapsed.value_or(!isLaneCollapsed(laneId));
+    const bool changed = nextCollapsed ? collapsedLaneIds.insert(laneId).second
+                                       : (collapsedLaneIds.erase(laneId) > 0);
+    if (!changed)
+        return false;
+
+    invalidateStaticCache();
+    repaint();
+    return true;
+}
+
+bool GridEditorComponent::isLaneCollapsed(const RuntimeLaneId& laneId) const
+{
+    return collapsedLaneIds.find(laneId) != collapsedLaneIds.end();
+}
+
+int GridEditorComponent::collapsedLaneHeightPx() const
+{
+    return juce::jlimit(10, 16, laneHeight / 3);
+}
+
+int GridEditorComponent::laneVisualHeight(const RuntimeLaneId& laneId) const
+{
+    return isLaneCollapsed(laneId) ? collapsedLaneHeightPx() : laneHeight;
+}
+
+juce::Rectangle<int> GridEditorComponent::laneRowBounds(int laneIndex) const
+{
+    if (laneIndex < 0)
+        return {};
+
+    const auto laneIds = orderedVisibleLaneIds();
+    if (laneIndex >= static_cast<int>(laneIds.size()))
+        return {};
+
+    int top = rulerHeight;
+    for (int index = 0; index < laneIndex; ++index)
+        top += laneVisualHeight(laneIds[static_cast<size_t>(index)]);
+
+    return { 0, top, getWidth(), laneVisualHeight(laneIds[static_cast<size_t>(laneIndex)]) };
+}
+
+std::optional<int> GridEditorComponent::visibleLaneIndexAtY(int y) const
+{
+    if (y < rulerHeight)
+        return std::nullopt;
+
+    const auto laneIds = orderedVisibleLaneIds();
+    int top = rulerHeight;
+
+    for (int index = 0; index < static_cast<int>(laneIds.size()); ++index)
+    {
+        const int bottom = top + laneVisualHeight(laneIds[static_cast<size_t>(index)]);
+        if (y < bottom)
+            return index;
+        top = bottom;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<RuntimeLaneId> GridEditorComponent::trackForYPosition(int y) const
+{
+    const auto laneIndex = visibleLaneIndexAtY(y);
+    return laneIndex.has_value() ? trackForVisibleLaneIndex(*laneIndex) : std::optional<RuntimeLaneId>{};
+}
+
+bool GridEditorComponent::isLanePinned(const RuntimeLaneId& laneId) const
+{
+    return pinnedLaneIds.find(laneId) != pinnedLaneIds.end();
+}
+
+bool GridEditorComponent::toggleLanePinned(const RuntimeLaneId& laneId, std::optional<bool> pinned)
+{
+    if (laneId.isEmpty() || !isVisibleLane(laneId))
+        return false;
+
+    const bool nextPinned = pinned.value_or(!isLanePinned(laneId));
+    const bool changed = nextPinned ? pinnedLaneIds.insert(laneId).second
+                                    : (pinnedLaneIds.erase(laneId) > 0);
+    if (!changed)
+        return false;
+
+    invalidateStaticCache();
+    repaint();
+    return true;
+}
+
+void GridEditorComponent::clearPinnedLanes()
+{
+    if (pinnedLaneIds.empty())
+        return;
+
+    pinnedLaneIds.clear();
+    invalidateStaticCache();
+    repaint();
+}
+
+bool GridEditorComponent::isLaneEditorMuted(const RuntimeLaneId& laneId) const
+{
+    return editorMutedLaneIds.find(laneId) != editorMutedLaneIds.end();
+}
+
+bool GridEditorComponent::toggleLaneEditorMuted(const RuntimeLaneId& laneId, std::optional<bool> muted)
+{
+    if (laneId.isEmpty() || !isVisibleLane(laneId))
+        return false;
+
+    const bool nextMuted = muted.value_or(!isLaneEditorMuted(laneId));
+    const bool changed = nextMuted ? editorMutedLaneIds.insert(laneId).second
+                                   : (editorMutedLaneIds.erase(laneId) > 0);
+    if (!changed)
+        return false;
+
+    invalidateStaticCache();
+    repaint();
+    return true;
+}
+
+void GridEditorComponent::clearEditorMutedLanes()
+{
+    if (editorMutedLaneIds.empty())
+        return;
+
+    editorMutedLaneIds.clear();
+    invalidateStaticCache();
+    repaint();
+}
+
+bool GridEditorComponent::setFocusedLane(const std::optional<RuntimeLaneId>& laneId)
+{
+    if (laneId.has_value() && (laneId->isEmpty() || !isVisibleLane(*laneId)))
+        return false;
+
+    if (focusedLaneId == laneId)
+        return false;
+
+    focusedLaneId = laneId;
+    invalidateStaticCache();
+    repaint();
+    return true;
+}
+
+bool GridEditorComponent::isLaneDimmedByFocus(const RuntimeLaneId& laneId) const
+{
+    return focusedLaneId.has_value() && *focusedLaneId != laneId;
+}
+
+void GridEditorComponent::pruneLocalLaneState()
+{
+    const auto base = baseVisibleLaneIds();
+    const auto containsLane = [&base](const RuntimeLaneId& laneId)
+    {
+        return std::find(base.begin(), base.end(), laneId) != base.end();
+    };
+
+    for (auto it = pinnedLaneIds.begin(); it != pinnedLaneIds.end();)
+        it = containsLane(*it) ? std::next(it) : pinnedLaneIds.erase(it);
+
+    for (auto it = editorMutedLaneIds.begin(); it != editorMutedLaneIds.end();)
+        it = containsLane(*it) ? std::next(it) : editorMutedLaneIds.erase(it);
+
+    for (auto it = collapsedLaneIds.begin(); it != collapsedLaneIds.end();)
+        it = containsLane(*it) ? std::next(it) : collapsedLaneIds.erase(it);
+
+    if (focusedLaneId.has_value() && !containsLane(*focusedLaneId))
+        focusedLaneId.reset();
+}
+
+juce::String GridEditorComponent::laneDisplayLabel(const RuntimeLaneId& laneId) const
+{
+    if (const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId))
+    {
+        if (lane->laneName.isNotEmpty())
+            return lane->laneName;
+        if (lane->runtimeTrackType.has_value())
+            return juce::String(toString(*lane->runtimeTrackType));
+    }
+
+    return laneId;
+}
+
+juce::String GridEditorComponent::laneCompactLabel(const RuntimeLaneId& laneId) const
+{
+    auto label = laneDisplayLabel(laneId).trim();
+    if (label.isEmpty())
+        return label;
+
+    label = label.replaceCharacter('/', ' ');
+    label = label.replace("Ghost", "G");
+    label = label.replace("Helper", "H");
+    label = label.replace("Closed", "Cl");
+    label = label.replace("Open", "Op");
+
+    if (label.length() <= 8)
+        return label;
+
+    juce::StringArray tokens;
+    tokens.addTokens(label, " _-", {});
+    if (tokens.size() >= 2)
+    {
+        juce::String compact;
+        for (const auto& token : tokens)
+        {
+            if (token.isNotEmpty())
+                compact << token.substring(0, juce::jmin(3, token.length()));
+        }
+
+        if (compact.isNotEmpty())
+            return compact.substring(0, juce::jmin(8, compact.length()));
+    }
+
+    return label.substring(0, juce::jmin(8, label.length()));
+}
+
+juce::String GridEditorComponent::laneGroupLabel(const RuntimeLaneId& laneId) const
+{
+    if (const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId))
+    {
+        if (lane->groupName.isNotEmpty())
+            return lane->groupName;
+        if (lane->runtimeTrackType.has_value())
+            return juce::String(toString(*lane->runtimeTrackType));
+        if (lane->laneName.isNotEmpty())
+            return lane->laneName;
+    }
+
+    return {};
+}
+
+juce::Colour GridEditorComponent::laneTintColour(const RuntimeLaneId& laneId) const
+{
+    if (!laneGroupTintEnabled)
+        return juce::Colours::transparentBlack;
+
+    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+    if (lane == nullptr || !lane->runtimeTrackType.has_value())
+        return juce::Colour::fromRGBA(132, 156, 196, 18);
+
+    switch (*lane->runtimeTrackType)
+    {
+        case TrackType::Kick:
+        case TrackType::GhostKick:
+        case TrackType::Sub808:
+            return juce::Colour::fromRGBA(255, 132, 96, 26);
+        case TrackType::Snare:
+        case TrackType::ClapGhostSnare:
+            return juce::Colour::fromRGBA(255, 178, 124, 22);
+        case TrackType::HiHat:
+        case TrackType::OpenHat:
+        case TrackType::HatFX:
+            return juce::Colour::fromRGBA(104, 206, 255, 24);
+        case TrackType::Ride:
+        case TrackType::Cymbal:
+            return juce::Colour::fromRGBA(138, 188, 255, 22);
+        case TrackType::Perc:
+            return juce::Colour::fromRGBA(128, 220, 176, 22);
+        default:
+            break;
+    }
+
+    return juce::Colour::fromRGBA(132, 156, 196, 18);
+}
+
+bool GridEditorComponent::isHelperLane(const RuntimeLaneId& laneId) const
+{
+    const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+    if (lane == nullptr)
+        return false;
+
+    if (lane->runtimeTrackType.has_value())
+    {
+        switch (*lane->runtimeTrackType)
+        {
+            case TrackType::GhostKick:
+            case TrackType::ClapGhostSnare:
+            case TrackType::HatFX:
+                return true;
+            default:
+                break;
+        }
+    }
+
+    const auto laneIdLower = lane->laneId.toLowerCase();
+    const auto laneNameLower = lane->laneName.toLowerCase();
+    const auto groupNameLower = lane->groupName.toLowerCase();
+
+    return laneIdLower.contains("ghost")
+        || laneNameLower.contains("ghost")
+        || laneNameLower.contains("helper")
+        || laneNameLower.contains("hatfx")
+        || laneIdLower.contains("hatfx")
+        || groupNameLower.contains("helper");
+}
+
+bool GridEditorComponent::applyAutoCollapseHelperLanesNow()
+{
+    bool changed = false;
+    for (const auto& laneId : orderedVisibleLaneIds())
+    {
+        if (!isHelperLane(laneId))
+            continue;
+
+        changed = toggleLaneCollapsed(laneId, true) || changed;
+    }
+
+    return changed;
 }
 
 void GridEditorComponent::notifyGridModeDisplayChanged()

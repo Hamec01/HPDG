@@ -15,7 +15,8 @@
 
 namespace bbg
 {
-class Sub808PianoRollComponent : public juce::Component
+class Sub808PianoRollComponent : public juce::Component,
+                                 public juce::SettableTooltipClient
 {
 public:
     struct DrumGhostNote
@@ -35,6 +36,7 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
+    bool keyPressed(const juce::KeyPress& key) override;
 
     void setBars(int barsCount);
     void setStepWidth(float width);
@@ -104,6 +106,33 @@ private:
         Triplet
     };
 
+    enum class LocalScaleType
+    {
+        Minor = 0,
+        Major,
+        HarmonicMinor,
+        Phrygian
+    };
+
+    struct HeaderLayout
+    {
+        juce::Rectangle<int> octaveDownButton;
+        juce::Rectangle<int> octaveUpButton;
+        juce::Rectangle<int> octaveInfo;
+        juce::Rectangle<int> pencilBtn;
+        juce::Rectangle<int> brushBtn;
+        juce::Rectangle<int> selectBtn;
+        juce::Rectangle<int> cutBtn;
+        juce::Rectangle<int> eraseBtn;
+        juce::Rectangle<int> inspectorBounds;
+        juce::Rectangle<int> keyButton;
+        juce::Rectangle<int> scaleButton;
+        juce::Rectangle<int> scaleLockButton;
+        juce::Rectangle<int> kickGuideButton;
+        juce::Rectangle<int> hotkeysBtn;
+        juce::Rectangle<int> snapButton;
+    };
+
     static constexpr int kTopBarHeight = 30;
     static constexpr int kKeyboardWidth = 76;
     static constexpr int kVelocityLaneHeight = 92;
@@ -121,6 +150,12 @@ private:
     GridEditorComponent::InputBindings inputBindings;
     int bassKeyRootChoice = 0;
     int bassScaleModeChoice = 0;
+    int localKeyRootChoice = 0;
+    LocalScaleType localScaleType = LocalScaleType::Minor;
+    bool scaleLockEnabled = false;
+    bool showKickGuideEnabled = true;
+    bool localScaleContextOverridden = false;
+    bool localScaleLockOverridden = false;
     Sub808LaneSettings laneSettings;
     int focusedOctave = 3;
     std::vector<int> selectedIndices;
@@ -152,6 +187,7 @@ private:
     int totalSteps() const;
     int totalTicks() const;
     Sub808Geometry makeGeometry() const;
+    HeaderLayout makeHeaderLayout() const;
     int contentWidth() const;
     int contentHeight() const;
     juce::Rectangle<int> topBarBounds() const;
@@ -184,9 +220,15 @@ private:
     bool applySelectionVelocityDelta(int deltaVel);
     bool applySelectionVelocityWave(int deltaVel, int currentMouseX);
     bool copySelectionInternal(bool removeAfterCopy);
+    int nextLinkedNoteIndex(int noteIndex) const;
+    bool toggleSelectionSlideState();
+    bool toggleSelectionLegatoState();
+    bool toggleSelectionGlideState();
     bool setSelectionSlideState(bool enabled);
     bool setSelectionLegatoState(bool enabled);
     bool setSelectionGlideState(bool enabled);
+    bool clearSelectionLinkFlags();
+    bool makeSelectionLegatoToNext();
     ContextMenuTarget contextMenuTargetAt(juce::Point<int> p, std::optional<int>* hitOut = nullptr);
     void showContextMenu(juce::Point<int> p);
     bool applyContextAction(int actionId, juce::Point<int> p);
@@ -201,9 +243,14 @@ private:
     bool isVelocityEditKeyDown() const;
     bool isStretchEditKeyDown() const;
     int snappedPitchForInput(int rawPitch, bool bypassScaleSnap) const;
+    int activeScaleModeChoice() const;
+    juce::String activeScaleName() const;
+    juce::String activeRootName() const;
+    juce::String tooltipForPoint(juce::Point<int> p) const;
     bool isPitchInActiveScale(int pitch) const;
     bool isRootPitch(int pitch) const;
     bool shouldForceScaleSnap() const;
+    std::vector<int> kickGuideTicks() const;
     void previewNote(const PitchedNoteEvent& note);
     juce::String snapModeLabel() const;
     void cycleSnapMode(bool forward);

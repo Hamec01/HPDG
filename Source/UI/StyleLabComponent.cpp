@@ -242,13 +242,16 @@ private:
 };
 }
 
-StyleLabComponent::StyleLabComponent(const StyleLabState& initialState)
+StyleLabComponent::StyleLabComponent(const StyleLabState& initialState,
+                                     const StyleLabDraftState& initialDraftState)
     : state(initialState)
     , defaultState(initialState)
+    , draftState(initialDraftState)
 {
     addAndMakeVisible(titleLabel);
     addAndMakeVisible(subtitleLabel);
     addAndMakeVisible(conflictLabel);
+    addAndMakeVisible(draftStatusLabel);
     addAndMakeVisible(genreLabel);
     addAndMakeVisible(substyleLabel);
     addAndMakeVisible(barsLabel);
@@ -259,6 +262,7 @@ StyleLabComponent::StyleLabComponent(const StyleLabState& initialState)
     addAndMakeVisible(barsCombo);
     addAndMakeVisible(tempoMinSlider);
     addAndMakeVisible(tempoMaxSlider);
+    addAndMakeVisible(captureButton);
     addAndMakeVisible(addLaneButton);
     addAndMakeVisible(resetLayoutButton);
     addAndMakeVisible(browseReferencesButton);
@@ -273,11 +277,14 @@ StyleLabComponent::StyleLabComponent(const StyleLabState& initialState)
     titleLabel.setFont(juce::Font(juce::FontOptions(24.0f, juce::Font::bold)));
     titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
 
-    subtitleLabel.setText("Developer-only reference workspace for style presets, lane concepts, and pattern capture.", juce::dontSendNotification);
+    subtitleLabel.setText("Current Pattern, Style Lab Draft, and saved references are separate. Draft updates only when you capture it.", juce::dontSendNotification);
     subtitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(162, 174, 188));
 
     conflictLabel.setText("[REFERENCE NOTE] Lane Layout Designer stays reference-only. Save Reference exports the current runtime lane model from PatternProject; designer lane edits stay secondary metadata until applied.", juce::dontSendNotification);
     conflictLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(246, 186, 88));
+
+    draftStatusLabel.setJustificationType(juce::Justification::centredRight);
+    draftStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(162, 174, 188));
 
     setupLabel(genreLabel, "Genre");
     setupLabel(substyleLabel, "Substyle");
@@ -344,21 +351,47 @@ StyleLabComponent::StyleLabComponent(const StyleLabState& initialState)
         emitStateChanged();
     };
 
+    captureButton.onClick = [this] { captureCurrentPattern(); };
     addLaneButton.onClick = [this] { addLane(); };
     resetLayoutButton.onClick = [this] { resetLaneLayout(); };
     browseReferencesButton.onClick = [this] { showReferenceBrowser(); };
     saveReferenceButton.onClick = [this]
     {
-        updateStatusText("Saving reference pattern...", juce::Colour::fromRGB(182, 190, 202));
-        if (onSaveReferencePattern)
-            onSaveReferencePattern(state);
+        if (!draftState.hasCapturedPattern)
+        {
+            updateStatusText("No draft captured. Use Capture Current Pattern before saving.", juce::Colour::fromRGB(246, 186, 88));
+            return;
+        }
+
+        if (!onSaveReferencePattern)
+        {
+            updateStatusText("Save path is not connected.", juce::Colour::fromRGB(246, 186, 88));
+            return;
+        }
+
+        updateStatusText("Saving Style Lab draft as a reference...", juce::Colour::fromRGB(182, 190, 202));
+        juce::String statusMessage;
+        if (onSaveReferencePattern(state, draftState, statusMessage))
+        {
+            draftState.isDirty = false;
+            emitDraftStateChanged();
+            syncDraftUi();
+            updateStatusText(statusMessage.isNotEmpty() ? statusMessage : "Draft saved as a reference.",
+                             juce::Colour::fromRGB(152, 204, 168));
+        }
+        else
+        {
+            updateStatusText(statusMessage.isNotEmpty() ? statusMessage : "Failed to save Style Lab draft.",
+                             juce::Colour::fromRGB(246, 186, 88));
+        }
     };
 
     statusLabel.setJustificationType(juce::Justification::centredLeft);
     statusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(162, 174, 188));
-    updateStatusText("Ready to capture JSON, MIDI, and Style Lab metadata.", juce::Colour::fromRGB(162, 174, 188));
+    updateStatusText("Ready. Capture the current pattern when you want to refresh the Style Lab draft.", juce::Colour::fromRGB(162, 174, 188));
 
     syncControlsFromState();
+    syncDraftUi();
     refreshLaneRows();
 }
 
@@ -386,7 +419,9 @@ void StyleLabComponent::resized()
 
     titleLabel.setBounds(area.removeFromTop(32));
     subtitleLabel.setBounds(area.removeFromTop(22));
-    conflictLabel.setBounds(area.removeFromTop(22));
+    auto infoRow = area.removeFromTop(22);
+    conflictLabel.setBounds(infoRow.removeFromLeft(juce::jmax(240, infoRow.getWidth() - 220)));
+    draftStatusLabel.setBounds(infoRow);
     area.removeFromTop(10);
 
     auto controls = area.removeFromTop(84);
@@ -422,6 +457,8 @@ void StyleLabComponent::resized()
 
     area.removeFromTop(8);
     auto toolbar = area.removeFromTop(30);
+    captureButton.setBounds(toolbar.removeFromLeft(172));
+    toolbar.removeFromLeft(8);
     addLaneButton.setBounds(toolbar.removeFromLeft(110));
     toolbar.removeFromLeft(8);
     resetLayoutButton.setBounds(toolbar.removeFromLeft(108));
@@ -539,6 +576,27 @@ void StyleLabComponent::updateStatusText(const juce::String& text, juce::Colour 
     statusLabel.setText(text, juce::dontSendNotification);
 }
 
+void StyleLabComponent::syncDraftUi()
+{
+    if (!draftState.hasCapturedPattern)
+    {
+        draftStatusLabel.setText("Draft: No Capture", juce::dontSendNotification);
+        draftStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(206, 176, 120));
+    }
+    else if (draftState.isDirty)
+    {
+        draftStatusLabel.setText("Draft: Unsaved Draft", juce::dontSendNotification);
+        draftStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(246, 186, 88));
+    }
+    else
+    {
+        draftStatusLabel.setText("Draft: Saved", juce::dontSendNotification);
+        draftStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(152, 204, 168));
+    }
+
+    saveReferenceButton.setEnabled(draftState.hasCapturedPattern);
+}
+
 void StyleLabComponent::emitStateChanged()
 {
     if (onStateChanged)
@@ -547,6 +605,35 @@ void StyleLabComponent::emitStateChanged()
     const auto conflict = StyleLabReferenceService::buildConflictDescription(state);
     if (conflict.isNotEmpty())
         updateStatusText(conflict, juce::Colour::fromRGB(246, 186, 88));
+}
+
+void StyleLabComponent::emitDraftStateChanged()
+{
+    if (onDraftStateChanged)
+        onDraftStateChanged(draftState);
+}
+
+void StyleLabComponent::captureCurrentPattern()
+{
+    if (!onCaptureCurrentPattern)
+    {
+        updateStatusText("Capture path is not connected.", juce::Colour::fromRGB(246, 186, 88));
+        return;
+    }
+
+    const auto captured = onCaptureCurrentPattern();
+    if (!captured.has_value())
+    {
+        updateStatusText("Failed to capture the current pattern.", juce::Colour::fromRGB(246, 186, 88));
+        return;
+    }
+
+    draftState.draftPattern = *captured;
+    draftState.isDirty = true;
+    draftState.hasCapturedPattern = true;
+    emitDraftStateChanged();
+    syncDraftUi();
+    updateStatusText("Current pattern captured into the Style Lab draft.", juce::Colour::fromRGB(152, 204, 168));
 }
 
 void StyleLabComponent::showReferenceBrowser()

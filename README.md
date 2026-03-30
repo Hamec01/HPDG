@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/26344019/README.md)
 # HPDG
 
 HPDG (HamloProd Drum Generator) is a JUCE-based VST3 and Standalone instrument for fast drum pattern generation and editing.

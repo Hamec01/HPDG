@@ -488,6 +488,22 @@ juce::String StyleLabReferenceService::buildReferenceMetadataJson(const PatternP
     return juce::JSON::toString(stateToMetadataVar(state, project, resolvedConflictMessage), true);
 }
 
+StyleLabReferenceExportResult StyleLabReferenceService::saveReferencePattern(const StyleLabDraftState& draftState,
+                                                                             const StyleLabState& state)
+{
+    StyleLabReferenceExportResult result;
+
+    if (!draftState.hasCapturedPattern)
+    {
+        result.errorMessage = "Capture the current pattern into the Style Lab draft before saving a reference.";
+        return result;
+    }
+
+    auto project = draftState.draftPattern;
+    result = saveReferencePattern(project, state);
+    return result;
+}
+
 StyleLabReferenceExportResult StyleLabReferenceService::saveReferencePattern(const PatternProject& project,
                                                                              const StyleLabState& state)
 {

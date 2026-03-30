@@ -103,6 +103,8 @@ public:
 
 private:
     static juce::String roleLabelForLane(const RuntimeLaneRowState& state);
+    static juce::String helperBadgeTextForLane(const RuntimeLaneRowState& state);
+    static juce::String tooltipTextForLane(const RuntimeLaneRowState& state);
     void updateParameterValueLabels();
     void showOverflowMenu();
     void applyDisplayModeVisibility();
@@ -118,6 +120,7 @@ private:
     bool isCore = true;
     bool supportsDragExport = true;
     bool isGhostTrack = false;
+    juce::String helperBadgeText;
     LaneRackDisplayMode displayMode = LaneRackDisplayMode::Full;
 
     ClickableLabel nameLabel;
