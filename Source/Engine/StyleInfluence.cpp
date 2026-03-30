@@ -107,11 +107,11 @@ void applyBoomBapMusicalHints(const ResolvedStyleDefinition& definition, Pattern
                clampUnit(sharedDensity * 0.7f + kickBias * 0.08f + hatBias * 0.06f - percSparsity * 0.18f),
                0.7f);
 
-    blendWeight(laneBiasFor(styleInfluence, TrackType::Kick).activityWeight, 0.96f + kickBias * 0.14f, 0.55f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::HiHat).activityWeight, 0.92f + hatBias * 0.10f, 0.45f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::ClapGhostSnare).balanceWeight, 1.0f + clapFocus * 0.24f, 0.8f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::Perc).activityWeight, 0.56f + (1.0f - percSparsity) * 0.18f, 0.75f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::OpenHat).activityWeight, 0.66f + (1.0f - percSparsity) * 0.16f, 0.7f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Kick).activityWeight, 0.96f + kickBias * 0.14f, 0.55f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 0.92f + hatBias * 0.10f, 0.45f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::ClapGhostSnare).balanceWeight, 1.0f + clapFocus * 0.24f, 0.8f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Perc).activityWeight, 0.56f + (1.0f - percSparsity) * 0.18f, 0.75f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::OpenHat).activityWeight, 0.66f + (1.0f - percSparsity) * 0.16f, 0.7f);
     blendWeight(styleInfluence.supportAccentWeight, 1.0f + clapFocus * 0.18f - percSparsity * 0.08f, 0.7f);
 }
 
@@ -133,10 +133,10 @@ void applyRapMusicalHints(const ResolvedStyleDefinition& definition, PatternProj
     blendParam(params.humanizeAmount, clampUnit(sharedHumanize * 0.6f + looseness * 0.25f), 0.5f);
     blendParam(params.densityAmount, clampUnit(sharedDensity * 0.72f + supportDensity * 0.18f), 0.55f);
 
-    blendWeight(laneBiasFor(styleInfluence, TrackType::ClapGhostSnare).balanceWeight, 1.0f + accentPush * 0.14f, 0.65f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::OpenHat).activityWeight, 0.88f + supportDensity * 0.12f, 0.5f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::Perc).activityWeight, 0.82f + supportDensity * 0.12f, 0.55f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::Ride).activityWeight, 0.78f + supportDensity * 0.14f, 0.6f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::ClapGhostSnare).balanceWeight, 1.0f + accentPush * 0.14f, 0.65f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::OpenHat).activityWeight, 0.88f + supportDensity * 0.12f, 0.5f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Perc).activityWeight, 0.82f + supportDensity * 0.12f, 0.55f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Ride).activityWeight, 0.78f + supportDensity * 0.14f, 0.6f);
     blendWeight(styleInfluence.supportAccentWeight, 0.94f + accentPush * 0.10f + supportDensity * 0.08f, 0.6f);
 }
 
@@ -159,10 +159,10 @@ void applyTrapMusicalHints(const ResolvedStyleDefinition& definition, PatternPro
     blendParam(params.humanizeAmount, clampUnit(sharedHumanize * 0.55f + hatSubdivision * 0.10f), 0.35f);
     blendParam(params.densityAmount, clampUnit(sharedDensity * 0.58f + hatSubdivision * 0.18f + emphasis808 * 0.16f), 0.75f);
 
-    blendWeight(laneBiasFor(styleInfluence, TrackType::HiHat).activityWeight, 1.0f + hatSubdivision * 0.22f, 0.8f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::HatFX).activityWeight, 0.96f + bounce * 0.24f, 0.75f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::Sub808).balanceWeight, 1.0f + emphasis808 * 0.30f, 0.85f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::OpenHat).activityWeight, 0.92f + openHatProfile * 0.24f, 0.75f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 1.0f + hatSubdivision * 0.22f, 0.8f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::HatFX).activityWeight, 0.96f + bounce * 0.24f, 0.75f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Bass).balanceWeight, 1.0f + emphasis808 * 0.30f, 0.85f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::OpenHat).activityWeight, 0.92f + openHatProfile * 0.24f, 0.75f);
     blendWeight(styleInfluence.bounceWeight, 1.0f + bounce * 0.22f, 0.8f);
     blendWeight(styleInfluence.lowEndCouplingWeight, 1.0f + emphasis808 * 0.18f, 0.7f);
 }
@@ -208,10 +208,10 @@ void applyDrillMusicalHints(const ResolvedStyleDefinition& definition, PatternPr
                          - refGapIntent * 0.10f),
                0.7f);
 
-    blendWeight(laneBiasFor(styleInfluence, TrackType::HiHat).activityWeight, 0.94f + styleAwareMotion * 0.18f + refDensityVariation * 0.06f, 0.7f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::HatFX).activityWeight, 0.96f + styleAwareMotion * 0.16f + refBurst * 0.10f, 0.72f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::Sub808).balanceWeight, 1.0f + kick808Coupling * 0.26f, 0.8f);
-    blendWeight(laneBiasFor(styleInfluence, TrackType::Perc).activityWeight, 0.78f - refGapIntent * 0.16f, 0.7f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 0.94f + styleAwareMotion * 0.18f + refDensityVariation * 0.06f, 0.7f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::HatFX).activityWeight, 0.96f + styleAwareMotion * 0.16f + refBurst * 0.10f, 0.72f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Bass).balanceWeight, 1.0f + kick808Coupling * 0.26f, 0.8f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Perc).activityWeight, 0.78f - refGapIntent * 0.16f, 0.7f);
     blendWeight(styleInfluence.lowEndCouplingWeight, 1.0f + kick808Coupling * 0.24f, 0.85f);
     blendWeight(styleInfluence.hatMotionWeight, 0.94f + styleAwareMotion * 0.26f + refBurst * 0.06f, 0.8f);
     blendWeight(styleInfluence.anchorRigidityWeight, 1.0f + anchorRigidity * 0.20f, 0.85f);

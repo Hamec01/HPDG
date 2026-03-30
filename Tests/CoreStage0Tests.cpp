@@ -2136,6 +2136,42 @@ void testStyleLabMetadataExportConsistency()
                               "Layout controller must clamp left panel width to available rack maximum.");
                       }
 
+                      void testRoleBasedLaneBiasAccessorParity()
+                      {
+                          StyleInfluenceState state;
+
+                          const auto expectAliasParity = [&state](TrackRole role, TrackType type)
+                          {
+                              auto& roleBias = laneBiasFor(state, role);
+                              auto& typeBias = laneBiasFor(state, type);
+
+                              roleBias.activityWeight = 1.37f;
+                              roleBias.balanceWeight = 0.83f;
+                              expect(&roleBias == &typeBias,
+                                  "Role-based lane bias accessor must resolve to the existing TrackType slot.");
+                              expect(nearlyEqual(typeBias.activityWeight, 1.37f),
+                                  "Role-based activity write must update the TrackType lane bias slot.");
+                              expect(nearlyEqual(typeBias.balanceWeight, 0.83f),
+                                  "Role-based balance write must update the TrackType lane bias slot.");
+
+                              typeBias.activityWeight = 0.61f;
+                              typeBias.balanceWeight = 1.29f;
+                              expect(nearlyEqual(roleBias.activityWeight, 0.61f),
+                                  "TrackType activity write must remain visible through the role-based accessor.");
+                              expect(nearlyEqual(roleBias.balanceWeight, 1.29f),
+                                  "TrackType balance write must remain visible through the role-based accessor.");
+                          };
+
+                          expectAliasParity(TrackRole::Kick, TrackType::Kick);
+                          expectAliasParity(TrackRole::HiHat, TrackType::HiHat);
+                          expectAliasParity(TrackRole::ClapGhostSnare, TrackType::ClapGhostSnare);
+                          expectAliasParity(TrackRole::Perc, TrackType::Perc);
+                          expectAliasParity(TrackRole::OpenHat, TrackType::OpenHat);
+                          expectAliasParity(TrackRole::Ride, TrackType::Ride);
+                          expectAliasParity(TrackRole::HatFX, TrackType::HatFX);
+                          expectAliasParity(TrackRole::Bass, TrackType::Sub808);
+                      }
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -2183,6 +2219,7 @@ int main()
     failures += runTest("Editor history controller undo redo", testEditorHistoryControllerUndoRedo);
     failures += runTest("Hotkey controller maps and persistence", testHotkeyControllerMapsAndPersistence);
     failures += runTest("Editor layout controller persistence smoke", testEditorLayoutControllerPersistenceSmoke);
+    failures += runTest("Role-based lane bias accessor parity", testRoleBasedLaneBiasAccessorParity);
 
     if (failures == 0)
     {

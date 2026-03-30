@@ -11,6 +11,7 @@
 #include "PatternAuthoringState.h"
 #include "ReferenceHatSkeleton.h"
 #include "RuntimeLaneProfile.h"
+#include "TrackSemantics.h"
 #include "TrackRegistry.h"
 #include "TrackState.h"
 
@@ -49,6 +50,18 @@ inline LaneMusicalBiasState& laneBiasFor(StyleInfluenceState& state, TrackType t
 inline const LaneMusicalBiasState& laneBiasFor(const StyleInfluenceState& state, TrackType type)
 {
     return state.laneBiases[trackTypeIndex(type)];
+}
+
+inline LaneMusicalBiasState& laneBiasFor(StyleInfluenceState& state, TrackRole role)
+{
+    jassert(hasCanonicalTrackTypeForRole(role));
+    return laneBiasFor(state, canonicalTrackTypeForRole(role));
+}
+
+inline const LaneMusicalBiasState& laneBiasFor(const StyleInfluenceState& state, TrackRole role)
+{
+    jassert(hasCanonicalTrackTypeForRole(role));
+    return laneBiasFor(state, canonicalTrackTypeForRole(role));
 }
 
 enum class PreviewPlaybackMode

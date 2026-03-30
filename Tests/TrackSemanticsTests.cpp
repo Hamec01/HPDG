@@ -63,6 +63,31 @@ void testRoleMapping()
     expect(roleFromTrackType(TrackType::Sub808) == TrackRole::Bass, "Sub808 role mapping mismatch.");
 }
 
+void testCanonicalTrackTypeMapping()
+{
+    expect(hasCanonicalTrackTypeForRole(TrackRole::Kick), "Kick canonical mapping missing.");
+    expect(hasCanonicalTrackTypeForRole(TrackRole::HiHat), "HiHat canonical mapping missing.");
+    expect(hasCanonicalTrackTypeForRole(TrackRole::ClapGhostSnare), "Clap/GhostSnare canonical mapping missing.");
+    expect(hasCanonicalTrackTypeForRole(TrackRole::Perc), "Perc canonical mapping missing.");
+    expect(hasCanonicalTrackTypeForRole(TrackRole::OpenHat), "OpenHat canonical mapping missing.");
+    expect(hasCanonicalTrackTypeForRole(TrackRole::Ride), "Ride canonical mapping missing.");
+    expect(hasCanonicalTrackTypeForRole(TrackRole::HatFX), "HatFX canonical mapping missing.");
+    expect(hasCanonicalTrackTypeForRole(TrackRole::Bass), "Bass canonical mapping missing.");
+    expect(!hasCanonicalTrackTypeForRole(TrackRole::Snare), "Snare canonical mapping must remain disabled for this alias layer.");
+    expect(!hasCanonicalTrackTypeForRole(TrackRole::GhostKick), "GhostKick canonical mapping must remain disabled for this alias layer.");
+    expect(!hasCanonicalTrackTypeForRole(TrackRole::Cymbal), "Cymbal canonical mapping must remain disabled for this alias layer.");
+    expect(!hasCanonicalTrackTypeForRole(TrackRole::Unknown), "Unknown canonical mapping must remain disabled.");
+
+    expect(canonicalTrackTypeForRole(TrackRole::Kick) == TrackType::Kick, "Kick canonical track mapping mismatch.");
+    expect(canonicalTrackTypeForRole(TrackRole::HiHat) == TrackType::HiHat, "HiHat canonical track mapping mismatch.");
+    expect(canonicalTrackTypeForRole(TrackRole::ClapGhostSnare) == TrackType::ClapGhostSnare, "Clap/GhostSnare canonical track mapping mismatch.");
+    expect(canonicalTrackTypeForRole(TrackRole::Perc) == TrackType::Perc, "Perc canonical track mapping mismatch.");
+    expect(canonicalTrackTypeForRole(TrackRole::OpenHat) == TrackType::OpenHat, "OpenHat canonical track mapping mismatch.");
+    expect(canonicalTrackTypeForRole(TrackRole::Ride) == TrackType::Ride, "Ride canonical track mapping mismatch.");
+    expect(canonicalTrackTypeForRole(TrackRole::HatFX) == TrackType::HatFX, "HatFX canonical track mapping mismatch.");
+    expect(canonicalTrackTypeForRole(TrackRole::Bass) == TrackType::Sub808, "Bass canonical track mapping mismatch.");
+}
+
 void testFamilyMapping()
 {
     expect(familyFromTrackType(TrackType::HiHat) == TrackFamily::HatFamily, "HiHat family mapping mismatch.");
@@ -126,6 +151,7 @@ int main()
 
     int failures = 0;
     failures += runTest("Track role mapping", testRoleMapping);
+    failures += runTest("Canonical track-type mapping", testCanonicalTrackTypeMapping);
     failures += runTest("Track family mapping", testFamilyMapping);
     failures += runTest("Helper parity", testHelperParity);
     failures += runTest("Default lane-role labels", testDefaultLaneRoleLabels);

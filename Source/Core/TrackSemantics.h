@@ -49,6 +49,40 @@ constexpr TrackRole roleFromTrackType(TrackType type)
     }
 }
 
+constexpr bool hasCanonicalTrackTypeForRole(TrackRole role)
+{
+    switch (role)
+    {
+        case TrackRole::HiHat:
+        case TrackRole::OpenHat:
+        case TrackRole::ClapGhostSnare:
+        case TrackRole::Kick:
+        case TrackRole::Ride:
+        case TrackRole::Perc:
+        case TrackRole::HatFX:
+        case TrackRole::Bass:
+            return true;
+        default:
+            return false;
+    }
+}
+
+constexpr TrackType canonicalTrackTypeForRole(TrackRole role)
+{
+    switch (role)
+    {
+        case TrackRole::HiHat:          return TrackType::HiHat;
+        case TrackRole::OpenHat:        return TrackType::OpenHat;
+        case TrackRole::ClapGhostSnare: return TrackType::ClapGhostSnare;
+        case TrackRole::Kick:           return TrackType::Kick;
+        case TrackRole::Ride:           return TrackType::Ride;
+        case TrackRole::Perc:           return TrackType::Perc;
+        case TrackRole::HatFX:          return TrackType::HatFX;
+        case TrackRole::Bass:           return TrackType::Sub808;
+        default:                        return TrackType::HiHat;
+    }
+}
+
 constexpr TrackFamily familyFromTrackType(TrackType type)
 {
     switch (type)
