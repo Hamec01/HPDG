@@ -718,7 +718,7 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                 {
                     for (int step : { 2, 6, 10, 14 })
                     {
-                        if (chance(rng) < std::clamp(style.rideChance * rideDefaults.noteProbability * laneActivityWeight(project, TrackType::Ride), 0.01f, 0.55f))
+                        if (chance(rng) < std::clamp(style.rideChance * rideDefaults.noteProbability * std::clamp(laneBiasFor(project.styleInfluence, TrackRole::Ride).activityWeight, 0.55f, 1.5f), 0.01f, 0.55f))
                             ride->notes.push_back({ 51, bar * 16 + step, 1, vel(rng), 2, false });
                     }
                 }
