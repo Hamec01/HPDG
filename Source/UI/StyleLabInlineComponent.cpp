@@ -46,6 +46,7 @@ StyleLabInlineComponent::StyleLabInlineComponent()
     addAndMakeVisible(targetLaneLabel);
     addAndMakeVisible(statsLabel);
     addAndMakeVisible(workflowLabel);
+    addAndMakeVisible(libraryMetaLabel);
     addAndMakeVisible(genreCombo);
     addAndMakeVisible(substyleCombo);
     addAndMakeVisible(barsCombo);
@@ -70,7 +71,9 @@ StyleLabInlineComponent::StyleLabInlineComponent()
     setupLabel(tempoMaxLabel, "Tempo Max");
     setupLabel(targetLaneLabel, "Import Target: Kick", juce::Colour::fromRGB(212, 220, 232));
     setupLabel(statsLabel, "Notes 0 | Tagged 0 | Tagged Lanes 0", juce::Colour::fromRGB(158, 176, 198));
+    setupLabel(libraryMetaLabel, "Library: mood -, density -, priority 50", juce::Colour::fromRGB(168, 182, 200));
     setupLabel(workflowLabel, "Workflow: draw or import MIDI, fix notes, tag roles, save reference.", juce::Colour::fromRGB(152, 196, 244));
+    libraryMetaLabel.setJustificationType(juce::Justification::centredLeft);
     workflowLabel.setJustificationType(juce::Justification::centredLeft);
 
     setupCombo(genreCombo, genreOptions());
@@ -183,6 +186,8 @@ void StyleLabInlineComponent::resized()
     statsLabel.setBounds(summaryRow);
 
     area.removeFromTop(2);
+    libraryMetaLabel.setBounds(area.removeFromTop(18));
+    area.removeFromTop(2);
     workflowLabel.setBounds(area.removeFromTop(18));
 }
 
@@ -207,6 +212,12 @@ void StyleLabInlineComponent::setState(const StyleLabState& state)
     barsCombo.setText(juce::String(juce::jmax(1, state.bars)), juce::dontSendNotification);
     tempoMinSlider.setValue(state.tempoRange.getStart(), juce::dontSendNotification);
     tempoMaxSlider.setValue(state.tempoRange.getEnd(), juce::dontSendNotification);
+    const auto moodText = state.mood.isNotEmpty() ? state.mood : "-";
+    const auto densityText = state.densityProfile.isNotEmpty() ? state.densityProfile : "-";
+    libraryMetaLabel.setText("Library: mood " + moodText
+                                 + ", density " + densityText
+                                 + ", priority " + juce::String(state.referencePriority),
+                             juce::dontSendNotification);
     syncingControls = false;
 }
 

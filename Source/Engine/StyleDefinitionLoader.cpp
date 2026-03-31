@@ -1,6 +1,7 @@
 #include "StyleDefinitionLoader.h"
 
 #include <algorithm>
+#include <map>
 
 #include "BoomBap/BoomBapStyleProfile.h"
 #include "Drill/DrillStyleProfile.h"
@@ -15,6 +16,8 @@ namespace bbg
 {
 namespace
 {
+constexpr int kMaxRankedReferences = 3;
+
 juce::String sanitizePathSegment(const juce::String& input)
 {
     auto text = input.trim();
@@ -102,6 +105,277 @@ float clampUnit(float value)
 ReferenceHatSkeleton extractReferenceHatSkeleton(const StyleLabReferenceRecord& record);
 StyleLabReferenceDrillHatMotionSummary analyzeDrillHatReference(const StyleLabReferenceRecord& record);
 ReferenceKickPattern extractReferenceKickPattern(const StyleLabReferenceRecord& record);
+void applyDrillHatSummaryHints(ResolvedStyleDefinition& definition,
+                               const StyleLabReferenceDrillHatMotionSummary& hatSummary);
+ReferenceHatCorpus buildReferenceHatCorpus(const std::vector<StyleLabReferenceRecord>& records);
+ReferenceKickCorpus buildReferenceKickCorpus(const std::vector<StyleLabReferenceRecord>& records);
+
+float weightedAverage(const std::vector<float>& values, const std::vector<float>& weights)
+{
+    double weightedSum = 0.0;
+    double totalWeight = 0.0;
+
+    for (size_t index = 0; index < values.size() && index < weights.size(); ++index)
+    {
+        weightedSum += static_cast<double>(values[index]) * static_cast<double>(weights[index]);
+        totalWeight += static_cast<double>(weights[index]);
+    }
+
+    if (totalWeight <= 0.0)
+        return 0.0f;
+
+    return static_cast<float>(weightedSum / totalWeight);
+}
+
+GenreType genreTypeFromDisplayName(const juce::String& genreName)
+{
+    if (genreName.equalsIgnoreCase("Rap"))
+        return GenreType::Rap;
+    if (genreName.equalsIgnoreCase("Trap"))
+        return GenreType::Trap;
+    if (genreName.equalsIgnoreCase("Drill"))
+        return GenreType::Drill;
+    return GenreType::BoomBap;
+}
+
+juce::Time referenceSortTime(const StyleLabReferenceRecord& record)
+{
+    if (record.exportedAt.isNotEmpty())
+    {
+        const auto parsed = juce::Time::fromISO8601(record.exportedAt);
+        if (parsed.toMilliseconds() > 0)
+            return parsed;
+    }
+
+    if (record.metadataFile.existsAsFile())
+        return record.metadataFile.getLastModificationTime();
+
+    return record.directory.getLastModificationTime();
+}
+
+float taggedNoteRatio(const StyleLabReferenceRecord& record)
+{
+    if (record.totalNotes <= 0)
+        return 0.0f;
+    return clampUnit(static_cast<float>(record.taggedNotes) / static_cast<float>(record.totalNotes));
+}
+
+float normalizedNoteDensity(const StyleLabReferenceRecord& record)
+{
+    if (record.totalNotes <= 0 || record.bars <= 0)
+        return 0.0f;
+
+    const auto notesPerBar = static_cast<float>(record.totalNotes) / static_cast<float>(record.bars);
+    return clampUnit(notesPerBar / 24.0f);
+}
+
+float backedLaneRatio(const StyleLabReferenceRecord& record)
+{
+    if (record.totalRuntimeLaneCount <= 0)
+        return 0.0f;
+    return clampUnit(static_cast<float>(record.backedLaneCount) / static_cast<float>(record.totalRuntimeLaneCount));
+}
+
+std::vector<float> referenceAggregationWeights(size_t count)
+{
+    static constexpr float kBaseWeights[] = { 1.0f, 0.65f, 0.45f };
+
+    std::vector<float> weights;
+    weights.reserve(count);
+    for (size_t index = 0; index < count; ++index)
+        weights.push_back(kBaseWeights[index < std::size(kBaseWeights) ? index : std::size(kBaseWeights) - 1]);
+    return weights;
+}
+
+struct RankedReferenceEntry
+{
+    StyleLabReferenceRecord record;
+    juce::Time sortTime;
+};
+
+bool isNumericVar(const juce::var& value)
+{
+    return value.isInt() || value.isInt64() || value.isDouble() || value.isBool();
+}
+
+StyleLabReferenceDrillHatMotionSummary weightedDrillHatSummary(const std::vector<StyleLabReferenceRecord>& records,
+                                                               const std::vector<float>& weights)
+{
+    StyleLabReferenceDrillHatMotionSummary averaged;
+    std::vector<float> rollLength;
+    std::vector<float> densityVariation;
+    std::vector<float> accentAlternation;
+    std::vector<float> silenceGapIntent;
+    std::vector<float> burstClusterRate;
+    std::vector<float> tripletRate;
+    std::vector<float> usedWeights;
+
+    for (size_t index = 0; index < records.size() && index < weights.size(); ++index)
+    {
+        const auto summary = analyzeDrillHatReference(records[index]);
+        if (!summary.available)
+            continue;
+
+        rollLength.push_back(summary.averageRollLength);
+        densityVariation.push_back(summary.densityVariation);
+        accentAlternation.push_back(summary.accentAlternation);
+        silenceGapIntent.push_back(summary.silenceGapIntent);
+        burstClusterRate.push_back(summary.burstClusterRate);
+        tripletRate.push_back(summary.tripletRate);
+        usedWeights.push_back(weights[index]);
+    }
+
+    if (usedWeights.empty())
+        return averaged;
+
+    averaged.available = true;
+    averaged.averageRollLength = weightedAverage(rollLength, usedWeights);
+    averaged.densityVariation = weightedAverage(densityVariation, usedWeights);
+    averaged.accentAlternation = weightedAverage(accentAlternation, usedWeights);
+    averaged.silenceGapIntent = weightedAverage(silenceGapIntent, usedWeights);
+    averaged.burstClusterRate = weightedAverage(burstClusterRate, usedWeights);
+    averaged.tripletRate = weightedAverage(tripletRate, usedWeights);
+    return averaged;
+}
+
+void applyReferenceMetadataHints(ResolvedStyleDefinition& definition,
+                                 const std::vector<StyleLabReferenceRecord>& records,
+                                 const std::vector<float>& weights)
+{
+    if (records.empty())
+        return;
+
+    std::vector<float> priorities;
+    std::vector<float> noteCoverage;
+    std::vector<float> noteDensity;
+    std::vector<float> laneCoverage;
+
+    priorities.reserve(records.size());
+    noteCoverage.reserve(records.size());
+    noteDensity.reserve(records.size());
+    laneCoverage.reserve(records.size());
+
+    for (const auto& record : records)
+    {
+        priorities.push_back(clampUnit(static_cast<float>(record.referencePriority) / 100.0f));
+        noteCoverage.push_back(taggedNoteRatio(record));
+        noteDensity.push_back(normalizedNoteDensity(record));
+        laneCoverage.push_back(backedLaneRatio(record));
+    }
+
+    definition.styleHints.set("library.reference_priority", weightedAverage(priorities, weights));
+    definition.styleHints.set("library.tagged_note_ratio", weightedAverage(noteCoverage, weights));
+    definition.styleHints.set("library.note_density", weightedAverage(noteDensity, weights));
+    definition.styleHints.set("library.backed_lane_ratio", weightedAverage(laneCoverage, weights));
+    definition.styleHints.set("library.reference_count", static_cast<int>(records.size()));
+}
+
+void applyWeightedStyleHints(ResolvedStyleDefinition& definition,
+                             const std::vector<ResolvedStyleDefinition>& definitions,
+                             const std::vector<float>& weights)
+{
+    if (definitions.size() <= 1)
+        return;
+
+    struct AggregateValue
+    {
+        double weightedSum = 0.0;
+        double totalWeight = 0.0;
+    };
+
+    std::map<juce::String, AggregateValue> aggregates;
+
+    for (size_t defIndex = 0; defIndex < definitions.size() && defIndex < weights.size(); ++defIndex)
+    {
+        const auto& hints = definitions[defIndex].styleHints;
+        const auto weight = static_cast<double>(weights[defIndex]);
+        for (int hintIndex = 0; hintIndex < hints.size(); ++hintIndex)
+        {
+            const auto& value = hints.getValueAt(hintIndex);
+            if (!isNumericVar(value))
+                continue;
+
+            auto& aggregate = aggregates[hints.getName(hintIndex).toString()];
+            aggregate.weightedSum += static_cast<double>(value) * weight;
+            aggregate.totalWeight += weight;
+        }
+    }
+
+    for (const auto& entry : aggregates)
+    {
+        if (entry.second.totalWeight <= 0.0)
+            continue;
+
+        definition.styleHints.set(juce::Identifier(entry.first),
+                                  static_cast<float>(entry.second.weightedSum / entry.second.totalWeight));
+    }
+}
+
+std::vector<StyleLabReferenceRecord> rankAndSelectReferences(std::vector<StyleLabReferenceRecord> matchingRecords)
+{
+    std::vector<RankedReferenceEntry> rankedEntries;
+    rankedEntries.reserve(matchingRecords.size());
+
+    for (auto& record : matchingRecords)
+    {
+        const auto sortTime = referenceSortTime(record);
+        rankedEntries.push_back({ std::move(record), sortTime });
+    }
+
+    std::sort(rankedEntries.begin(), rankedEntries.end(), [](const RankedReferenceEntry& lhs, const RankedReferenceEntry& rhs)
+    {
+        if (lhs.record.referencePriority != rhs.record.referencePriority)
+            return lhs.record.referencePriority > rhs.record.referencePriority;
+        if (lhs.record.taggedNotes != rhs.record.taggedNotes)
+            return lhs.record.taggedNotes > rhs.record.taggedNotes;
+        if (lhs.record.totalNotes != rhs.record.totalNotes)
+            return lhs.record.totalNotes > rhs.record.totalNotes;
+        if (lhs.sortTime != rhs.sortTime)
+            return lhs.sortTime > rhs.sortTime;
+        return lhs.record.directory.getFullPathName() < rhs.record.directory.getFullPathName();
+    });
+
+    std::vector<StyleLabReferenceRecord> selected;
+    const auto limit = std::min<size_t>(rankedEntries.size(), kMaxRankedReferences);
+    selected.reserve(limit);
+    for (size_t index = 0; index < limit; ++index)
+        selected.push_back(std::move(rankedEntries[index].record));
+    return selected;
+}
+
+void applyRankedReferenceAggregation(ResolvedStyleDefinition& definition,
+                                     GenreType genre,
+                                     const std::vector<StyleLabReferenceRecord>& selectedRecords)
+{
+    if (selectedRecords.empty())
+        return;
+
+    definition.sourceReferenceCountUsed = static_cast<int>(selectedRecords.size());
+    definition.primaryReferenceId = selectedRecords.front().directory.getFileName();
+    definition.loadStrategy = selectedRecords.size() > 1 ? "ranked-reference-set" : "single-best-reference";
+
+    const auto weights = referenceAggregationWeights(selectedRecords.size());
+    std::vector<ResolvedStyleDefinition> resolvedReferences;
+    resolvedReferences.reserve(selectedRecords.size());
+    for (const auto& record : selectedRecords)
+        resolvedReferences.push_back(StyleDefinitionLoader::fromReferenceRecord(genre, record));
+
+    applyWeightedStyleHints(definition, resolvedReferences, weights);
+    applyReferenceMetadataHints(definition, selectedRecords, weights);
+
+    if (genre == GenreType::Drill)
+    {
+        const auto corpus = buildReferenceHatCorpus(selectedRecords);
+        if (corpus.available)
+            definition.referenceHatCorpus = corpus;
+
+        const auto kickCorpus = buildReferenceKickCorpus(selectedRecords);
+        if (kickCorpus.available)
+            definition.referenceKickCorpus = kickCorpus;
+
+        applyDrillHatSummaryHints(definition, weightedDrillHatSummary(selectedRecords, weights));
+    }
+}
 
 void applyDrillHatSummaryHints(ResolvedStyleDefinition& definition,
                                const StyleLabReferenceDrillHatMotionSummary& hatSummary)
@@ -818,18 +1092,7 @@ std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const j
             candidates.push_back(directory);
     }
 
-    std::sort(candidates.begin(), candidates.end(), [](const juce::File& lhs, const juce::File& rhs)
-    {
-        return lhs.getFileName() > rhs.getFileName();
-    });
-
-    GenreType genre = GenreType::BoomBap;
-    if (genreName.equalsIgnoreCase("Rap"))
-        genre = GenreType::Rap;
-    else if (genreName.equalsIgnoreCase("Trap"))
-        genre = GenreType::Trap;
-    else if (genreName.equalsIgnoreCase("Drill"))
-        genre = GenreType::Drill;
+    const auto genre = genreTypeFromDisplayName(genreName);
 
     std::vector<StyleLabReferenceRecord> matchingRecords;
     for (const auto& directory : candidates)
@@ -851,17 +1114,9 @@ std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const j
 
     if (!matchingRecords.empty())
     {
-        auto definition = fromReferenceRecord(genre, matchingRecords.front());
-        if (genre == GenreType::Drill && substyleName.equalsIgnoreCase("UKDrill"))
-        {
-            const auto corpus = buildReferenceHatCorpus(matchingRecords);
-            if (corpus.available)
-                definition.referenceHatCorpus = corpus;
-            const auto kickCorpus = buildReferenceKickCorpus(matchingRecords);
-            if (kickCorpus.available)
-                definition.referenceKickCorpus = kickCorpus;
-            applyDrillHatSummaryHints(definition, averageDrillHatSummaries(matchingRecords));
-        }
+        const auto selectedRecords = rankAndSelectReferences(std::move(matchingRecords));
+        auto definition = fromReferenceRecord(genre, selectedRecords.front());
+        applyRankedReferenceAggregation(definition, genre, selectedRecords);
 
         if (errorMessage != nullptr)
             *errorMessage = {};
@@ -882,6 +1137,9 @@ StyleDefinition StyleDefinitionLoader::buildFallback(GenreType genre, int substy
     definition.substyleName = substyleNameFor(genre, clampedIndex);
     definition.source = "StyleDefaults fallback";
     definition.loadedFromReference = false;
+    definition.sourceReferenceCountUsed = 0;
+    definition.primaryReferenceId = {};
+    definition.loadStrategy = "fallback";
 
     const auto& styleDefaults = getGenreStyleDefaults(genre, clampedIndex);
     auto profile = TrackRegistry::createDefaultRuntimeLaneProfile();
@@ -933,6 +1191,9 @@ StyleDefinition StyleDefinitionLoader::fromReferenceRecord(GenreType genre, cons
     definition.substyleName = record.substyle;
     definition.source = record.directory.getFileName();
     definition.loadedFromReference = true;
+    definition.sourceReferenceCountUsed = 1;
+    definition.primaryReferenceId = record.directory.getFileName();
+    definition.loadStrategy = "single-best-reference";
     definition.lanes.clear();
     definition.lanes.reserve(record.runtimeLanes.size());
 

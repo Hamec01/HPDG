@@ -154,6 +154,77 @@ bool hasReferenceKickCorpus(const StyleInfluenceState& styleInfluence)
         && !styleInfluence.referenceKickCorpus.variants.empty();
 }
 
+struct ReferenceKickStepProfile
+{
+    bool available = false;
+    float density = 0.0f;
+    std::array<float, 16> presence {};
+    std::array<float, 16> velocityBias {};
+};
+
+ReferenceKickStepProfile buildReferenceKickStepProfile(const ReferenceKickCorpus* corpus, int bar)
+{
+    ReferenceKickStepProfile profile;
+    if (corpus == nullptr || !corpus->available || corpus->variants.empty())
+        return profile;
+
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    for (const auto& variant : corpus->variants)
+    {
+        const auto* barPattern = referenceKickBarFor(&variant, bar);
+        if (barPattern == nullptr)
+            continue;
+
+        ++contributingBars;
+        totalNotes += static_cast<float>(barPattern->notes.size());
+        for (const auto& note : barPattern->notes)
+        {
+            const int step = std::clamp(note.step16, 0, 15);
+            profile.presence[static_cast<size_t>(step)] += 1.0f;
+            profile.velocityBias[static_cast<size_t>(step)] += static_cast<float>(std::clamp(note.velocity, 1, 127)) / 127.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return profile;
+
+    profile.available = true;
+    const float invBars = 1.0f / static_cast<float>(contributingBars);
+    for (size_t index = 0; index < profile.presence.size(); ++index)
+    {
+        profile.presence[index] *= invBars;
+        profile.velocityBias[index] = profile.presence[index] > 0.0f
+            ? std::clamp(profile.velocityBias[index] * invBars, 0.0f, 1.0f)
+            : 0.0f;
+    }
+    profile.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    return profile;
+}
+
+std::vector<int> referenceKickLeadSteps(const ReferenceKickStepProfile& profile)
+{
+    std::vector<std::pair<float, int>> ranked;
+    for (int step = 0; step < 16; ++step)
+    {
+        if (profile.presence[static_cast<size_t>(step)] < 0.34f)
+            continue;
+        ranked.push_back({ profile.presence[static_cast<size_t>(step)] + profile.velocityBias[static_cast<size_t>(step)] * 0.12f, step });
+    }
+
+    std::sort(ranked.begin(), ranked.end(), [](const auto& left, const auto& right)
+    {
+        if (left.first != right.first)
+            return left.first > right.first;
+        return left.second < right.second;
+    });
+
+    std::vector<int> steps;
+    for (const auto& item : ranked)
+        steps.push_back(item.second);
+    return steps;
+}
+
 std::vector<int> buildUKKickStepsFromCorpus(const ReferenceKickCorpus* corpus,
                                             int bar,
                                             float rigidity,
@@ -244,35 +315,9 @@ void DrillKickGenerator::generate(TrackState& track,
         density *= 0.74f;
     density = std::clamp(density, 0.08f, 1.0f);
     const float rigidity = anchorRigidityWeight(styleInfluence);
-
-    if (style.substyle == DrillSubstyle::UKDrill && hasReferenceKickCorpus(styleInfluence))
-    {
-        std::uniform_int_distribution<int> vel(style.kickVelocityMin, style.kickVelocityMax);
-        for (int bar = 0; bar < bars; ++bar)
-        {
-            for (const int step : buildUKKickStepsFromCorpus(&styleInfluence.referenceKickCorpus, bar, rigidity, rng))
-            {
-                NoteEvent note;
-                note.pitch = pitch;
-                note.step = bar * 16 + step;
-                note.length = 1;
-                note.velocity = vel(rng);
-                track.notes.push_back(note);
-            }
-        }
-
-        std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& left, const NoteEvent& right)
-        {
-            if (left.step != right.step)
-                return left.step < right.step;
-            return left.velocity > right.velocity;
-        });
-        track.notes.erase(std::unique(track.notes.begin(), track.notes.end(), [](const NoteEvent& left, const NoteEvent& right)
-        {
-            return left.step == right.step;
-        }), track.notes.end());
-        return;
-    }
+    const ReferenceKickCorpus* referenceCorpus = hasReferenceKickCorpus(styleInfluence)
+        ? &styleInfluence.referenceKickCorpus
+        : nullptr;
 
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     std::uniform_int_distribution<int> vel(style.kickVelocityMin, style.kickVelocityMax);
@@ -284,6 +329,8 @@ void DrillKickGenerator::generate(TrackState& track,
     for (int bar = 0; bar < bars; ++bar)
     {
         const auto role = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : DrillPhraseRole::Base;
+        const auto referenceProfile = buildReferenceKickStepProfile(referenceCorpus, bar);
+        const auto referenceLeadSteps = referenceKickLeadSteps(referenceProfile);
         std::vector<int> selected;
         selected.reserve(6);
         std::array<int, 4> majorEventsByWindow { 0, 0, 0, 0 };
@@ -304,7 +351,8 @@ void DrillKickGenerator::generate(TrackState& track,
             ? std::clamp(blueprint->barPlans[static_cast<size_t>(bar)].densityBudget, 0.0f, 1.0f)
             : std::clamp(density, 0.0f, 1.0f);
         const int dynamicMaxHits = std::max(1, static_cast<int>(std::round(static_cast<float>(maxHits) * std::clamp(0.55f + barBudget * 0.85f, 0.4f, 1.25f))));
-        const int effectiveMaxHits = std::min({ maxHits, dynamicMaxHits, caps.maxTotalPerBar });
+        const int referenceBonusHits = referenceProfile.available && referenceProfile.density > 0.58f && role != DrillPhraseRole::Response ? 1 : 0;
+        const int effectiveMaxHits = std::min({ maxHits, dynamicMaxHits + referenceBonusHits, caps.maxTotalPerBar });
         const int effectiveMinHits = std::min(minHits, effectiveMaxHits);
 
         auto tryAdd = [&](int step)
@@ -342,6 +390,20 @@ void DrillKickGenerator::generate(TrackState& track,
             gate *= std::clamp(0.6f + barBudget * 0.8f, 0.35f, 1.2f);
             if (step == 0)
                 gate = 1.0f;
+
+            if (referenceProfile.available)
+            {
+                const float presence = referenceProfile.presence[static_cast<size_t>(step)];
+                const float velocityBias = referenceProfile.velocityBias[static_cast<size_t>(step)];
+                float referenceGate = 0.82f + presence * (step == 0 || step == 10 ? 0.34f : 0.62f) + velocityBias * 0.08f;
+                if (eventType == DrillKickEventType::PhraseEdgeKick && presence >= 0.36f)
+                    referenceGate += 0.08f;
+                if (style.substyle == DrillSubstyle::UKDrill)
+                    referenceGate += presence * 0.06f;
+                if (referenceProfile.density < 0.28f && eventType == DrillKickEventType::SupportKick)
+                    referenceGate *= 0.88f;
+                gate *= std::clamp(referenceGate, 0.52f, 1.42f);
+            }
 
             if (eventType == DrillKickEventType::AnchorKick)
                 gate *= std::clamp(0.9f + rigidity * 0.14f, 0.8f, 1.15f);
@@ -415,6 +477,16 @@ void DrillKickGenerator::generate(TrackState& track,
         ++majorEventsByWindow[0];
         if (std::find(candidates.begin(), candidates.end(), 10) != candidates.end())
             tryAdd(10);
+        for (const int step : referenceLeadSteps)
+        {
+            if (step == 0 || step == 10)
+                continue;
+            if (referenceProfile.presence[static_cast<size_t>(step)] < 0.42f)
+                continue;
+            tryAdd(step);
+            if (static_cast<int>(selected.size()) >= std::min(effectiveMaxHits, 3))
+                break;
+        }
         for (const int step : candidates)
             if (step != 0 && step != 10)
                 tryAdd(step);

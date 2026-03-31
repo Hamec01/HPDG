@@ -29,6 +29,12 @@ struct StyleLabState
     juce::String substyle;
     int bars = 4;
     juce::Range<int> tempoRange { 88, 100 };
+    juce::StringArray tags;
+    juce::String mood;
+    juce::String densityProfile;
+    int referencePriority = 50;
+    juce::String notesSummary;
+    juce::String authoringNotes;
     std::vector<StyleLabLaneDefinition> laneDefinitions;
 };
 

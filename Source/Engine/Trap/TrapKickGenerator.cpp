@@ -45,6 +45,73 @@ float lowEndCouplingWeight(const StyleInfluenceState& styleInfluence)
     return std::clamp(styleInfluence.lowEndCouplingWeight, 0.7f, 1.5f);
 }
 
+float bounceWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(styleInfluence.bounceWeight, 0.65f, 1.5f);
+}
+
+struct ReferenceTrapKickFeel
+{
+    bool available = false;
+    float density = 0.0f;
+    float anchorRatio = 0.0f;
+    float bounceRatio = 0.0f;
+    float tailRatio = 0.0f;
+    std::array<float, 16> presence {};
+};
+
+ReferenceTrapKickFeel buildReferenceTrapKickFeel(const StyleInfluenceState& styleInfluence, int bar)
+{
+    ReferenceTrapKickFeel feel;
+    if (!styleInfluence.referenceKickCorpus.available || styleInfluence.referenceKickCorpus.variants.empty())
+        return feel;
+
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    float anchors = 0.0f;
+    float bounces = 0.0f;
+    float tails = 0.0f;
+
+    for (const auto& variant : styleInfluence.referenceKickCorpus.variants)
+    {
+        if (!variant.available || variant.barPatterns.empty())
+            continue;
+
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        const auto& barPattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
+        ++contributingBars;
+        totalNotes += static_cast<float>(barPattern.notes.size());
+        for (const auto& note : barPattern.notes)
+        {
+            const int step = std::clamp(note.step16, 0, 15);
+            feel.presence[static_cast<size_t>(step)] += 1.0f;
+            if (step == 0 || step == 8 || step == 10)
+                anchors += 1.0f;
+            if (step == 6 || step == 11 || step == 12 || step == 13)
+                bounces += 1.0f;
+            if (step >= 14)
+                tails += 1.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return feel;
+
+    feel.available = true;
+    const float invBars = 1.0f / static_cast<float>(contributingBars);
+    for (auto& value : feel.presence)
+        value *= invBars;
+    feel.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    feel.anchorRatio = totalNotes > 0.0f ? anchors / totalNotes : 0.0f;
+    feel.bounceRatio = totalNotes > 0.0f ? bounces / totalNotes : 0.0f;
+    feel.tailRatio = totalNotes > 0.0f ? tails / totalNotes : 0.0f;
+    return feel;
+}
+
 int maxKickEventsPerBar(TrapSubstyle substyle)
 {
     switch (substyle)
@@ -123,6 +190,7 @@ void tryAddEvent(std::vector<TrapKickEvent>& plan,
 std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
                                                float density,
                                                const TrapStyleProfile& style,
+                                               const StyleInfluenceState& styleInfluence,
                                                const std::vector<TrapPhraseRole>& phrase,
                                                bool halfTimeAware,
                                                std::mt19937& rng)
@@ -137,6 +205,8 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
     for (int bar = 0; bar < bars; ++bar)
     {
         const auto phraseRole = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : TrapPhraseRole::Base;
+        const auto referenceFeel = buildReferenceTrapKickFeel(styleInfluence, bar);
+        const float bounce = bounceWeight(styleInfluence);
         const int barStart = bar * 16;
         const int midStep = halfTimeAware ? 10 : 8;
         const int lateTailStep = 14;
@@ -152,6 +222,13 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
             midGate += 0.14f;
         if (style.substyle == TrapSubstyle::DarkTrap || style.substyle == TrapSubstyle::LuxuryTrap)
             midGate -= 0.08f;
+        if (referenceFeel.available)
+        {
+            const float anchorPresence = referenceFeel.presence[static_cast<size_t>(midStep)];
+            midGate *= std::clamp(0.88f + anchorPresence * 0.42f + referenceFeel.anchorRatio * 0.18f, 0.76f, 1.28f);
+            if (referenceFeel.density < 0.30f && phraseRole == TrapPhraseRole::Base)
+                midGate *= 0.88f;
+        }
         if (chance(rng) < std::clamp(midGate * sparseBias * rageBias, 0.1f, 0.96f))
             tryAddEvent(plan, barStart + midStep, TrapKickRole::Anchor, bars, style, rng);
 
@@ -164,12 +241,27 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
             pickupGate += 0.14f;
         if (style.substyle == TrapSubstyle::DarkTrap)
             pickupGate -= 0.06f;
+        int pickupStep = (chance(rng) < 0.55f) ? 6 : 11;
+        if (referenceFeel.available)
+        {
+            const std::array<int, 4> pickupCandidates { 6, 11, 12, 13 };
+            float bestPresence = -1.0f;
+            for (const int candidate : pickupCandidates)
+            {
+                const float presence = referenceFeel.presence[static_cast<size_t>(candidate)] + (candidate >= 12 ? referenceFeel.tailRatio * 0.18f : 0.0f);
+                if (presence > bestPresence)
+                {
+                    bestPresence = presence;
+                    pickupStep = candidate;
+                }
+            }
+            pickupGate *= std::clamp(0.86f + referenceFeel.bounceRatio * 0.34f + bestPresence * 0.28f + (bounce - 1.0f) * 0.16f,
+                                     0.74f,
+                                     1.32f);
+        }
 
         if (chance(rng) < std::clamp(pickupGate * sparseBias * rageBias, 0.05f, 0.92f))
-        {
-            const int pickupStep = (chance(rng) < 0.55f) ? 6 : 11;
             tryAddEvent(plan, barStart + pickupStep, TrapKickRole::Pickup, bars, style, rng);
-        }
 
         float supportGate = 0.16f + density * 0.26f;
         if (style.substyle == TrapSubstyle::RageTrap)
@@ -178,8 +270,26 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
             supportGate += 0.06f;
         if (style.substyle == TrapSubstyle::DarkTrap || style.substyle == TrapSubstyle::LuxuryTrap)
             supportGate -= 0.06f;
+        int supportStep = 10;
+        if (referenceFeel.available)
+        {
+            const std::array<int, 4> supportCandidates { 9, 10, 11, 13 };
+            float bestPresence = referenceFeel.presence[10];
+            for (const int candidate : supportCandidates)
+            {
+                const float presence = referenceFeel.presence[static_cast<size_t>(candidate)];
+                if (presence > bestPresence)
+                {
+                    bestPresence = presence;
+                    supportStep = candidate;
+                }
+            }
+            supportGate *= std::clamp(0.84f + referenceFeel.bounceRatio * 0.38f + bestPresence * 0.32f + (bounce - 1.0f) * 0.18f,
+                                      0.72f,
+                                      1.34f);
+        }
         if (chance(rng) < std::clamp(supportGate * sparseBias * rageBias, 0.04f, 0.82f))
-            tryAddEvent(plan, barStart + 10, TrapKickRole::Support, bars, style, rng);
+            tryAddEvent(plan, barStart + supportStep, TrapKickRole::Support, bars, style, rng);
 
         float tailGate = 0.18f + density * 0.22f;
         if (phraseRole == TrapPhraseRole::Ending)
@@ -188,10 +298,19 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
             tailGate += 0.1f;
         if (style.substyle == TrapSubstyle::RageTrap)
             tailGate += 0.08f;
+        if (referenceFeel.available)
+        {
+            tailGate *= std::clamp(0.86f + referenceFeel.tailRatio * 0.42f + referenceFeel.presence[14] * 0.24f, 0.72f, 1.3f);
+            if (referenceFeel.density < 0.24f && phraseRole == TrapPhraseRole::Base)
+                tailGate *= 0.82f;
+        }
         if (chance(rng) < std::clamp(tailGate, 0.06f, 0.9f))
             tryAddEvent(plan, barStart + lateTailStep, TrapKickRole::Tail, bars, style, rng);
 
-        if (style.substyle == TrapSubstyle::RageTrap && chance(rng) < std::clamp(0.2f + density * 0.2f, 0.06f, 0.72f))
+        float rageBounceGate = std::clamp(0.2f + density * 0.2f, 0.06f, 0.72f);
+        if (referenceFeel.available)
+            rageBounceGate *= std::clamp(0.86f + referenceFeel.bounceRatio * 0.44f + referenceFeel.presence[12] * 0.26f, 0.74f, 1.34f);
+        if (style.substyle == TrapSubstyle::RageTrap && chance(rng) < rageBounceGate)
             tryAddEvent(plan, barStart + 12, TrapKickRole::Pickup, bars, style, rng);
 
         if (chance(rng) < std::clamp(0.06f + density * 0.08f, 0.0f, 0.24f))
@@ -292,7 +411,7 @@ void TrapKickGenerator::generate(TrackState& track,
     const float density = std::clamp(params.densityAmount * style.kickDensityBias * densityScaleForSubstyle(style.substyle) * tempoScale * lowEndCouplingWeight(styleInfluence), 0.12f, 1.0f);
     const bool halfTimeAware = tempoBand != TempoBand::Base;
 
-    auto plan = buildKickPhrasePlan(bars, density, style, phrase, halfTimeAware, rng);
+    auto plan = buildKickPhrasePlan(bars, density, style, styleInfluence, phrase, halfTimeAware, rng);
     for (auto& event : plan)
     {
         event.note.pitch = pitch;

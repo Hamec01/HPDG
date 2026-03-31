@@ -3021,7 +3021,18 @@ void BoomBGeneratorAudioProcessorEditor::showStyleLabWindow()
     if (!styleLabDraftState.has_value())
         styleLabDraftState = StyleLabDraftState {};
 
-    auto component = std::make_unique<StyleLabComponent>(*styleLabState, *styleLabDraftState);
+    auto component = std::make_unique<StyleLabComponent>(*styleLabState,
+                                                         *styleLabDraftState,
+                                                         [](const juce::String& genre)
+                                                         {
+                                                             if (genre.equalsIgnoreCase("Rap"))
+                                                                 return getRapSubstyleNames();
+                                                             if (genre.equalsIgnoreCase("Trap"))
+                                                                 return getTrapSubstyleNames();
+                                                             if (genre.equalsIgnoreCase("Drill"))
+                                                                 return getDrillSubstyleNames();
+                                                             return getBoomBapSubstyleNames();
+                                                         });
     component->onStateChanged = [this](const StyleLabState& state)
     {
         styleLabState = state;

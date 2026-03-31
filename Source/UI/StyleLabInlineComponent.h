@@ -16,7 +16,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    int getPreferredHeight() const { return 84; }
+    int getPreferredHeight() const { return 104; }
     void setSubstyleOptions(const juce::StringArray& options);
     void setState(const StyleLabState& state);
     void setWorkflowSummary(const juce::String& targetLane,
@@ -48,6 +48,7 @@ private:
     juce::Label targetLaneLabel;
     juce::Label statsLabel;
     juce::Label workflowLabel;
+    juce::Label libraryMetaLabel;
     juce::ComboBox genreCombo;
     juce::ComboBox substyleCombo;
     juce::ComboBox barsCombo;

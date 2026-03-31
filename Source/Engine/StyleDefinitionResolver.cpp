@@ -21,7 +21,9 @@ ResolvedStyleDefinition StyleDefinitionResolver::resolve(GenreType genre,
         auto definition = *loaded;
         definition.genre = genre;
         if (statusMessage != nullptr)
-            *statusMessage = "Style Lab reference";
+            *statusMessage = definition.loadStrategy == "ranked-reference-set"
+                ? "Style Lab ranked reference set"
+                : "Style Lab reference";
         return definition;
     }
 

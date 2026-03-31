@@ -71,6 +71,46 @@ juce::String stringProperty(const juce::DynamicObject& object, const juce::Ident
     return value.isVoid() ? fallback : value.toString();
 }
 
+juce::StringArray parseTagsVar(const juce::var& tagsVar)
+{
+    juce::StringArray tags;
+
+    if (const auto* tagArray = tagsVar.getArray())
+    {
+        for (const auto& tagVar : *tagArray)
+        {
+            const auto tag = tagVar.toString().trim();
+            if (tag.isNotEmpty())
+                tags.add(tag);
+        }
+        return tags;
+    }
+
+    const auto rawTags = tagsVar.toString();
+    if (rawTags.isEmpty())
+        return tags;
+
+    tags.addTokens(rawTags, ",", {});
+    for (int index = tags.size(); --index >= 0;)
+    {
+        tags.set(index, tags[index].trim());
+        if (tags[index].isEmpty())
+            tags.remove(index);
+    }
+
+    return tags;
+}
+
+juce::String fallbackNotesSummary(const StyleLabReferenceRecord& record)
+{
+    if (record.totalNotes <= 0 && record.totalRuntimeLaneCount <= 0)
+        return {};
+
+    return juce::String(record.totalNotes) + " notes, "
+        + juce::String(record.taggedNotes) + " tagged, "
+        + juce::String(record.totalRuntimeLaneCount) + " lanes";
+}
+
 std::optional<TrackType> parseTrackTypeString(const juce::String& text)
 {
     const auto normalized = text.trim();
@@ -217,6 +257,12 @@ std::optional<StyleLabReferenceRecord> parseMetadataVar(const juce::var& rootVar
     record.bars = intProperty(*rootObject, "bars", record.bars);
     record.tempoMin = intProperty(*rootObject, "tempoMin", record.tempoMin);
     record.tempoMax = intProperty(*rootObject, "tempoMax", record.tempoMax);
+    record.tags = parseTagsVar(rootObject->getProperty("tags"));
+    record.mood = stringProperty(*rootObject, "mood");
+    record.densityProfile = stringProperty(*rootObject, "densityProfile");
+    record.referencePriority = intProperty(*rootObject, "referencePriority", record.referencePriority);
+    record.notesSummary = stringProperty(*rootObject, "notesSummary");
+    record.authoringNotes = stringProperty(*rootObject, "authoringNotes");
     record.exportedAt = stringProperty(*rootObject, "exportedAt");
     record.conflictMessage = stringProperty(*rootObject, "conflictMessage");
 
@@ -249,6 +295,9 @@ std::optional<StyleLabReferenceRecord> parseMetadataVar(const juce::var& rootVar
         record.totalNotes = intProperty(*referenceProjectObject, "totalNotes", record.totalNotes);
         record.taggedNotes = intProperty(*referenceProjectObject, "taggedNotes", record.taggedNotes);
     }
+
+    if (record.notesSummary.isEmpty())
+        record.notesSummary = fallbackNotesSummary(record);
 
     std::map<juce::String, juce::var> layoutByLaneId;
     for (const auto& laneVar : *layoutArray)

@@ -530,6 +530,177 @@ bool hasReferenceHatCorpus(const StyleInfluenceState& styleInfluence)
         && !styleInfluence.referenceHatCorpus.variants.empty();
 }
 
+struct ReferenceHatFeel
+{
+    bool available = false;
+    double averageNotesPerBar = 0.0;
+    double motionRatio = 0.0;
+    double tripletRatio = 0.0;
+    double burstRatio = 0.0;
+    double gapRatio = 0.0;
+    double preSnareRatio = 0.0;
+    std::array<double, 32> stepWeight {};
+    std::array<double, 16> backboneWeight {};
+};
+
+ReferenceHatFeel buildReferenceHatFeel(const ReferenceHatCorpus* corpus, int bar)
+{
+    ReferenceHatFeel feel;
+    if (corpus == nullptr || !corpus->available || corpus->variants.empty())
+        return feel;
+
+    int contributingBars = 0;
+    double totalNotes = 0.0;
+    double totalMotion = 0.0;
+    double totalTripletClusters = 0.0;
+    double totalBurstClusters = 0.0;
+    double totalGapSlots = 0.0;
+    double totalPreSnareSlots = 0.0;
+
+    for (const auto& variant : corpus->variants)
+    {
+        if (!variant.available || variant.barMaps.empty())
+            continue;
+
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barMaps.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barMaps.size()))
+            continue;
+
+        const auto& referenceBar = variant.barMaps[static_cast<size_t>(normalizedBar)];
+
+        ++contributingBars;
+        std::array<bool, 32> occupied32 {};
+        for (const auto& note : referenceBar.notes)
+        {
+            const int step32 = std::clamp(HiResTiming::quantizeTicks(note.tickInBar, HiResTiming::kTicks1_32) / HiResTiming::kTicks1_32,
+                                          0,
+                                          31);
+            occupied32[static_cast<size_t>(step32)] = true;
+            feel.stepWeight[static_cast<size_t>(step32)] += 1.0;
+            totalNotes += 1.0;
+            if ((step32 % 2) == 1)
+                totalMotion += 1.0;
+        }
+
+        for (const int step16 : referenceBar.backboneSteps16)
+        {
+            if (step16 >= 0 && step16 < 16)
+                feel.backboneWeight[static_cast<size_t>(step16)] += 1.0;
+        }
+
+        for (int step32 = 0; step32 < 32; ++step32)
+        {
+            if (!occupied32[static_cast<size_t>(step32)])
+                totalGapSlots += 1.0;
+        }
+
+        totalPreSnareSlots += static_cast<double>(referenceBar.preSnareZoneSteps32.size());
+
+        for (const auto& cluster : variant.rollClusters)
+        {
+            if (cluster.barIndex != normalizedBar)
+                continue;
+            totalBurstClusters += 1.0;
+        }
+        for (const auto& cluster : variant.tripletClusters)
+        {
+            if (cluster.barIndex != normalizedBar)
+                continue;
+            totalTripletClusters += 1.0;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return feel;
+
+    feel.available = true;
+    const double invBars = 1.0 / static_cast<double>(contributingBars);
+    for (auto& value : feel.stepWeight)
+        value *= invBars;
+    for (auto& value : feel.backboneWeight)
+        value *= invBars;
+
+    feel.averageNotesPerBar = totalNotes * invBars;
+    feel.motionRatio = totalNotes > 0.0 ? totalMotion / totalNotes : 0.0;
+    feel.tripletRatio = totalTripletClusters * invBars;
+    feel.burstRatio = totalBurstClusters * invBars;
+    feel.gapRatio = totalGapSlots / (static_cast<double>(contributingBars) * 32.0);
+    feel.preSnareRatio = totalPreSnareSlots / (static_cast<double>(contributingBars) * 32.0);
+    return feel;
+}
+
+DrillHatGenerator::MotionProfile blendMotionProfileFromReference(DrillHatGenerator::MotionProfile profile,
+                                                                 const ReferenceHatFeel& feel,
+                                                                 DrillSubstyle substyle)
+{
+    if (!feel.available)
+        return profile;
+
+    const double substyleBlend = substyle == DrillSubstyle::UKDrill ? 0.34
+        : (substyle == DrillSubstyle::BrooklynDrill ? 0.26 : 0.22);
+    profile.motionWeight = std::clamp(profile.motionWeight + (feel.motionRatio - 0.36) * 0.28 * substyleBlend, 0.65, 1.75);
+    profile.rollLengthWeight = std::clamp(profile.rollLengthWeight + feel.burstRatio * 0.18 * substyleBlend, 0.65, 1.75);
+    profile.burstWeight = std::clamp(profile.burstWeight + feel.burstRatio * 0.32 * substyleBlend, 0.65, 1.85);
+    profile.tripletWeight = std::clamp(profile.tripletWeight + feel.tripletRatio * 0.34 * substyleBlend, 0.65, 1.85);
+    profile.gapIntentWeight = std::clamp(profile.gapIntentWeight + (feel.gapRatio - 0.52) * 0.24 * substyleBlend, 0.65, 1.75);
+    profile.averageRollNotes = std::clamp(profile.averageRollNotes
+                                          + feel.burstRatio * 0.85 * substyleBlend
+                                          + feel.tripletRatio * 0.55 * substyleBlend
+                                          - std::max(0.0, feel.gapRatio - 0.58) * 0.6 * substyleBlend,
+                                          2.0,
+                                          6.0);
+    profile.rollsPerBarTarget = std::clamp(profile.rollsPerBarTarget
+                                           + feel.motionRatio * 0.18 * substyleBlend
+                                           + feel.burstRatio * 0.14 * substyleBlend
+                                           + feel.tripletRatio * 0.12 * substyleBlend,
+                                           0.05,
+                                           1.35);
+    if (feel.averageNotesPerBar >= 10.5)
+        profile.maxMotionEventsPerBar = std::min(profile.maxMotionEventsPerBar + 1, 5);
+    if (feel.burstRatio > 0.22)
+        profile.preferBurstClusters = true;
+    if (feel.motionRatio > 0.42 || feel.preSnareRatio > 0.08)
+        profile.preferAccentGroups = true;
+    if (feel.tripletRatio > 0.24 || feel.burstRatio > 0.28)
+        profile.expressiveMode = true;
+    if (feel.gapRatio > 0.62 && feel.averageNotesPerBar < 9.0)
+        profile.sparseMode = true;
+    return profile;
+}
+
+void applyReferenceHatFeel(std::vector<DrillHatGenerator::HatGridFeature>& features,
+                           int bar,
+                           const ReferenceHatFeel& feel)
+{
+    if (!feel.available)
+        return;
+
+    for (auto& feature : features)
+    {
+        if ((feature.step / 32) != bar)
+            continue;
+
+        const int step32 = feature.step % 32;
+        const int step16 = step32 / 2;
+        const double motionBias = feel.stepWeight[static_cast<size_t>(step32)];
+        const double backboneBias = feel.backboneWeight[static_cast<size_t>(step16)];
+        feature.referenceMotion = std::max(feature.referenceMotion, motionBias);
+        feature.referenceBackbone = std::max(feature.referenceBackbone, backboneBias);
+        feature.phaseAnchor = std::max(feature.phaseAnchor,
+                                       std::clamp(backboneBias * 0.36 + motionBias * 0.22, 0.0, 1.0));
+
+        if (feel.preSnareRatio > 0.06 && step32 >= 24 && motionBias >= 0.24)
+            feature.referencePreSnareZone = true;
+        if (feel.burstRatio > 0.16 && motionBias >= 0.34 && (step32 % 2) == 1)
+            feature.referenceRollZone = true;
+        if (feel.tripletRatio > 0.12 && motionBias >= 0.28 && (step32 % 3) != 1)
+            feature.referenceTripletZone = true;
+        if (feel.gapRatio > 0.60 && motionBias < 0.18 && backboneBias < 0.12 && feature.offbeat < 0.9)
+            feature.reservedSilence = feature.reservedSilence || feature.majorEventCompetition > 0.6;
+    }
+}
+
 const ReferenceHatBarSkeleton* referenceBarFor(const ReferenceHatSkeleton* skeleton, int bar)
 {
     if (skeleton == nullptr || !skeleton->available || skeleton->barMaps.empty())
@@ -2109,7 +2280,6 @@ void DrillHatGenerator::generate(TrackState& track,
 
     const auto spec = getDrillHatBaseSpec(style.substyle);
     const double activity = hiHatActivityWeight(styleInfluence);
-    const auto motion = buildMotionProfile(styleInfluence);
     const auto snareTargets = collectSnareTargets(snareTrack, clapTrack, bars);
     const auto kickTicks = collectTicks(kickTrack);
     const ReferenceHatSkeleton* referenceSkeleton = hasReferenceHatSkeleton(styleInfluence)
@@ -2119,16 +2289,46 @@ void DrillHatGenerator::generate(TrackState& track,
         ? &styleInfluence.referenceHatCorpus
         : nullptr;
 
-    if (style.substyle == DrillSubstyle::UKDrill && referenceCorpus != nullptr)
+    std::vector<ReferenceHatFeel> referenceFeels(static_cast<size_t>(bars));
+    ReferenceHatFeel aggregateFeel;
+    int aggregateFeelCount = 0;
+    if (referenceCorpus != nullptr)
     {
-        auto hats = buildUKCorpusDrivenHats(referenceCorpus, bars, rng);
-        ensureBarStartAnchors(hats, bars);
-        renderMidi(track, hats, pitch, bars);
-        return;
+        for (int bar = 0; bar < bars; ++bar)
+        {
+            referenceFeels[static_cast<size_t>(bar)] = buildReferenceHatFeel(referenceCorpus, bar);
+            const auto& feel = referenceFeels[static_cast<size_t>(bar)];
+            if (!feel.available)
+                continue;
+
+            aggregateFeel.available = true;
+            aggregateFeel.averageNotesPerBar += feel.averageNotesPerBar;
+            aggregateFeel.motionRatio += feel.motionRatio;
+            aggregateFeel.tripletRatio += feel.tripletRatio;
+            aggregateFeel.burstRatio += feel.burstRatio;
+            aggregateFeel.gapRatio += feel.gapRatio;
+            aggregateFeel.preSnareRatio += feel.preSnareRatio;
+            ++aggregateFeelCount;
+        }
+    }
+
+    auto motion = buildMotionProfile(styleInfluence);
+    if (aggregateFeelCount > 0)
+    {
+        const double invCount = 1.0 / static_cast<double>(aggregateFeelCount);
+        aggregateFeel.averageNotesPerBar *= invCount;
+        aggregateFeel.motionRatio *= invCount;
+        aggregateFeel.tripletRatio *= invCount;
+        aggregateFeel.burstRatio *= invCount;
+        aggregateFeel.gapRatio *= invCount;
+        aggregateFeel.preSnareRatio *= invCount;
+        motion = blendMotionProfileFromReference(motion, aggregateFeel, style.substyle);
     }
 
     auto barContext = buildBarContext(phrase, snareTargets, kickTicks, referenceSkeleton, blueprint, style, bars);
     auto features = buildGridFeatures(barContext, referenceSkeleton, blueprint, bars);
+    for (int bar = 0; bar < bars; ++bar)
+        applyReferenceHatFeel(features, bar, referenceFeels[static_cast<size_t>(bar)]);
 
     std::vector<HatEvent> backboneHats;
     backboneHats.reserve(static_cast<size_t>(bars * 10));

@@ -12,7 +12,8 @@ class StyleLabComponent final : public juce::Component
 {
 public:
     StyleLabComponent(const StyleLabState& initialState,
-                      const StyleLabDraftState& initialDraftState);
+                      const StyleLabDraftState& initialDraftState,
+                      std::function<juce::StringArray(const juce::String&)> substyleOptionsProvider = {});
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -28,6 +29,11 @@ public:
     std::function<std::optional<StyleLabState>()> onResetToRuntimeLayout;
 
 private:
+    static juce::StringArray moodOptions();
+    static juce::StringArray densityProfileOptions();
+    static juce::StringArray parseTagsFromText(const juce::String& text);
+    static juce::String joinTagsForText(const juce::StringArray& tags);
+    void rebuildSubstyleComboForCurrentGenre();
     void syncControlsFromState();
     void refreshLaneRows();
     void syncDraftUi();
@@ -49,6 +55,7 @@ private:
     StyleLabState state;
     StyleLabState defaultState;
     StyleLabDraftState draftState;
+    std::function<juce::StringArray(const juce::String&)> substyleOptionsProvider;
     bool syncingControls = false;
 
     juce::Label titleLabel;
@@ -60,11 +67,22 @@ private:
     juce::Label barsLabel;
     juce::Label tempoMinLabel;
     juce::Label tempoMaxLabel;
+    juce::Label tagsLabel;
+    juce::Label moodLabel;
+    juce::Label densityProfileLabel;
+    juce::Label referencePriorityLabel;
+    juce::Label referencePriorityValueLabel;
+    juce::Label authoringNotesLabel;
     juce::ComboBox genreCombo;
     juce::ComboBox substyleCombo;
     juce::ComboBox barsCombo;
     juce::Slider tempoMinSlider;
     juce::Slider tempoMaxSlider;
+    juce::TextEditor tagsEditor;
+    juce::ComboBox moodCombo;
+    juce::ComboBox densityProfileCombo;
+    juce::Slider referencePrioritySlider;
+    juce::TextEditor authoringNotesEditor;
     juce::TextButton captureButton { "Capture Current Pattern" };
     juce::TextButton addLaneButton { "Add Lane" };
     juce::TextButton resetLayoutButton { "Reset Layout" };

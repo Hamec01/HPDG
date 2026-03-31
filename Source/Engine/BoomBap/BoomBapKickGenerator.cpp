@@ -66,6 +66,68 @@ float supportAccentWeight(const StyleInfluenceState& styleInfluence)
 {
     return std::clamp(styleInfluence.supportAccentWeight, 0.6f, 1.5f);
 }
+
+struct ReferenceBoomBapKickFeel
+{
+    bool available = false;
+    float density = 0.0f;
+    float anchorRatio = 0.0f;
+    float supportRatio = 0.0f;
+    float punctuationRatio = 0.0f;
+    std::array<float, 16> presence {};
+};
+
+ReferenceBoomBapKickFeel buildReferenceBoomBapKickFeel(const StyleInfluenceState& styleInfluence, int bar)
+{
+    ReferenceBoomBapKickFeel feel;
+    if (!styleInfluence.referenceKickCorpus.available || styleInfluence.referenceKickCorpus.variants.empty())
+        return feel;
+
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    float anchors = 0.0f;
+    float supports = 0.0f;
+    float punctuation = 0.0f;
+
+    for (const auto& variant : styleInfluence.referenceKickCorpus.variants)
+    {
+        if (!variant.available || variant.barPatterns.empty())
+            continue;
+
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        const auto& pattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
+        ++contributingBars;
+        totalNotes += static_cast<float>(pattern.notes.size());
+        for (const auto& note : pattern.notes)
+        {
+            const int step = std::clamp(note.step16, 0, 15);
+            feel.presence[static_cast<size_t>(step)] += 1.0f;
+            if (step == 0 || step == 8)
+                anchors += 1.0f;
+            else if (step >= 11)
+                punctuation += 1.0f;
+            else
+                supports += 1.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return feel;
+
+    feel.available = true;
+    const float invBars = 1.0f / static_cast<float>(contributingBars);
+    for (auto& value : feel.presence)
+        value *= invBars;
+    feel.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    feel.anchorRatio = totalNotes > 0.0f ? anchors / totalNotes : 0.0f;
+    feel.supportRatio = totalNotes > 0.0f ? supports / totalNotes : 0.0f;
+    feel.punctuationRatio = totalNotes > 0.0f ? punctuation / totalNotes : 0.0f;
+    return feel;
+}
 } // namespace
 
 void BoomBapKickGenerator::generate(TrackState& track,
@@ -123,6 +185,7 @@ void BoomBapKickGenerator::generate(TrackState& track,
     for (int bar = 0; bar < bars; ++bar)
     {
         const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : PhraseRole::Base;
+        const auto referenceFeel = buildReferenceBoomBapKickFeel(styleInfluence, bar);
         const float roleVar = BoomBapPhrasePlanner::roleVariationStrength(role) * style.barVariationAmount;
         const float retainIdentity = identityRetention(role);
         const auto* barTemplate = pickTemplate(style.substyle, density, role, rng);
@@ -142,6 +205,12 @@ void BoomBapKickGenerator::generate(TrackState& track,
             float keepChance = std::clamp(0.94f + retainIdentity * 0.08f, 0.75f, 1.0f);
             if (tempoBand == TempoBand::Fast)
                 keepChance = std::clamp(keepChance - 0.08f, 0.6f, 1.0f);
+            if (referenceFeel.available)
+                keepChance = std::clamp(keepChance * std::clamp(0.88f + referenceFeel.presence[static_cast<size_t>(stepInBar)] * 0.36f + referenceFeel.anchorRatio * 0.18f,
+                                                                0.78f,
+                                                                1.28f),
+                                        0.6f,
+                                        1.0f);
 
             if (chance(rng) > keepChance)
                 continue;
@@ -171,11 +240,23 @@ void BoomBapKickGenerator::generate(TrackState& track,
             float keepChance = probabilityForRole(hitRole, density, roleVar, style.kickDensityBias);
             if (hitRole != KickHitRole::Anchor)
                 keepChance = std::clamp(keepChance * profileScale * retainIdentity * supportAccent, 0.05f, 1.0f);
+            if (referenceFeel.available)
+            {
+                const float presence = referenceFeel.presence[static_cast<size_t>(stepInBar)];
+                if (hitRole == KickHitRole::Anchor)
+                    keepChance *= std::clamp(0.88f + presence * 0.38f + referenceFeel.anchorRatio * 0.18f, 0.78f, 1.28f);
+                else if (hitRole == KickHitRole::Pickup)
+                    keepChance *= std::clamp(0.86f + presence * 0.28f + referenceFeel.punctuationRatio * 0.24f, 0.72f, 1.3f);
+                else
+                    keepChance *= std::clamp(0.86f + presence * 0.3f + referenceFeel.supportRatio * 0.18f, 0.72f, 1.24f);
+            }
             if (tempoBand != TempoBand::Base && hitRole != KickHitRole::Anchor)
                 keepChance = std::clamp(keepChance * (tempoBand == TempoBand::Fast ? 0.58f : 0.72f), 0.03f, 1.0f);
 
             if (role == PhraseRole::Ending && hitRole == KickHitRole::Pickup)
                 keepChance = std::clamp(keepChance + (style.substyle == BoomBapSubstyle::BoomBapGold ? 0.16f : 0.08f), 0.05f, 1.0f);
+            if (referenceFeel.available && role == PhraseRole::Ending && stepInBar >= 11)
+                keepChance = std::clamp(keepChance + referenceFeel.punctuationRatio * 0.12f, 0.05f, 1.0f);
 
             if (chance(rng) > keepChance)
                 continue;

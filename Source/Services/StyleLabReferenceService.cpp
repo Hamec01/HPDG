@@ -39,6 +39,44 @@ juce::String sanitizePathSegment(const juce::String& input)
     return cleaned.isEmpty() ? "Unsorted" : cleaned;
 }
 
+juce::var stringArrayToVar(const juce::StringArray& values)
+{
+    juce::Array<juce::var> array;
+    for (const auto& value : values)
+        array.add(value);
+    return juce::var(array);
+}
+
+juce::String buildNotesSummary(const PatternProject& project)
+{
+    int totalNotes = 0;
+    int taggedNotes = 0;
+
+    for (const auto& track : project.tracks)
+    {
+        if (track.type == TrackType::Sub808)
+        {
+            const auto effectiveSub808Notes = sub808NotesForRead(track);
+            totalNotes += static_cast<int>(effectiveSub808Notes.size());
+            taggedNotes += static_cast<int>(std::count_if(effectiveSub808Notes.begin(), effectiveSub808Notes.end(), [](const Sub808NoteEvent& note)
+            {
+                return note.semanticRole.isNotEmpty();
+            }));
+            continue;
+        }
+
+        totalNotes += static_cast<int>(track.notes.size());
+        taggedNotes += static_cast<int>(std::count_if(track.notes.begin(), track.notes.end(), [](const NoteEvent& note)
+        {
+            return note.semanticRole.isNotEmpty();
+        }));
+    }
+
+    return juce::String(totalNotes) + " notes, "
+        + juce::String(taggedNotes) + " tagged, "
+        + juce::String(static_cast<int>(project.runtimeLaneProfile.lanes.size())) + " lanes";
+}
+
 juce::var valueTreeToVar(const juce::ValueTree& node)
 {
     auto* object = new juce::DynamicObject();
@@ -414,6 +452,12 @@ juce::var stateToMetadataVar(const StyleLabState& state, const PatternProject& p
     object->setProperty("bars", state.bars);
     object->setProperty("tempoMin", state.tempoRange.getStart());
     object->setProperty("tempoMax", state.tempoRange.getEnd());
+    object->setProperty("tags", stringArrayToVar(state.tags));
+    object->setProperty("mood", state.mood);
+    object->setProperty("densityProfile", state.densityProfile);
+    object->setProperty("referencePriority", state.referencePriority);
+    object->setProperty("notesSummary", state.notesSummary.isNotEmpty() ? state.notesSummary : buildNotesSummary(project));
+    object->setProperty("authoringNotes", state.authoringNotes);
     object->setProperty("exportedAt", juce::Time::getCurrentTime().toISO8601(true));
     object->setProperty("conflictMessage", conflictMessage);
     object->setProperty("laneLayoutSource", "PatternProject.runtime");
@@ -441,6 +485,8 @@ StyleLabState StyleLabReferenceService::createDefaultState(const PatternProject&
     state.genre = genre.isNotEmpty() ? genre : "Boom Bap";
     state.substyle = substyle.isNotEmpty() ? substyle : "Classic";
     state.bars = juce::jlimit(1, 16, bars > 0 ? bars : juce::jmax(1, project.phraseLengthBars));
+    state.referencePriority = 50;
+    state.notesSummary = buildNotesSummary(project);
 
     const int boundedBpm = juce::jlimit(60, 180, bpm);
     state.tempoRange = { juce::jmax(60, boundedBpm - 6), juce::jmin(180, boundedBpm + 6) };

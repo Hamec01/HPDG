@@ -9,12 +9,15 @@
 
 namespace bbg
 {
+struct StyleInfluenceState;
+
 class BoomBapGhostGenerator
 {
 public:
     void generateGhostKick(TrackState& ghostKickTrack,
                            const TrackState& kickTrack,
                            const BoomBapStyleProfile& style,
+                           const StyleInfluenceState& styleInfluence,
                            float density,
                            const std::vector<PhraseRole>& phraseRoles,
                            std::mt19937& rng) const;
@@ -22,6 +25,7 @@ public:
     void generateClapLayer(TrackState& clapTrack,
                            const TrackState& snareTrack,
                            const BoomBapStyleProfile& style,
+                           const StyleInfluenceState& styleInfluence,
                            const std::vector<PhraseRole>& phraseRoles,
                            std::mt19937& rng) const;
 };

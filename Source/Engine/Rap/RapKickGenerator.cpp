@@ -54,6 +54,68 @@ float supportAccentWeight(const StyleInfluenceState& styleInfluence)
 {
     return std::clamp(styleInfluence.supportAccentWeight, 0.65f, 1.45f);
 }
+
+struct ReferenceRapKickFeel
+{
+    bool available = false;
+    float density = 0.0f;
+    float anchorRatio = 0.0f;
+    float supportRatio = 0.0f;
+    float tailRatio = 0.0f;
+    std::array<float, 16> presence {};
+};
+
+ReferenceRapKickFeel buildReferenceRapKickFeel(const StyleInfluenceState& styleInfluence, int bar)
+{
+    ReferenceRapKickFeel feel;
+    if (!styleInfluence.referenceKickCorpus.available || styleInfluence.referenceKickCorpus.variants.empty())
+        return feel;
+
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    float anchors = 0.0f;
+    float supports = 0.0f;
+    float tails = 0.0f;
+
+    for (const auto& variant : styleInfluence.referenceKickCorpus.variants)
+    {
+        if (!variant.available || variant.barPatterns.empty())
+            continue;
+
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        const auto& pattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
+        ++contributingBars;
+        totalNotes += static_cast<float>(pattern.notes.size());
+        for (const auto& note : pattern.notes)
+        {
+            const int step = std::clamp(note.step16, 0, 15);
+            feel.presence[static_cast<size_t>(step)] += 1.0f;
+            if (step == 0 || step == 8)
+                anchors += 1.0f;
+            else if (step >= 14)
+                tails += 1.0f;
+            else
+                supports += 1.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return feel;
+
+    feel.available = true;
+    const float invBars = 1.0f / static_cast<float>(contributingBars);
+    for (auto& value : feel.presence)
+        value *= invBars;
+    feel.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    feel.anchorRatio = totalNotes > 0.0f ? anchors / totalNotes : 0.0f;
+    feel.supportRatio = totalNotes > 0.0f ? supports / totalNotes : 0.0f;
+    feel.tailRatio = totalNotes > 0.0f ? tails / totalNotes : 0.0f;
+    return feel;
+}
 }
 
 void RapKickGenerator::generate(TrackState& track,
@@ -92,6 +154,7 @@ void RapKickGenerator::generate(TrackState& track,
     for (int bar = 0; bar < bars; ++bar)
     {
         const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : RapPhraseRole::Base;
+        const auto referenceFeel = buildReferenceRapKickFeel(styleInfluence, bar);
         const float roleBoost = RapPhrasePlanner::roleVariationStrength(role);
 
         for (const auto& zone : zones)
@@ -99,6 +162,24 @@ void RapKickGenerator::generate(TrackState& track,
             float gate = zone.gate;
             if (!zone.anchor)
                 gate = std::clamp(gate * (0.52f + density * 0.72f + roleBoost * 0.16f) * supportAccent, 0.06f, 0.94f);
+
+            if (referenceFeel.available)
+            {
+                const float presence = referenceFeel.presence[static_cast<size_t>(zone.step)];
+                if (zone.anchor)
+                {
+                    gate *= std::clamp(0.88f + presence * 0.42f + referenceFeel.anchorRatio * 0.18f, 0.78f, 1.28f);
+                    if (referenceFeel.density < 0.28f && role == RapPhraseRole::Base)
+                        gate *= 0.9f;
+                }
+                else
+                {
+                    float supportBias = 0.84f + presence * 0.4f + referenceFeel.supportRatio * 0.22f;
+                    if (zone.step >= 14)
+                        supportBias += referenceFeel.tailRatio * 0.18f;
+                    gate *= std::clamp(supportBias, 0.72f, 1.34f);
+                }
+            }
 
             if (tempoBand != TempoBand::Base && !zone.anchor)
                 gate = std::clamp(gate * (tempoBand == TempoBand::Fast ? 0.70f : 0.84f), 0.05f, 0.9f);

@@ -10,6 +10,8 @@
 
 namespace bbg
 {
+struct StyleInfluenceState;
+
 class BoomBapOpenHatGenerator
 {
 public:
@@ -17,6 +19,7 @@ public:
                   const TrackState& hatTrack,
                   const GeneratorParams& params,
                   const BoomBapStyleProfile& style,
+                  const StyleInfluenceState& styleInfluence,
                   const std::vector<PhraseRole>& phraseRoles,
                   std::mt19937& rng) const;
 };

@@ -15,6 +15,32 @@ juce::String quotedOrDash(const juce::String& value)
 {
     return value.isNotEmpty() ? ("\"" + value + "\"") : "-";
 }
+
+juce::String tagsSummary(const juce::StringArray& tags)
+{
+    return tags.isEmpty() ? juce::String("-") : tags.joinIntoString(", ");
+}
+
+bool matchesTagFilter(const StyleLabReferenceRecord& record, const juce::String& tagFilter)
+{
+    const auto needle = tagFilter.trim().toLowerCase();
+    if (needle.isEmpty())
+        return true;
+
+    for (const auto& tag : record.tags)
+    {
+        if (tag.toLowerCase().contains(needle))
+            return true;
+    }
+
+    return false;
+}
+
+void setupFilterLabel(juce::Label& label, const juce::String& text)
+{
+    label.setText(text, juce::dontSendNotification);
+    label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(162, 174, 188));
+}
 }
 
 StyleLabReferenceBrowserComponent::StyleLabReferenceBrowserComponent()
@@ -25,6 +51,14 @@ StyleLabReferenceBrowserComponent::StyleLabReferenceBrowserComponent()
     addAndMakeVisible(refreshButton);
     addAndMakeVisible(openFolderButton);
     addAndMakeVisible(applyButton);
+    addAndMakeVisible(tagFilterLabel);
+    addAndMakeVisible(moodFilterLabel);
+    addAndMakeVisible(densityFilterLabel);
+    addAndMakeVisible(sortLabel);
+    addAndMakeVisible(tagFilterEditor);
+    addAndMakeVisible(moodFilterCombo);
+    addAndMakeVisible(densityFilterCombo);
+    addAndMakeVisible(sortCombo);
     addAndMakeVisible(referenceList);
     addAndMakeVisible(summaryLabel);
     addAndMakeVisible(laneDetailEditor);
@@ -38,6 +72,27 @@ StyleLabReferenceBrowserComponent::StyleLabReferenceBrowserComponent()
 
     statusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(162, 174, 188));
     statusLabel.setJustificationType(juce::Justification::centredLeft);
+
+    setupFilterLabel(tagFilterLabel, "Tag");
+    setupFilterLabel(moodFilterLabel, "Mood");
+    setupFilterLabel(densityFilterLabel, "Density");
+    setupFilterLabel(sortLabel, "Sort");
+
+    tagFilterEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(21, 25, 31));
+    tagFilterEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(44, 54, 68));
+    tagFilterEditor.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour::fromRGB(104, 148, 214));
+    tagFilterEditor.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(216, 224, 234));
+    tagFilterEditor.setTextToShowWhenEmpty("tag filter", juce::Colour::fromRGB(114, 124, 138));
+    tagFilterEditor.onTextChange = [this] { rebuildFilteredReferences(); };
+
+    moodFilterCombo.addItem("All", 1);
+    densityFilterCombo.addItem("All", 1);
+    sortCombo.addItem("Newest", 1);
+    sortCombo.addItem("Priority", 2);
+    sortCombo.setSelectedId(1, juce::dontSendNotification);
+    moodFilterCombo.onChange = [this] { rebuildFilteredReferences(); };
+    densityFilterCombo.onChange = [this] { rebuildFilteredReferences(); };
+    sortCombo.onChange = [this] { rebuildFilteredReferences(); };
 
     referenceList.setModel(this);
     referenceList.setRowHeight(42);
@@ -105,6 +160,22 @@ void StyleLabReferenceBrowserComponent::resized()
     applyButton.setBounds(toolbar.removeFromLeft(124));
     statusLabel.setBounds(toolbar.reduced(12, 0));
 
+    area.removeFromTop(8);
+    auto filters = area.removeFromTop(42);
+    const int labelHeight = 12;
+    const int fieldHeight = 24;
+    auto setFilterField = [labelHeight, fieldHeight](juce::Rectangle<int>& work, int width, juce::Label& label, juce::Component& field)
+    {
+        auto slot = work.removeFromLeft(width);
+        label.setBounds(slot.removeFromTop(labelHeight));
+        field.setBounds(slot.removeFromTop(fieldHeight));
+        work.removeFromLeft(8);
+    };
+    setFilterField(filters, 210, tagFilterLabel, tagFilterEditor);
+    setFilterField(filters, 140, moodFilterLabel, moodFilterCombo);
+    setFilterField(filters, 140, densityFilterLabel, densityFilterCombo);
+    setFilterField(filters, 110, sortLabel, sortCombo);
+
     area.removeFromTop(10);
     auto content = area;
     auto left = content.removeFromLeft(290);
@@ -118,7 +189,7 @@ void StyleLabReferenceBrowserComponent::resized()
 
 int StyleLabReferenceBrowserComponent::getNumRows()
 {
-    return static_cast<int>(catalog.references.size());
+    return static_cast<int>(filteredReferenceIndices.size());
 }
 
 void StyleLabReferenceBrowserComponent::paintListBoxItem(int rowNumber,
@@ -130,10 +201,10 @@ void StyleLabReferenceBrowserComponent::paintListBoxItem(int rowNumber,
     juce::ignoreUnused(height);
     g.fillAll(rowIsSelected ? juce::Colour::fromRGB(48, 64, 92) : juce::Colour::fromRGB(21, 25, 31));
 
-    if (!juce::isPositiveAndBelow(rowNumber, static_cast<int>(catalog.references.size())))
+    if (!juce::isPositiveAndBelow(rowNumber, static_cast<int>(filteredReferenceIndices.size())))
         return;
 
-    const auto& record = catalog.references[static_cast<size_t>(rowNumber)];
+    const auto& record = catalog.references[static_cast<size_t>(filteredReferenceIndices[static_cast<size_t>(rowNumber)])];
     const auto name = record.directory.getFileName();
     const auto laneSummary = juce::String(record.backedLaneCount) + " backed / " + juce::String(record.unbackedLaneCount) + " unbacked";
 
@@ -143,7 +214,10 @@ void StyleLabReferenceBrowserComponent::paintListBoxItem(int rowNumber,
 
     g.setColour(juce::Colour::fromRGB(172, 182, 194));
     g.setFont(juce::Font(juce::FontOptions(11.0f)));
-    g.drawText(record.genre + " / " + record.substyle + "  |  " + laneSummary,
+    const auto moodText = record.mood.isNotEmpty() ? record.mood : "-";
+    const auto densityText = record.densityProfile.isNotEmpty() ? record.densityProfile : "-";
+    g.drawText(record.genre + " / " + record.substyle + "  |  P" + juce::String(record.referencePriority)
+                   + "  |  " + moodText + "  |  " + densityText,
                10,
                20,
                width - 20,
@@ -160,12 +234,8 @@ void StyleLabReferenceBrowserComponent::selectedRowsChanged(int)
 void StyleLabReferenceBrowserComponent::reloadCatalog()
 {
     catalog = StyleLabReferenceBrowserService::loadReferenceCatalog(StyleLabReferenceService::getReferenceRootDirectory());
-    referenceList.updateContent();
-
-    if (!catalog.references.empty())
-        referenceList.selectRow(0);
-    else
-        referenceList.deselectAllRows();
+    refreshFilterChoices();
+    rebuildFilteredReferences();
 
     if (!catalog.warnings.isEmpty())
         statusLabel.setText("Loaded with warnings: " + juce::String(catalog.warnings.size()), juce::dontSendNotification);
@@ -173,6 +243,92 @@ void StyleLabReferenceBrowserComponent::reloadCatalog()
         statusLabel.setText("No references found.", juce::dontSendNotification);
     else
         statusLabel.setText("Loaded " + juce::String(static_cast<int>(catalog.references.size())) + " references.", juce::dontSendNotification);
+
+    refreshDetailPanel();
+}
+
+void StyleLabReferenceBrowserComponent::refreshFilterChoices()
+{
+    const auto keepSelection = [](juce::ComboBox& combo)
+    {
+        const auto current = combo.getText();
+        combo.clear(juce::dontSendNotification);
+        combo.addItem("All", 1);
+        return current;
+    };
+
+    const auto currentMood = keepSelection(moodFilterCombo);
+    const auto currentDensity = keepSelection(densityFilterCombo);
+
+    juce::StringArray moods;
+    juce::StringArray densities;
+    for (const auto& record : catalog.references)
+    {
+        if (record.mood.isNotEmpty() && !moods.contains(record.mood))
+            moods.add(record.mood);
+        if (record.densityProfile.isNotEmpty() && !densities.contains(record.densityProfile))
+            densities.add(record.densityProfile);
+    }
+
+    moods.sort(true);
+    densities.sort(true);
+    for (const auto& mood : moods)
+        moodFilterCombo.addItem(mood, moodFilterCombo.getNumItems() + 1);
+    for (const auto& density : densities)
+        densityFilterCombo.addItem(density, densityFilterCombo.getNumItems() + 1);
+
+    if (moodFilterCombo.getNumItems() > 0)
+        moodFilterCombo.setText(moods.contains(currentMood) ? currentMood : "All", juce::dontSendNotification);
+    if (densityFilterCombo.getNumItems() > 0)
+        densityFilterCombo.setText(densities.contains(currentDensity) ? currentDensity : "All", juce::dontSendNotification);
+}
+
+void StyleLabReferenceBrowserComponent::rebuildFilteredReferences()
+{
+    filteredReferenceIndices.clear();
+    const auto moodFilter = moodFilterCombo.getText();
+    const auto densityFilter = densityFilterCombo.getText();
+
+    for (int index = 0; index < static_cast<int>(catalog.references.size()); ++index)
+    {
+        const auto& record = catalog.references[static_cast<size_t>(index)];
+        if (!matchesTagFilter(record, tagFilterEditor.getText()))
+            continue;
+        if (moodFilter.isNotEmpty() && moodFilter != "All" && record.mood != moodFilter)
+            continue;
+        if (densityFilter.isNotEmpty() && densityFilter != "All" && record.densityProfile != densityFilter)
+            continue;
+
+        filteredReferenceIndices.push_back(index);
+    }
+
+    if (sortCombo.getSelectedId() == 2)
+    {
+        std::stable_sort(filteredReferenceIndices.begin(), filteredReferenceIndices.end(), [this](int lhs, int rhs)
+        {
+            const auto& left = catalog.references[static_cast<size_t>(lhs)];
+            const auto& right = catalog.references[static_cast<size_t>(rhs)];
+            if (left.referencePriority != right.referencePriority)
+                return left.referencePriority > right.referencePriority;
+            return left.directory.getFileName() > right.directory.getFileName();
+        });
+    }
+
+    referenceList.updateContent();
+
+    if (!filteredReferenceIndices.empty())
+        referenceList.selectRow(0);
+    else
+        referenceList.deselectAllRows();
+
+    if (catalog.references.empty())
+        statusLabel.setText("No references found.", juce::dontSendNotification);
+    else if (filteredReferenceIndices.empty())
+        statusLabel.setText("No references match current filters.", juce::dontSendNotification);
+    else
+        statusLabel.setText("Showing " + juce::String(static_cast<int>(filteredReferenceIndices.size()))
+                                + " of " + juce::String(static_cast<int>(catalog.references.size())) + " references.",
+                            juce::dontSendNotification);
 
     refreshDetailPanel();
 }
@@ -225,6 +381,14 @@ juce::String StyleLabReferenceBrowserComponent::buildReferenceSummary(const Styl
     summary << "Folder: " << record.directory.getFileName() << "\n";
     summary << "Genre/Substyle: " << record.genre << " / " << record.substyle << "\n";
     summary << "Bars/BPM Range: " << record.bars << " / " << record.tempoMin << "-" << record.tempoMax << "\n";
+    summary << "Mood/Density/Priority: " << (record.mood.isNotEmpty() ? record.mood : "-")
+            << " / " << (record.densityProfile.isNotEmpty() ? record.densityProfile : "-")
+            << " / " << record.referencePriority << "\n";
+    summary << "Tags: " << tagsSummary(record.tags) << "\n";
+    if (record.notesSummary.isNotEmpty())
+        summary << "Notes Summary: " << record.notesSummary << "\n";
+    if (record.authoringNotes.isNotEmpty())
+        summary << "Authoring Notes: " << record.authoringNotes << "\n";
     summary << "Runtime Lanes: " << record.totalRuntimeLaneCount << " total, "
             << record.backedLaneCount << " backed, " << record.unbackedLaneCount << " unbacked\n";
     summary << "Notes: " << record.totalNotes << " total, " << record.taggedNotes << " tagged\n";
@@ -296,15 +460,18 @@ juce::String StyleLabReferenceBrowserComponent::buildLaneDetailText(const StyleL
     if (record.runtimeLanes.empty())
         detail = "No runtime lane metadata available.";
 
+    if (record.authoringNotes.isNotEmpty())
+        detail = "Authoring Notes: " + record.authoringNotes + "\n\n" + detail;
+
     return detail;
 }
 
 const StyleLabReferenceRecord* StyleLabReferenceBrowserComponent::selectedReference() const
 {
     const int row = referenceList.getSelectedRow();
-    if (!juce::isPositiveAndBelow(row, static_cast<int>(catalog.references.size())))
+    if (!juce::isPositiveAndBelow(row, static_cast<int>(filteredReferenceIndices.size())))
         return nullptr;
 
-    return &catalog.references[static_cast<size_t>(row)];
+    return &catalog.references[static_cast<size_t>(filteredReferenceIndices[static_cast<size_t>(row)])];
 }
 } // namespace bbg

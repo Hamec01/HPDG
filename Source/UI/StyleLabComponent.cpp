@@ -20,12 +20,14 @@ juce::StringArray genreOptions()
     return { "Boom Bap", "Rap", "Trap", "Drill" };
 }
 
-juce::StringArray substyleOptions()
+juce::StringArray moodOptions()
 {
-    return {
-        "Classic", "Dusty", "Jazzy", "Aggressive", "LaidBack", "BoomBapGold", "RussianUnderground",
-        "Modern", "Dark", "Bouncy", "Melodic", "Minimal", "Custom"
-    };
+    return { "Unspecified", "Dark", "Aggressive", "Melancholic", "Warm", "Bouncy", "Tense", "Atmospheric" };
+}
+
+juce::StringArray densityProfileOptions()
+{
+    return { "Unspecified", "Sparse", "Balanced", "Dense", "Busy", "Minimal", "Punchy" };
 }
 
 juce::StringArray groupOptions()
@@ -53,6 +55,16 @@ void setupTempoSlider(juce::Slider& slider)
     slider.setRange(60.0, 180.0, 1.0);
     slider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(84, 128, 188));
     slider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(216, 228, 244));
+}
+
+void setupMetadataEditor(juce::TextEditor& editor, bool multiLine = false)
+{
+    editor.setMultiLine(multiLine);
+    editor.setReturnKeyStartsNewLine(multiLine);
+    editor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(30, 35, 44));
+    editor.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(54, 64, 80));
+    editor.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour::fromRGB(104, 148, 214));
+    editor.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(220, 228, 238));
 }
 
 class StyleLabLaneRowComponent final : public juce::Component
@@ -243,10 +255,12 @@ private:
 }
 
 StyleLabComponent::StyleLabComponent(const StyleLabState& initialState,
-                                     const StyleLabDraftState& initialDraftState)
+                                     const StyleLabDraftState& initialDraftState,
+                                     std::function<juce::StringArray(const juce::String&)> provider)
     : state(initialState)
     , defaultState(initialState)
     , draftState(initialDraftState)
+    , substyleOptionsProvider(std::move(provider))
 {
     addAndMakeVisible(titleLabel);
     addAndMakeVisible(subtitleLabel);
@@ -257,11 +271,22 @@ StyleLabComponent::StyleLabComponent(const StyleLabState& initialState,
     addAndMakeVisible(barsLabel);
     addAndMakeVisible(tempoMinLabel);
     addAndMakeVisible(tempoMaxLabel);
+    addAndMakeVisible(tagsLabel);
+    addAndMakeVisible(moodLabel);
+    addAndMakeVisible(densityProfileLabel);
+    addAndMakeVisible(referencePriorityLabel);
+    addAndMakeVisible(referencePriorityValueLabel);
+    addAndMakeVisible(authoringNotesLabel);
     addAndMakeVisible(genreCombo);
     addAndMakeVisible(substyleCombo);
     addAndMakeVisible(barsCombo);
     addAndMakeVisible(tempoMinSlider);
     addAndMakeVisible(tempoMaxSlider);
+    addAndMakeVisible(tagsEditor);
+    addAndMakeVisible(moodCombo);
+    addAndMakeVisible(densityProfileCombo);
+    addAndMakeVisible(referencePrioritySlider);
+    addAndMakeVisible(authoringNotesEditor);
     addAndMakeVisible(captureButton);
     addAndMakeVisible(addLaneButton);
     addAndMakeVisible(resetLayoutButton);
@@ -291,9 +316,15 @@ StyleLabComponent::StyleLabComponent(const StyleLabState& initialState,
     setupLabel(barsLabel, "Bars");
     setupLabel(tempoMinLabel, "Tempo Min");
     setupLabel(tempoMaxLabel, "Tempo Max");
+    setupLabel(tagsLabel, "Tags");
+    setupLabel(moodLabel, "Mood");
+    setupLabel(densityProfileLabel, "Density");
+    setupLabel(referencePriorityLabel, "Priority");
+    setupLabel(authoringNotesLabel, "Authoring Notes");
 
     setupCombo(genreCombo, genreOptions());
-    setupCombo(substyleCombo, substyleOptions());
+    setupCombo(moodCombo, moodOptions());
+    setupCombo(densityProfileCombo, densityProfileOptions());
     barsCombo.addItem("1", 1);
     barsCombo.addItem("2", 2);
     barsCombo.addItem("4", 3);
@@ -302,12 +333,23 @@ StyleLabComponent::StyleLabComponent(const StyleLabState& initialState,
 
     setupTempoSlider(tempoMinSlider);
     setupTempoSlider(tempoMaxSlider);
+    setupMetadataEditor(tagsEditor, false);
+    setupMetadataEditor(authoringNotesEditor, false);
+
+    referencePrioritySlider.setSliderStyle(juce::Slider::LinearHorizontal);
+    referencePrioritySlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    referencePrioritySlider.setRange(0.0, 100.0, 1.0);
+    referencePrioritySlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(84, 128, 188));
+    referencePrioritySlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(216, 228, 244));
+    referencePriorityValueLabel.setJustificationType(juce::Justification::centredRight);
+    referencePriorityValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(196, 204, 214));
 
     genreCombo.onChange = [this]
     {
         if (syncingControls)
             return;
         state.genre = genreCombo.getText();
+        rebuildSubstyleComboForCurrentGenre();
         emitStateChanged();
     };
 
@@ -350,6 +392,51 @@ StyleLabComponent::StyleLabComponent(const StyleLabState& initialState,
         syncControlsFromState();
         emitStateChanged();
     };
+
+    auto commitTags = [this]
+    {
+        if (syncingControls)
+            return;
+        state.tags = parseTagsFromText(tagsEditor.getText());
+        emitStateChanged();
+    };
+    tagsEditor.onReturnKey = commitTags;
+    tagsEditor.onFocusLost = commitTags;
+
+    moodCombo.onChange = [this]
+    {
+        if (syncingControls)
+            return;
+        state.mood = moodCombo.getSelectedId() <= 1 ? juce::String() : moodCombo.getText();
+        emitStateChanged();
+    };
+
+    densityProfileCombo.onChange = [this]
+    {
+        if (syncingControls)
+            return;
+        state.densityProfile = densityProfileCombo.getSelectedId() <= 1 ? juce::String() : densityProfileCombo.getText();
+        emitStateChanged();
+    };
+
+    referencePrioritySlider.onValueChange = [this]
+    {
+        if (syncingControls)
+            return;
+        state.referencePriority = static_cast<int>(std::lround(referencePrioritySlider.getValue()));
+        referencePriorityValueLabel.setText(juce::String(state.referencePriority), juce::dontSendNotification);
+        emitStateChanged();
+    };
+
+    auto commitAuthoringNotes = [this]
+    {
+        if (syncingControls)
+            return;
+        state.authoringNotes = authoringNotesEditor.getText().trim();
+        emitStateChanged();
+    };
+    authoringNotesEditor.onReturnKey = commitAuthoringNotes;
+    authoringNotesEditor.onFocusLost = commitAuthoringNotes;
 
     captureButton.onClick = [this] { captureCurrentPattern(); };
     addLaneButton.onClick = [this] { addLane(); };
@@ -424,7 +511,7 @@ void StyleLabComponent::resized()
     draftStatusLabel.setBounds(infoRow);
     area.removeFromTop(10);
 
-    auto controls = area.removeFromTop(84);
+    auto controls = area.removeFromTop(126);
     const int labelHeight = 18;
     const int fieldHeight = 24;
     const int columnGap = 12;
@@ -455,6 +542,31 @@ void StyleLabComponent::resized()
     column = controls.removeFromLeft(columnWidth);
     setField(tempoMaxLabel, tempoMaxSlider, column);
 
+    controls.removeFromTop(8);
+    auto metadataRow = controls.removeFromTop(42);
+    auto tagsBounds = metadataRow.removeFromLeft(columnWidth * 2 + columnGap);
+    setField(tagsLabel, tagsEditor, tagsBounds);
+    metadataRow.removeFromLeft(columnGap);
+
+    column = metadataRow.removeFromLeft(columnWidth);
+    setField(moodLabel, moodCombo, column);
+    metadataRow.removeFromLeft(columnGap);
+
+    column = metadataRow.removeFromLeft(columnWidth);
+    setField(densityProfileLabel, densityProfileCombo, column);
+    metadataRow.removeFromLeft(columnGap);
+
+    auto priorityBounds = metadataRow.removeFromLeft(columnWidth);
+    referencePriorityLabel.setBounds(priorityBounds.removeFromTop(labelHeight));
+    auto priorityField = priorityBounds.removeFromTop(fieldHeight);
+    referencePriorityValueLabel.setBounds(priorityField.removeFromRight(34));
+    referencePrioritySlider.setBounds(priorityField);
+
+    controls.removeFromTop(8);
+    auto notesRow = controls.removeFromTop(42);
+    authoringNotesLabel.setBounds(notesRow.removeFromTop(labelHeight));
+    authoringNotesEditor.setBounds(notesRow.removeFromTop(fieldHeight));
+
     area.removeFromTop(8);
     auto toolbar = area.removeFromTop(30);
     captureButton.setBounds(toolbar.removeFromLeft(172));
@@ -480,14 +592,54 @@ void StyleLabComponent::resized()
     }
 }
 
+void StyleLabComponent::rebuildSubstyleComboForCurrentGenre()
+{
+    const auto validGenres = genreOptions();
+    const auto resolvedGenre = validGenres.contains(state.genre) ? state.genre : validGenres[0];
+    auto options = substyleOptionsProvider ? substyleOptionsProvider(resolvedGenre) : juce::StringArray {};
+    const auto preferredSubstyle = state.substyle.isNotEmpty() ? state.substyle : substyleCombo.getText();
+
+    if (options.isEmpty() && preferredSubstyle.isNotEmpty())
+        options.add(preferredSubstyle);
+
+    syncingControls = true;
+    genreCombo.setText(resolvedGenre, juce::dontSendNotification);
+    substyleCombo.clear(juce::dontSendNotification);
+    setupCombo(substyleCombo, options);
+
+    juce::String resolvedSubstyle;
+    if (options.contains(preferredSubstyle))
+        resolvedSubstyle = preferredSubstyle;
+    else if (!options.isEmpty())
+        resolvedSubstyle = options[0];
+
+    substyleCombo.setText(resolvedSubstyle, juce::dontSendNotification);
+    syncingControls = false;
+
+    state.genre = resolvedGenre;
+    state.substyle = resolvedSubstyle;
+}
+
 void StyleLabComponent::syncControlsFromState()
 {
     syncingControls = true;
     genreCombo.setText(state.genre, juce::dontSendNotification);
-    substyleCombo.setText(state.substyle, juce::dontSendNotification);
+    syncingControls = false;
+    rebuildSubstyleComboForCurrentGenre();
+    syncingControls = true;
     barsCombo.setText(juce::String(state.bars), juce::dontSendNotification);
     tempoMinSlider.setValue(state.tempoRange.getStart(), juce::dontSendNotification);
     tempoMaxSlider.setValue(state.tempoRange.getEnd(), juce::dontSendNotification);
+    tagsEditor.setText(joinTagsForText(state.tags), juce::dontSendNotification);
+    moodCombo.setSelectedId(1, juce::dontSendNotification);
+    if (state.mood.isNotEmpty())
+        moodCombo.setText(state.mood, juce::dontSendNotification);
+    densityProfileCombo.setSelectedId(1, juce::dontSendNotification);
+    if (state.densityProfile.isNotEmpty())
+        densityProfileCombo.setText(state.densityProfile, juce::dontSendNotification);
+    referencePrioritySlider.setValue(state.referencePriority, juce::dontSendNotification);
+    referencePriorityValueLabel.setText(juce::String(state.referencePriority), juce::dontSendNotification);
+    authoringNotesEditor.setText(state.authoringNotes, juce::dontSendNotification);
     syncingControls = false;
 }
 
@@ -824,5 +976,30 @@ const StyleLabLaneDefinition* StyleLabComponent::findLane(const juce::String& la
     }
 
     return nullptr;
+}
+
+juce::StringArray StyleLabComponent::moodOptions()
+{
+    return bbg::moodOptions();
+}
+
+juce::StringArray StyleLabComponent::densityProfileOptions()
+{
+    return bbg::densityProfileOptions();
+}
+
+juce::StringArray StyleLabComponent::parseTagsFromText(const juce::String& text)
+{
+    juce::StringArray tags;
+    tags.addTokens(text, ",", {});
+    for (int index = 0; index < tags.size(); ++index)
+        tags.set(index, tags[index].trim());
+    tags.removeEmptyStrings();
+    return tags;
+}
+
+juce::String StyleLabComponent::joinTagsForText(const juce::StringArray& tags)
+{
+    return tags.joinIntoString(", ");
 }
 } // namespace bbg

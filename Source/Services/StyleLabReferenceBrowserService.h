@@ -71,6 +71,12 @@ struct StyleLabReferenceRecord
     int bars = 0;
     int tempoMin = 0;
     int tempoMax = 0;
+    juce::StringArray tags;
+    juce::String mood;
+    juce::String densityProfile;
+    int referencePriority = 50;
+    juce::String notesSummary;
+    juce::String authoringNotes;
     juce::String exportedAt;
     juce::String conflictMessage;
     juce::String selectedTrackLaneId;

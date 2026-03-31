@@ -38,6 +38,9 @@ struct ResolvedStyleDefinition
     juce::String substyleName;
     juce::String source;
     bool loadedFromReference = false;
+    int sourceReferenceCountUsed = 0;
+    juce::String primaryReferenceId;
+    juce::String loadStrategy = "fallback";
     std::vector<ResolvedStyleDefinitionLane> lanes;
     juce::NamedValueSet styleHints;
     std::optional<ReferenceHatSkeleton> referenceHatSkeleton;

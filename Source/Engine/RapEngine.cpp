@@ -6,6 +6,7 @@
 
 #include "../Core/TrackSemantics.h"
 #include "../Core/TrackRegistry.h"
+#include "HiResTiming.h"
 #include "Rap/LofiRapStyleSpec.h"
 #include "Rap/RapStyleSpec.h"
 #include "StyleInfluence.h"
@@ -46,6 +47,133 @@ float laneBalanceWeight(const PatternProject& project, TrackType type)
 float supportAccentWeight(const PatternProject& project)
 {
     return std::clamp(project.styleInfluence.supportAccentWeight, 0.65f, 1.5f);
+}
+
+float lowEndCouplingWeight(const PatternProject& project)
+{
+    return std::clamp(project.styleInfluence.lowEndCouplingWeight, 0.65f, 1.6f);
+}
+
+struct ReferenceRapKickFeel
+{
+    bool available = false;
+    float density = 0.0f;
+    float anchorRatio = 0.0f;
+    float supportRatio = 0.0f;
+    float tailRatio = 0.0f;
+    std::array<float, 16> presence {};
+};
+
+struct ReferenceRapHatFeel
+{
+    bool available = false;
+    float density = 0.0f;
+    float supportRatio = 0.0f;
+    float gapRatio = 0.0f;
+};
+
+ReferenceRapKickFeel buildReferenceRapKickFeel(const PatternProject& project, int bar)
+{
+    ReferenceRapKickFeel feel;
+    const auto& corpus = project.styleInfluence.referenceKickCorpus;
+    if (!corpus.available || corpus.variants.empty())
+        return feel;
+
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    float anchors = 0.0f;
+    float supports = 0.0f;
+    float tails = 0.0f;
+
+    for (const auto& variant : corpus.variants)
+    {
+        if (!variant.available || variant.barPatterns.empty())
+            continue;
+
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        const auto& pattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
+        ++contributingBars;
+        totalNotes += static_cast<float>(pattern.notes.size());
+        for (const auto& note : pattern.notes)
+        {
+            const int step = std::clamp(note.step16, 0, 15);
+            feel.presence[static_cast<size_t>(step)] += 1.0f;
+            if (step == 0 || step == 8)
+                anchors += 1.0f;
+            else if (step >= 14)
+                tails += 1.0f;
+            else
+                supports += 1.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return feel;
+
+    feel.available = true;
+    const float invBars = 1.0f / static_cast<float>(contributingBars);
+    for (auto& value : feel.presence)
+        value *= invBars;
+    feel.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    feel.anchorRatio = totalNotes > 0.0f ? anchors / totalNotes : 0.0f;
+    feel.supportRatio = totalNotes > 0.0f ? supports / totalNotes : 0.0f;
+    feel.tailRatio = totalNotes > 0.0f ? tails / totalNotes : 0.0f;
+    return feel;
+}
+
+ReferenceRapHatFeel buildReferenceRapHatFeel(const PatternProject& project, int bar)
+{
+    ReferenceRapHatFeel feel;
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    float supportNotes = 0.0f;
+    float emptySlots = 0.0f;
+
+    const auto& corpus = project.styleInfluence.referenceHatCorpus;
+    if (corpus.available && !corpus.variants.empty())
+    {
+        for (const auto& variant : corpus.variants)
+        {
+            if (!variant.available || variant.barMaps.empty())
+                continue;
+
+            const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barMaps.size()));
+            const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+            if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barMaps.size()))
+                continue;
+
+            const auto& barMap = variant.barMaps[static_cast<size_t>(normalizedBar)];
+            ++contributingBars;
+            std::array<bool, 8> occupiedSlots {};
+            for (const auto& note : barMap.notes)
+            {
+                const int step32 = std::clamp(HiResTiming::quantizeTicks(note.tickInBar, HiResTiming::kTicks1_32) / HiResTiming::kTicks1_32,
+                                              0,
+                                              31);
+                const int step16 = std::clamp(step32 / 2, 0, 15);
+                occupiedSlots[static_cast<size_t>(step16 / 2)] = true;
+                totalNotes += 1.0f;
+                if ((step16 % 2) == 1)
+                    supportNotes += 1.0f;
+            }
+            for (size_t i = 0; i < occupiedSlots.size(); ++i)
+                if (!occupiedSlots[i])
+                    emptySlots += 1.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return feel;
+
+    feel.available = true;
+    feel.density = totalNotes / static_cast<float>(contributingBars);
+    feel.supportRatio = totalNotes > 0.0f ? supportNotes / totalNotes : 0.0f;
+    feel.gapRatio = emptySlots / (static_cast<float>(contributingBars) * 8.0f);
+    return feel;
 }
 
 bool containsStep(const std::vector<NoteEvent>& notes, int step)
@@ -644,10 +772,15 @@ void RapEngine::generateDependentTracks(PatternProject& project,
 
         for (const auto& n : snare->notes)
         {
+            const int bar = std::clamp(n.step / 16, 0, std::max(0, project.params.bars - 1));
+            const auto referenceKickFeel = buildReferenceRapKickFeel(project, bar);
             const auto& clapDefaults = getLaneStyleDefaults(styleDefaults, clap->type);
-            if (!n.isGhost && chance(rng) < std::clamp(clapDensity * clapDefaults.noteProbability, 0.01f, 0.58f))
+            float clapGate = std::clamp(clapDensity * clapDefaults.noteProbability, 0.01f, 0.58f);
+            if (referenceKickFeel.available)
+                clapGate *= std::clamp(0.88f + referenceKickFeel.supportRatio * 0.22f + referenceKickFeel.anchorRatio * 0.1f, 0.76f, 1.22f);
+            if (!n.isGhost && chance(rng) < clapGate)
                 clap->notes.push_back({ 39, n.step, 1, std::clamp(clapVel(rng), 1, 127), 3, false });
-            else if (chance(rng) < std::clamp(clapDensity * 0.62f, 0.01f, 0.30f))
+            else if (chance(rng) < std::clamp(clapDensity * 0.62f * (referenceKickFeel.available ? std::clamp(0.9f + referenceKickFeel.supportRatio * 0.18f, 0.8f, 1.18f) : 1.0f), 0.01f, 0.30f))
                 clap->notes.push_back({ 39, std::max(0, n.step - 1), 1, std::clamp(ghostVel(rng), 1, 127), 2, true });
         }
     }
@@ -663,10 +796,14 @@ void RapEngine::generateDependentTracks(PatternProject& project,
             if ((n.step % 16) == 0 || (n.step % 16) == 8)
                 continue;
 
+            const int bar = std::clamp(n.step / 16, 0, std::max(0, project.params.bars - 1));
+            const auto referenceKickFeel = buildReferenceRapKickFeel(project, bar);
             const auto& ghostDefaults = getLaneStyleDefaults(styleDefaults, ghostKick->type);
             const float baseGhost = rapMix(spec.ghostKickDensityMin, spec.ghostKickDensityMax, project.params.densityAmount)
                 * supportAccentWeight(project);
-            const float gate = std::clamp(baseGhost * ghostDefaults.noteProbability, 0.01f, 0.28f);
+            float gate = std::clamp(baseGhost * ghostDefaults.noteProbability, 0.01f, 0.28f);
+            if (referenceKickFeel.available)
+                gate *= std::clamp(0.86f + referenceKickFeel.supportRatio * 0.3f + referenceKickFeel.presence[static_cast<size_t>(n.step % 16)] * 0.16f, 0.74f, 1.26f);
             if (chance(rng) < gate)
                 ghostKick->notes.push_back({ 35, std::max(0, n.step - 1), 1, vel(rng), 2, true });
         }
@@ -688,6 +825,7 @@ void RapEngine::generateDependentTracks(PatternProject& project,
             {
                 const int stepInBar = n.step % 16;
                 const int bar = n.step / 16;
+                const auto referenceHatFeel = buildReferenceRapHatFeel(project, bar);
                 const auto role = bar < static_cast<int>(phrasePlan.size()) ? phrasePlan[static_cast<size_t>(bar)] : RapPhraseRole::Base;
                 const auto& openDefaults = getLaneStyleDefaults(styleDefaults, openHat->type);
 
@@ -696,6 +834,8 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                     gate += 0.06f;
                 if (role == RapPhraseRole::Ending && stepInBar >= 12)
                     gate += 0.08f * openDefaults.phraseEndingProbability;
+                if (referenceHatFeel.available)
+                    gate *= std::clamp(0.86f + referenceHatFeel.supportRatio * 0.28f + (referenceHatFeel.gapRatio > 0.45f ? 0.08f : 0.0f), 0.74f, 1.22f);
 
                 if (chance(rng) < std::clamp(gate, 0.0f, 0.52f))
                     openHat->notes.push_back({ 46, n.step, role == RapPhraseRole::Ending ? 2 : 1, std::clamp(vel(rng), 1, 127), n.microOffset, false });
@@ -716,9 +856,13 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                 const int bars = std::max(1, project.params.bars);
                 for (int bar = 0; bar < bars; ++bar)
                 {
+                    const auto referenceHatFeel = buildReferenceRapHatFeel(project, bar);
                     for (int step : { 2, 6, 10, 14 })
                     {
-                        if (chance(rng) < std::clamp(style.rideChance * rideDefaults.noteProbability * std::clamp(laneBiasFor(project.styleInfluence, TrackRole::Ride).activityWeight, 0.55f, 1.5f), 0.01f, 0.55f))
+                        float gate = std::clamp(style.rideChance * rideDefaults.noteProbability * std::clamp(laneBiasFor(project.styleInfluence, TrackRole::Ride).activityWeight, 0.55f, 1.5f), 0.01f, 0.55f);
+                        if (referenceHatFeel.available)
+                            gate *= std::clamp(0.9f + referenceHatFeel.supportRatio * 0.2f - std::max(0.0f, referenceHatFeel.gapRatio - 0.5f) * 0.12f, 0.78f, 1.18f);
+                        if (chance(rng) < gate)
                             ride->notes.push_back({ 51, bar * 16 + step, 1, vel(rng), 2, false });
                     }
                 }
@@ -758,9 +902,13 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                                                  spec.percDensityMax);
             for (int bar = 0; bar < bars; ++bar)
             {
+                const auto referenceHatFeel = buildReferenceRapHatFeel(project, bar);
                 for (int step : { 5, 9, 13 })
                 {
-                    if (chance(rng) < std::clamp(percDensity * 0.7f, 0.02f, 0.24f))
+                    float gate = std::clamp(percDensity * 0.7f, 0.02f, 0.24f);
+                    if (referenceHatFeel.available)
+                        gate *= std::clamp(0.88f + referenceHatFeel.supportRatio * 0.24f + (step == 13 ? 0.04f : 0.0f), 0.76f, 1.2f);
+                    if (chance(rng) < gate)
                         perc->notes.push_back({ 50, bar * 16 + step, 1, std::clamp(vel(rng), 1, 127), 0, false });
                 }
             }
@@ -789,7 +937,7 @@ void RapEngine::generateDependentTracks(PatternProject& project,
     {
         sub->notes.clear();
 
-        const float subDensity = std::clamp(rapMix(spec.sub808DensityMin, spec.sub808DensityMax, project.params.densityAmount),
+        const float subDensity = std::clamp(rapMix(spec.sub808DensityMin, spec.sub808DensityMax, project.params.densityAmount) * lowEndCouplingWeight(project),
                                             spec.sub808DensityMin,
                                             spec.sub808DensityMax);
 
@@ -804,9 +952,18 @@ void RapEngine::generateDependentTracks(PatternProject& project,
             for (const auto& k : kick->notes)
             {
                 const int stepInBar = k.step % 16;
+                const int bar = std::clamp(k.step / 16, 0, std::max(0, project.params.bars - 1));
+                const auto referenceKickFeel = buildReferenceRapKickFeel(project, bar);
                 const bool anchor = stepInBar == 0 || stepInBar == 8;
                 float gate = spec.sub808FollowKickMoreOften ? (anchor ? 0.62f : 0.36f) : (anchor ? 0.42f : 0.20f);
                 gate = std::clamp(gate + subDensity * 0.46f, 0.02f, 0.88f);
+                if (referenceKickFeel.available)
+                {
+                    const float presence = referenceKickFeel.presence[static_cast<size_t>(stepInBar)];
+                    gate *= std::clamp(0.86f + presence * (anchor ? 0.42f : 0.34f) + referenceKickFeel.anchorRatio * (anchor ? 0.18f : 0.04f), 0.72f, 1.28f);
+                    if (!anchor && referenceKickFeel.density < 0.28f)
+                        gate *= 0.82f;
+                }
                 if (chance(rng) > gate)
                     continue;
 
@@ -814,7 +971,14 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                 if (spec.sub808AllowSlides && style.substyle == RapSubstyle::RnBRap && chance(rng) < 0.08f)
                     pitch = std::clamp(basePitch + (chance(rng) < 0.5f ? 7 : 12), 24, 96);
 
-                const int length = style.substyle == RapSubstyle::RnBRap ? 2 : 1;
+                int length = style.substyle == RapSubstyle::RnBRap ? 2 : 1;
+                if (referenceKickFeel.available)
+                {
+                    if (anchor && referenceKickFeel.anchorRatio > 0.32f)
+                        length = std::max(length, style.substyle == RapSubstyle::RnBRap ? 3 : 2);
+                    if (stepInBar >= 14 && referenceKickFeel.tailRatio > 0.14f)
+                        length = std::max(length, 2);
+                }
                 sub->notes.push_back({ pitch, k.step, length, std::clamp(vel(rng), 1, 127), 0, false });
             }
         }

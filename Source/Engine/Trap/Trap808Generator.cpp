@@ -104,6 +104,73 @@ float lowEndCouplingWeight(const StyleInfluenceState& styleInfluence)
     return std::clamp(styleInfluence.lowEndCouplingWeight, 0.65f, 1.6f);
 }
 
+float bounceWeight(const StyleInfluenceState& styleInfluence)
+{
+    return std::clamp(styleInfluence.bounceWeight, 0.65f, 1.5f);
+}
+
+struct ReferenceTrapKickFeel
+{
+    bool available = false;
+    float density = 0.0f;
+    float anchorRatio = 0.0f;
+    float bounceRatio = 0.0f;
+    float tailRatio = 0.0f;
+    std::array<float, 16> presence {};
+};
+
+ReferenceTrapKickFeel buildReferenceTrapKickFeel(const StyleInfluenceState& styleInfluence, int bar)
+{
+    ReferenceTrapKickFeel feel;
+    if (!styleInfluence.referenceKickCorpus.available || styleInfluence.referenceKickCorpus.variants.empty())
+        return feel;
+
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    float anchors = 0.0f;
+    float bounces = 0.0f;
+    float tails = 0.0f;
+
+    for (const auto& variant : styleInfluence.referenceKickCorpus.variants)
+    {
+        if (!variant.available || variant.barPatterns.empty())
+            continue;
+
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        const auto& barPattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
+        ++contributingBars;
+        totalNotes += static_cast<float>(barPattern.notes.size());
+        for (const auto& note : barPattern.notes)
+        {
+            const int step = std::clamp(note.step16, 0, 15);
+            feel.presence[static_cast<size_t>(step)] += 1.0f;
+            if (step == 0 || step == 8 || step == 10)
+                anchors += 1.0f;
+            if (step == 6 || step == 11 || step == 12 || step == 13)
+                bounces += 1.0f;
+            if (step >= 14)
+                tails += 1.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return feel;
+
+    feel.available = true;
+    const float invBars = 1.0f / static_cast<float>(contributingBars);
+    for (auto& value : feel.presence)
+        value *= invBars;
+    feel.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    feel.anchorRatio = totalNotes > 0.0f ? anchors / totalNotes : 0.0f;
+    feel.bounceRatio = totalNotes > 0.0f ? bounces / totalNotes : 0.0f;
+    feel.tailRatio = totalNotes > 0.0f ? tails / totalNotes : 0.0f;
+    return feel;
+}
+
 const std::array<int, 7>& intervalsForScale(int scaleMode)
 {
     static const std::array<int, 7> minor { 0, 2, 3, 5, 7, 8, 10 };
@@ -599,11 +666,15 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
     std::uniform_int_distribution<int> vel(style.sub808VelocityMin, style.sub808VelocityMax);
 
     const float activity = std::clamp(subActivity * style.sub808Activity * subBalanceWeight(styleInfluence) * lowEndCouplingWeight(styleInfluence), 0.1f, 1.0f);
+    const float bounce = bounceWeight(styleInfluence);
 
     const int twoBarWindows = std::max(1, (totalSteps + 31) / 32);
     std::vector<int> startsPerWindow(static_cast<size_t>(twoBarWindows), 0);
     std::vector<int> startsPerBar(static_cast<size_t>(bars), 0);
     std::vector<int> restartsPerBar(static_cast<size_t>(bars), 0);
+    std::vector<ReferenceTrapKickFeel> referenceFeels(static_cast<size_t>(bars));
+    for (int bar = 0; bar < bars; ++bar)
+        referenceFeels[static_cast<size_t>(bar)] = buildReferenceTrapKickFeel(styleInfluence, bar);
 
     int maxStartsPerBar = budgets.maxStartsPerBar;
     if (activity < 0.4f)
@@ -657,6 +728,8 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
         const int window = twoBarWindowIndex(candidate.step);
         if (window < 0 || window >= twoBarWindows)
             continue;
+        const auto& referenceFeel = referenceFeels[static_cast<size_t>(bar)];
+        const float referencePresence = referenceFeel.presence[static_cast<size_t>(stepInBar)];
 
         TrapBassAnchorContext ctx;
         ctx.kickRole = candidate.role;
@@ -692,6 +765,20 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
         ctx.stylePrefersThisPosition = stylePrefersPosition(style.substyle, ctx);
 
         candidate.staticScore = scoreTrapBassAnchor(spec, style, budgets, ctx);
+        if (referenceFeel.available)
+        {
+            float referenceBias = referencePresence * (ctx.kickRole == TrapKickRole::Anchor ? 0.38f : 0.3f);
+            referenceBias += referenceFeel.anchorRatio * (ctx.isStartOfBar || ctx.isMidBarStrongPoint ? 0.16f : 0.04f);
+            referenceBias += referenceFeel.bounceRatio * (ctx.kickRole == TrapKickRole::Pickup || ctx.kickRole == TrapKickRole::Support ? 0.2f : 0.06f);
+            referenceBias += referenceFeel.tailRatio * (ctx.isEndOfBar ? 0.18f : 0.0f);
+            referenceBias += (lowEndCouplingWeight(styleInfluence) - 1.0f) * 0.12f;
+            referenceBias += (bounce - 1.0f) * (ctx.kickRole == TrapKickRole::Pickup ? 0.14f : 0.06f);
+
+            if (referenceFeel.density < 0.3f && ctx.kickRole == TrapKickRole::Support)
+                referenceBias -= 0.12f;
+
+            candidate.staticScore = std::clamp(candidate.staticScore + referenceBias, -2.0f, 3.2f);
+        }
         const TrapBassEventType eventType = decideTrapBassEventType(spec, style, ctx, candidate.staticScore, threshold);
 
         if (eventType == TrapBassEventType::Reject || eventType == TrapBassEventType::ContinueSustain)
@@ -725,7 +812,16 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
             }
         }
 
-        const int length = lengthForEventType(eventType, candidate.step, spec, style, rng);
+        int length = lengthForEventType(eventType, candidate.step, spec, style, rng);
+        if (referenceFeel.available)
+        {
+            if (referencePresence >= 0.42f && (ctx.kickRole == TrapKickRole::Anchor || ctx.kickRole == TrapKickRole::Tail))
+                length = std::max(length, ctx.isEndOfBar ? 4 : 3);
+            if (referenceFeel.tailRatio > 0.16f && ctx.isEndOfBar)
+                length = std::max(length, 4);
+            if (referenceFeel.bounceRatio > 0.2f && isRestart)
+                length = std::min(length, 2);
+        }
         int velocityBonus = 0;
         if (candidate.role == TrapKickRole::Anchor) velocityBonus += 6;
         if (candidate.role == TrapKickRole::GhostLike) velocityBonus -= 18;
@@ -971,6 +1067,10 @@ void Trap808Generator::applySlides(TrackState& subTrack,
             gate *= 0.8f;
         if (currentRole == TrapKickRole::Support && nextRole == TrapKickRole::Support)
             gate *= 0.72f;
+        if (current.length >= 4 && (phraseRole == TrapPhraseRole::Ending || stepInBar >= 12))
+            gate *= 1.08f;
+        if (current.length <= 2 && gap == 1)
+            gate *= 0.9f;
 
         if (chance(rng) < std::clamp(gate, 0.02f, 0.86f))
         {

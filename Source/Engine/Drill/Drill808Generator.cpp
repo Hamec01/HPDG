@@ -177,6 +177,66 @@ float lowEndCouplingWeight(const StyleInfluenceState& styleInfluence)
 {
     return std::clamp(styleInfluence.lowEndCouplingWeight, 0.65f, 1.6f);
 }
+
+struct ReferenceKickStepProfile
+{
+    bool available = false;
+    float density = 0.0f;
+    std::array<float, 16> presence {};
+};
+
+ReferenceKickStepProfile buildReferenceKickStepProfile(const ReferenceKickCorpus* corpus, int bar)
+{
+    ReferenceKickStepProfile profile;
+    if (corpus == nullptr || !corpus->available || corpus->variants.empty())
+        return profile;
+
+    int contributingBars = 0;
+    float totalNotes = 0.0f;
+    for (const auto& variant : corpus->variants)
+    {
+        if (!variant.available || variant.barPatterns.empty())
+            continue;
+
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        const auto& barPattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
+        ++contributingBars;
+        totalNotes += static_cast<float>(barPattern.notes.size());
+        for (const auto& note : barPattern.notes)
+        {
+            const int step = std::clamp(note.step16, 0, 15);
+            profile.presence[static_cast<size_t>(step)] += 1.0f;
+        }
+    }
+
+    if (contributingBars <= 0)
+        return profile;
+
+    profile.available = true;
+    const float invBars = 1.0f / static_cast<float>(contributingBars);
+    for (auto& value : profile.presence)
+        value *= invBars;
+    profile.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    return profile;
+}
+
+bool blueprintAllowsSubStart(const DrillGrooveBlueprint* blueprint, int absoluteStep)
+{
+    if (blueprint == nullptr)
+        return true;
+
+    const auto* slot = blueprint->slotAt(absoluteStep);
+    if (slot == nullptr)
+        return true;
+
+    return !slot->snareProtection
+        && (!slot->majorEventReserved || slot->phraseEdgeWeight < 0.7f)
+        && (slot->subRestartAllowed || slot->subStartWeight >= 0.5f);
+}
 }
 
 void Drill808Generator::generateRhythm(TrackState& subTrack,
@@ -201,6 +261,12 @@ void Drill808Generator::generateRhythm(TrackState& subTrack,
     const float supportFollow = std::clamp(spec.supportFollowProbability * activity, 0.04f, 0.9f);
     const float restartGateBase = std::clamp(spec.restartProbability * activity, 0.0f, 0.88f);
     const float denseTopRejectGate = std::clamp(spec.rejectIfDenseTopProbability * style.hatFxIntensity * 0.65f, 0.0f, 0.9f);
+    const ReferenceKickCorpus* referenceCorpus = styleInfluence.referenceKickCorpus.available
+        ? &styleInfluence.referenceKickCorpus
+        : nullptr;
+    std::vector<ReferenceKickStepProfile> referenceProfiles(static_cast<size_t>(bars));
+    for (int bar = 0; bar < bars; ++bar)
+        referenceProfiles[static_cast<size_t>(bar)] = buildReferenceKickStepProfile(referenceCorpus, bar);
 
     std::vector<int> startsPerBar(static_cast<size_t>(bars), 0);
     std::vector<int> restartsPerWindow(static_cast<size_t>(std::max(1, (bars + 1) / 2)), 0);
@@ -243,6 +309,10 @@ void Drill808Generator::generateRhythm(TrackState& subTrack,
         const bool anchor = stepInBar == 0 || stepInBar == 10;
         const bool pickup = stepInBar == 15 || stepInBar <= 1;
         const int window = std::clamp(bar / 2, 0, static_cast<int>(restartsPerWindow.size()) - 1);
+        const auto& referenceProfile = referenceProfiles[static_cast<size_t>(bar)];
+        const float referencePresence = referenceProfile.presence[static_cast<size_t>(stepInBar)];
+        const float forwardPresence = referenceProfile.presence[static_cast<size_t>(std::min(15, stepInBar + 1))];
+        const float backwardPresence = referenceProfile.presence[static_cast<size_t>(std::max(0, stepInBar - 1))];
 
         float reinforce = anchor ? anchorFollow : supportFollow;
         if (anchor)
@@ -253,6 +323,14 @@ void Drill808Generator::generateRhythm(TrackState& subTrack,
             reinforce += spec.pickupBassProbability * 0.16f;
         if (!anchor && chance(rng) < denseTopRejectGate)
             reinforce *= 0.7f;
+        if (referenceProfile.available)
+        {
+            reinforce *= std::clamp(0.86f + referencePresence * (anchor ? 0.34f : 0.58f), 0.68f, 1.28f);
+            if (phraseEdge && referencePresence >= 0.36f)
+                reinforce += 0.05f;
+            if (pickup && backwardPresence >= 0.32f)
+                reinforce += 0.04f;
+        }
         if (slot != nullptr)
         {
             if (slot->kickEventType == DrillKickEventType::AnchorKick)
@@ -284,6 +362,13 @@ void Drill808Generator::generateRhythm(TrackState& subTrack,
             anchorLength = std::max(anchorLength, phraseEdge ? 5 : 4);
         if (denseTopBar)
             anchorLength = std::max(anchorLength, phraseEdge ? 5 : 4);
+        if (referenceProfile.available)
+        {
+            if (referencePresence >= 0.42f)
+                anchorLength = std::max(anchorLength, phraseEdge ? 5 : 4);
+            if (referenceProfile.density < 0.30f && !anchor)
+                anchorLength = std::max(anchorLength, phraseEdge ? 4 : 3);
+        }
 
         if (chance(rng) < std::clamp(reinforce, 0.1f, 0.98f))
             addStart(k.step, anchorLength, vel(rng));
@@ -306,6 +391,13 @@ void Drill808Generator::generateRhythm(TrackState& subTrack,
             if (phraseEdge && !slot->subRestartAllowed)
                 restartGate = 0.0f;
         }
+        if (referenceProfile.available)
+        {
+            const float neighborPresence = spec.rhythmMode == Drill808RhythmMode::FrontalPressure ? backwardPresence : forwardPresence;
+            restartGate *= std::clamp(0.82f + neighborPresence * 0.52f, 0.48f, 1.32f);
+            if (anchor && referencePresence >= 0.4f)
+                restartGate *= 0.82f;
+        }
 
         const bool canRestart = restartsPerWindow[static_cast<size_t>(window)] < spec.maxMajorRestartsPer2Bars;
         if (canRestart && stepInBar < 15 && startsPerBar[static_cast<size_t>(bar)] < spec.maxStartsPerBar
@@ -327,6 +419,59 @@ void Drill808Generator::generateRhythm(TrackState& subTrack,
             const int endStep = std::min(bars * 16 - 1, bar * 16 + 15);
             const int hold = chance(rng) < spec.phraseHoldProbability ? 6 : 3;
             addStart(endStep, hold, std::max(style.sub808VelocityMin, vel(rng) - 6));
+        }
+    }
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        const auto& referenceProfile = referenceProfiles[static_cast<size_t>(bar)];
+        if (!referenceProfile.available)
+            continue;
+        if (startsPerBar[static_cast<size_t>(bar)] >= spec.maxStartsPerBar)
+            continue;
+
+        const auto phraseRole = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : DrillPhraseRole::Base;
+        int bestStep = -1;
+        float bestScore = 0.0f;
+        for (int step = 0; step < 16; ++step)
+        {
+            const float presence = referenceProfile.presence[static_cast<size_t>(step)];
+            if (presence < 0.44f)
+                continue;
+
+            float score = presence;
+            if (step == 15 || step == 13)
+                score += phraseRole == DrillPhraseRole::Ending ? 0.18f : 0.08f;
+            if (step == 6 || step == 9)
+                score += phraseRole == DrillPhraseRole::Tension ? 0.1f : 0.0f;
+            if (step == 0 || step == 10)
+                score *= 0.84f;
+
+            const int absoluteStep = bar * 16 + step;
+            if (hasStartNear(absoluteStep, 1) || !blueprintAllowsSubStart(blueprint, absoluteStep))
+                continue;
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestStep = step;
+            }
+        }
+
+        if (bestStep >= 0)
+        {
+            const float supplementGate = std::clamp((lowEndCouplingWeight(styleInfluence) - 0.7f) * 0.42f + bestScore * 0.42f,
+                                                    0.0f,
+                                                    0.56f);
+            if (chance(rng) < supplementGate)
+            {
+                const int hold = (bestStep >= 13 || phraseRole == DrillPhraseRole::Ending)
+                    ? std::max(3, spec.rhythmMode == Drill808RhythmMode::SparseThreat ? 6 : 4)
+                    : 2;
+                addStart(bar * 16 + bestStep,
+                         hold,
+                         std::max(style.sub808VelocityMin, vel(rng) - 8));
+            }
         }
     }
 

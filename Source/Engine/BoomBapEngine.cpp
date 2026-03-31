@@ -70,6 +70,88 @@ float supportAccentWeight(const PatternProject& project)
     return std::clamp(project.styleInfluence.supportAccentWeight, 0.65f, 1.5f);
 }
 
+struct ReferenceBoomBapGrooveFeel
+{
+    bool available = false;
+    float carrierRatio = 0.0f;
+    float supportRatio = 0.0f;
+    float gapRatio = 0.0f;
+    float punctuationRatio = 0.0f;
+};
+
+ReferenceBoomBapGrooveFeel buildReferenceBoomBapGrooveFeel(const PatternProject& project, int bar)
+{
+    ReferenceBoomBapGrooveFeel feel;
+    int hatBars = 0;
+    float hatNotes = 0.0f;
+    float carrierNotes = 0.0f;
+    float supportNotes = 0.0f;
+    float emptySlots = 0.0f;
+
+    if (project.styleInfluence.referenceHatCorpus.available && !project.styleInfluence.referenceHatCorpus.variants.empty())
+    {
+        for (const auto& variant : project.styleInfluence.referenceHatCorpus.variants)
+        {
+            if (!variant.available || variant.barMaps.empty())
+                continue;
+            const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barMaps.size()));
+            const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+            if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barMaps.size()))
+                continue;
+
+            const auto& barMap = variant.barMaps[static_cast<size_t>(normalizedBar)];
+            ++hatBars;
+            std::array<bool, 8> occupiedSlots {};
+            for (const auto& note : barMap.notes)
+            {
+                const int step16 = std::clamp(note.tickInBar / 120, 0, 15);
+                occupiedSlots[static_cast<size_t>(step16 / 2)] = true;
+                hatNotes += 1.0f;
+                if ((step16 % 4) == 0)
+                    carrierNotes += 1.0f;
+                else
+                    supportNotes += 1.0f;
+            }
+            for (size_t i = 0; i < occupiedSlots.size(); ++i)
+                if (!occupiedSlots[i])
+                    emptySlots += 1.0f;
+        }
+    }
+
+    float kickNotes = 0.0f;
+    float punctuation = 0.0f;
+    int kickBars = 0;
+    if (project.styleInfluence.referenceKickCorpus.available && !project.styleInfluence.referenceKickCorpus.variants.empty())
+    {
+        for (const auto& variant : project.styleInfluence.referenceKickCorpus.variants)
+        {
+            if (!variant.available || variant.barPatterns.empty())
+                continue;
+            const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+            const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+            if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+                continue;
+
+            const auto& pattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
+            ++kickBars;
+            kickNotes += static_cast<float>(pattern.notes.size());
+            for (const auto& note : pattern.notes)
+                if (note.step16 >= 11)
+                    punctuation += 1.0f;
+        }
+    }
+
+    if (hatBars <= 0 && kickBars <= 0)
+        return feel;
+
+    feel.available = true;
+    feel.carrierRatio = hatNotes > 0.0f ? carrierNotes / hatNotes : 0.0f;
+    feel.supportRatio = hatNotes > 0.0f ? supportNotes / hatNotes : 0.0f;
+    feel.gapRatio = hatBars > 0 ? emptySlots / (static_cast<float>(hatBars) * 8.0f) : 0.0f;
+    feel.punctuationRatio = kickNotes > 0.0f ? punctuation / kickNotes : 0.0f;
+    return feel;
+}
+
 void filterLaneNotesByBarActivation(TrackState& track,
                                     const BoomBapLaneActivationPlan& lanePlan,
                                     std::function<bool(const BoomBapLaneActivation&)> selector)
@@ -484,7 +566,7 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
     {
         if (auto* ghostKick = findTrack(project, TrackType::GhostKick); ghostKick != nullptr && !ghostKick->locked && ghostKick->enabled)
         {
-            ghostGenerator.generateGhostKick(*ghostKick, *track, style, project.params.densityAmount, phrasePlan, rng);
+            ghostGenerator.generateGhostKick(*ghostKick, *track, style, project.styleInfluence, project.params.densityAmount, phrasePlan, rng);
             filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
 
             if (grooveContext.halfTimeReference)
@@ -499,7 +581,7 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
     {
         if (auto* clap = findTrack(project, TrackType::ClapGhostSnare); clap != nullptr && !clap->locked && clap->enabled)
         {
-            ghostGenerator.generateClapLayer(*clap, *track, style, phrasePlan, rng);
+            ghostGenerator.generateClapLayer(*clap, *track, style, project.styleInfluence, phrasePlan, rng);
             filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
             mutableTracks.insert(clap->type);
         }
@@ -508,7 +590,7 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
     {
         if (auto* openHat = findTrack(project, TrackType::OpenHat); openHat != nullptr && !openHat->locked && openHat->enabled)
         {
-            openHatGenerator.generate(*openHat, *track, project.params, style, phrasePlan, rng);
+            openHatGenerator.generate(*openHat, *track, project.params, style, project.styleInfluence, phrasePlan, rng);
             filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
             mutableTracks.insert(openHat->type);
         }
@@ -560,7 +642,7 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
         if (auto* clap = findTrack(project, TrackType::ClapGhostSnare); clap != nullptr && !clap->locked && clap->enabled)
         {
             const auto oldClap = clap->notes;
-            ghostGenerator.generateClapLayer(*clap, *target, style, phrasePlan, rng);
+            ghostGenerator.generateClapLayer(*clap, *target, style, project.styleInfluence, phrasePlan, rng);
             filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
             const auto& clapDefaults = getLaneStyleDefaults(styleDefaults, clap->type);
             clap->notes = mergeVariationNotes(clap->type, oldClap, clap->notes, clapDefaults.rgVariationIntensity, rng);
@@ -574,7 +656,7 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
         if (auto* ghostKick = findTrack(project, TrackType::GhostKick); ghostKick != nullptr && !ghostKick->locked && ghostKick->enabled)
         {
             const auto oldGhost = ghostKick->notes;
-            ghostGenerator.generateGhostKick(*ghostKick, *target, style, project.params.densityAmount, phrasePlan, rng);
+            ghostGenerator.generateGhostKick(*ghostKick, *target, style, project.styleInfluence, project.params.densityAmount, phrasePlan, rng);
             filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
             const auto& ghostDefaults = getLaneStyleDefaults(styleDefaults, ghostKick->type);
             ghostKick->notes = mergeVariationNotes(ghostKick->type, oldGhost, ghostKick->notes, ghostDefaults.rgVariationIntensity, rng);
@@ -588,7 +670,7 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
         if (auto* openHat = findTrack(project, TrackType::OpenHat); openHat != nullptr && !openHat->locked && openHat->enabled)
         {
             const auto oldOpen = openHat->notes;
-            openHatGenerator.generate(*openHat, *target, project.params, style, phrasePlan, rng);
+            openHatGenerator.generate(*openHat, *target, project.params, style, project.styleInfluence, phrasePlan, rng);
             filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
             const auto& openDefaults = getLaneStyleDefaults(styleDefaults, openHat->type);
             openHat->notes = mergeVariationNotes(openHat->type, oldOpen, openHat->notes, openDefaults.rgVariationIntensity, rng);
@@ -832,7 +914,7 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
     if (auto* clap = findTrack(project, TrackType::ClapGhostSnare);
         clap != nullptr && snare != nullptr && mutableTracks.find(clap->type) != mutableTracks.end() && !clap->locked && clap->enabled)
     {
-        ghostGenerator.generateClapLayer(*clap, *snare, style, phrasePlan, rng);
+        ghostGenerator.generateClapLayer(*clap, *snare, style, project.styleInfluence, phrasePlan, rng);
         filterLaneNotesByBarActivation(*clap, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useClapGhostSnare; });
         std::uniform_real_distribution<float> chance(0.0f, 1.0f);
         const float clapKeep = std::clamp(laneBalanceWeight(project, TrackType::ClapGhostSnare) * supportAccentWeight(project) * 0.78f, 0.2f, 1.0f);
@@ -845,14 +927,14 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
     if (auto* ghostKick = findTrack(project, TrackType::GhostKick);
         ghostKick != nullptr && kick != nullptr && mutableTracks.find(ghostKick->type) != mutableTracks.end() && !ghostKick->locked && ghostKick->enabled)
     {
-        ghostGenerator.generateGhostKick(*ghostKick, *kick, style, project.params.densityAmount * laneActivityWeight(project, TrackType::Kick), phrasePlan, rng);
+        ghostGenerator.generateGhostKick(*ghostKick, *kick, style, project.styleInfluence, project.params.densityAmount * laneActivityWeight(project, TrackType::Kick), phrasePlan, rng);
         filterLaneNotesByBarActivation(*ghostKick, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useGhostKick; });
     }
 
     if (auto* openHat = findTrack(project, TrackType::OpenHat);
         openHat != nullptr && hat != nullptr && mutableTracks.find(openHat->type) != mutableTracks.end() && !openHat->locked && openHat->enabled)
     {
-        openHatGenerator.generate(*openHat, *hat, project.params, style, phrasePlan, rng);
+        openHatGenerator.generate(*openHat, *hat, project.params, style, project.styleInfluence, phrasePlan, rng);
         filterLaneNotesByBarActivation(*openHat, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.useOpenHat; });
         std::uniform_real_distribution<float> chance(0.0f, 1.0f);
         const float openKeep = std::clamp(laneActivityWeight(project, TrackType::OpenHat), 0.2f, 1.0f);
@@ -865,7 +947,7 @@ void BoomBapEngine::generateDependentTracks(PatternProject& project,
     if (auto* perc = findTrack(project, TrackType::Perc);
         perc != nullptr && mutableTracks.find(perc->type) != mutableTracks.end() && !perc->locked && perc->enabled)
     {
-        percGenerator.generate(*perc, project.params, style, phrasePlan, rng);
+        percGenerator.generate(*perc, project.params, style, project.styleInfluence, phrasePlan, rng);
         filterLaneNotesByBarActivation(*perc, lanePlan, [](const BoomBapLaneActivation& lane) { return lane.usePerc; });
         std::uniform_real_distribution<float> chance(0.0f, 1.0f);
         const float percKeep = std::clamp(laneActivityWeight(project, TrackType::Perc), 0.18f, 1.0f);
@@ -1196,11 +1278,13 @@ BoomBapEngine::GrooveContext BoomBapEngine::buildGrooveContext(const PatternProj
 {
     GrooveContext context;
     context.halfTimeReference = style.grooveReferenceBpm >= 150;
+    const auto referenceFeel = buildReferenceBoomBapGrooveFeel(project, 0);
 
     const float baseVar = style.barVariationAmount;
     const float halfBias = context.halfTimeReference ? style.halfTimeReferenceBias * 0.16f : 0.0f;
     const float densityBias = (project.params.densityAmount - 0.5f) * 0.10f;
-    context.phraseVariationAmount = std::clamp(baseVar + halfBias + densityBias, 0.15f, 0.75f);
+    const float referenceVar = referenceFeel.available ? (referenceFeel.supportRatio - referenceFeel.carrierRatio) * 0.08f : 0.0f;
+    context.phraseVariationAmount = std::clamp(baseVar + halfBias + densityBias + referenceVar, 0.15f, 0.75f);
 
     std::array<float, 3> weights {
         std::max(0.01f, style.hatCarrierPreference),
@@ -1213,6 +1297,15 @@ BoomBapEngine::GrooveContext BoomBapEngine::buildGrooveContext(const PatternProj
         weights[0] *= 0.92f;
         weights[1] *= 1.28f;
         weights[2] *= 1.14f;
+    }
+    if (referenceFeel.available)
+    {
+        std::uniform_real_distribution<float> chance(0.0f, 1.0f);
+        weights[0] *= std::clamp(0.88f + referenceFeel.carrierRatio * 0.42f, 0.78f, 1.28f);
+        weights[1] *= std::clamp(0.92f + referenceFeel.gapRatio * 0.36f, 0.78f, 1.24f);
+        weights[2] *= std::clamp(0.9f + referenceFeel.supportRatio * 0.28f, 0.78f, 1.22f);
+        if (referenceFeel.gapRatio > 0.5f && referenceFeel.carrierRatio < 0.3f)
+            context.halfTimeReference = context.halfTimeReference || chance(rng) < 0.42f;
     }
 
     std::discrete_distribution<int> pick(weights.begin(), weights.end());
@@ -1238,6 +1331,7 @@ void BoomBapEngine::applyCarrierMode(PatternProject& project,
 
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     const float densityScale = carrierDensityForMode(grooveContext.carrierMode);
+    const auto referenceFeel = buildReferenceBoomBapGrooveFeel(project, 0);
 
     if (mutableTracks.count(hat->type) != 0)
     {
@@ -1247,7 +1341,10 @@ void BoomBapEngine::applyCarrierMode(PatternProject& project,
         for (const auto& n : hat->notes)
         {
             const bool anchor = (n.step % 4) == 0;
-            const float keep = anchor ? 1.0f : std::clamp(0.55f + project.params.densityAmount * 0.35f, 0.35f, 0.92f) * densityScale;
+            float keep = anchor ? 1.0f : std::clamp(0.55f + project.params.densityAmount * 0.35f, 0.35f, 0.92f) * densityScale;
+            if (referenceFeel.available)
+                keep *= anchor ? std::clamp(0.9f + referenceFeel.carrierRatio * 0.16f, 0.86f, 1.1f)
+                               : std::clamp(0.9f + referenceFeel.supportRatio * 0.12f - std::max(0.0f, referenceFeel.gapRatio - 0.5f) * 0.16f, 0.78f, 1.08f);
             if (chance(rng) <= keep)
                 reducedHat.push_back(n);
         }

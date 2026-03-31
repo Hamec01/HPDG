@@ -27,6 +27,8 @@ private:
     void selectedRowsChanged(int lastRowSelected) override;
 
     void reloadCatalog();
+    void rebuildFilteredReferences();
+    void refreshFilterChoices();
     void applySelectedReference();
     void refreshDetailPanel();
     juce::String buildReferenceSummary(const StyleLabReferenceRecord& record) const;
@@ -34,6 +36,7 @@ private:
     const StyleLabReferenceRecord* selectedReference() const;
 
     StyleLabReferenceCatalog catalog;
+    std::vector<int> filteredReferenceIndices;
 
     juce::Label titleLabel;
     juce::Label subtitleLabel;
@@ -41,6 +44,14 @@ private:
     juce::TextButton refreshButton { "Refresh" };
     juce::TextButton openFolderButton { "Open Folder" };
     juce::TextButton applyButton { "Apply To Editor" };
+    juce::Label tagFilterLabel;
+    juce::Label moodFilterLabel;
+    juce::Label densityFilterLabel;
+    juce::Label sortLabel;
+    juce::TextEditor tagFilterEditor;
+    juce::ComboBox moodFilterCombo;
+    juce::ComboBox densityFilterCombo;
+    juce::ComboBox sortCombo;
     juce::ListBox referenceList;
     juce::Label summaryLabel;
     juce::TextEditor laneDetailEditor;
