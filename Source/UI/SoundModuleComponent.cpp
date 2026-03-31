@@ -1,5 +1,8 @@
 #include "SoundModuleComponent.h"
 
+#include <algorithm>
+#include <vector>
+
 namespace bbg
 {
 namespace
@@ -28,86 +31,47 @@ bool comboContainsDescriptor(const std::vector<SoundTargetDescriptor>& descripto
     return std::find(descriptors.begin(), descriptors.end(), target) != descriptors.end();
 }
 
-juce::String formatPercent(float value)
-{
-    return juce::String(juce::roundToInt(std::abs(value) * 100.0f)) + "%";
-}
-
-juce::String formatToneValue(float value)
-{
-    if (std::abs(value) < 0.05f)
-        return "Neutral";
-
-    return value < 0.0f ? "Dark " + formatPercent(value)
-                        : "Bright " + formatPercent(value);
-}
-
-juce::String formatGlueValue(float value)
-{
-    if (value < 0.05f)
-        return "Open";
-    if (value < 0.33f)
-        return "Light " + formatPercent(value);
-    if (value < 0.66f)
-        return "Glue " + formatPercent(value);
-    return "Tight " + formatPercent(value);
-}
-
-juce::String formatSpaceValue(float value)
-{
-    if (value < 0.05f)
-        return "Dry";
-    if (value < 0.4f)
-        return "Room " + formatPercent(value);
-    if (value < 0.75f)
-        return "Space " + formatPercent(value);
-    return "Wash " + formatPercent(value);
-}
-
-juce::String formatGateValue(float value)
-{
-    if (value < 0.05f)
-        return "Open";
-    if (value < 0.4f)
-        return "Trim " + formatPercent(value);
-    return "Tight " + formatPercent(value);
-}
-
-juce::String formatPunchValue(float value)
-{
-    if (value < 0.05f)
-        return "Smooth";
-    if (value < 0.4f)
-        return "Lift " + formatPercent(value);
-    return "Punch " + formatPercent(value);
-}
-
-juce::String formatDriveValue(float value)
-{
-    if (value < 0.05f)
-        return "Clean";
-    if (value < 0.4f)
-        return "Warm " + formatPercent(value);
-    return "Grit " + formatPercent(value);
-}
-
-juce::Colour groupFillForIndex(int index)
+juce::Colour cardFillForIndex(int index)
 {
     switch (index)
     {
         case 0: return juce::Colour::fromRGB(19, 29, 28);
         case 1: return juce::Colour::fromRGB(31, 25, 20);
-        default: return juce::Colour::fromRGB(25, 23, 34);
+        case 2: return juce::Colour::fromRGB(25, 23, 34);
+        case 3: return juce::Colour::fromRGB(19, 23, 31);
+        default: return juce::Colour::fromRGB(22, 25, 32);
     }
 }
 
-juce::Colour groupOutlineForIndex(int index)
+juce::Colour cardOutlineForIndex(int index)
 {
     switch (index)
     {
-        case 0: return juce::Colour::fromRGBA(136, 204, 174, 76);
-        case 1: return juce::Colour::fromRGBA(248, 198, 154, 78);
-        default: return juce::Colour::fromRGBA(206, 194, 250, 82);
+        case 0: return juce::Colour::fromRGBA(136, 204, 174, 86);
+        case 1: return juce::Colour::fromRGBA(248, 198, 154, 86);
+        case 2: return juce::Colour::fromRGBA(206, 194, 250, 90);
+        case 3: return juce::Colour::fromRGBA(152, 200, 255, 80);
+        default: return juce::Colour::fromRGBA(255, 255, 255, 38);
+    }
+}
+
+juce::String eqShapeToString(EqBandShape shape)
+{
+    switch (shape)
+    {
+        case EqBandShape::LowCut: return "LowCut";
+        case EqBandShape::HighCut: return "HighCut";
+        default: return "Bell";
+    }
+}
+
+EqBandShape eqShapeFromComboId(int id)
+{
+    switch (id)
+    {
+        case 1: return EqBandShape::LowCut;
+        case 3: return EqBandShape::HighCut;
+        default: return EqBandShape::Bell;
     }
 }
 }
@@ -115,12 +79,12 @@ juce::Colour groupOutlineForIndex(int index)
 SoundModuleComponent::SoundModuleComponent()
 {
     titleLabel.setText("SOUND MODULE", juce::dontSendNotification);
-    titleLabel.setFont(juce::Font(12.5f, juce::Font::bold));
-    titleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(222, 228, 236));
     titleLabel.setJustificationType(juce::Justification::centredLeft);
+    titleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(226, 231, 238));
+    titleLabel.setFont(juce::Font(12.5f, juce::Font::bold));
     addAndMakeVisible(titleLabel);
 
-    targetLabel.setText("Routing", juce::dontSendNotification);
+    targetLabel.setText("Target", juce::dontSendNotification);
     targetLabel.setJustificationType(juce::Justification::centredLeft);
     targetLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(166, 176, 192));
     targetLabel.setFont(juce::Font(11.0f));
@@ -140,98 +104,140 @@ SoundModuleComponent::SoundModuleComponent()
     targetModeLabel.setFont(juce::Font(10.0f, juce::Font::bold));
     addAndMakeVisible(targetModeLabel);
 
-    targetStatusLabel.setText("Routing: shared sound layer for the full kit.", juce::dontSendNotification);
+    targetStatusLabel.setText("Routing: shared sound shaping for the full kit.", juce::dontSendNotification);
     targetStatusLabel.setJustificationType(juce::Justification::centredLeft);
     targetStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(152, 200, 255));
     targetStatusLabel.setFont(juce::Font(10.5f));
     addAndMakeVisible(targetStatusLabel);
 
-    targetCombo.setTooltip("Choose whether the Sound Module edits the global layer or a specific lane target.");
+    chainSummaryLabel.setText("1 EQ -> 2 COMP -> 3 REVERB -> 4 TRANSIENT", juce::dontSendNotification);
+    chainSummaryLabel.setJustificationType(juce::Justification::centredRight);
+    chainSummaryLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(188, 196, 210));
+    chainSummaryLabel.setFont(juce::Font(10.0f, juce::Font::bold));
+    addAndMakeVisible(chainSummaryLabel);
+
+    targetCombo.setTooltip("Choose whether the Sound Module edits the global layer or a specific lane/track target.");
     addAndMakeVisible(targetCombo);
 
-    toneSectionLabel.setText("TONE & GLUE", juce::dontSendNotification);
-    spaceSectionLabel.setText("SPACE & CONTROL", juce::dontSendNotification);
-    textureSectionLabel.setText("PUNCH & TEXTURE", juce::dontSendNotification);
+    bypassAllButton.setButtonText("Bypass All");
+    bypassAllButton.setTooltip("Disable EQ, compressor, reverb, and transient processing for the current target.");
+    addAndMakeVisible(bypassAllButton);
 
-    auto styleSectionLabel = [](juce::Label& label)
+    resetTargetButton.setButtonText("Reset Target FX");
+    resetTargetButton.setTooltip("Reset the current target to the default Sound Module state.");
+    addAndMakeVisible(resetTargetButton);
+
+    setupSectionTitle(compressorTitleLabel, "COMPRESSOR");
+    setupToggle(compressorEnableButton, "Enable");
+    populateOrderCombo(compressorOrderCombo);
+    addAndMakeVisible(compressorOrderCombo);
+
+    const std::array<juce::String, 6> compressorNames { "Ratio", "Threshold", "Mix", "Attack", "Release", "Saturation" };
+    for (size_t index = 0; index < compressorLabels.size(); ++index)
     {
-        label.setJustificationType(juce::Justification::centredLeft);
-        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(190, 198, 212));
-        label.setFont(juce::Font(9.5f, juce::Font::bold));
-    };
+        setupControlLabel(compressorLabels[index], compressorNames[index]);
+        addAndMakeVisible(compressorLabels[index]);
+        addAndMakeVisible(compressorSliders[index]);
+    }
+    setupLinearSlider(compressorSliders[0], 1.0, 20.0, 0.1);
+    setupLinearSlider(compressorSliders[1], -60.0, 6.0, 0.1, " dB");
+    setupLinearSlider(compressorSliders[2], 0.0, 1.0, 0.01);
+    setupLinearSlider(compressorSliders[3], 0.1, 250.0, 0.1, " ms");
+    setupLinearSlider(compressorSliders[4], 5.0, 2000.0, 1.0, " ms");
+    setupLinearSlider(compressorSliders[5], 0.0, 1.0, 0.01);
 
-    styleSectionLabel(toneSectionLabel);
-    styleSectionLabel(spaceSectionLabel);
-    styleSectionLabel(textureSectionLabel);
+    setupSectionTitle(reverbTitleLabel, "REVERB");
+    setupToggle(reverbEnableButton, "Enable");
+    populateOrderCombo(reverbOrderCombo);
+    addAndMakeVisible(reverbOrderCombo);
 
-    addAndMakeVisible(toneSectionLabel);
-    addAndMakeVisible(spaceSectionLabel);
-    addAndMakeVisible(textureSectionLabel);
-
-    eqLabel.setText("Tone", juce::dontSendNotification);
-    compLabel.setText("Glue", juce::dontSendNotification);
-    reverbLabel.setText("Space", juce::dontSendNotification);
-    gateLabel.setText("Tightness", juce::dontSendNotification);
-    transientLabel.setText("Punch", juce::dontSendNotification);
-    driveLabel.setText("Grit", juce::dontSendNotification);
-
-    auto styleLabel = [](juce::Label& label)
+    const std::array<juce::String, 4> reverbNames { "Mix", "Predelay", "Size", "ER/Tail" };
+    for (size_t index = 0; index < reverbLabels.size(); ++index)
     {
-        label.setJustificationType(juce::Justification::centredLeft);
-        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(166, 176, 192));
-        label.setFont(juce::Font(10.5f));
-    };
+        setupControlLabel(reverbLabels[index], reverbNames[index]);
+        addAndMakeVisible(reverbLabels[index]);
+        addAndMakeVisible(reverbSliders[index]);
+    }
+    setupLinearSlider(reverbSliders[0], 0.0, 1.0, 0.01);
+    setupLinearSlider(reverbSliders[1], 0.0, 250.0, 0.1, " ms");
+    setupLinearSlider(reverbSliders[2], 0.0, 1.0, 0.01);
+    setupLinearSlider(reverbSliders[3], 0.0, 1.0, 0.01);
 
-    auto styleValueLabel = [](juce::Label& label)
+    setupSectionTitle(transientTitleLabel, "TRANSIENT MASTER");
+    setupToggle(transientEnableButton, "Enable");
+    populateOrderCombo(transientOrderCombo);
+    addAndMakeVisible(transientOrderCombo);
+
+    const std::array<juce::String, 3> transientNames { "Attack", "Sustain", "Gain" };
+    for (size_t index = 0; index < transientSliderLabels.size(); ++index)
     {
-        label.setJustificationType(juce::Justification::centredRight);
-        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(214, 222, 234));
-        label.setFont(juce::Font(10.0f, juce::Font::bold));
-    };
+        setupControlLabel(transientSliderLabels[index], transientNames[index]);
+        addAndMakeVisible(transientSliderLabels[index]);
+        addAndMakeVisible(transientSliders[index]);
+    }
+    setupLinearSlider(transientSliders[0], -1.0, 1.0, 0.01);
+    setupLinearSlider(transientSliders[1], -1.0, 1.0, 0.01);
+    setupLinearSlider(transientSliders[2], -24.0, 24.0, 0.1, " dB");
+    setupToggle(transientSmoothButton, "Smooth");
+    setupToggle(transientLimitButton, "Limit");
 
-    styleLabel(eqLabel);
-    styleLabel(compLabel);
-    styleLabel(reverbLabel);
-    styleLabel(gateLabel);
-    styleLabel(transientLabel);
-    styleLabel(driveLabel);
+    setupSectionTitle(eqTitleLabel, "EQ");
+    setupToggle(eqEnableButton, "Enable");
+    populateOrderCombo(eqOrderCombo);
+    addAndMakeVisible(eqOrderCombo);
 
-    styleValueLabel(eqValueLabel);
-    styleValueLabel(compValueLabel);
-    styleValueLabel(reverbValueLabel);
-    styleValueLabel(gateValueLabel);
-    styleValueLabel(transientValueLabel);
-    styleValueLabel(driveValueLabel);
+    eqPlaceholderLabel.setText("EQ Display (waveform/curve in later phase)", juce::dontSendNotification);
+    eqPlaceholderLabel.setJustificationType(juce::Justification::centred);
+    eqPlaceholderLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(173, 188, 212));
+    eqPlaceholderLabel.setFont(juce::Font(12.0f, juce::Font::bold));
+    addAndMakeVisible(eqPlaceholderLabel);
 
-    eqSlider.setTooltip("Tilt the current target darker or brighter.");
-    compSlider.setTooltip("Add more or less glue to the current target.");
-    reverbSlider.setTooltip("Set how much space surrounds the current target.");
-    gateSlider.setTooltip("Tighten the tail of the current target.");
-    transientSlider.setTooltip("Bring out the front edge and punch.");
-    driveSlider.setTooltip("Add warmth and grit to the current target.");
+    setupControlLabel(eqBandLabel, "Band");
+    addAndMakeVisible(eqBandLabel);
+    addAndMakeVisible(eqBandSelector);
+    setupToggle(eqBandEnableButton, "Band Enabled");
 
-    setupSlider(eqSlider, -1.0, 1.0, 0.01, juce::Colour::fromRGB(112, 172, 142), juce::Colour::fromRGB(188, 230, 206));
-    setupSlider(compSlider, 0.0, 1.0, 0.01, juce::Colour::fromRGB(112, 172, 142), juce::Colour::fromRGB(188, 230, 206));
-    setupSlider(reverbSlider, 0.0, 1.0, 0.01, juce::Colour::fromRGB(214, 150, 96), juce::Colour::fromRGB(248, 206, 162));
-    setupSlider(gateSlider, 0.0, 1.0, 0.01, juce::Colour::fromRGB(214, 150, 96), juce::Colour::fromRGB(248, 206, 162));
-    setupSlider(transientSlider, 0.0, 1.0, 0.01, juce::Colour::fromRGB(154, 144, 214), juce::Colour::fromRGB(212, 206, 250));
-    setupSlider(driveSlider, 0.0, 1.0, 0.01, juce::Colour::fromRGB(154, 144, 214), juce::Colour::fromRGB(212, 206, 250));
+    setupControlLabel(eqFreqLabel, "Freq");
+    setupLinearSlider(eqFreqSlider, 20.0, 22000.0, 1.0, " Hz");
+    eqFreqSlider.setSkewFactorFromMidPoint(1000.0);
+    addAndMakeVisible(eqFreqLabel);
+    addAndMakeVisible(eqFreqSlider);
 
-    addAndMakeVisible(eqLabel);
-    addAndMakeVisible(compLabel);
-    addAndMakeVisible(reverbLabel);
-    addAndMakeVisible(gateLabel);
-    addAndMakeVisible(transientLabel);
-    addAndMakeVisible(driveLabel);
-    addAndMakeVisible(eqValueLabel);
-    addAndMakeVisible(compValueLabel);
-    addAndMakeVisible(reverbValueLabel);
-    addAndMakeVisible(gateValueLabel);
-    addAndMakeVisible(transientValueLabel);
-    addAndMakeVisible(driveValueLabel);
+    setupControlLabel(eqGainLabel, "Gain");
+    setupLinearSlider(eqGainSlider, -24.0, 24.0, 0.1, " dB");
+    addAndMakeVisible(eqGainLabel);
+    addAndMakeVisible(eqGainSlider);
+
+    setupControlLabel(eqQLabel, "Q");
+    setupLinearSlider(eqQSlider, 0.1, 12.0, 0.01);
+    addAndMakeVisible(eqQLabel);
+    addAndMakeVisible(eqQSlider);
+
+    setupControlLabel(eqShapeLabel, "Shape");
+    eqShapeCombo.addItem("LowCut", 1);
+    eqShapeCombo.addItem("Bell", 2);
+    eqShapeCombo.addItem("HighCut", 3);
+    addAndMakeVisible(eqShapeLabel);
+    addAndMakeVisible(eqShapeCombo);
+
+    for (int bandIndex = 0; bandIndex < 7; ++bandIndex)
+        eqBandSelector.addItem("Band " + juce::String(bandIndex + 1), bandIndex + 1);
+
+    setupSectionTitle(stereoTitleLabel, "STEREO / PLACEMENT");
+    setupControlLabel(panLabel, "Pan");
+    setupControlLabel(widthLabel, "Width");
+    setupLinearSlider(panSlider, -1.0, 1.0, 0.01);
+    setupLinearSlider(widthSlider, 0.0, 2.0, 0.01);
+    addAndMakeVisible(panLabel);
+    addAndMakeVisible(panSlider);
+    addAndMakeVisible(widthLabel);
+    addAndMakeVisible(widthSlider);
 
     targetCombo.onChange = [this]
     {
+        if (suppressCallbacks)
+            return;
+
         const int id = targetCombo.getSelectedId();
         SoundTargetDescriptor target = SoundTargetDescriptor::makeGlobal();
         if (id >= 2)
@@ -246,91 +252,321 @@ SoundModuleComponent::SoundModuleComponent()
             onSoundTargetChanged(currentTarget);
     };
 
-    eqSlider.onValueChange = [this] { emitSoundLayerChange(); };
-    compSlider.onValueChange = [this] { emitSoundLayerChange(); };
-    reverbSlider.onValueChange = [this] { emitSoundLayerChange(); };
-    gateSlider.onValueChange = [this] { emitSoundLayerChange(); };
-    transientSlider.onValueChange = [this] { emitSoundLayerChange(); };
-    driveSlider.onValueChange = [this] { emitSoundLayerChange(); };
+    auto onAnyControlChanged = [this]
+    {
+        if (!suppressCallbacks)
+            emitSoundLayerChange();
+    };
+
+    compressorEnableButton.onClick = onAnyControlChanged;
+    compressorOrderCombo.onChange = onAnyControlChanged;
+    for (auto& slider : compressorSliders)
+        slider.onValueChange = onAnyControlChanged;
+
+    reverbEnableButton.onClick = onAnyControlChanged;
+    reverbOrderCombo.onChange = onAnyControlChanged;
+    for (auto& slider : reverbSliders)
+        slider.onValueChange = onAnyControlChanged;
+
+    transientEnableButton.onClick = onAnyControlChanged;
+    transientOrderCombo.onChange = onAnyControlChanged;
+    for (auto& slider : transientSliders)
+        slider.onValueChange = onAnyControlChanged;
+    transientSmoothButton.onClick = onAnyControlChanged;
+    transientLimitButton.onClick = onAnyControlChanged;
+
+    eqEnableButton.onClick = onAnyControlChanged;
+    eqOrderCombo.onChange = onAnyControlChanged;
+    eqBandEnableButton.onClick = onAnyControlChanged;
+    eqFreqSlider.onValueChange = onAnyControlChanged;
+    eqGainSlider.onValueChange = onAnyControlChanged;
+    eqQSlider.onValueChange = onAnyControlChanged;
+    eqShapeCombo.onChange = onAnyControlChanged;
+    panSlider.onValueChange = onAnyControlChanged;
+    widthSlider.onValueChange = onAnyControlChanged;
+
+    eqBandSelector.onChange = [this]
+    {
+        if (suppressCallbacks)
+            return;
+
+        currentSoundState.eq.selectedBand = juce::jlimit(0, static_cast<int>(currentSoundState.eq.bands.size()) - 1,
+                                                         eqBandSelector.getSelectedId() - 1);
+        refreshControlsFromState();
+        emitSoundLayerChange();
+    };
+
+    bypassAllButton.onClick = [this]
+    {
+        if (!targetAvailable)
+            return;
+
+        currentSoundState.eq.enabled = false;
+        currentSoundState.compressor.enabled = false;
+        currentSoundState.reverbState.enabled = false;
+        currentSoundState.transientState.enabled = false;
+        currentSoundState.sanitizeExpanded();
+        currentSoundState.syncLegacyFromExpanded();
+        refreshControlsFromState();
+        emitSoundLayerChange();
+    };
+
+    resetTargetButton.onClick = [this]
+    {
+        if (!targetAvailable)
+            return;
+
+        currentSoundState = SoundLayerState {};
+        currentSoundState.sanitizeExpanded();
+        currentSoundState.syncLegacyFromExpanded();
+        refreshControlsFromState();
+        emitSoundLayerChange();
+    };
+
+    refreshControlsFromState();
+    updateChainSummary();
 }
 
 void SoundModuleComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour::fromRGB(13, 16, 22));
 
-    for (size_t i = 0; i < moduleGroupBounds.size(); ++i)
+    for (size_t index = 0; index < moduleGroupBounds.size(); ++index)
     {
-        const auto bounds = moduleGroupBounds[i].toFloat();
+        const auto bounds = moduleGroupBounds[index].toFloat();
         if (bounds.isEmpty())
             continue;
 
-        g.setColour(groupFillForIndex(static_cast<int>(i)));
-        g.fillRoundedRectangle(bounds, 6.0f);
-        g.setColour(groupOutlineForIndex(static_cast<int>(i)));
-        g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
+        g.setColour(cardFillForIndex(static_cast<int>(index)));
+        g.fillRoundedRectangle(bounds, 7.0f);
+        g.setColour(cardOutlineForIndex(static_cast<int>(index)));
+        g.drawRoundedRectangle(bounds, 7.0f, 1.0f);
     }
 
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
-    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 6.0f, 1.0f);
+    const std::array<juce::Rectangle<int>, 3> rightCards { eqDisplayBounds, eqEditorBounds, stereoBounds };
+    for (size_t index = 0; index < rightCards.size(); ++index)
+    {
+        const auto bounds = rightCards[index].toFloat();
+        if (bounds.isEmpty())
+            continue;
+
+        g.setColour(cardFillForIndex(static_cast<int>(index) + 3));
+        g.fillRoundedRectangle(bounds, 7.0f);
+        g.setColour(cardOutlineForIndex(static_cast<int>(index) + 3));
+        g.drawRoundedRectangle(bounds, 7.0f, 1.0f);
+    }
+
+    if (!eqDisplayBounds.isEmpty())
+    {
+        auto placeholderBounds = eqDisplayBounds.reduced(12, 34).toFloat();
+        g.setColour(juce::Colour::fromRGBA(152, 200, 255, 22));
+        g.fillRoundedRectangle(placeholderBounds, 8.0f);
+        g.setColour(juce::Colour::fromRGBA(152, 200, 255, 76));
+        g.drawRoundedRectangle(placeholderBounds, 8.0f, 1.0f);
+
+        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
+        const auto centerY = placeholderBounds.getCentreY();
+        g.drawLine(placeholderBounds.getX() + 18.0f, centerY,
+                   placeholderBounds.getRight() - 18.0f, centerY, 1.0f);
+        g.drawLine(placeholderBounds.getCentreX(), placeholderBounds.getY() + 16.0f,
+                   placeholderBounds.getCentreX(), placeholderBounds.getBottom() - 16.0f, 1.0f);
+    }
+
+    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
+    g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 8.0f, 1.0f);
 }
 
 void SoundModuleComponent::resized()
 {
     auto area = getLocalBounds().reduced(8);
-    auto titleRow = area.removeFromTop(22);
-    targetModeLabel.setBounds(titleRow.removeFromRight(84));
-    titleLabel.setBounds(titleRow);
 
-    area.removeFromTop(2);
-    targetSummaryLabel.setBounds(area.removeFromTop(18));
-
-    area.removeFromTop(2);
-    auto targetLine = area.removeFromTop(24);
-    targetLabel.setBounds(targetLine.removeFromLeft(68));
-    targetCombo.setBounds(targetLine);
+    auto topRow = area.removeFromTop(26);
+    titleLabel.setBounds(topRow.removeFromLeft(132));
+    targetLabel.setBounds(topRow.removeFromLeft(42));
+    targetCombo.setBounds(topRow.removeFromLeft(190));
+    topRow.removeFromLeft(6);
+    resetTargetButton.setBounds(topRow.removeFromRight(112));
+    topRow.removeFromRight(6);
+    bypassAllButton.setBounds(topRow.removeFromRight(92));
 
     area.removeFromTop(4);
+    auto summaryRow = area.removeFromTop(20);
+    targetSummaryLabel.setBounds(summaryRow.removeFromLeft(210));
+    targetModeLabel.setBounds(summaryRow.removeFromLeft(74));
+    chainSummaryLabel.setBounds(summaryRow);
+
+    area.removeFromTop(2);
     targetStatusLabel.setBounds(area.removeFromTop(18));
+    area.removeFromTop(8);
 
-    area.removeFromTop(6);
-    auto rowA = area.removeFromTop(46);
-    auto rowB = area.removeFromTop(46);
-    auto rowC = area.removeFromTop(46);
+    auto body = area;
+    auto leftColumn = body.removeFromLeft(body.getWidth() * 44 / 100);
+    body.removeFromLeft(8);
+    auto rightColumn = body;
 
-    moduleGroupBounds[0] = rowA;
-    moduleGroupBounds[1] = rowB;
-    moduleGroupBounds[2] = rowC;
+    const int leftGap = 8;
+    const int leftHeight = (leftColumn.getHeight() - leftGap * 2) / 3;
+    moduleGroupBounds[0] = leftColumn.removeFromTop(leftHeight);
+    leftColumn.removeFromTop(leftGap);
+    moduleGroupBounds[1] = leftColumn.removeFromTop(leftHeight);
+    leftColumn.removeFromTop(leftGap);
+    moduleGroupBounds[2] = leftColumn;
 
-    const auto placeSound = [](juce::Rectangle<int>& row,
-                               juce::Label& label,
-                               juce::Label& valueLabel,
-                               juce::Slider& slider)
+    const auto layoutModule = [](juce::Rectangle<int> bounds,
+                                 juce::Label& title,
+                                 juce::ToggleButton& enabled,
+                                 juce::ComboBox& order,
+                                 const std::vector<std::pair<juce::Label*, juce::Slider*>>& controls,
+                                 const std::vector<juce::Component*>& footer)
     {
-        auto slot = row.removeFromLeft(row.getWidth() / 2).reduced(6, 0);
-        auto topLine = slot.removeFromTop(14);
-        valueLabel.setBounds(topLine.removeFromRight(72));
-        label.setBounds(topLine);
-        slot.removeFromTop(2);
-        slider.setBounds(slot.removeFromTop(18));
+        auto inner = bounds.reduced(10, 8);
+        auto header = inner.removeFromTop(22);
+        title.setBounds(header.removeFromLeft(header.getWidth() / 2));
+        auto orderArea = header.removeFromRight(64);
+        order.setBounds(orderArea);
+        header.removeFromRight(8);
+        enabled.setBounds(header.removeFromRight(72));
+
+        inner.removeFromTop(6);
+        const int columns = 2;
+        const int rows = static_cast<int>((controls.size() + columns - 1) / columns);
+        const int footerHeight = footer.empty() ? 0 : 28;
+        const int rowGap = 6;
+        const int cellHeight = rows > 0
+            ? (inner.getHeight() - footerHeight - rowGap * (rows - 1)) / rows
+            : 0;
+
+        size_t controlIndex = 0;
+        for (int row = 0; row < rows; ++row)
+        {
+            auto rowArea = inner.removeFromTop(cellHeight);
+            if (row < rows - 1)
+                inner.removeFromTop(rowGap);
+
+            const int columnGap = 8;
+            const int cellWidth = (rowArea.getWidth() - columnGap) / columns;
+            for (int column = 0; column < columns && controlIndex < controls.size(); ++column, ++controlIndex)
+            {
+                auto cell = rowArea.removeFromLeft(cellWidth);
+                if (column == 0)
+                    rowArea.removeFromLeft(columnGap);
+
+                controls[controlIndex].first->setBounds(cell.removeFromTop(14));
+                cell.removeFromTop(2);
+                controls[controlIndex].second->setBounds(cell.removeFromTop(22));
+            }
+        }
+
+        if (!footer.empty())
+        {
+            inner.removeFromTop(4);
+            auto footerRow = inner.removeFromTop(24);
+            const int gap = 10;
+            const int width = (footerRow.getWidth() - gap * static_cast<int>(footer.size() - 1)) / static_cast<int>(footer.size());
+            for (size_t index = 0; index < footer.size(); ++index)
+            {
+                footer[index]->setBounds(footerRow.removeFromLeft(width));
+                if (index + 1 < footer.size())
+                    footerRow.removeFromLeft(gap);
+            }
+        }
     };
 
-    auto rowAContent = rowA.reduced(4, 4);
-    toneSectionLabel.setBounds(rowAContent.removeFromTop(12));
-    rowAContent.removeFromTop(2);
-    placeSound(rowAContent, eqLabel, eqValueLabel, eqSlider);
-    placeSound(rowAContent, compLabel, compValueLabel, compSlider);
+    layoutModule(moduleGroupBounds[0],
+                 compressorTitleLabel,
+                 compressorEnableButton,
+                 compressorOrderCombo,
+                 {
+                     { &compressorLabels[0], &compressorSliders[0] },
+                     { &compressorLabels[1], &compressorSliders[1] },
+                     { &compressorLabels[2], &compressorSliders[2] },
+                     { &compressorLabels[3], &compressorSliders[3] },
+                     { &compressorLabels[4], &compressorSliders[4] },
+                     { &compressorLabels[5], &compressorSliders[5] }
+                 },
+                 {});
 
-    auto rowBContent = rowB.reduced(4, 4);
-    spaceSectionLabel.setBounds(rowBContent.removeFromTop(12));
-    rowBContent.removeFromTop(2);
-    placeSound(rowBContent, reverbLabel, reverbValueLabel, reverbSlider);
-    placeSound(rowBContent, gateLabel, gateValueLabel, gateSlider);
+    layoutModule(moduleGroupBounds[1],
+                 reverbTitleLabel,
+                 reverbEnableButton,
+                 reverbOrderCombo,
+                 {
+                     { &reverbLabels[0], &reverbSliders[0] },
+                     { &reverbLabels[1], &reverbSliders[1] },
+                     { &reverbLabels[2], &reverbSliders[2] },
+                     { &reverbLabels[3], &reverbSliders[3] }
+                 },
+                 {});
 
-    auto rowCContent = rowC.reduced(4, 4);
-    textureSectionLabel.setBounds(rowCContent.removeFromTop(12));
-    rowCContent.removeFromTop(2);
-    placeSound(rowCContent, transientLabel, transientValueLabel, transientSlider);
-    placeSound(rowCContent, driveLabel, driveValueLabel, driveSlider);
+    layoutModule(moduleGroupBounds[2],
+                 transientTitleLabel,
+                 transientEnableButton,
+                 transientOrderCombo,
+                 {
+                     { &transientSliderLabels[0], &transientSliders[0] },
+                     { &transientSliderLabels[1], &transientSliders[1] },
+                     { &transientSliderLabels[2], &transientSliders[2] }
+                 },
+                 { &transientSmoothButton, &transientLimitButton });
+
+    const int rightGap = 8;
+    const int displayHeight = rightColumn.getHeight() * 46 / 100;
+    const int stereoHeight = 78;
+    eqDisplayBounds = rightColumn.removeFromTop(displayHeight);
+    rightColumn.removeFromTop(rightGap);
+    eqEditorBounds = rightColumn.removeFromTop(rightColumn.getHeight() - stereoHeight - rightGap);
+    rightColumn.removeFromTop(rightGap);
+    stereoBounds = rightColumn;
+
+    auto eqDisplayInner = eqDisplayBounds.reduced(10, 8);
+    auto eqHeader = eqDisplayInner.removeFromTop(22);
+    eqTitleLabel.setBounds(eqHeader.removeFromLeft(eqHeader.getWidth() / 2));
+    eqOrderCombo.setBounds(eqHeader.removeFromRight(64));
+    eqHeader.removeFromRight(8);
+    eqEnableButton.setBounds(eqHeader.removeFromRight(72));
+    eqDisplayInner.removeFromTop(6);
+    eqPlaceholderLabel.setBounds(eqDisplayInner);
+
+    auto eqEditorInner = eqEditorBounds.reduced(10, 8);
+    auto eqBandRow = eqEditorInner.removeFromTop(22);
+    eqBandLabel.setBounds(eqBandRow.removeFromLeft(36));
+    eqBandSelector.setBounds(eqBandRow.removeFromLeft(92));
+    eqBandRow.removeFromLeft(10);
+    eqBandEnableButton.setBounds(eqBandRow.removeFromLeft(112));
+
+    eqEditorInner.removeFromTop(8);
+    auto eqRowOne = eqEditorInner.removeFromTop(40);
+    auto eqRowTwo = eqEditorInner.removeFromTop(40);
+    const int eqGap = 8;
+    const int eqCellWidth = (eqRowOne.getWidth() - eqGap * 2) / 3;
+
+    auto placeSliderCell = [eqGap](juce::Rectangle<int>& row, juce::Label& label, juce::Slider& slider, int width)
+    {
+        auto cell = row.removeFromLeft(width);
+        label.setBounds(cell.removeFromTop(14));
+        cell.removeFromTop(2);
+        slider.setBounds(cell.removeFromTop(22));
+        row.removeFromLeft(eqGap);
+    };
+
+    placeSliderCell(eqRowOne, eqFreqLabel, eqFreqSlider, eqCellWidth);
+    placeSliderCell(eqRowOne, eqGainLabel, eqGainSlider, eqCellWidth);
+    placeSliderCell(eqRowOne, eqQLabel, eqQSlider, eqCellWidth);
+
+    eqShapeLabel.setBounds(eqRowTwo.removeFromLeft(46));
+    eqShapeCombo.setBounds(eqRowTwo.removeFromLeft(112));
+
+    auto stereoInner = stereoBounds.reduced(10, 8);
+    stereoTitleLabel.setBounds(stereoInner.removeFromTop(18));
+    stereoInner.removeFromTop(6);
+    auto stereoRow = stereoInner.removeFromTop(32);
+    auto panCell = stereoRow.removeFromLeft((stereoRow.getWidth() - 8) / 2);
+    stereoRow.removeFromLeft(8);
+    auto widthCell = stereoRow;
+    panLabel.setBounds(panCell.removeFromTop(14));
+    panSlider.setBounds(panCell.removeFromTop(18));
+    widthLabel.setBounds(widthCell.removeFromTop(14));
+    widthSlider.setBounds(widthCell.removeFromTop(18));
 }
 
 void SoundModuleComponent::setState(const std::vector<TrackState>& tracks,
@@ -339,7 +575,7 @@ void SoundModuleComponent::setState(const std::vector<TrackState>& tracks,
 {
     targetDescriptors.clear();
     targetCombo.clear(juce::dontSendNotification);
-    targetCombo.addItem("All Tracks (Global)", 1);
+    targetCombo.addItem("Global", 1);
 
     int selectedId = 1;
     int itemId = 2;
@@ -367,53 +603,159 @@ void SoundModuleComponent::setState(const std::vector<TrackState>& tracks,
     }
 
     currentTarget = selectedTarget;
-    currentSoundState = soundState;
     targetAvailable = selectedTarget.isGlobal() || comboContainsDescriptor(targetDescriptors, selectedTarget);
     if (targetAvailable)
     {
+        currentSoundState = soundState;
+        currentSoundState.sanitizeExpanded();
+        currentSoundState.syncLegacyFromExpanded();
+        suppressCallbacks = true;
         targetCombo.setSelectedId(selectedId, juce::dontSendNotification);
+        suppressCallbacks = false;
     }
     else
     {
+        currentSoundState = SoundLayerState {};
+        currentSoundState.sanitizeExpanded();
+        suppressCallbacks = true;
         targetCombo.setSelectedId(0, juce::dontSendNotification);
         targetCombo.setText("Unavailable: " + displayNameForDescriptor(selectedTarget), juce::dontSendNotification);
+        suppressCallbacks = false;
     }
 
-    eqSlider.setValue(soundState.eqTone, juce::dontSendNotification);
-    compSlider.setValue(soundState.compression, juce::dontSendNotification);
-    reverbSlider.setValue(soundState.reverb, juce::dontSendNotification);
-    gateSlider.setValue(soundState.gate, juce::dontSendNotification);
-    transientSlider.setValue(soundState.transient, juce::dontSendNotification);
-    driveSlider.setValue(soundState.drive, juce::dontSendNotification);
-
+    refreshControlsFromState();
     updateTargetPresentation(tracks, selectedTarget, targetMatchedInCombo, matchedTargetName);
     setControlsEnabled(targetAvailable);
-    updateValueLabels();
+    updateChainSummary();
 }
 
-void SoundModuleComponent::setupSlider(juce::Slider& slider,
-                                       double min,
-                                       double max,
-                                       double step,
-                                       juce::Colour trackColour,
-                                       juce::Colour thumbColour)
+void SoundModuleComponent::setupSectionTitle(juce::Label& label, const juce::String& text)
+{
+    label.setText(text, juce::dontSendNotification);
+    label.setJustificationType(juce::Justification::centredLeft);
+    label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(222, 228, 236));
+    label.setFont(juce::Font(10.5f, juce::Font::bold));
+    addAndMakeVisible(label);
+}
+
+void SoundModuleComponent::setupControlLabel(juce::Label& label, const juce::String& text)
+{
+    label.setText(text, juce::dontSendNotification);
+    label.setJustificationType(juce::Justification::centredLeft);
+    label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(166, 176, 192));
+    label.setFont(juce::Font(10.0f));
+}
+
+void SoundModuleComponent::setupLinearSlider(juce::Slider& slider,
+                                             double min,
+                                             double max,
+                                             double step,
+                                             const juce::String& suffix)
 {
     slider.setSliderStyle(juce::Slider::LinearHorizontal);
-    slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 56, 18);
     slider.setRange(min, max, step);
-    slider.setColour(juce::Slider::trackColourId, trackColour);
-    slider.setColour(juce::Slider::thumbColourId, thumbColour);
-    addAndMakeVisible(slider);
+    slider.setTextValueSuffix(suffix);
+    slider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(126, 158, 202));
+    slider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(214, 222, 236));
+    slider.setColour(juce::Slider::backgroundColourId, juce::Colour::fromRGBA(255, 255, 255, 18));
+}
+
+void SoundModuleComponent::setupToggle(juce::ToggleButton& button, const juce::String& text, const juce::String& tooltip)
+{
+    button.setButtonText(text);
+    button.setTooltip(tooltip);
+    button.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(214, 222, 234));
+    addAndMakeVisible(button);
+}
+
+void SoundModuleComponent::populateOrderCombo(juce::ComboBox& combo)
+{
+    for (int order = 1; order <= 8; ++order)
+        combo.addItem(juce::String(order), order);
 }
 
 void SoundModuleComponent::setControlsEnabled(bool shouldEnable)
 {
-    eqSlider.setEnabled(shouldEnable);
-    compSlider.setEnabled(shouldEnable);
-    reverbSlider.setEnabled(shouldEnable);
-    gateSlider.setEnabled(shouldEnable);
-    transientSlider.setEnabled(shouldEnable);
-    driveSlider.setEnabled(shouldEnable);
+    compressorEnableButton.setEnabled(shouldEnable);
+    compressorOrderCombo.setEnabled(shouldEnable);
+    for (auto& slider : compressorSliders)
+        slider.setEnabled(shouldEnable);
+
+    reverbEnableButton.setEnabled(shouldEnable);
+    reverbOrderCombo.setEnabled(shouldEnable);
+    for (auto& slider : reverbSliders)
+        slider.setEnabled(shouldEnable);
+
+    transientEnableButton.setEnabled(shouldEnable);
+    transientOrderCombo.setEnabled(shouldEnable);
+    for (auto& slider : transientSliders)
+        slider.setEnabled(shouldEnable);
+    transientSmoothButton.setEnabled(shouldEnable);
+    transientLimitButton.setEnabled(shouldEnable);
+
+    eqEnableButton.setEnabled(shouldEnable);
+    eqOrderCombo.setEnabled(shouldEnable);
+    eqBandSelector.setEnabled(shouldEnable);
+    eqBandEnableButton.setEnabled(shouldEnable);
+    eqFreqSlider.setEnabled(shouldEnable);
+    eqGainSlider.setEnabled(shouldEnable);
+    eqQSlider.setEnabled(shouldEnable);
+    eqShapeCombo.setEnabled(shouldEnable);
+    panSlider.setEnabled(shouldEnable);
+    widthSlider.setEnabled(shouldEnable);
+    bypassAllButton.setEnabled(shouldEnable);
+    resetTargetButton.setEnabled(shouldEnable);
+}
+
+void SoundModuleComponent::refreshControlsFromState()
+{
+    suppressCallbacks = true;
+
+    currentSoundState.sanitizeExpanded();
+
+    panSlider.setValue(currentSoundState.pan, juce::dontSendNotification);
+    widthSlider.setValue(currentSoundState.width, juce::dontSendNotification);
+
+    compressorEnableButton.setToggleState(currentSoundState.compressor.enabled, juce::dontSendNotification);
+    compressorOrderCombo.setSelectedId(juce::jlimit(1, 8, currentSoundState.compressor.order), juce::dontSendNotification);
+    compressorSliders[0].setValue(currentSoundState.compressor.ratio, juce::dontSendNotification);
+    compressorSliders[1].setValue(currentSoundState.compressor.thresholdDb, juce::dontSendNotification);
+    compressorSliders[2].setValue(currentSoundState.compressor.mix, juce::dontSendNotification);
+    compressorSliders[3].setValue(currentSoundState.compressor.attackMs, juce::dontSendNotification);
+    compressorSliders[4].setValue(currentSoundState.compressor.releaseMs, juce::dontSendNotification);
+    compressorSliders[5].setValue(currentSoundState.compressor.saturation, juce::dontSendNotification);
+
+    reverbEnableButton.setToggleState(currentSoundState.reverbState.enabled, juce::dontSendNotification);
+    reverbOrderCombo.setSelectedId(juce::jlimit(1, 8, currentSoundState.reverbState.order), juce::dontSendNotification);
+    reverbSliders[0].setValue(currentSoundState.reverbState.mix, juce::dontSendNotification);
+    reverbSliders[1].setValue(currentSoundState.reverbState.predelayMs, juce::dontSendNotification);
+    reverbSliders[2].setValue(currentSoundState.reverbState.size, juce::dontSendNotification);
+    reverbSliders[3].setValue(currentSoundState.reverbState.erTail, juce::dontSendNotification);
+
+    transientEnableButton.setToggleState(currentSoundState.transientState.enabled, juce::dontSendNotification);
+    transientOrderCombo.setSelectedId(juce::jlimit(1, 8, currentSoundState.transientState.order), juce::dontSendNotification);
+    transientSliders[0].setValue(currentSoundState.transientState.attack, juce::dontSendNotification);
+    transientSliders[1].setValue(currentSoundState.transientState.sustain, juce::dontSendNotification);
+    transientSliders[2].setValue(currentSoundState.transientState.gainDb, juce::dontSendNotification);
+    transientSmoothButton.setToggleState(currentSoundState.transientState.smooth, juce::dontSendNotification);
+    transientLimitButton.setToggleState(currentSoundState.transientState.limit, juce::dontSendNotification);
+
+    eqEnableButton.setToggleState(currentSoundState.eq.enabled, juce::dontSendNotification);
+    eqOrderCombo.setSelectedId(juce::jlimit(1, 8, currentSoundState.eq.order), juce::dontSendNotification);
+    eqBandSelector.setSelectedId(currentSoundState.eq.selectedBand + 1, juce::dontSendNotification);
+
+    const auto& band = currentEqBand();
+    eqBandEnableButton.setToggleState(band.enabled, juce::dontSendNotification);
+    eqFreqSlider.setValue(band.freqHz, juce::dontSendNotification);
+    eqGainSlider.setValue(band.gainDb, juce::dontSendNotification);
+    eqQSlider.setValue(band.q, juce::dontSendNotification);
+    eqShapeCombo.setSelectedId(band.shape == EqBandShape::LowCut ? 1
+                                 : band.shape == EqBandShape::HighCut ? 3
+                                                                     : 2,
+                             juce::dontSendNotification);
+
+    suppressCallbacks = false;
 }
 
 void SoundModuleComponent::updateTargetPresentation(const std::vector<TrackState>& tracks,
@@ -428,7 +770,7 @@ void SoundModuleComponent::updateTargetPresentation(const std::vector<TrackState
         targetSummaryLabel.setText("Editing: Target unavailable", juce::dontSendNotification);
         targetModeLabel.setText("INVALID", juce::dontSendNotification);
         targetModeLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(120, 68, 68));
-        targetStatusLabel.setText("Target is no longer valid. Choose Global or a visible lane before editing.",
+        targetStatusLabel.setText("Target is no longer valid. Choose Global or a visible lane/track before editing.",
                                   juce::dontSendNotification);
         targetStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(255, 170, 170));
         return;
@@ -436,7 +778,7 @@ void SoundModuleComponent::updateTargetPresentation(const std::vector<TrackState
 
     if (selectedTarget.isGlobal())
     {
-        targetSummaryLabel.setText("Editing: Global sound layer", juce::dontSendNotification);
+        targetSummaryLabel.setText("Editing: Global", juce::dontSendNotification);
         targetModeLabel.setText("GLOBAL", juce::dontSendNotification);
         targetModeLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(71, 96, 132));
         targetStatusLabel.setText("Routing: shared sound shaping for the full kit.", juce::dontSendNotification);
@@ -447,7 +789,7 @@ void SoundModuleComponent::updateTargetPresentation(const std::vector<TrackState
     const auto targetName = targetMatchedInCombo ? matchedTargetName : displayNameForDescriptor(selectedTarget);
     if (selectedTarget.kind == SoundTargetDescriptorKind::BackedRuntimeLane)
     {
-        targetSummaryLabel.setText("Editing: " + targetName + " lane", juce::dontSendNotification);
+        targetSummaryLabel.setText("Editing: " + targetName, juce::dontSendNotification);
         targetModeLabel.setText("LANE", juce::dontSendNotification);
         targetModeLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(78, 112, 84));
         targetStatusLabel.setText("Routing: edits the current backed runtime lane only.", juce::dontSendNotification);
@@ -455,37 +797,126 @@ void SoundModuleComponent::updateTargetPresentation(const std::vector<TrackState
         return;
     }
 
-    targetSummaryLabel.setText("Editing: " + targetName + " track", juce::dontSendNotification);
+    targetSummaryLabel.setText("Editing: " + targetName, juce::dontSendNotification);
     targetModeLabel.setText("TRACK", juce::dontSendNotification);
     targetModeLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(118, 92, 64));
     targetStatusLabel.setText("Routing: edits the selected track target.", juce::dontSendNotification);
     targetStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(240, 204, 166));
 }
 
-void SoundModuleComponent::updateValueLabels()
+void SoundModuleComponent::updateChainSummary()
 {
-    eqValueLabel.setText(formatToneValue(static_cast<float>(eqSlider.getValue())), juce::dontSendNotification);
-    compValueLabel.setText(formatGlueValue(static_cast<float>(compSlider.getValue())), juce::dontSendNotification);
-    reverbValueLabel.setText(formatSpaceValue(static_cast<float>(reverbSlider.getValue())), juce::dontSendNotification);
-    gateValueLabel.setText(formatGateValue(static_cast<float>(gateSlider.getValue())), juce::dontSendNotification);
-    transientValueLabel.setText(formatPunchValue(static_cast<float>(transientSlider.getValue())), juce::dontSendNotification);
-    driveValueLabel.setText(formatDriveValue(static_cast<float>(driveSlider.getValue())), juce::dontSendNotification);
+    if (!targetAvailable)
+    {
+        chainSummaryLabel.setText("Chain unavailable for invalid target", juce::dontSendNotification);
+        return;
+    }
+
+    struct ChainEntry
+    {
+        int order;
+        juce::String name;
+    };
+
+    std::vector<ChainEntry> entries;
+    if (currentSoundState.eq.enabled)
+        entries.push_back({ juce::jlimit(1, 8, currentSoundState.eq.order), "EQ" });
+    if (currentSoundState.compressor.enabled)
+        entries.push_back({ juce::jlimit(1, 8, currentSoundState.compressor.order), "COMP" });
+    if (currentSoundState.reverbState.enabled)
+        entries.push_back({ juce::jlimit(1, 8, currentSoundState.reverbState.order), "REVERB" });
+    if (currentSoundState.transientState.enabled)
+        entries.push_back({ juce::jlimit(1, 8, currentSoundState.transientState.order), "TRANSIENT" });
+
+    std::sort(entries.begin(), entries.end(), [](const ChainEntry& lhs, const ChainEntry& rhs)
+    {
+        if (lhs.order == rhs.order)
+            return lhs.name < rhs.name;
+        return lhs.order < rhs.order;
+    });
+
+    if (entries.empty())
+    {
+        chainSummaryLabel.setText("Chain: Bypassed", juce::dontSendNotification);
+        return;
+    }
+
+    juce::String summary;
+    for (size_t index = 0; index < entries.size(); ++index)
+    {
+        if (index > 0)
+            summary << " -> ";
+        summary << juce::String(entries[index].order) << " " << entries[index].name;
+    }
+    chainSummaryLabel.setText(summary, juce::dontSendNotification);
 }
 
 void SoundModuleComponent::emitSoundLayerChange()
 {
-    if (!onSoundLayerChanged || !targetAvailable)
+    if (suppressCallbacks || !targetAvailable)
         return;
 
     SoundLayerState state = currentSoundState;
-    state.eqTone = static_cast<float>(eqSlider.getValue());
-    state.compression = static_cast<float>(compSlider.getValue());
-    state.reverb = static_cast<float>(reverbSlider.getValue());
-    state.gate = static_cast<float>(gateSlider.getValue());
-    state.transient = static_cast<float>(transientSlider.getValue());
-    state.drive = static_cast<float>(driveSlider.getValue());
+    state.pan = static_cast<float>(panSlider.getValue());
+    state.width = static_cast<float>(widthSlider.getValue());
+
+    state.compressor.enabled = compressorEnableButton.getToggleState();
+    state.compressor.order = juce::jlimit(1, 8, compressorOrderCombo.getSelectedId());
+    state.compressor.ratio = static_cast<float>(compressorSliders[0].getValue());
+    state.compressor.thresholdDb = static_cast<float>(compressorSliders[1].getValue());
+    state.compressor.mix = static_cast<float>(compressorSliders[2].getValue());
+    state.compressor.attackMs = static_cast<float>(compressorSliders[3].getValue());
+    state.compressor.releaseMs = static_cast<float>(compressorSliders[4].getValue());
+    state.compressor.saturation = static_cast<float>(compressorSliders[5].getValue());
+
+    state.reverbState.enabled = reverbEnableButton.getToggleState();
+    state.reverbState.order = juce::jlimit(1, 8, reverbOrderCombo.getSelectedId());
+    state.reverbState.mix = static_cast<float>(reverbSliders[0].getValue());
+    state.reverbState.predelayMs = static_cast<float>(reverbSliders[1].getValue());
+    state.reverbState.size = static_cast<float>(reverbSliders[2].getValue());
+    state.reverbState.erTail = static_cast<float>(reverbSliders[3].getValue());
+
+    state.transientState.enabled = transientEnableButton.getToggleState();
+    state.transientState.order = juce::jlimit(1, 8, transientOrderCombo.getSelectedId());
+    state.transientState.attack = static_cast<float>(transientSliders[0].getValue());
+    state.transientState.sustain = static_cast<float>(transientSliders[1].getValue());
+    state.transientState.gainDb = static_cast<float>(transientSliders[2].getValue());
+    state.transientState.smooth = transientSmoothButton.getToggleState();
+    state.transientState.limit = transientLimitButton.getToggleState();
+
+    state.eq.enabled = eqEnableButton.getToggleState();
+    state.eq.order = juce::jlimit(1, 8, eqOrderCombo.getSelectedId());
+    state.eq.selectedBand = juce::jlimit(0, static_cast<int>(state.eq.bands.size()) - 1, eqBandSelector.getSelectedId() - 1);
+    auto& band = state.eq.bands[static_cast<size_t>(state.eq.selectedBand)];
+    band.enabled = eqBandEnableButton.getToggleState();
+    band.freqHz = static_cast<float>(eqFreqSlider.getValue());
+    band.gainDb = static_cast<float>(eqGainSlider.getValue());
+    band.q = static_cast<float>(eqQSlider.getValue());
+    band.shape = eqShapeFromComboId(eqShapeCombo.getSelectedId());
+
+    state.sanitizeExpanded();
+    state.syncLegacyFromExpanded();
+
     currentSoundState = state;
-    updateValueLabels();
-    onSoundLayerChanged(currentTarget, state);
+    updateChainSummary();
+
+    if (onSoundLayerChanged)
+        onSoundLayerChanged(currentTarget, state);
+}
+
+EqBandState& SoundModuleComponent::currentEqBand()
+{
+    currentSoundState.eq.selectedBand = juce::jlimit(0,
+                                                     static_cast<int>(currentSoundState.eq.bands.size()) - 1,
+                                                     currentSoundState.eq.selectedBand);
+    return currentSoundState.eq.bands[static_cast<size_t>(currentSoundState.eq.selectedBand)];
+}
+
+const EqBandState& SoundModuleComponent::currentEqBand() const
+{
+    const auto index = juce::jlimit(0,
+                                    static_cast<int>(currentSoundState.eq.bands.size()) - 1,
+                                    currentSoundState.eq.selectedBand);
+    return currentSoundState.eq.bands[static_cast<size_t>(index)];
 }
 } // namespace bbg
