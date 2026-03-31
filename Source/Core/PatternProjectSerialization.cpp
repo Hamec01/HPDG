@@ -47,11 +47,6 @@ float safeFloat(const juce::ValueTree& node, const juce::Identifier& key, float 
     return v.isVoid() ? fallback : static_cast<float>(v);
 }
 
-bool hasProperty(const juce::ValueTree& node, const juce::String& key)
-{
-    return node.hasProperty(key);
-}
-
 juce::String safeString(const juce::ValueTree& node, const juce::Identifier& key, const juce::String& fallback = {})
 {
     const auto v = node.getProperty(key);
@@ -60,125 +55,26 @@ juce::String safeString(const juce::ValueTree& node, const juce::Identifier& key
 
 void serializeSoundLayer(juce::ValueTree& node, const SoundLayerState& sound, const juce::String& prefix)
 {
-    auto serialized = sound;
-    serialized.syncExpandedFromLegacy();
-    serialized.sanitizeExpanded();
-    serialized.syncLegacyFromExpanded();
-
-    node.setProperty(prefix + "_pan", serialized.pan, nullptr);
-    node.setProperty(prefix + "_width", serialized.width, nullptr);
-    node.setProperty(prefix + "_eq_tone", serialized.eqTone, nullptr);
-    node.setProperty(prefix + "_compression", serialized.compression, nullptr);
-    node.setProperty(prefix + "_reverb", serialized.reverb, nullptr);
-    node.setProperty(prefix + "_gate", serialized.gate, nullptr);
-    node.setProperty(prefix + "_transient", serialized.transient, nullptr);
-    node.setProperty(prefix + "_drive", serialized.drive, nullptr);
-
-    node.setProperty(prefix + "_compressor_enabled", serialized.compressor.enabled, nullptr);
-    node.setProperty(prefix + "_compressor_order", serialized.compressor.order, nullptr);
-    node.setProperty(prefix + "_compressor_ratio", serialized.compressor.ratio, nullptr);
-    node.setProperty(prefix + "_compressor_threshold_db", serialized.compressor.thresholdDb, nullptr);
-    node.setProperty(prefix + "_compressor_mix", serialized.compressor.mix, nullptr);
-    node.setProperty(prefix + "_compressor_attack_ms", serialized.compressor.attackMs, nullptr);
-    node.setProperty(prefix + "_compressor_release_ms", serialized.compressor.releaseMs, nullptr);
-    node.setProperty(prefix + "_compressor_saturation", serialized.compressor.saturation, nullptr);
-
-    node.setProperty(prefix + "_reverb_enabled", serialized.reverbState.enabled, nullptr);
-    node.setProperty(prefix + "_reverb_order", serialized.reverbState.order, nullptr);
-    node.setProperty(prefix + "_reverb_mix_v2", serialized.reverbState.mix, nullptr);
-    node.setProperty(prefix + "_reverb_predelay_ms", serialized.reverbState.predelayMs, nullptr);
-    node.setProperty(prefix + "_reverb_size", serialized.reverbState.size, nullptr);
-    node.setProperty(prefix + "_reverb_er_tail", serialized.reverbState.erTail, nullptr);
-
-    node.setProperty(prefix + "_transient_enabled", serialized.transientState.enabled, nullptr);
-    node.setProperty(prefix + "_transient_order", serialized.transientState.order, nullptr);
-    node.setProperty(prefix + "_transient_attack_v2", serialized.transientState.attack, nullptr);
-    node.setProperty(prefix + "_transient_sustain", serialized.transientState.sustain, nullptr);
-    node.setProperty(prefix + "_transient_gain_db", serialized.transientState.gainDb, nullptr);
-    node.setProperty(prefix + "_transient_smooth", serialized.transientState.smooth, nullptr);
-    node.setProperty(prefix + "_transient_limit", serialized.transientState.limit, nullptr);
-
-    node.setProperty(prefix + "_eq_enabled", serialized.eq.enabled, nullptr);
-    node.setProperty(prefix + "_eq_order", serialized.eq.order, nullptr);
-    node.setProperty(prefix + "_eq_selected_band", serialized.eq.selectedBand, nullptr);
-    for (size_t index = 0; index < serialized.eq.bands.size(); ++index)
-    {
-        const auto bandPrefix = prefix + "_eq_band_" + juce::String(static_cast<int>(index));
-        const auto& band = serialized.eq.bands[index];
-        node.setProperty(bandPrefix + "_enabled", band.enabled, nullptr);
-        node.setProperty(bandPrefix + "_freq_hz", band.freqHz, nullptr);
-        node.setProperty(bandPrefix + "_gain_db", band.gainDb, nullptr);
-        node.setProperty(bandPrefix + "_q", band.q, nullptr);
-        node.setProperty(bandPrefix + "_shape", static_cast<int>(band.shape), nullptr);
-    }
+    node.setProperty(prefix + "_pan", sound.pan, nullptr);
+    node.setProperty(prefix + "_width", sound.width, nullptr);
+    node.setProperty(prefix + "_eq_tone", sound.eqTone, nullptr);
+    node.setProperty(prefix + "_compression", sound.compression, nullptr);
+    node.setProperty(prefix + "_reverb", sound.reverb, nullptr);
+    node.setProperty(prefix + "_gate", sound.gate, nullptr);
+    node.setProperty(prefix + "_transient", sound.transient, nullptr);
+    node.setProperty(prefix + "_drive", sound.drive, nullptr);
 }
 
 void deserializeSoundLayer(const juce::ValueTree& node, SoundLayerState& sound, const juce::String& prefix)
 {
     sound.pan = safeFloat(node, prefix + "_pan", sound.pan);
     sound.width = safeFloat(node, prefix + "_width", sound.width);
-
-    const bool hasExpandedState = hasProperty(node, prefix + "_eq_enabled")
-        || hasProperty(node, prefix + "_compressor_enabled")
-        || hasProperty(node, prefix + "_reverb_mix_v2")
-        || hasProperty(node, prefix + "_transient_attack_v2");
-
-    if (hasExpandedState)
-    {
-        sound.compressor.enabled = safeBool(node, prefix + "_compressor_enabled", sound.compressor.enabled);
-        sound.compressor.order = safeInt(node, prefix + "_compressor_order", sound.compressor.order);
-        sound.compressor.ratio = safeFloat(node, prefix + "_compressor_ratio", sound.compressor.ratio);
-        sound.compressor.thresholdDb = safeFloat(node, prefix + "_compressor_threshold_db", sound.compressor.thresholdDb);
-        sound.compressor.mix = safeFloat(node, prefix + "_compressor_mix", sound.compressor.mix);
-        sound.compressor.attackMs = safeFloat(node, prefix + "_compressor_attack_ms", sound.compressor.attackMs);
-        sound.compressor.releaseMs = safeFloat(node, prefix + "_compressor_release_ms", sound.compressor.releaseMs);
-        sound.compressor.saturation = safeFloat(node, prefix + "_compressor_saturation", sound.compressor.saturation);
-
-        sound.reverbState.enabled = safeBool(node, prefix + "_reverb_enabled", sound.reverbState.enabled);
-        sound.reverbState.order = safeInt(node, prefix + "_reverb_order", sound.reverbState.order);
-        sound.reverbState.mix = safeFloat(node, prefix + "_reverb_mix_v2", sound.reverbState.mix);
-        sound.reverbState.predelayMs = safeFloat(node, prefix + "_reverb_predelay_ms", sound.reverbState.predelayMs);
-        sound.reverbState.size = safeFloat(node, prefix + "_reverb_size", sound.reverbState.size);
-        sound.reverbState.erTail = safeFloat(node, prefix + "_reverb_er_tail", sound.reverbState.erTail);
-
-        sound.transientState.enabled = safeBool(node, prefix + "_transient_enabled", sound.transientState.enabled);
-        sound.transientState.order = safeInt(node, prefix + "_transient_order", sound.transientState.order);
-        sound.transientState.attack = safeFloat(node, prefix + "_transient_attack_v2", sound.transientState.attack);
-        sound.transientState.sustain = safeFloat(node, prefix + "_transient_sustain", sound.transientState.sustain);
-        sound.transientState.gainDb = safeFloat(node, prefix + "_transient_gain_db", sound.transientState.gainDb);
-        sound.transientState.smooth = safeBool(node, prefix + "_transient_smooth", sound.transientState.smooth);
-        sound.transientState.limit = safeBool(node, prefix + "_transient_limit", sound.transientState.limit);
-
-        sound.eq.enabled = safeBool(node, prefix + "_eq_enabled", sound.eq.enabled);
-        sound.eq.order = safeInt(node, prefix + "_eq_order", sound.eq.order);
-        sound.eq.selectedBand = safeInt(node, prefix + "_eq_selected_band", sound.eq.selectedBand);
-        for (size_t index = 0; index < sound.eq.bands.size(); ++index)
-        {
-            const auto bandPrefix = prefix + "_eq_band_" + juce::String(static_cast<int>(index));
-            auto& band = sound.eq.bands[index];
-            band.enabled = safeBool(node, bandPrefix + "_enabled", band.enabled);
-            band.freqHz = safeFloat(node, bandPrefix + "_freq_hz", band.freqHz);
-            band.gainDb = safeFloat(node, bandPrefix + "_gain_db", band.gainDb);
-            band.q = safeFloat(node, bandPrefix + "_q", band.q);
-            band.shape = static_cast<EqBandShape>(juce::jlimit(0,
-                                                              2,
-                                                              safeInt(node, bandPrefix + "_shape", static_cast<int>(band.shape))));
-        }
-
-        sound.syncLegacyFromExpanded();
-    }
-    else
-    {
-        sound.eqTone = safeFloat(node, prefix + "_eq_tone", sound.eqTone);
-        sound.compression = safeFloat(node, prefix + "_compression", sound.compression);
-        sound.reverb = safeFloat(node, prefix + "_reverb", sound.reverb);
-        sound.gate = safeFloat(node, prefix + "_gate", sound.gate);
-        sound.transient = safeFloat(node, prefix + "_transient", sound.transient);
-        sound.drive = safeFloat(node, prefix + "_drive", sound.drive);
-        sound.syncExpandedFromLegacy();
-    }
-
-    sound.sanitizeExpanded();
+    sound.eqTone = safeFloat(node, prefix + "_eq_tone", sound.eqTone);
+    sound.compression = safeFloat(node, prefix + "_compression", sound.compression);
+    sound.reverb = safeFloat(node, prefix + "_reverb", sound.reverb);
+    sound.gate = safeFloat(node, prefix + "_gate", sound.gate);
+    sound.transient = safeFloat(node, prefix + "_transient", sound.transient);
+    sound.drive = safeFloat(node, prefix + "_drive", sound.drive);
 }
 
 juce::ValueTree serializeRuntimeLane(const RuntimeLaneDefinition& lane)
@@ -503,7 +399,14 @@ void normalizeRuntimeLaneOrder(const RuntimeLaneProfile& profile, std::vector<Ru
 
 void sanitizeSoundLayerState(SoundLayerState& sound)
 {
-    sound.sanitizeExpanded();
+    sound.pan = std::clamp(sound.pan, -1.0f, 1.0f);
+    sound.width = std::clamp(sound.width, 0.0f, 2.0f);
+    sound.eqTone = std::clamp(sound.eqTone, -1.0f, 1.0f);
+    sound.compression = std::clamp(sound.compression, 0.0f, 1.0f);
+    sound.reverb = std::clamp(sound.reverb, 0.0f, 1.0f);
+    sound.gate = std::clamp(sound.gate, 0.0f, 1.0f);
+    sound.transient = std::clamp(sound.transient, 0.0f, 1.0f);
+    sound.drive = std::clamp(sound.drive, 0.0f, 1.0f);
 }
 
 void sanitizeStyleInfluenceState(PatternProject& project)
