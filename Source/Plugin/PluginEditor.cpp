@@ -275,7 +275,6 @@ std::vector<RuntimeLaneId> buildTrackListLaneOrder(const PatternProject& project
         if (lane == nullptr)
             continue;
 
-        if (std::find(laneOrder.begin(), laneOrder.end(), lane->laneId) == laneOrder.end())
             laneOrder.push_back(lane->laneId);
     }
 
@@ -635,6 +634,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     : juce::AudioProcessorEditor(&processor)
     , audioProcessor(processor)
     , commandController(processor)
+    , soundModuleController(processor, soundModule)
 {
     setWantsKeyboardFocus(true);
     setMouseClickGrabsKeyboardFocus(true);
@@ -653,6 +653,23 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     addAndMakeVisible(sub808ViewModeButton);
     addAndMakeVisible(pianoRollFullscreenButton);
     addAndMakeVisible(gridEditorFullscreenButton);
+
+    soundModuleController.setHostCallbacks([this](const std::function<void()>& mutation, bool refreshTrackRows)
+                                           {
+                                               applyProcessorProjectMutation(mutation, refreshTrackRows);
+                                           },
+                                           [this](bool refreshTrackRows)
+                                           {
+                                               refreshFromProcessor(refreshTrackRows);
+                                           },
+                                           [this]
+                                           {
+                                               beginSoundModuleGesture();
+                                           },
+                                           [this]
+                                           {
+                                               endSoundModuleGesture();
+                                           });
 
     auto* splitter = new SplitterHandleComponent();
     splitter->onPress = [this](const juce::MouseEvent& event)
@@ -858,6 +875,18 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
         setPreviewPlayback(shouldStart);
     };
 
+    header.barsCombo.onChange = [this]
+    {
+        const int selectedBars = juce::jmax(1, header.barsCombo.getText().getIntValue());
+        if (audioProcessor.getProjectSnapshot().params.bars == selectedBars)
+            return;
+
+        applyProcessorProjectMutation([this]
+        {
+            audioProcessor.syncBarsFromState();
+        });
+    };
+
     header.onStartPlayWithDawToggled = [this](bool enabled)
     {
         applyProcessorProjectMutation([this, enabled]
@@ -1053,6 +1082,10 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
 BoomBGeneratorAudioProcessorEditor::~BoomBGeneratorAudioProcessorEditor()
 {
+    stopTimer();
+    if (auto* modalManager = juce::ModalComponentManager::getInstance())
+        modalManager->cancelAllModalComponents();
+
     setSub808DetachedWindowVisible(false);
 }
 
@@ -1679,6 +1712,29 @@ void BoomBGeneratorAudioProcessorEditor::timerCallback()
     refreshFromProcessor(false);
 }
 
+void BoomBGeneratorAudioProcessorEditor::beginSoundModuleGesture()
+{
+    if (soundModuleGestureActive)
+        return;
+
+    commitPendingProjectHistoryState();
+    soundModuleGestureBefore = audioProcessor.getProjectSnapshot();
+    soundModuleGestureActive = true;
+}
+
+void BoomBGeneratorAudioProcessorEditor::endSoundModuleGesture()
+{
+    if (!soundModuleGestureActive)
+        return;
+
+    const auto after = audioProcessor.getProjectSnapshot();
+    if (soundModuleGestureBefore.has_value())
+        pushProjectHistoryState(*soundModuleGestureBefore, after);
+
+    soundModuleGestureBefore.reset();
+    soundModuleGestureActive = false;
+}
+
 void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackRows)
 {
     auto project = audioProcessor.getProjectSnapshot();
@@ -1714,14 +1770,28 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
     }
     grid.setLaneDisplayOrder(laneDisplayOrder);
 
-    const auto soundTarget = audioProcessor.getSoundModuleTarget();
-    const auto panelSound = SoundTargetController::resolveSoundState(project, soundTarget);
-    soundModule.setState(project.tracks, soundTarget, panelSound);
+    if (!soundModuleGestureActive)
+        soundModuleController.sync(project);
+    soundModule.setEqDisplayAnalyzerState(audioProcessor.getEqDisplayAnalyzerState());
 
     header.setPreviewPlaying(audioProcessor.isPreviewPlaying());
     header.setStartPlayWithDawEnabled(audioProcessor.isStartPlayWithDawEnabled());
     header.setPreviewPlaybackModeId(previewPlaybackModeId(project.previewPlaybackMode));
     header.setStandaloneWindowMaximized(isStandaloneWindowMaximized());
+    if (project.styleInfluence.brooklynHatDiagnostics.available)
+    {
+        const auto& diagnostics = project.styleInfluence.brooklynHatDiagnostics;
+        juce::String text = "Brooklyn Hat Ref: " + diagnostics.primaryReferenceId;
+        if (diagnostics.usedBlend && diagnostics.secondaryReferenceId.isNotEmpty())
+            text << " + " << diagnostics.secondaryReferenceId;
+        text << " | Sim " << juce::String(diagnostics.similarityScore, 2);
+        text << " | Pool " << juce::String(diagnostics.candidatePoolSize);
+        header.setStyleLabDiagnosticsText(text);
+    }
+    else
+    {
+        header.setStyleLabDiagnosticsText({});
+    }
     grid.setPlayheadStep(audioProcessor.getPreviewPlayheadStep());
     grid.setLoopRegion(audioProcessor.getPreviewLoopRegion());
     const auto selectedTrack = project.tracks.empty()
@@ -1921,8 +1991,6 @@ void BoomBGeneratorAudioProcessorEditor::setupAttachments()
     seedAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::seed, header.seedSlider);
     seedLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::seedLock, header.seedLockToggle);
     masterVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, header.masterVolumeSlider);
-    masterCompressorAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterCompressor, header.masterCompressorSlider);
-    masterLofiAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterLofi, header.masterLofiSlider);
 
     refreshSubstyleBindingForGenre();
 }
@@ -2104,9 +2172,13 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
             if (track.laneId != laneId)
                 continue;
 
+            nextState.eq = track.sound.eq;
             nextState.eqTone = track.sound.eqTone;
             nextState.compression = track.sound.compression;
+            nextState.compressor = track.sound.compressor;
             nextState.reverb = track.sound.reverb;
+            nextState.monstaFx = track.sound.monstaFx;
+            nextState.drumTransient = track.sound.drumTransient;
             nextState.gate = track.sound.gate;
             nextState.transient = track.sound.transient;
             nextState.drive = track.sound.drive;
@@ -2178,20 +2250,6 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         showAddLaneMenu();
     };
 
-    soundModule.onSoundTargetChanged = [this](const SoundTargetDescriptor& target)
-    {
-        audioProcessor.setSoundModuleTarget(target);
-        refreshFromProcessor(false);
-    };
-
-    soundModule.onSoundLayerChanged = [this](const SoundTargetDescriptor& target, const SoundLayerState& state)
-    {
-        applyProcessorProjectMutation([this, target, state]
-        {
-            audioProcessor.setSoundLayerForTarget(target, state);
-        }, false);
-    };
-
     analysisPanel.onAnalysisSourceChanged = [this](SampleAnalysisRequest::SourceType source)
     {
         applyProcessorProjectMutation([this, source]
@@ -2248,24 +2306,28 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
 
     analysisPanel.onChooseAnalysisFile = [this]
     {
+        auto safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this);
         auto chooser = std::make_shared<juce::FileChooser>(
             "Select audio file for analysis",
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
             "*.wav;*.aif;*.aiff;*.flac;*.mp3");
 
         chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                             [this, chooser](const juce::FileChooser& fc)
+                             [safeEditor, chooser](const juce::FileChooser& fc)
                              {
                                  const auto selected = fc.getResult();
-                                 if (selected == juce::File())
+                                 if (safeEditor == nullptr || selected == juce::File())
                                      return;
 
-                                 applyProcessorProjectMutation([this, selected]
+                                 safeEditor->applyProcessorProjectMutation([safeEditor, selected]
                                  {
-                                     auto request = audioProcessor.getSampleAnalysisRequest();
+                                     if (safeEditor == nullptr)
+                                         return;
+
+                                     auto request = safeEditor->audioProcessor.getSampleAnalysisRequest();
                                      request.source = SampleAnalysisRequest::SourceType::AudioFile;
                                      request.audioFile = selected;
-                                     audioProcessor.setSampleAnalysisRequest(request);
+                                     safeEditor->audioProcessor.setSampleAnalysisRequest(request);
                                  }, false);
                              });
     };
@@ -2753,7 +2815,10 @@ void BoomBGeneratorAudioProcessorEditor::applyProcessorProjectMutation(const std
     mutation();
     const auto after = audioProcessor.getProjectSnapshot();
 
-    pushProjectHistoryState(before, after);
+    if (soundModuleGestureActive)
+        historyController.observeProjectState(after);
+    else
+        pushProjectHistoryState(before, after);
     refreshFromProcessor(refreshTrackRows);
 }
 
@@ -2941,29 +3006,32 @@ void BoomBGeneratorAudioProcessorEditor::showEditorOptionsMenu()
     menu.addItem(2, "Show Hotkeys");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&optionsToolButton).withParentComponent(this),
-                       [this](int choice)
+                       [safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)](int choice)
                        {
+                           if (safeEditor == nullptr)
+                               return;
+
                            if (choice >= 10 && choice <= 14)
                            {
-                               grid.setEditorTool(static_cast<GridEditorComponent::EditorTool>(choice - 10));
-                               syncEditorToolButtons(static_cast<GridEditorComponent::EditorTool>(choice - 10));
+                               safeEditor->grid.setEditorTool(static_cast<GridEditorComponent::EditorTool>(choice - 10));
+                               safeEditor->syncEditorToolButtons(static_cast<GridEditorComponent::EditorTool>(choice - 10));
                                return;
                            }
 
                            if (choice == 1)
                            {
-                               restoreDefaultHotkeys();
+                               safeEditor->restoreDefaultHotkeys();
                                return;
                            }
 
                            if (choice == 3)
                            {
-                               showStyleLabReferenceBrowserWindow();
+                               safeEditor->showStyleLabReferenceBrowserWindow();
                                return;
                            }
 
                            if (choice == 2)
-                               showHotkeysMenu();
+                               safeEditor->showHotkeysMenu();
                        });
 }
 
@@ -3169,24 +3237,27 @@ void BoomBGeneratorAudioProcessorEditor::showHotkeyActionMenu(const juce::String
         menu.addItem(199, "Reset to default");
 
         menu.showMenuAsync(juce::PopupMenu::Options{}.withParentComponent(this),
-                           [this, actionId, onDone](int choice)
+                           [safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this), actionId, onDone](int choice)
                            {
+                               if (safeEditor == nullptr)
+                                   return;
+
                                if (choice <= 0)
                                    return;
 
                                if (choice == 199)
                                {
-                                   resetHotkeyActionToDefault(actionId);
+                                   safeEditor->resetHotkeyActionToDefault(actionId);
                                    if (onDone) onDone();
                                    return;
                                }
 
                                if (choice == 101)
-                                   tryRebindMouseModifierAction(actionId, juce::ModifierKeys::shiftModifier);
+                                   safeEditor->tryRebindMouseModifierAction(actionId, juce::ModifierKeys::shiftModifier);
                                else if (choice == 102)
-                                   tryRebindMouseModifierAction(actionId, juce::ModifierKeys::ctrlModifier);
+                                   safeEditor->tryRebindMouseModifierAction(actionId, juce::ModifierKeys::ctrlModifier);
                                else if (choice == 103)
-                                   tryRebindMouseModifierAction(actionId, juce::ModifierKeys::altModifier);
+                                   safeEditor->tryRebindMouseModifierAction(actionId, juce::ModifierKeys::altModifier);
 
                                if (onDone) onDone();
                            });
@@ -3195,9 +3266,12 @@ void BoomBGeneratorAudioProcessorEditor::showHotkeyActionMenu(const juce::String
 
     // ── Key actions: open a key-capture dialog ─────────────────────────────────
     auto capture = std::make_unique<KeyCaptureComponent>(it->displayName);
-    capture->onKeyCaptured = [this, actionId, onDone](const juce::KeyPress& key)
+    capture->onKeyCaptured = [safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this), actionId, onDone](const juce::KeyPress& key)
     {
-        tryRebindKeyAction(actionId, key);
+        if (safeEditor == nullptr)
+            return;
+
+        safeEditor->tryRebindKeyAction(actionId, key);
         if (onDone) onDone();
     };
 
@@ -3299,15 +3373,18 @@ void BoomBGeneratorAudioProcessorEditor::showSub808ViewModeMenu()
     menu.addItem(4, "Detach", true, sub808ViewMode == Sub808ViewMode::Detached);
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&sub808ViewModeButton).withParentComponent(this),
-                       [this](int choice)
+                       [safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)](int choice)
                        {
+                           if (safeEditor == nullptr)
+                               return;
+
                            switch (choice)
                            {
-                               case 2: setSub808ViewMode(Sub808ViewMode::Docked); break;
-                               case 3: setSub808ViewMode(Sub808ViewMode::Split); break;
-                               case 4: setSub808ViewMode(Sub808ViewMode::Detached); break;
+                               case 2: safeEditor->setSub808ViewMode(Sub808ViewMode::Docked); break;
+                               case 3: safeEditor->setSub808ViewMode(Sub808ViewMode::Split); break;
+                               case 4: safeEditor->setSub808ViewMode(Sub808ViewMode::Detached); break;
                                case 1:
-                               default: setSub808ViewMode(Sub808ViewMode::Hidden); break;
+                               default: safeEditor->setSub808ViewMode(Sub808ViewMode::Hidden); break;
                            }
                        });
 }
@@ -3372,9 +3449,12 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
     if (sub808DetachedWindow == nullptr)
     {
         auto window = std::make_unique<DetachedSub808Window>();
-        window->onCloseRequested = [this]
+        window->onCloseRequested = [safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)]
         {
-            setSub808ViewMode(sub808LastInlineViewMode);
+            if (safeEditor == nullptr)
+                return;
+
+            safeEditor->setSub808ViewMode(safeEditor->sub808LastInlineViewMode);
         };
         sub808DetachedWindow = std::move(window);
     }

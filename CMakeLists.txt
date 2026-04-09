@@ -38,15 +38,24 @@ target_sources(HPDG
     PRIVATE
         Source/Plugin/PluginProcessor.cpp
         Source/Plugin/PluginEditor.cpp
+        Source/Audio/DrumCompressorBlock.cpp
+        Source/Audio/MonstaFxBlock.cpp
     Source/Analysis/SampleAnalyzer.cpp
     Source/Analysis/FeatureExtractor.cpp
     Source/Core/TrackRegistry.cpp
     Source/Core/RuntimeLaneLifecycle.cpp
         Source/Core/PatternProjectSerialization.cpp
         Source/Engine/BoomBapEngine.cpp
+    Source/Engine/DrillEngine.cpp
+    Source/Engine/Drill/Drill808Generator.cpp
+    Source/Engine/Drill/DrillHatFxGenerator.cpp
+    Source/Engine/Drill/DrillHatGenerator.cpp
+    Source/Engine/Drill/DrillKickGenerator.cpp
+    Source/Engine/Drill/DrillPatternValidator.cpp
     Source/Engine/RapEngine.cpp
     Source/Engine/TrapEngine.cpp
-    Source/Engine/DrillEngine.cpp
+    Source/Engine/Drill/DrillPhrasePlanner.cpp
+    Source/Engine/Drill/DrillSnareGenerator.cpp
     Source/Engine/StyleDefaults.cpp
     Source/Engine/StyleDefinitionLoader.cpp
     Source/Engine/StyleDefinitionResolver.cpp
@@ -81,15 +90,6 @@ target_sources(HPDG
     Source/Engine/Trap/TrapHatGenerator.cpp
     Source/Engine/Trap/TrapHatFxGenerator.cpp
     Source/Engine/Trap/Trap808Generator.cpp
-    Source/Engine/Drill/DrillStyleProfile.cpp
-    Source/Engine/Drill/DrillPhrasePlanner.cpp
-    Source/Engine/Drill/DrillGrooveBlueprint.cpp
-    Source/Engine/Drill/DrillCrossTrackResolver.cpp
-    Source/Engine/Drill/DrillKickGenerator.cpp
-    Source/Engine/Drill/DrillSnareGenerator.cpp
-    Source/Engine/Drill/DrillHatGenerator.cpp
-    Source/Engine/Drill/DrillHatFxGenerator.cpp
-    Source/Engine/Drill/Drill808Generator.cpp
     Source/Services/StyleLabReferenceService.cpp
     Source/Services/StyleLabReferenceBrowserService.cpp
     Source/Services/MidiImportService.cpp
@@ -122,59 +122,21 @@ target_link_libraries(HPDG
         juce::juce_recommended_warning_flags
 )
 
-add_executable(HPDG_RuntimeMetadataContract
-    Source/Contract/RuntimeMetadataContractMain.cpp
-    Source/Core/TrackRegistry.cpp
-    Source/Core/RuntimeLaneLifecycle.cpp
-    Source/Core/PatternProjectSerialization.cpp
-    Source/Engine/MidiExportEngine.cpp
-    Source/Engine/BoomBap/BoomBapPatternLibrary.cpp
-    Source/Engine/BoomBap/BoomBapPhrasePlanner.cpp
-    Source/Engine/BoomBap/BoomBapKickGenerator.cpp
-    Source/Engine/Rap/RapHatGenerator.cpp
-    Source/Engine/Rap/RapKickGenerator.cpp
-    Source/Engine/Rap/RapPhrasePlanner.cpp
-    Source/Engine/Trap/Trap808Generator.cpp
-    Source/Engine/Trap/TrapHatGenerator.cpp
-    Source/Engine/Trap/TrapKickGenerator.cpp
-    Source/Engine/Trap/TrapPhrasePlanner.cpp
-    Source/Engine/Drill/Drill808Generator.cpp
-    Source/Engine/Drill/DrillGrooveBlueprint.cpp
-    Source/Engine/Drill/DrillHatGenerator.cpp
-    Source/Engine/Drill/DrillKickGenerator.cpp
-    Source/Engine/Drill/DrillPhrasePlanner.cpp
-    Source/Engine/BoomBap/BoomBapStyleProfile.cpp
-    Source/Engine/Rap/RapStyleProfile.cpp
-    Source/Engine/Trap/TrapStyleProfile.cpp
-    Source/Engine/Drill/DrillStyleProfile.cpp
-    Source/Engine/StyleDefaults.cpp
-    Source/Services/TemporaryMidiExportService.cpp
-    Source/Services/StyleLabReferenceService.cpp
-    Source/Services/StyleLabReferenceBrowserService.cpp
-    Source/Engine/StyleDefinitionLoader.cpp
-    Source/Engine/StyleDefinitionResolver.cpp
-    Source/Engine/StyleInfluence.cpp
-)
-
-target_include_directories(HPDG_RuntimeMetadataContract
-    PRIVATE
-        Source
-)
-
-target_link_libraries(HPDG_RuntimeMetadataContract
-    PRIVATE
-        juce::juce_audio_formats
-        juce::juce_data_structures
-    PUBLIC
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_warning_flags
-)
-
 add_executable(HPDG_CoreTests
     Tests/CoreStage0Tests.cpp
     Source/Core/TrackRegistry.cpp
     Source/Core/RuntimeLaneLifecycle.cpp
     Source/Core/PatternProjectSerialization.cpp
+    Source/Engine/GrooveEngine.cpp
+    Source/Engine/DrillEngine.cpp
+    Source/Engine/Drill/Drill808Generator.cpp
+    Source/Engine/Drill/DrillHatFxGenerator.cpp
+    Source/Engine/Drill/DrillHatGenerator.cpp
+    Source/Engine/Drill/DrillKickGenerator.cpp
+    Source/Engine/Drill/DrillPatternValidator.cpp
+    Source/Engine/Drill/DrillPhrasePlanner.cpp
+    Source/Engine/Drill/DrillSnareGenerator.cpp
+    Source/Engine/HumanizeEngine.cpp
     Source/Engine/MidiExportEngine.cpp
     Source/Engine/StyleDefaults.cpp
     Source/Engine/StyleDefinitionLoader.cpp
@@ -183,9 +145,6 @@ add_executable(HPDG_CoreTests
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
     Source/Engine/Rap/RapStyleProfile.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
-    Source/Engine/Drill/DrillGrooveBlueprint.cpp
-    Source/Engine/Drill/DrillHatGenerator.cpp
-    Source/Engine/Drill/DrillStyleProfile.cpp
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/StyleLabReferenceService.cpp
     Source/Services/StyleLabReferenceBrowserService.cpp

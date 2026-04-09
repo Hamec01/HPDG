@@ -11,6 +11,7 @@
 #include "../Core/ProjectStateController.h"
 #include "../Core/TrackRegistry.h"
 #include "../Engine/MidiExportEngine.h"
+#include "../Engine/PatternPerformanceTransformEngine.h"
 #include "../Engine/StyleDefaults.h"
 #include "../Services/TemporaryMidiExportService.h"
 #include "../Utils/TimingHelpers.h"
@@ -20,7 +21,9 @@ namespace bbg
 namespace
 {
 constexpr auto kStateType = "BoomBapState";
-constexpr auto kRootSchemaVersion = 3;
+constexpr auto kRootSchemaVersion = 4;
+constexpr double kEqAnalyzerMinFrequencyHz = 20.0;
+constexpr double kEqAnalyzerMaxFrequencyHz = 20000.0;
 
 inline int floorDiv(int a, int b)
 {
@@ -53,18 +56,6 @@ GenreType genreFromChoice(int choice)
     }
 }
 
-float defaultBpmForGenre(GenreType genre)
-{
-    switch (genre)
-    {
-        case GenreType::Trap: return 145.0f;
-        case GenreType::Drill: return 142.0f;
-        case GenreType::Rap: return 96.0f;
-        case GenreType::BoomBap:
-        default: return 90.0f;
-    }
-}
-
 float playbackRateForTrackPitch(TrackType track, int pitch)
 {
     const auto* info = TrackRegistry::find(track);
@@ -73,10 +64,10 @@ float playbackRateForTrackPitch(TrackType track, int pitch)
     return std::pow(2.0f, static_cast<float>(clampedPitch - basePitch) / 12.0f);
 }
 
-bool isSyncEnabled(const juce::AudioProcessorValueTreeState& apvts)
+bool isBpmLocked(const juce::AudioProcessorValueTreeState& apvts)
 {
-    const auto* syncValue = apvts.getRawParameterValue(ParamIds::syncDawTempo);
-    return syncValue != nullptr && syncValue->load() > 0.5f;
+    const auto* bpmLockValue = apvts.getRawParameterValue(ParamIds::bpmLock);
+    return bpmLockValue != nullptr && bpmLockValue->load() > 0.5f;
 }
 
 bool shouldIncludeTrackForPlayback(const PatternProject& project, const TrackState& track)
@@ -120,6 +111,83 @@ void logDrag(const juce::String& message)
     file.getParentDirectory().createDirectory();
     const auto line = juce::Time::getCurrentTime().toString(true, true) + " | PROCESSOR | " + message + "\n";
     file.appendText(line, false, false, "\n");
+}
+
+bool soundLayerHasActiveEq(const SoundLayerState& state)
+{
+    return std::any_of(state.eq.bands.begin(), state.eq.bands.end(), [](const EqBandState& band)
+    {
+        return band.enabled;
+    });
+}
+
+bool soundLayerHasActiveReverb(const SoundLayerState& state)
+{
+    return state.reverb > 0.001f || isDrumReverbAudiblyActive(state.drumReverb);
+}
+
+bool soundLayerHasActiveStereoField(const SoundLayerState& state)
+{
+    return isStereoFieldAudiblyActive(state);
+}
+
+bool soundLayerHasActiveTransient(const SoundLayerState& state)
+{
+    return isDrumTransientAudiblyActive(state.drumTransient);
+}
+
+bool soundLayerHasActiveMonstaFx(const SoundLayerState& state)
+{
+    return isMonstaFxAudiblyActive(state.monstaFx);
+}
+
+bool soundLayerNeedsSeparatedRender(const SoundLayerState& state)
+{
+    if (soundLayerHasActiveEq(state))
+        return true;
+
+    if (state.compression > 0.001f || isCompressorAudiblyActive(state.compressor))
+        return true;
+
+    if (soundLayerHasActiveReverb(state))
+        return true;
+
+    if (soundLayerHasActiveTransient(state))
+        return true;
+
+    if (soundLayerHasActiveMonstaFx(state))
+        return true;
+
+    return soundLayerHasActiveStereoField(state);
+}
+
+float envelopeTimeCoefficient(double sampleRate, float timeMs)
+{
+    const float clampedMs = juce::jmax(0.1f, timeMs);
+    const float sr = static_cast<float>(sampleRate > 1000.0 ? sampleRate : 44100.0);
+    return std::exp(-1.0f / (0.001f * clampedMs * sr));
+}
+
+float followEnvelope(float input, float current, float attackCoeff, float releaseCoeff)
+{
+    const float coeff = input > current ? attackCoeff : releaseCoeff;
+    return input + coeff * (current - input);
+}
+
+float softLimitSample(float sample, float ceiling, float drive)
+{
+    const float safeCeiling = juce::jmax(0.1f, ceiling);
+    const float shapedDrive = juce::jmax(1.0f, drive);
+    const float normalized = sample / safeCeiling;
+    const float normalizer = juce::jmax(0.001f, std::tanh(shapedDrive));
+    return std::tanh(normalized * shapedDrive) / normalizer * safeCeiling;
+}
+
+double eqAnalyzerFrequencyFromNormalized(double normalized)
+{
+    const double minLog = std::log10(kEqAnalyzerMinFrequencyHz);
+    const double maxLog = std::log10(kEqAnalyzerMaxFrequencyHz);
+    return std::pow(10.0, minLog + juce::jlimit(0.0, 1.0, normalized) * (maxLog - minLog));
 }
 } // namespace
 
@@ -196,6 +264,7 @@ BoomBapGeneratorAudioProcessor::BoomBapGeneratorAudioProcessor()
     }
 
     applySelectedStylePreset(true);
+    resetEqDisplayAnalyzer();
 
     generatePattern();
 }
@@ -226,9 +295,121 @@ void BoomBapGeneratorAudioProcessor::prepareToPlay(double sampleRate, int)
 
     lofiDownsampleCounter = 0;
     lofiHeldSample = { 0.0f, 0.0f };
+    resetEqDisplayAnalyzer();
+
+    for (auto& runtime : laneFxRuntimeStates)
+        prepareSoundFxRuntimeState(runtime);
+    prepareSoundFxRuntimeState(globalFxRuntimeState);
 }
 
-void BoomBapGeneratorAudioProcessor::releaseResources() {}
+void BoomBapGeneratorAudioProcessor::releaseResources()
+{
+    std::scoped_lock lock(projectMutex);
+    previewPlaying = false;
+    previewSamplePosition = 0;
+    pendingPreviewNotes.clear();
+    previewEngine.reset();
+    for (auto& runtime : laneFxRuntimeStates)
+        resetSoundFxRuntimeState(runtime);
+    resetSoundFxRuntimeState(globalFxRuntimeState);
+    resetEqDisplayAnalyzer();
+}
+
+void BoomBapGeneratorAudioProcessor::resetEqDisplayAnalyzer()
+{
+    eqDisplayAnalyzerFifoIndex = 0;
+    eqDisplayAnalyzerFifo.fill(0.0f);
+    eqDisplayAnalyzerFftData.fill(0.0f);
+    for (auto& magnitude : eqDisplayAnalyzerMagnitudes)
+        magnitude.store(0.0f, std::memory_order_relaxed);
+    eqDisplayAnalyzerRms.store(0.0f, std::memory_order_relaxed);
+    eqDisplayAnalyzerActive.store(false, std::memory_order_relaxed);
+}
+
+void BoomBapGeneratorAudioProcessor::captureEqDisplayAnalyzer(const juce::AudioBuffer<float>& buffer)
+{
+    if (buffer.getNumSamples() <= 0)
+        return;
+
+    const int channelCount = juce::jmax(1, buffer.getNumChannels());
+    float sumSquares = 0.0f;
+    bool producedFrame = false;
+
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        float mono = 0.0f;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            mono += buffer.getSample(channel, sample);
+
+        mono /= static_cast<float>(channelCount);
+        sumSquares += mono * mono;
+        eqDisplayAnalyzerFifo[static_cast<size_t>(eqDisplayAnalyzerFifoIndex++)] = mono;
+
+        if (eqDisplayAnalyzerFifoIndex >= kEqDisplayAnalyzerFftSize)
+        {
+            runEqDisplayAnalyzerFrame();
+            eqDisplayAnalyzerFifoIndex = 0;
+            producedFrame = true;
+        }
+    }
+
+    const float blockRms = std::sqrt(sumSquares / static_cast<float>(buffer.getNumSamples()));
+    const float previousRms = eqDisplayAnalyzerRms.load(std::memory_order_relaxed);
+    const float smoothedRms = juce::jmax(blockRms, previousRms * 0.84f);
+    eqDisplayAnalyzerRms.store(smoothedRms, std::memory_order_relaxed);
+
+    if (!producedFrame)
+    {
+        float peakMagnitude = 0.0f;
+        for (auto& magnitude : eqDisplayAnalyzerMagnitudes)
+        {
+            const float decayed = magnitude.load(std::memory_order_relaxed) * 0.965f;
+            magnitude.store(decayed, std::memory_order_relaxed);
+            peakMagnitude = juce::jmax(peakMagnitude, decayed);
+        }
+
+        eqDisplayAnalyzerActive.store(peakMagnitude > 0.012f || smoothedRms > 0.004f, std::memory_order_relaxed);
+    }
+}
+
+void BoomBapGeneratorAudioProcessor::runEqDisplayAnalyzerFrame()
+{
+    if (currentSampleRate <= 0.0)
+        return;
+
+    std::fill(eqDisplayAnalyzerFftData.begin(), eqDisplayAnalyzerFftData.end(), 0.0f);
+    std::copy(eqDisplayAnalyzerFifo.begin(), eqDisplayAnalyzerFifo.end(), eqDisplayAnalyzerFftData.begin());
+    eqDisplayAnalyzerWindow.multiplyWithWindowingTable(eqDisplayAnalyzerFftData.data(), kEqDisplayAnalyzerFftSize);
+    eqDisplayAnalyzerFft.performFrequencyOnlyForwardTransform(eqDisplayAnalyzerFftData.data());
+
+    float peakMagnitude = 0.0f;
+    for (int index = 0; index < kEqDisplayAnalyzerBinCount; ++index)
+    {
+        const double normalized = kEqDisplayAnalyzerBinCount > 1
+            ? static_cast<double>(index) / static_cast<double>(kEqDisplayAnalyzerBinCount - 1)
+            : 0.0;
+        const double frequencyHz = eqAnalyzerFrequencyFromNormalized(normalized);
+        const int fftIndex = juce::jlimit(1,
+                                          kEqDisplayAnalyzerFftSize / 2 - 2,
+                                          static_cast<int>(std::round(frequencyHz * static_cast<double>(kEqDisplayAnalyzerFftSize)
+                                                                      / currentSampleRate)));
+
+        float magnitude = 0.0f;
+        for (int bin = fftIndex - 1; bin <= fftIndex + 1; ++bin)
+            magnitude = juce::jmax(magnitude, eqDisplayAnalyzerFftData[static_cast<size_t>(bin)]);
+
+        const float scaledMagnitude = magnitude / static_cast<float>(kEqDisplayAnalyzerFftSize);
+        const float magnitudeDb = juce::Decibels::gainToDecibels(scaledMagnitude, -96.0f);
+        const float normalizedMagnitude = juce::jmap(juce::jlimit(-90.0f, -18.0f, magnitudeDb), -90.0f, -18.0f, 0.0f, 1.0f);
+        const float previousMagnitude = eqDisplayAnalyzerMagnitudes[static_cast<size_t>(index)].load(std::memory_order_relaxed);
+        const float smoothedMagnitude = juce::jmax(normalizedMagnitude, previousMagnitude * 0.78f);
+        eqDisplayAnalyzerMagnitudes[static_cast<size_t>(index)].store(smoothedMagnitude, std::memory_order_relaxed);
+        peakMagnitude = juce::jmax(peakMagnitude, smoothedMagnitude);
+    }
+
+    eqDisplayAnalyzerActive.store(peakMagnitude > 0.012f || eqDisplayAnalyzerRms.load(std::memory_order_relaxed) > 0.004f,
+                                  std::memory_order_relaxed);
+}
 
 bool BoomBapGeneratorAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
@@ -243,15 +424,55 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 
     const auto snapshot = TransportSnapshot::fromPlayHead(getPlayHead());
     const auto currentParams = buildParamsFromState(snapshot);
+    bool shouldAutoStartPreview = false;
+    bool shouldAutoStopPreview = false;
     {
         std::scoped_lock lock(projectMutex);
+        shouldAutoStartPreview = startPlayWithDawEnabled && snapshot.isPlaying && !lastObservedHostPlaying;
+        shouldAutoStopPreview = startPlayWithDawEnabled && !snapshot.isPlaying && lastObservedHostPlaying;
+        lastObservedHostPlaying = snapshot.isPlaying;
         lastTransport = snapshot;
-        project.params = currentParams;
+        syncLivePerformanceStateLocked(currentParams);
+
+        if (shouldAutoStartPreview)
+        {
+            if (!laneSampleBank.hasSamples(TrackType::Kick)
+                && !laneSampleBank.hasSamples(TrackType::Snare)
+                && !laneSampleBank.hasSamples(TrackType::HiHat))
+                rescanLaneSamplesLocked();
+
+            rebuildMidiCache();
+            previewPlaying = true;
+            if (snapshot.hasPpq && currentParams.bpm > 0.0f)
+            {
+                const double samplesPerQuarter = (60.0 / static_cast<double>(currentParams.bpm)) * currentSampleRate;
+                previewSamplePosition = static_cast<int>(std::lround(snapshot.ppqPosition * samplesPerQuarter));
+            }
+            else
+            {
+                startPreviewFromCurrentStartStepLocked();
+            }
+            previewEngine.reset();
+        }
+        else if (shouldAutoStopPreview)
+        {
+            previewPlaying = false;
+            previewEngine.reset();
+        }
     }
 
     int startSample = transportSamplePosition;
     if (snapshot.hasPpq)
         startSample = stepToSamples(static_cast<int>(snapshot.ppqPosition * 4.0), currentSampleRate, currentParams.bpm);
+
+    const double safeBpm = currentParams.bpm > 0.0f ? static_cast<double>(currentParams.bpm) : 120.0;
+    const double samplesPerQuarter = (60.0 / safeBpm) * currentSampleRate;
+    MonstaFxTimelineContext monstaTimeline;
+    monstaTimeline.bpm = safeBpm;
+    monstaTimeline.blockStartSample = static_cast<std::int64_t>(startSample);
+    monstaTimeline.blockStartQuarter = snapshot.hasPpq && snapshot.ppqPosition >= 0.0
+        ? snapshot.ppqPosition
+        : (samplesPerQuarter > 0.0 ? static_cast<double>(startSample) / samplesPerQuarter : 0.0);
 
     const int numSamples = buffer.getNumSamples();
     const int patternLength = getPatternLengthSamples();
@@ -259,6 +480,22 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         return;
 
     std::scoped_lock lock(projectMutex);
+    bool requiresSeparatedSoundLayerPath = soundLayerNeedsSeparatedRender(project.globalSound);
+    if (!requiresSeparatedSoundLayerPath)
+    {
+        for (const auto& track : project.tracks)
+        {
+            if (!shouldIncludeTrackForPlayback(project, track))
+                continue;
+
+            if (soundLayerNeedsSeparatedRender(track.sound))
+            {
+                requiresSeparatedSoundLayerPath = true;
+                break;
+            }
+        }
+    }
+
     for (const auto& audition : pendingPreviewNotes)
     {
         PreviewEngine::TriggerOptions options;
@@ -405,11 +642,51 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     shouldRenderPreviewVoices = shouldRenderPreviewVoices || previewEngine.hasActiveVoices();
     if (shouldRenderPreviewVoices)
     {
-        previewEngine.render(buffer, 0, numSamples);
-        applyMasterFx(buffer);
+        if (!requiresSeparatedSoundLayerPath)
+        {
+            previewEngine.render(buffer, 0, numSamples);
+            applyMasterFx(buffer);
+        }
+        else
+        {
+            const int outputChannels = juce::jmax(1, buffer.getNumChannels());
+            for (auto& laneBuffer : previewLaneBuffers)
+            {
+                laneBuffer.setSize(outputChannels, numSamples, false, false, true);
+                laneBuffer.clear();
+            }
+
+            previewEngine.renderSeparated(previewLaneBuffers, 0, numSamples);
+
+            for (int trackIndex = 0; trackIndex < kTrackTypeCount; ++trackIndex)
+            {
+                auto& laneBuffer = previewLaneBuffers[static_cast<size_t>(trackIndex)];
+                const auto trackType = static_cast<TrackType>(trackIndex);
+                if (const auto* trackState = findTrackState(trackType); trackState != nullptr)
+                    applySoundLayerFx(laneBuffer,
+                                      trackState->sound,
+                                      laneFxRuntimeStates[static_cast<size_t>(trackIndex)],
+                                      monstaTimeline);
+
+                for (int channel = 0; channel < outputChannels; ++channel)
+                    buffer.addFrom(channel, 0, laneBuffer, channel, 0, numSamples);
+            }
+
+            applySoundLayerFx(buffer, project.globalSound, globalFxRuntimeState, monstaTimeline);
+
+            for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            {
+                auto* channelData = buffer.getWritePointer(channel);
+                for (int sample = 0; sample < numSamples; ++sample)
+                    channelData[sample] = std::tanh(channelData[sample] * 0.85f);
+            }
+
+            applyMasterFx(buffer);
+        }
     }
 
     transportSamplePosition = startSample + numSamples;
+    captureEqDisplayAnalyzer(buffer);
 }
 
 juce::AudioProcessorEditor* BoomBapGeneratorAudioProcessor::createEditor()
@@ -445,6 +722,7 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
 
     {
         std::scoped_lock lock(projectMutex);
+        PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, buildParamsFromState(lastTransport));
         serializePatternProjectToState(state);
     }
 
@@ -490,12 +768,23 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
 {
     std::scoped_lock lock(projectMutex);
     advanceSeedForGeneration(std::nullopt);
-    project.params = buildParamsFromState(lastTransport);
+    auto generationParams = buildParamsFromState(lastTransport);
+    const auto bpmSelection = resolveGenerationBpm(generationParams,
+                                                   generationParams.bpm,
+                                                   isBpmLocked(apvts),
+                                                   lastTransport.hasHostTempo && lastTransport.bpm > 0.0
+                                                       ? std::optional<double>(lastTransport.bpm)
+                                                       : std::nullopt);
+    if (std::abs(bpmSelection.bpm - generationParams.bpm) > 0.05f)
+        setFloatParameterValue(ParamIds::bpm, bpmSelection.bpm);
+
+    generationParams.bpm = bpmSelection.bpm;
+    project.params = generationParams;
     switch (project.params.genre)
     {
+        case GenreType::Drill: drillEngine.generate(project); break;
         case GenreType::Rap: rapEngine.generate(project); break;
         case GenreType::Trap: trapEngine.generate(project); break;
-        case GenreType::Drill: drillEngine.generate(project); break;
         case GenreType::BoomBap:
         default: boomBapEngine.generate(project); break;
     }
@@ -510,9 +799,9 @@ void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
     project.params = buildParamsFromState(lastTransport);
     switch (project.params.genre)
     {
+        case GenreType::Drill: drillEngine.generateTrackNew(project, track); break;
         case GenreType::Rap: rapEngine.generateTrackNew(project, track); break;
         case GenreType::Trap: trapEngine.generateTrackNew(project, track); break;
-        case GenreType::Drill: drillEngine.generateTrackNew(project, track); break;
         case GenreType::BoomBap:
         default: boomBapEngine.generateTrackNew(project, track); break;
     }
@@ -527,9 +816,9 @@ void BoomBapGeneratorAudioProcessor::regenerateTrack(TrackType track)
     project.params = buildParamsFromState(lastTransport);
     switch (project.params.genre)
     {
+        case GenreType::Drill: drillEngine.regenerateTrackVariation(project, track); break;
         case GenreType::Rap: rapEngine.regenerateTrackVariation(project, track); break;
         case GenreType::Trap: trapEngine.regenerateTrackVariation(project, track); break;
-        case GenreType::Drill: drillEngine.regenerateTrackVariation(project, track); break;
         case GenreType::BoomBap:
         default: boomBapEngine.regenerateTrackVariation(project, track); break;
     }
@@ -553,9 +842,9 @@ void BoomBapGeneratorAudioProcessor::mutatePattern()
     project.params = buildParamsFromState(lastTransport);
     switch (project.params.genre)
     {
+        case GenreType::Drill: drillEngine.mutatePattern(project); break;
         case GenreType::Rap: rapEngine.mutatePattern(project); break;
         case GenreType::Trap: trapEngine.mutatePattern(project); break;
-        case GenreType::Drill: drillEngine.mutatePattern(project); break;
         case GenreType::BoomBap:
         default: boomBapEngine.mutatePattern(project); break;
     }
@@ -570,9 +859,9 @@ void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
     project.params = buildParamsFromState(lastTransport);
     switch (project.params.genre)
     {
+        case GenreType::Drill: drillEngine.mutateTrack(project, track); break;
         case GenreType::Rap: rapEngine.mutateTrack(project, track); break;
         case GenreType::Trap: trapEngine.mutateTrack(project, track); break;
-        case GenreType::Drill: drillEngine.mutateTrack(project, track); break;
         case GenreType::BoomBap:
         default: boomBapEngine.mutateTrack(project, track); break;
     }
@@ -627,6 +916,14 @@ void BoomBapGeneratorAudioProcessor::setPreviewStartStep(int step)
     ProjectStateController::setPreviewStartStep(project, step);
 }
 
+void BoomBapGeneratorAudioProcessor::syncBarsFromState()
+{
+    std::scoped_lock lock(projectMutex);
+    const auto liveParams = buildParamsFromState(lastTransport);
+    ProjectStateController::setBars(project, liveParams.bars);
+    rebuildMidiCache();
+}
+
 void BoomBapGeneratorAudioProcessor::setPreviewPlaybackMode(PreviewPlaybackMode mode)
 {
     std::scoped_lock lock(projectMutex);
@@ -648,6 +945,7 @@ void BoomBapGeneratorAudioProcessor::restoreEditorProjectSnapshot(const PatternP
 {
     std::scoped_lock lock(projectMutex);
     ProjectStateController::restoreEditorProjectSnapshot(project, snapshot, buildParamsFromState(lastTransport));
+    PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, project.params);
     rebuildMidiCache();
 }
 
@@ -816,15 +1114,23 @@ void BoomBapGeneratorAudioProcessor::auditionSub808Note(int pitch, int velocity,
 
 void BoomBapGeneratorAudioProcessor::setSub808TrackNotes(TrackType track, const std::vector<Sub808NoteEvent>& notes)
 {
+    if (track != TrackType::Sub808)
+        return;
+
     std::scoped_lock lock(projectMutex);
+    project.params = buildParamsFromState(lastTransport);
     ProjectStateController::setSub808TrackNotes(project, track, notes);
+    captureEditedTrackPerformanceBaseLocked(track);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setSub808TrackNotes(const RuntimeLaneId& laneId, const std::vector<Sub808NoteEvent>& notes)
 {
     std::scoped_lock lock(projectMutex);
+    project.params = buildParamsFromState(lastTransport);
     ProjectStateController::setSub808TrackNotes(project, laneId, notes);
+    if (const auto type = ProjectLaneAccess::backingTrackTypeForLaneId(project, laneId); type.has_value())
+        captureEditedTrackPerformanceBaseLocked(*type);
     rebuildMidiCache();
 }
 
@@ -924,14 +1230,19 @@ void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(const RuntimeLaneId& lan
 void BoomBapGeneratorAudioProcessor::setTrackNotes(TrackType track, const std::vector<NoteEvent>& notes)
 {
     std::scoped_lock lock(projectMutex);
+    project.params = buildParamsFromState(lastTransport);
     ProjectStateController::setTrackNotes(project, track, notes);
+    captureEditedTrackPerformanceBaseLocked(track);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackNotes(const RuntimeLaneId& laneId, const std::vector<NoteEvent>& notes)
 {
     std::scoped_lock lock(projectMutex);
+    project.params = buildParamsFromState(lastTransport);
     ProjectStateController::setTrackNotes(project, laneId, notes);
+    if (const auto type = ProjectLaneAccess::backingTrackTypeForLaneId(project, laneId); type.has_value())
+        captureEditedTrackPerformanceBaseLocked(*type);
     rebuildMidiCache();
 }
 
@@ -971,10 +1282,30 @@ SoundTargetDescriptor BoomBapGeneratorAudioProcessor::getSoundModuleTarget() con
     return SoundTargetController::resolveProjectSelection(project);
 }
 
-void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(TrackType track, const SoundLayerState& state)
+float BoomBapGeneratorAudioProcessor::getSoundLayerGainReductionDb(const SoundTargetDescriptor& descriptor) const
 {
     std::scoped_lock lock(projectMutex);
-    ProjectStateController::setTrackSoundLayer(project, track, state);
+
+    const auto resolved = SoundTargetController::sanitizeDescriptor(project, descriptor);
+    const auto soundState = sanitizeSoundLayer(SoundTargetController::resolveSoundState(project, resolved));
+    if (!isCompressorAudiblyActive(soundState.compressor))
+        return 0.0f;
+
+    if (resolved.isGlobal())
+        return globalFxRuntimeState.compressor.getLastGainReductionDb();
+
+    if (const auto trackType = SoundTargetController::toLegacyTrackTypeAlias(resolved); trackType.has_value())
+        return laneFxRuntimeStates[static_cast<size_t>(*trackType)].compressor.getLastGainReductionDb();
+
+    return 0.0f;
+}
+
+void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(TrackType track, const SoundLayerState& state)
+{
+    auto sanitizedState = sanitizeSoundLayer(state);
+    sanitizedState.monstaFx.pendingChaosReseed = false;
+    std::scoped_lock lock(projectMutex);
+    ProjectStateController::setTrackSoundLayer(project, track, sanitizedState);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(const RuntimeLaneId& laneId, const SoundLayerState& state)
@@ -988,14 +1319,18 @@ void BoomBapGeneratorAudioProcessor::setTrackSoundLayer(const RuntimeLaneId& lan
 
 void BoomBapGeneratorAudioProcessor::setGlobalSoundLayer(const SoundLayerState& state)
 {
+    auto sanitizedState = sanitizeSoundLayer(state);
+    sanitizedState.monstaFx.pendingChaosReseed = false;
     std::scoped_lock lock(projectMutex);
-    ProjectStateController::setGlobalSoundLayer(project, state);
+    ProjectStateController::setGlobalSoundLayer(project, sanitizedState);
 }
 
 void BoomBapGeneratorAudioProcessor::setSoundLayerForTarget(const SoundTargetDescriptor& descriptor, const SoundLayerState& state)
 {
+    auto sanitizedState = sanitizeSoundLayer(state);
+    sanitizedState.monstaFx.pendingChaosReseed = false;
     std::scoped_lock lock(projectMutex);
-    ProjectStateController::setSoundLayerForTarget(project, descriptor, state);
+    ProjectStateController::setSoundLayerForTarget(project, descriptor, sanitizedState);
 }
 
 void BoomBapGeneratorAudioProcessor::setHatFxDragDensity(float density, bool lockDragDensity)
@@ -1020,14 +1355,19 @@ bool BoomBapGeneratorAudioProcessor::isHatFxDragDensityLocked() const
 void BoomBapGeneratorAudioProcessor::clearTrack(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
+    project.params = buildParamsFromState(lastTransport);
     ProjectStateController::clearTrack(project, track);
+    captureEditedTrackPerformanceBaseLocked(track);
     rebuildMidiCache();
 }
 
 void BoomBapGeneratorAudioProcessor::clearTrack(const RuntimeLaneId& laneId)
 {
     std::scoped_lock lock(projectMutex);
+    project.params = buildParamsFromState(lastTransport);
     ProjectStateController::clearTrack(project, laneId);
+    if (const auto type = ProjectLaneAccess::backingTrackTypeForLaneId(project, laneId); type.has_value())
+        captureEditedTrackPerformanceBaseLocked(*type);
     rebuildMidiCache();
 }
 
@@ -1245,6 +1585,16 @@ PatternProject BoomBapGeneratorAudioProcessor::getProjectSnapshot() const
     return project;
 }
 
+EqDisplayAnalyzerState BoomBapGeneratorAudioProcessor::getEqDisplayAnalyzerState() const
+{
+    EqDisplayAnalyzerState state;
+    state.rms = eqDisplayAnalyzerRms.load(std::memory_order_relaxed);
+    state.active = eqDisplayAnalyzerActive.load(std::memory_order_relaxed);
+    for (int index = 0; index < kEqDisplayAnalyzerBinCount; ++index)
+        state.magnitudes[static_cast<size_t>(index)] = eqDisplayAnalyzerMagnitudes[static_cast<size_t>(index)].load(std::memory_order_relaxed);
+    return state;
+}
+
 TransportSnapshot BoomBapGeneratorAudioProcessor::getLastTransportSnapshot() const
 {
     std::scoped_lock lock(projectMutex);
@@ -1428,8 +1778,6 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
     setFloatParameterValue(ParamIds::timingAmount, style.timingDefault);
     setFloatParameterValue(ParamIds::humanizeAmount, style.humanizeDefault);
     setFloatParameterValue(ParamIds::densityAmount, style.densityDefault);
-    if (genreChanged && !isSyncEnabled(apvts))
-        setFloatParameterValue(ParamIds::bpm, defaultBpmForGenre(genreType));
 
     {
         std::scoped_lock lock(projectMutex);
@@ -1543,6 +1891,29 @@ void BoomBapGeneratorAudioProcessor::setFloatParameterValue(const juce::String& 
     parameter->endChangeGesture();
 }
 
+void BoomBapGeneratorAudioProcessor::syncLivePerformanceStateLocked(const GeneratorParams& liveParams)
+{
+    PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, liveParams);
+
+    const auto previousParams = project.params;
+    const bool performanceChanged = PatternPerformanceTransformEngine::hasLivePerformanceParamChange(previousParams, liveParams);
+    const bool playbackTimingChanged = PatternPerformanceTransformEngine::hasPlaybackTimingParamChange(previousParams, liveParams);
+
+    project.params = liveParams;
+
+    if (performanceChanged)
+        PatternPerformanceTransformEngine::applyPerformanceFromBase(project, liveParams);
+
+    if (performanceChanged || playbackTimingChanged)
+        rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::captureEditedTrackPerformanceBaseLocked(TrackType trackType)
+{
+    if (auto* track = ProjectLaneAccess::findTrackState(project, trackType); track != nullptr)
+        PatternPerformanceTransformEngine::captureBasePattern(*track, project.params);
+}
+
 void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
 {
     for (auto& track : project.tracks)
@@ -1638,70 +2009,539 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
     });
 }
 
+void BoomBapGeneratorAudioProcessor::DrumReverbBlock::prepare(const juce::dsp::ProcessSpec& spec)
+{
+    sampleRate = spec.sampleRate > 1000.0 ? spec.sampleRate : 44100.0;
+    maximumBlockSize = juce::jmax(1, static_cast<int>(spec.maximumBlockSize));
+    maximumPredelaySamples = juce::jmax(1, juce::roundToInt(sampleRate * 0.06));
+
+    const int channels = juce::jmax(1, static_cast<int>(spec.numChannels));
+    const int predelayBufferLength = maximumPredelaySamples + maximumBlockSize + 2;
+
+    predelayBuffer.setSize(channels, predelayBufferLength, false, false, true);
+    dryBuffer.setSize(channels, maximumBlockSize, false, false, true);
+    earlyBuffer.setSize(channels, maximumBlockSize, false, false, true);
+    tailBuffer.setSize(channels, maximumBlockSize, false, false, true);
+    wetHighpassState.assign(static_cast<size_t>(channels), 0.0f);
+    wetLowpassState.assign(static_cast<size_t>(channels), 0.0f);
+
+    reset();
+}
+
+void BoomBapGeneratorAudioProcessor::DrumReverbBlock::reset()
+{
+    predelayWritePosition = 0;
+    predelayBuffer.clear();
+    dryBuffer.clear();
+    earlyBuffer.clear();
+    tailBuffer.clear();
+    std::fill(wetHighpassState.begin(), wetHighpassState.end(), 0.0f);
+    std::fill(wetLowpassState.begin(), wetLowpassState.end(), 0.0f);
+    earlyReverb.reset();
+    tailReverb.reset();
+}
+
+void BoomBapGeneratorAudioProcessor::DrumReverbBlock::ensureScratchCapacity(int channels, int samples)
+{
+    const int requiredChannels = juce::jmax(1, channels);
+    const int requiredBlockSize = juce::jmax(1, samples);
+
+    if (requiredBlockSize > maximumBlockSize)
+        maximumBlockSize = requiredBlockSize;
+
+    const int predelayBufferLength = juce::jmax(maximumPredelaySamples + maximumBlockSize + 2,
+                                                maximumPredelaySamples + requiredBlockSize + 2);
+
+    if (predelayBuffer.getNumChannels() != requiredChannels || predelayBuffer.getNumSamples() < predelayBufferLength)
+    {
+        predelayBuffer.setSize(requiredChannels, predelayBufferLength, false, false, true);
+        predelayBuffer.clear();
+        predelayWritePosition = 0;
+    }
+
+    if (dryBuffer.getNumChannels() != requiredChannels || dryBuffer.getNumSamples() < requiredBlockSize)
+        dryBuffer.setSize(requiredChannels, requiredBlockSize, false, false, true);
+
+    if (earlyBuffer.getNumChannels() != requiredChannels || earlyBuffer.getNumSamples() < requiredBlockSize)
+        earlyBuffer.setSize(requiredChannels, requiredBlockSize, false, false, true);
+
+    if (tailBuffer.getNumChannels() != requiredChannels || tailBuffer.getNumSamples() < requiredBlockSize)
+        tailBuffer.setSize(requiredChannels, requiredBlockSize, false, false, true);
+
+    if (wetHighpassState.size() != static_cast<size_t>(requiredChannels))
+        wetHighpassState.assign(static_cast<size_t>(requiredChannels), 0.0f);
+
+    if (wetLowpassState.size() != static_cast<size_t>(requiredChannels))
+        wetLowpassState.assign(static_cast<size_t>(requiredChannels), 0.0f);
+}
+
+float BoomBapGeneratorAudioProcessor::DrumReverbBlock::processWetSample(float sample,
+                                                                         int channel,
+                                                                         float highPassCoeff,
+                                                                         float lowPassCoeff)
+{
+    auto& highpassState = wetHighpassState[static_cast<size_t>(channel)];
+    auto& lowpassState = wetLowpassState[static_cast<size_t>(channel)];
+
+    highpassState = (1.0f - highPassCoeff) * sample + highPassCoeff * highpassState;
+    const float highPassed = sample - highpassState;
+    lowpassState = (1.0f - lowPassCoeff) * highPassed + lowPassCoeff * lowpassState;
+    return lowpassState;
+}
+
+void BoomBapGeneratorAudioProcessor::DrumReverbBlock::process(juce::AudioBuffer<float>& buffer,
+                                                               const DrumReverbState& state)
+{
+    if (buffer.getNumSamples() <= 0 || buffer.getNumChannels() <= 0)
+        return;
+
+    auto reverbState = state;
+    sanitizeDrumReverbState(reverbState);
+    if (!isDrumReverbAudiblyActive(reverbState))
+        return;
+
+    const int channels = buffer.getNumChannels();
+    const int samples = buffer.getNumSamples();
+    ensureScratchCapacity(channels, samples);
+
+    dryBuffer.makeCopyOf(buffer, true);
+    earlyBuffer.setSize(channels, samples, false, false, true);
+    tailBuffer.setSize(channels, samples, false, false, true);
+    earlyBuffer.clear();
+    tailBuffer.clear();
+
+    const int delaySamples = juce::jlimit(0,
+                                          maximumPredelaySamples,
+                                          juce::roundToInt((reverbState.predelayMs / 1000.0f) * static_cast<float>(sampleRate)));
+    const int predelayBufferLength = predelayBuffer.getNumSamples();
+
+    for (int sample = 0; sample < samples; ++sample)
+    {
+        int readPosition = predelayWritePosition - delaySamples;
+        if (readPosition < 0)
+            readPosition += predelayBufferLength;
+
+        for (int channel = 0; channel < channels; ++channel)
+        {
+            const float input = dryBuffer.getSample(channel, sample);
+            predelayBuffer.setSample(channel, predelayWritePosition, input);
+            const float delayed = predelayBuffer.getSample(channel, readPosition);
+            earlyBuffer.setSample(channel, sample, delayed);
+            tailBuffer.setSample(channel, sample, delayed);
+        }
+
+        predelayWritePosition = (predelayWritePosition + 1) % predelayBufferLength;
+    }
+
+    juce::Reverb::Parameters earlyParameters;
+    earlyParameters.roomSize = juce::jlimit(0.12f, 0.48f, 0.14f + reverbState.size * 0.26f + reverbState.erTail * 0.05f);
+    earlyParameters.damping = juce::jlimit(0.45f, 0.92f, 0.58f + reverbState.size * 0.15f + reverbState.mix * 0.10f);
+    earlyParameters.wetLevel = 1.0f;
+    earlyParameters.dryLevel = 0.0f;
+    earlyParameters.width = juce::jlimit(0.20f, 0.75f, 0.30f + reverbState.size * 0.22f);
+    earlyParameters.freezeMode = 0.0f;
+
+    juce::Reverb::Parameters tailParameters;
+    tailParameters.roomSize = juce::jlimit(0.24f, 0.78f, 0.26f + reverbState.size * 0.44f + reverbState.erTail * 0.08f);
+    tailParameters.damping = juce::jlimit(0.52f, 0.97f, 0.62f + reverbState.size * 0.18f + reverbState.mix * 0.12f);
+    tailParameters.wetLevel = 1.0f;
+    tailParameters.dryLevel = 0.0f;
+    tailParameters.width = juce::jlimit(0.35f, 0.92f, 0.48f + reverbState.size * 0.24f);
+    tailParameters.freezeMode = 0.0f;
+
+    earlyReverb.setParameters(earlyParameters);
+    tailReverb.setParameters(tailParameters);
+
+    if (channels >= 2)
+    {
+        earlyReverb.processStereo(earlyBuffer.getWritePointer(0), earlyBuffer.getWritePointer(1), samples);
+        tailReverb.processStereo(tailBuffer.getWritePointer(0), tailBuffer.getWritePointer(1), samples);
+    }
+    else
+    {
+        earlyReverb.processMono(earlyBuffer.getWritePointer(0), samples);
+        tailReverb.processMono(tailBuffer.getWritePointer(0), samples);
+    }
+
+    const float macro = juce::jlimit(0.0f, 1.0f, reverbState.erTail);
+    const float earlyWeight = std::cos(macro * juce::MathConstants<float>::pi * 0.5f);
+    const float tailWeight = std::sin(macro * juce::MathConstants<float>::pi * 0.5f);
+    const float earlyTrim = 0.64f + (1.0f - reverbState.size) * 0.08f;
+    const float tailTrim = 0.56f + reverbState.size * 0.12f + macro * 0.08f;
+    const float highPassCutoff = juce::jlimit(95.0f, 220.0f, 115.0f + (1.0f - macro) * 65.0f + reverbState.size * 20.0f);
+    const float lowPassCutoff = juce::jlimit(3600.0f,
+                                             12000.0f,
+                                             10400.0f - reverbState.size * 2600.0f - reverbState.mix * 1700.0f - macro * 900.0f);
+    const float highPassCoeff = std::exp(-juce::MathConstants<float>::twoPi * highPassCutoff / static_cast<float>(sampleRate));
+    const float lowPassCoeff = std::exp(-juce::MathConstants<float>::twoPi * lowPassCutoff / static_cast<float>(sampleRate));
+    const float dryGain = std::cos(reverbState.mix * juce::MathConstants<float>::pi * 0.5f);
+    const float wetGain = std::sin(reverbState.mix * juce::MathConstants<float>::pi * 0.5f);
+
+    for (int channel = 0; channel < channels; ++channel)
+    {
+        for (int sample = 0; sample < samples; ++sample)
+        {
+            const float wet = earlyBuffer.getSample(channel, sample) * earlyWeight * earlyTrim
+                + tailBuffer.getSample(channel, sample) * tailWeight * tailTrim;
+            const float filteredWet = processWetSample(wet, channel, highPassCoeff, lowPassCoeff);
+            const float dry = dryBuffer.getSample(channel, sample);
+            buffer.setSample(channel, sample, dry * dryGain + filteredWet * wetGain);
+        }
+    }
+}
+
+void BoomBapGeneratorAudioProcessor::DrumStereoFieldBlock::prepare(const juce::dsp::ProcessSpec& spec)
+{
+    sampleRate = spec.sampleRate > 1000.0 ? spec.sampleRate : 44100.0;
+    reset();
+}
+
+void BoomBapGeneratorAudioProcessor::DrumStereoFieldBlock::reset()
+{
+    lowSideState = 0.0f;
+    airSideState = 0.0f;
+}
+
+void BoomBapGeneratorAudioProcessor::DrumStereoFieldBlock::process(juce::AudioBuffer<float>& buffer,
+                                                                    const SoundLayerState& state)
+{
+    if (buffer.getNumSamples() <= 0 || buffer.getNumChannels() < 2)
+        return;
+
+    auto stereoState = state;
+    sanitizeStereoFieldSettings(stereoState);
+    if (!isStereoFieldAudiblyActive(stereoState))
+        return;
+
+    const float width = stereoState.width;
+    const float focus = stereoState.stereoFieldFocus;
+    const float edge = stereoState.stereoFieldEdge;
+    const float lowCenterProtect = stereoState.stereoFieldLowCenterProtect;
+    const float airSpread = stereoState.stereoFieldAirSpread;
+    const bool monoSafe = stereoState.stereoFieldMonoSafe;
+
+    const float widthExcess = juce::jmax(0.0f, width - 1.0f);
+    const float lowCutoff = juce::jlimit(120.0f, 260.0f, 140.0f + (1.0f - lowCenterProtect) * 120.0f);
+    const float airCutoff = juce::jlimit(2600.0f,
+                                         9000.0f,
+                                         3400.0f + airSpread * 2400.0f + widthExcess * 1200.0f + edge * 600.0f);
+    const float lowCoeff = std::exp(-juce::MathConstants<float>::twoPi * lowCutoff / static_cast<float>(sampleRate));
+    const float airCoeff = std::exp(-juce::MathConstants<float>::twoPi * airCutoff / static_cast<float>(sampleRate));
+
+    float focusMidGain = 0.88f + focus * 0.28f;
+    float focusSideGain = 1.14f - focus * 0.28f;
+    float lowSideGain = width * focusSideGain * (1.0f - lowCenterProtect * widthExcess * 0.85f);
+    float midSideGain = width * focusSideGain * (1.0f + edge * 0.12f);
+    float airSideGain = width * focusSideGain * (1.0f + airSpread * (0.35f + widthExcess * 0.45f)) * (1.0f + edge * 0.55f);
+
+    lowSideGain = juce::jmax(0.0f, lowSideGain);
+    midSideGain = juce::jmax(0.0f, midSideGain);
+    airSideGain = juce::jmax(0.0f, airSideGain);
+
+    if (monoSafe)
+    {
+        lowSideGain = juce::jmin(lowSideGain, 1.10f);
+        midSideGain = juce::jmin(midSideGain, 1.35f);
+        airSideGain = juce::jmin(airSideGain, 1.55f);
+    }
+
+    const float postTrim = 1.0f / (1.0f + widthExcess * 0.12f + juce::jmax(0.0f, focus - 0.5f) * 0.10f + edge * 0.06f);
+    const float panLeft = std::cos((stereoState.pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+    const float panRight = std::sin((stereoState.pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+
+    auto* left = buffer.getWritePointer(0);
+    auto* right = buffer.getWritePointer(1);
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        const float mid = 0.5f * (left[sample] + right[sample]);
+        const float side = 0.5f * (left[sample] - right[sample]);
+
+        lowSideState = side * (1.0f - lowCoeff) + lowSideState * lowCoeff;
+        airSideState = side * (1.0f - airCoeff) + airSideState * airCoeff;
+
+        const float lowSide = lowSideState;
+        const float airSide = side - airSideState;
+        const float midSide = airSideState - lowSide;
+
+        float shapedAirSide = airSide * airSideGain;
+        if (edge > 0.001f)
+        {
+            const float edgeDrive = 1.0f + edge * 1.15f;
+            shapedAirSide = std::tanh(shapedAirSide * edgeDrive) / (0.92f + edge * 0.38f);
+        }
+
+        float processedMid = mid * focusMidGain;
+        float processedSide = lowSide * lowSideGain + midSide * midSideGain + shapedAirSide;
+
+        if (monoSafe)
+        {
+            const float softRange = 0.95f + widthExcess * 0.35f + edge * 0.20f;
+            processedSide = softRange * std::tanh(processedSide / juce::jmax(0.25f, softRange));
+            const float maxRatio = 1.15f + widthExcess * 0.35f + airSpread * 0.15f;
+            const float sideLimit = std::abs(processedMid) * maxRatio + 0.05f;
+            processedSide = juce::jlimit(-sideLimit, sideLimit, processedSide);
+        }
+
+        const float outputLeft = (processedMid + processedSide) * postTrim * panLeft;
+        const float outputRight = (processedMid - processedSide) * postTrim * panRight;
+
+        left[sample] = outputLeft;
+        right[sample] = outputRight;
+    }
+}
+
+void BoomBapGeneratorAudioProcessor::DrumTransientBlock::prepare(const juce::dsp::ProcessSpec& spec)
+{
+    sampleRate = spec.sampleRate > 1000.0 ? spec.sampleRate : 44100.0;
+    reset();
+}
+
+void BoomBapGeneratorAudioProcessor::DrumTransientBlock::reset()
+{
+    fastEnvelope = 0.0f;
+    slowEnvelope = 0.0f;
+    sustainEnvelope = 0.0f;
+}
+
+void BoomBapGeneratorAudioProcessor::DrumTransientBlock::process(juce::AudioBuffer<float>& buffer,
+                                                                  const DrumTransientState& state)
+{
+    if (buffer.getNumSamples() <= 0 || buffer.getNumChannels() <= 0)
+        return;
+
+    auto transientState = state;
+    sanitizeDrumTransientState(transientState);
+    if (!isDrumTransientAudiblyActive(transientState))
+        return;
+
+    const bool smooth = transientState.smooth;
+    const bool limit = transientState.limit;
+    const float attackAmount = juce::jlimit(0.0f, 1.0f, transientState.attack);
+    const float sustainAmount = transientState.sustain >= 0.25f
+        ? juce::jlimit(0.0f, 1.0f, (transientState.sustain - 0.25f) / 0.75f)
+        : -juce::jlimit(0.0f, 1.0f, (0.25f - transientState.sustain) / 0.25f);
+    const float outputGain = juce::Decibels::decibelsToGain(transientState.gainDb);
+
+    const float fastAttackCoeff = envelopeTimeCoefficient(sampleRate, smooth ? 1.8f : 0.45f);
+    const float fastReleaseCoeff = envelopeTimeCoefficient(sampleRate, smooth ? 16.0f : 7.5f);
+    const float slowAttackCoeff = envelopeTimeCoefficient(sampleRate, smooth ? 12.0f : 8.0f);
+    const float slowReleaseCoeff = envelopeTimeCoefficient(sampleRate, smooth ? 110.0f : 82.0f);
+    const float sustainAttackCoeff = envelopeTimeCoefficient(sampleRate, smooth ? 28.0f : 18.0f);
+    const float sustainReleaseCoeff = envelopeTimeCoefficient(sampleRate, smooth ? 240.0f : 170.0f);
+    const float attackDepth = smooth ? 1.25f : 1.95f;
+    const float sustainBoostDepth = smooth ? 1.05f : 1.55f;
+    const float sustainCutDepth = smooth ? 0.52f : 0.74f;
+    const float ceiling = smooth ? 0.96f : 0.93f;
+    const float limiterDrive = 1.15f
+        + attackAmount * (smooth ? 0.65f : 1.0f)
+        + juce::jmax(0.0f, sustainAmount) * 0.45f
+        + juce::jmax(0.0f, transientState.gainDb) * 0.055f;
+
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        float detector = 0.0f;
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            detector += std::abs(buffer.getSample(channel, sample));
+        detector /= static_cast<float>(buffer.getNumChannels());
+
+        fastEnvelope = followEnvelope(detector, fastEnvelope, fastAttackCoeff, fastReleaseCoeff);
+        slowEnvelope = followEnvelope(detector, slowEnvelope, slowAttackCoeff, slowReleaseCoeff);
+        sustainEnvelope = followEnvelope(detector, sustainEnvelope, sustainAttackCoeff, sustainReleaseCoeff);
+
+        const float attackDelta = juce::jmax(0.0f, fastEnvelope - slowEnvelope);
+        const float sustainDelta = juce::jmax(0.0f, sustainEnvelope - fastEnvelope);
+        float attackNormalized = attackDelta / (slowEnvelope + 0.03f);
+        float sustainNormalized = sustainDelta / (sustainEnvelope + 0.03f);
+
+        attackNormalized = std::tanh(attackNormalized * (smooth ? 0.95f : 1.28f));
+        sustainNormalized = std::tanh(sustainNormalized * (smooth ? 0.88f : 1.12f));
+
+        float transientGain = 1.0f + attackAmount * attackDepth * attackNormalized;
+        if (sustainAmount >= 0.0f)
+            transientGain *= 1.0f + sustainAmount * sustainBoostDepth * sustainNormalized;
+        else
+            transientGain *= 1.0f + sustainAmount * sustainCutDepth * sustainNormalized;
+
+        transientGain *= 1.0f / (1.0f + attackAmount * 0.16f + juce::jmax(0.0f, sustainAmount) * 0.10f);
+        transientGain = juce::jlimit(0.32f, 4.0f, transientGain * outputGain);
+
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        {
+            float shaped = buffer.getSample(channel, sample) * transientGain;
+            if (limit)
+                shaped = softLimitSample(shaped, ceiling, limiterDrive);
+
+            buffer.setSample(channel, sample, shaped);
+        }
+    }
+}
+
+SoundLayerState BoomBapGeneratorAudioProcessor::sanitizeSoundLayer(const SoundLayerState& state) const
+{
+    auto sanitized = state;
+    sanitized.pan = juce::jlimit(-1.0f, 1.0f, sanitized.pan);
+    sanitized.width = juce::jlimit(0.0f, 2.0f, sanitized.width);
+    sanitizeStereoFieldSettings(sanitized);
+    sanitized.eq.selectedBand = clampEqBandIndex(sanitized.eq.selectedBand);
+    for (auto& band : sanitized.eq.bands)
+    {
+        band.freqHz = juce::jlimit(20.0f, 20000.0f, band.freqHz);
+        band.gainDb = juce::jlimit(-24.0f, 24.0f, band.gainDb);
+        band.q = juce::jlimit(0.1f, 10.0f, band.q);
+        band.shape = static_cast<EqBandShape>(juce::jlimit(0, 2, static_cast<int>(band.shape)));
+    }
+    sanitized.compression = juce::jlimit(0.0f, 1.0f, sanitized.compression);
+    sanitizeMonstaFxState(sanitized.monstaFx);
+    sanitizeDrumReverbState(sanitized.drumReverb);
+    sanitizeDrumTransientState(sanitized.drumTransient);
+    sanitized.reverb = juce::jlimit(0.0f, 1.0f, sanitized.reverb);
+    sanitized.gate = juce::jlimit(0.0f, 1.0f, sanitized.gate);
+    sanitized.transient = juce::jlimit(0.0f, 1.0f, sanitized.transient);
+    sanitized.drive = juce::jlimit(0.0f, 1.0f, sanitized.drive);
+    reconcileLegacySoundLayerState(sanitized);
+    return sanitized;
+}
+
+void BoomBapGeneratorAudioProcessor::prepareSoundFxRuntimeState(SoundFxRuntimeState& state)
+{
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = currentSampleRate > 1000.0 ? currentSampleRate : 44100.0;
+    spec.maximumBlockSize = static_cast<juce::uint32>(getBlockSize() > 0 ? getBlockSize() : 1024);
+    spec.numChannels = static_cast<juce::uint32>(juce::jmax(1, getTotalNumOutputChannels()));
+
+    for (auto& eqBand : state.eqBands)
+    {
+        eqBand.reset();
+        eqBand.prepare(spec);
+        const auto neutralCoefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(spec.sampleRate, 1000.0f, 1.0f, 1.0f);
+        if (eqBand.state == nullptr)
+            eqBand.state = neutralCoefficients;
+        else
+            *eqBand.state = *neutralCoefficients;
+    }
+
+    state.lowPass.reset();
+    state.lowPass.prepare(spec);
+    state.lowPass.setType(juce::dsp::StateVariableTPTFilterType::lowpass);
+    state.lowPass.setCutoffFrequency(18000.0f);
+
+    state.highPass.reset();
+    state.highPass.prepare(spec);
+    state.highPass.setType(juce::dsp::StateVariableTPTFilterType::highpass);
+    state.highPass.setCutoffFrequency(20.0f);
+
+    state.compressor.reset();
+    state.compressor.prepare(spec);
+    state.monstaFx.prepare(spec);
+    state.reverb.prepare(spec);
+    state.transient.prepare(spec);
+    state.stereoField.prepare(spec);
+    resetSoundFxRuntimeState(state);
+}
+
+void BoomBapGeneratorAudioProcessor::resetSoundFxRuntimeState(SoundFxRuntimeState& state)
+{
+    for (auto& eqBand : state.eqBands)
+        eqBand.reset();
+    state.lowPass.reset();
+    state.highPass.reset();
+    state.compressor.reset();
+    state.monstaFx.reset();
+    state.reverb.reset();
+    state.transient.reset();
+    state.stereoField.reset();
+    state.gateEnvelope = 0.0f;
+}
+
+void BoomBapGeneratorAudioProcessor::applySoundLayerFx(juce::AudioBuffer<float>& buffer,
+                                                       const SoundLayerState& state,
+                                                       SoundFxRuntimeState& runtime,
+                                                       const MonstaFxTimelineContext& monstaTimeline)
+{
+    if (buffer.getNumSamples() <= 0 || buffer.getNumChannels() <= 0)
+        return;
+
+    const auto sanitized = sanitizeSoundLayer(state);
+    const bool hasEq = soundLayerHasActiveEq(sanitized);
+    const bool hasCompressor = isCompressorAudiblyActive(sanitized.compressor);
+    const bool hasMonstaFx = isMonstaFxAudiblyActive(sanitized.monstaFx);
+    const bool hasReverb = isDrumReverbAudiblyActive(sanitized.drumReverb);
+    const bool hasTransient = isDrumTransientAudiblyActive(sanitized.drumTransient);
+    const bool hasStereoField = soundLayerHasActiveStereoField(sanitized);
+    if (!hasEq && !hasCompressor && !hasMonstaFx && !hasReverb && !hasTransient && !hasStereoField)
+        return;
+
+    const bool monstaPreTransient = sanitized.monstaFx.order <= 0;
+
+    const auto applyEq = [&]()
+    {
+        juce::dsp::AudioBlock<float> block(buffer);
+        for (int bandIndex = 0; bandIndex < kEqBandCount; ++bandIndex)
+        {
+            const auto& band = sanitized.eq.bands[static_cast<size_t>(bandIndex)];
+            if (!band.enabled)
+                continue;
+
+            juce::dsp::IIR::Coefficients<float>::Ptr coefficients;
+            switch (band.shape)
+            {
+                case EqBandShape::LowCut:
+                    coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(currentSampleRate, band.freqHz, band.q);
+                    break;
+                case EqBandShape::HighCut:
+                    coefficients = juce::dsp::IIR::Coefficients<float>::makeLowPass(currentSampleRate, band.freqHz, band.q);
+                    break;
+                case EqBandShape::Bell:
+                default:
+                    coefficients = juce::dsp::IIR::Coefficients<float>::makePeakFilter(currentSampleRate,
+                                                                                       band.freqHz,
+                                                                                       band.q,
+                                                                                       juce::Decibels::decibelsToGain(band.gainDb));
+                    break;
+            }
+
+            auto& eqBand = runtime.eqBands[static_cast<size_t>(bandIndex)];
+            if (eqBand.state == nullptr)
+                eqBand.state = coefficients;
+            else
+                *eqBand.state = *coefficients;
+            juce::dsp::ProcessContextReplacing<float> context(block);
+            eqBand.process(context);
+        }
+    };
+
+    if (hasCompressor && sanitized.compressor.order <= 1)
+        runtime.compressor.process(buffer, sanitized.compressor);
+
+    if (hasEq)
+        applyEq();
+
+    if (hasCompressor && sanitized.compressor.order > 1)
+        runtime.compressor.process(buffer, sanitized.compressor);
+
+    if (hasMonstaFx && monstaPreTransient)
+        runtime.monstaFx.process(buffer, sanitized.monstaFx, monstaTimeline);
+
+    if (hasTransient)
+        runtime.transient.process(buffer, sanitized.drumTransient);
+
+    if (hasMonstaFx && !monstaPreTransient)
+        runtime.monstaFx.process(buffer, sanitized.monstaFx, monstaTimeline);
+
+    if (hasReverb)
+        runtime.reverb.process(buffer, sanitized.drumReverb);
+
+    if (hasStereoField)
+        runtime.stereoField.process(buffer, sanitized);
+}
+
 void BoomBapGeneratorAudioProcessor::applyMasterFx(juce::AudioBuffer<float>& buffer)
 {
     const auto* volParam = apvts.getRawParameterValue(ParamIds::masterVolume);
-    const auto* compParam = apvts.getRawParameterValue(ParamIds::masterCompressor);
-    const auto* lofiParam = apvts.getRawParameterValue(ParamIds::masterLofi);
 
     const float masterVol = volParam != nullptr ? volParam->load() : 1.0f;
-    const float compAmount = compParam != nullptr ? compParam->load() : 0.0f;
-    const float lofiAmount = lofiParam != nullptr ? lofiParam->load() : 0.0f;
 
     buffer.applyGain(juce::jlimit(0.0f, 1.5f, masterVol));
-
-    if (compAmount > 0.001f)
-    {
-        juce::AudioBuffer<float> dry;
-        dry.makeCopyOf(buffer, true);
-        previewCompressor.setThreshold(juce::jmap(compAmount, -9.0f, -26.0f));
-        previewCompressor.setRatio(juce::jmap(compAmount, 1.4f, 5.5f));
-
-        juce::dsp::AudioBlock<float> block(buffer);
-        juce::dsp::ProcessContextReplacing<float> context(block);
-        previewCompressor.process(context);
-
-        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-        {
-            const float* dryData = dry.getReadPointer(ch);
-            float* wetData = buffer.getWritePointer(ch);
-            for (int i = 0; i < buffer.getNumSamples(); ++i)
-                wetData[i] = juce::jmap(compAmount, dryData[i], wetData[i]);
-        }
-    }
-
-    if (lofiAmount > 0.001f)
-    {
-        const int holdSamples = 1 + static_cast<int>(lofiAmount * 14.0f);
-        const int bitDepth = juce::jlimit(6, 16, 16 - static_cast<int>(lofiAmount * 9.0f));
-        const float levels = static_cast<float>(1 << (bitDepth - 1));
-
-        for (int i = 0; i < buffer.getNumSamples(); ++i)
-        {
-            if (lofiDownsampleCounter <= 0)
-            {
-                for (int ch = 0; ch < juce::jmin(2, buffer.getNumChannels()); ++ch)
-                {
-                    const float s = buffer.getSample(ch, i);
-                    lofiHeldSample[static_cast<size_t>(ch)] = std::round(s * levels) / levels;
-                }
-                lofiDownsampleCounter = holdSamples;
-            }
-
-            --lofiDownsampleCounter;
-            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
-            {
-                const float dry = buffer.getSample(ch, i);
-                const float wet = lofiHeldSample[static_cast<size_t>(juce::jmin(ch, 1))];
-                buffer.setSample(ch, i, juce::jmap(lofiAmount, dry, wet));
-            }
-        }
-
-        previewLofiFilter.setCutoffFrequency(juce::jmap(lofiAmount, 18000.0f, 3600.0f));
-        juce::dsp::AudioBlock<float> block(buffer);
-        juce::dsp::ProcessContextReplacing<float> context(block);
-        previewLofiFilter.process(context);
-    }
 }
 
 int BoomBapGeneratorAudioProcessor::getPatternLengthSamples() const
@@ -1779,6 +2619,7 @@ void BoomBapGeneratorAudioProcessor::restorePatternProjectFromState(const juce::
     // APVTS remains the parameter source of truth after restore.
     restored.params = buildParamsFromState(lastTransport);
     PatternProjectSerialization::validate(restored);
+    PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(restored, restored.params);
     project = std::move(restored);
 }
 } // namespace bbg

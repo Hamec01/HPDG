@@ -16,6 +16,7 @@ namespace
 constexpr auto kPatternProjectNode = "PATTERN_PROJECT";
 constexpr auto kTrackNode = "TRACK";
 constexpr auto kNoteNode = "NOTE";
+constexpr auto kBaseNoteNode = "BASE_NOTE";
 constexpr auto kRuntimeLaneProfileNode = "RUNTIME_LANE_PROFILE";
 constexpr auto kRuntimeLaneNode = "RUNTIME_LANE";
 constexpr auto kRuntimeLaneOrderNode = "RUNTIME_LANE_ORDER";
@@ -53,28 +54,344 @@ juce::String safeString(const juce::ValueTree& node, const juce::Identifier& key
     return v.isVoid() ? fallback : v.toString();
 }
 
+juce::ValueTree serializeNoteNode(const char* nodeType, const NoteEvent& note)
+{
+    juce::ValueTree node(nodeType);
+    node.setProperty("pitch", note.pitch, nullptr);
+    node.setProperty("step", note.step, nullptr);
+    node.setProperty("length", note.length, nullptr);
+    node.setProperty("velocity", note.velocity, nullptr);
+    node.setProperty("micro_offset", note.microOffset, nullptr);
+    node.setProperty("is_ghost", note.isGhost, nullptr);
+    node.setProperty("semantic_role", note.semanticRole, nullptr);
+    node.setProperty("is_slide", note.isSlide, nullptr);
+    node.setProperty("is_legato", note.isLegato, nullptr);
+    node.setProperty("glide_to_next", note.glideToNext, nullptr);
+    return node;
+}
+
+void sanitizeGeneratorParams(GeneratorParams& params)
+{
+    params.bpm = std::clamp(params.bpm, 40.0f, 240.0f);
+    params.swingPercent = std::clamp(params.swingPercent, 50.0f, 75.0f);
+    params.velocityAmount = std::clamp(params.velocityAmount, 0.0f, 1.0f);
+    params.timingAmount = std::clamp(params.timingAmount, 0.0f, 1.0f);
+    params.humanizeAmount = std::clamp(params.humanizeAmount, 0.0f, 1.0f);
+    params.densityAmount = std::clamp(params.densityAmount, 0.0f, 1.0f);
+    params.bars = juce::jlimit(1, 16, params.bars);
+    params.tempoInterpretationMode = std::max(0, params.tempoInterpretationMode);
+    params.boombapSubstyle = std::max(0, params.boombapSubstyle);
+    params.rapSubstyle = std::max(0, params.rapSubstyle);
+    params.trapSubstyle = std::max(0, params.trapSubstyle);
+    params.drillSubstyle = std::max(0, params.drillSubstyle);
+    params.genre = static_cast<GenreType>(juce::jlimit(0, 3, static_cast<int>(params.genre)));
+}
+
+void serializePerformanceBaseParams(juce::ValueTree& node, const TrackState& track)
+{
+    if (!track.hasPerformanceBaseParams)
+        return;
+
+    const auto& params = track.performanceBaseParams;
+    node.setProperty("performance_base_params_present", true, nullptr);
+    node.setProperty("performance_base_bpm", params.bpm, nullptr);
+    node.setProperty("performance_base_swing_percent", params.swingPercent, nullptr);
+    node.setProperty("performance_base_velocity_amount", params.velocityAmount, nullptr);
+    node.setProperty("performance_base_timing_amount", params.timingAmount, nullptr);
+    node.setProperty("performance_base_humanize_amount", params.humanizeAmount, nullptr);
+    node.setProperty("performance_base_density_amount", params.densityAmount, nullptr);
+    node.setProperty("performance_base_bars", params.bars, nullptr);
+    node.setProperty("performance_base_tempo_interpretation", params.tempoInterpretationMode, nullptr);
+    node.setProperty("performance_base_genre", static_cast<int>(params.genre), nullptr);
+    node.setProperty("performance_base_boombap_substyle", params.boombapSubstyle, nullptr);
+    node.setProperty("performance_base_rap_substyle", params.rapSubstyle, nullptr);
+    node.setProperty("performance_base_trap_substyle", params.trapSubstyle, nullptr);
+    node.setProperty("performance_base_drill_substyle", params.drillSubstyle, nullptr);
+}
+
+void deserializePerformanceBaseParams(const juce::ValueTree& node, TrackState& track)
+{
+    track.hasPerformanceBaseParams = safeBool(node, "performance_base_params_present", false);
+    if (!track.hasPerformanceBaseParams)
+        return;
+
+    auto& params = track.performanceBaseParams;
+    params.bpm = safeFloat(node, "performance_base_bpm", params.bpm);
+    params.swingPercent = safeFloat(node, "performance_base_swing_percent", params.swingPercent);
+    params.velocityAmount = safeFloat(node, "performance_base_velocity_amount", params.velocityAmount);
+    params.timingAmount = safeFloat(node, "performance_base_timing_amount", params.timingAmount);
+    params.humanizeAmount = safeFloat(node, "performance_base_humanize_amount", params.humanizeAmount);
+    params.densityAmount = safeFloat(node, "performance_base_density_amount", params.densityAmount);
+    params.bars = safeInt(node, "performance_base_bars", params.bars);
+    params.tempoInterpretationMode = safeInt(node, "performance_base_tempo_interpretation", params.tempoInterpretationMode);
+    params.genre = static_cast<GenreType>(safeInt(node, "performance_base_genre", static_cast<int>(params.genre)));
+    params.boombapSubstyle = safeInt(node, "performance_base_boombap_substyle", params.boombapSubstyle);
+    params.rapSubstyle = safeInt(node, "performance_base_rap_substyle", params.rapSubstyle);
+    params.trapSubstyle = safeInt(node, "performance_base_trap_substyle", params.trapSubstyle);
+    params.drillSubstyle = safeInt(node, "performance_base_drill_substyle", params.drillSubstyle);
+    sanitizeGeneratorParams(params);
+}
+
+void sanitizeLegacyNotes(std::vector<NoteEvent>& notes, TrackType trackType, int maxStep)
+{
+    const auto* info = TrackRegistry::find(trackType);
+
+    for (auto& note : notes)
+    {
+        note.pitch = std::clamp(note.pitch, 0, 127);
+        if (note.pitch == 0 && info != nullptr)
+            note.pitch = info->defaultMidiNote;
+
+        note.step = std::clamp(note.step, 0, maxStep);
+        note.length = std::clamp(note.length, 1, 64);
+        note.velocity = std::clamp(note.velocity, 1, 127);
+        note.microOffset = std::clamp(note.microOffset, -960, 960);
+        note.semanticRole = note.semanticRole.trim();
+        if (trackType != TrackType::Sub808)
+        {
+            note.isSlide = false;
+            note.isLegato = false;
+            note.glideToNext = false;
+        }
+    }
+
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    {
+        if (a.step != b.step)
+            return a.step < b.step;
+        return a.pitch < b.pitch;
+    });
+}
+
+void sanitizeSub808Notes(std::vector<Sub808NoteEvent>& notes, int maxStep)
+{
+    for (auto& note : notes)
+    {
+        note.pitch = std::clamp(note.pitch, 0, 127);
+        note.step = std::clamp(note.step, 0, maxStep);
+        note.length = std::clamp(note.length, 1, 64);
+        note.velocity = std::clamp(note.velocity, 1, 127);
+        note.microOffset = std::clamp(note.microOffset, -960, 960);
+        note.semanticRole = note.semanticRole.trim();
+    }
+
+    std::sort(notes.begin(), notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
+    {
+        if (a.step != b.step)
+            return a.step < b.step;
+        return a.pitch < b.pitch;
+    });
+}
+
 void serializeSoundLayer(juce::ValueTree& node, const SoundLayerState& sound, const juce::String& prefix)
 {
-    node.setProperty(prefix + "_pan", sound.pan, nullptr);
-    node.setProperty(prefix + "_width", sound.width, nullptr);
-    node.setProperty(prefix + "_eq_tone", sound.eqTone, nullptr);
-    node.setProperty(prefix + "_compression", sound.compression, nullptr);
-    node.setProperty(prefix + "_reverb", sound.reverb, nullptr);
-    node.setProperty(prefix + "_gate", sound.gate, nullptr);
-    node.setProperty(prefix + "_transient", sound.transient, nullptr);
-    node.setProperty(prefix + "_drive", sound.drive, nullptr);
+    auto serializedSound = sound;
+    reconcileLegacySoundLayerState(serializedSound);
+
+    node.setProperty(prefix + "_pan", serializedSound.pan, nullptr);
+    node.setProperty(prefix + "_width", serializedSound.width, nullptr);
+    node.setProperty(prefix + "_stereo_field_enabled", serializedSound.stereoFieldEnabled, nullptr);
+    node.setProperty(prefix + "_stereo_field_order", serializedSound.stereoFieldOrder, nullptr);
+    node.setProperty(prefix + "_stereo_field_focus", serializedSound.stereoFieldFocus, nullptr);
+    node.setProperty(prefix + "_stereo_field_edge", serializedSound.stereoFieldEdge, nullptr);
+    node.setProperty(prefix + "_stereo_field_mono_safe", serializedSound.stereoFieldMonoSafe, nullptr);
+    node.setProperty(prefix + "_stereo_field_low_center_protect", serializedSound.stereoFieldLowCenterProtect, nullptr);
+    node.setProperty(prefix + "_stereo_field_air_spread", serializedSound.stereoFieldAirSpread, nullptr);
+    node.setProperty(prefix + "_eq_tone", serializedSound.eqTone, nullptr);
+    node.setProperty(prefix + "_eq_selected_band", serializedSound.eq.selectedBand, nullptr);
+    for (int bandIndex = 0; bandIndex < kEqBandCount; ++bandIndex)
+    {
+        const auto& band = serializedSound.eq.bands[static_cast<size_t>(bandIndex)];
+        const auto bandPrefix = prefix + "_eq_band_" + juce::String(bandIndex);
+        node.setProperty(bandPrefix + "_enabled", band.enabled, nullptr);
+        node.setProperty(bandPrefix + "_freq_hz", band.freqHz, nullptr);
+        node.setProperty(bandPrefix + "_gain_db", band.gainDb, nullptr);
+        node.setProperty(bandPrefix + "_q", band.q, nullptr);
+        node.setProperty(bandPrefix + "_shape", static_cast<int>(band.shape), nullptr);
+    }
+
+    node.setProperty(prefix + "_compressor_enabled", serializedSound.compressor.enabled, nullptr);
+    node.setProperty(prefix + "_compressor_order", serializedSound.compressor.order, nullptr);
+    node.setProperty(prefix + "_compressor_ratio", serializedSound.compressor.ratio, nullptr);
+    node.setProperty(prefix + "_compressor_threshold_db", serializedSound.compressor.thresholdDb, nullptr);
+    node.setProperty(prefix + "_compressor_mix", serializedSound.compressor.mix, nullptr);
+    node.setProperty(prefix + "_compressor_attack_ms", serializedSound.compressor.attackMs, nullptr);
+    node.setProperty(prefix + "_compressor_release_ms", serializedSound.compressor.releaseMs, nullptr);
+    node.setProperty(prefix + "_compressor_saturation", serializedSound.compressor.saturation, nullptr);
+    node.setProperty(prefix + "_compressor_input_trim_db", serializedSound.compressor.inputTrimDb, nullptr);
+    node.setProperty(prefix + "_compressor_output_trim_db", serializedSound.compressor.outputTrimDb, nullptr);
+    node.setProperty(prefix + "_compressor_auto_makeup", serializedSound.compressor.autoMakeup, nullptr);
+    node.setProperty(prefix + "_compressor_character", static_cast<int>(serializedSound.compressor.character), nullptr);
+    node.setProperty(prefix + "_compressor_saturation_mode", static_cast<int>(serializedSound.compressor.saturationMode), nullptr);
+
+    node.setProperty(prefix + "_drum_reverb_enabled", serializedSound.drumReverb.enabled, nullptr);
+    node.setProperty(prefix + "_drum_reverb_mix", serializedSound.drumReverb.mix, nullptr);
+    node.setProperty(prefix + "_drum_reverb_predelay_ms", serializedSound.drumReverb.predelayMs, nullptr);
+    node.setProperty(prefix + "_drum_reverb_size", serializedSound.drumReverb.size, nullptr);
+    node.setProperty(prefix + "_drum_reverb_er_tail", serializedSound.drumReverb.erTail, nullptr);
+
+    node.setProperty(prefix + "_drum_transient_attack", serializedSound.drumTransient.attack, nullptr);
+    node.setProperty(prefix + "_drum_transient_sustain", serializedSound.drumTransient.sustain, nullptr);
+    node.setProperty(prefix + "_drum_transient_gain_db", serializedSound.drumTransient.gainDb, nullptr);
+    node.setProperty(prefix + "_drum_transient_smooth", serializedSound.drumTransient.smooth, nullptr);
+    node.setProperty(prefix + "_drum_transient_limit", serializedSound.drumTransient.limit, nullptr);
+
+    node.setProperty(prefix + "_monsta_fx_enabled", serializedSound.monstaFx.enabled, nullptr);
+    node.setProperty(prefix + "_monsta_fx_order", serializedSound.monstaFx.order, nullptr);
+    node.setProperty(prefix + "_monsta_fx_dry", serializedSound.monstaFx.dry, nullptr);
+    node.setProperty(prefix + "_monsta_fx_wet", serializedSound.monstaFx.wet, nullptr);
+    node.setProperty(prefix + "_monsta_fx_chaos_seed", static_cast<int64_t>(serializedSound.monstaFx.chaosSeed), nullptr);
+
+    node.setProperty(prefix + "_compression", serializedSound.compression, nullptr);
+    node.setProperty(prefix + "_reverb", serializedSound.reverb, nullptr);
+    node.setProperty(prefix + "_gate", serializedSound.gate, nullptr);
+    node.setProperty(prefix + "_transient", serializedSound.transient, nullptr);
+    node.setProperty(prefix + "_drive", serializedSound.drive, nullptr);
 }
 
 void deserializeSoundLayer(const juce::ValueTree& node, SoundLayerState& sound, const juce::String& prefix)
 {
     sound.pan = safeFloat(node, prefix + "_pan", sound.pan);
     sound.width = safeFloat(node, prefix + "_width", sound.width);
+    sound.stereoFieldEnabled = safeBool(node, prefix + "_stereo_field_enabled", sound.stereoFieldEnabled);
+    sound.stereoFieldOrder = safeInt(node, prefix + "_stereo_field_order", sound.stereoFieldOrder);
+    sound.stereoFieldFocus = safeFloat(node, prefix + "_stereo_field_focus", sound.stereoFieldFocus);
+    sound.stereoFieldEdge = safeFloat(node, prefix + "_stereo_field_edge", sound.stereoFieldEdge);
+    sound.stereoFieldMonoSafe = safeBool(node, prefix + "_stereo_field_mono_safe", sound.stereoFieldMonoSafe);
+    sound.stereoFieldLowCenterProtect = safeFloat(node,
+                                                  prefix + "_stereo_field_low_center_protect",
+                                                  sound.stereoFieldLowCenterProtect);
+    sound.stereoFieldAirSpread = safeFloat(node, prefix + "_stereo_field_air_spread", sound.stereoFieldAirSpread);
     sound.eqTone = safeFloat(node, prefix + "_eq_tone", sound.eqTone);
-    sound.compression = safeFloat(node, prefix + "_compression", sound.compression);
-    sound.reverb = safeFloat(node, prefix + "_reverb", sound.reverb);
+    const bool hasEqState = !node.getProperty(prefix + "_eq_selected_band").isVoid()
+        || !node.getProperty(prefix + "_eq_band_0_freq_hz").isVoid();
+    sound.eq = createDefaultEqState();
+    if (hasEqState)
+    {
+        sound.eq.selectedBand = clampEqBandIndex(safeInt(node, prefix + "_eq_selected_band", sound.eq.selectedBand));
+        for (int bandIndex = 0; bandIndex < kEqBandCount; ++bandIndex)
+        {
+            auto& band = sound.eq.bands[static_cast<size_t>(bandIndex)];
+            const auto bandPrefix = prefix + "_eq_band_" + juce::String(bandIndex);
+            band.enabled = safeBool(node, bandPrefix + "_enabled", band.enabled);
+            band.freqHz = safeFloat(node, bandPrefix + "_freq_hz", band.freqHz);
+            band.gainDb = safeFloat(node, bandPrefix + "_gain_db", band.gainDb);
+            band.q = safeFloat(node, bandPrefix + "_q", band.q);
+            band.shape = static_cast<EqBandShape>(juce::jlimit(0,
+                                                               2,
+                                                               safeInt(node, bandPrefix + "_shape", static_cast<int>(band.shape))));
+        }
+        sound.eqTone = legacyEqToneFromEqState(sound.eq);
+    }
+    else
+    {
+        applyLegacyEqToneToEqState(sound.eq, sound.eqTone);
+    }
+
+    const bool hasCompressorState = !node.getProperty(prefix + "_compressor_enabled").isVoid()
+        || !node.getProperty(prefix + "_compressor_ratio").isVoid()
+        || !node.getProperty(prefix + "_compressor_threshold_db").isVoid()
+        || !node.getProperty(prefix + "_compressor_mix").isVoid();
+
+    const float legacyCompression = safeFloat(node, prefix + "_compression", sound.compression);
+    if (hasCompressorState)
+    {
+        sound.compressor = createDefaultCompressorState();
+        sound.compressor.enabled = safeBool(node, prefix + "_compressor_enabled", sound.compressor.enabled);
+        sound.compressor.order = safeInt(node, prefix + "_compressor_order", sound.compressor.order);
+        sound.compressor.ratio = safeFloat(node, prefix + "_compressor_ratio", sound.compressor.ratio);
+        sound.compressor.thresholdDb = safeFloat(node, prefix + "_compressor_threshold_db", sound.compressor.thresholdDb);
+        sound.compressor.mix = safeFloat(node, prefix + "_compressor_mix", sound.compressor.mix);
+        sound.compressor.attackMs = safeFloat(node, prefix + "_compressor_attack_ms", sound.compressor.attackMs);
+        sound.compressor.releaseMs = safeFloat(node, prefix + "_compressor_release_ms", sound.compressor.releaseMs);
+        sound.compressor.saturation = safeFloat(node, prefix + "_compressor_saturation", sound.compressor.saturation);
+        sound.compressor.inputTrimDb = safeFloat(node, prefix + "_compressor_input_trim_db", sound.compressor.inputTrimDb);
+        sound.compressor.outputTrimDb = safeFloat(node, prefix + "_compressor_output_trim_db", sound.compressor.outputTrimDb);
+        sound.compressor.autoMakeup = safeBool(node, prefix + "_compressor_auto_makeup", sound.compressor.autoMakeup);
+        sound.compressor.character = clampDrumCompressorCharacter(safeInt(node,
+                                                                         prefix + "_compressor_character",
+                                                                         static_cast<int>(sound.compressor.character)));
+        sound.compressor.saturationMode = clampDrumSaturationMode(safeInt(node,
+                                                                          prefix + "_compressor_saturation_mode",
+                                                                          static_cast<int>(sound.compressor.saturationMode)));
+    }
+    else
+    {
+        applyLegacyCompressionToCompressorState(sound.compressor, legacyCompression);
+    }
+
+    const bool hasDrumReverbState = !node.getProperty(prefix + "_drum_reverb_enabled").isVoid()
+        || !node.getProperty(prefix + "_drum_reverb_mix").isVoid()
+        || !node.getProperty(prefix + "_drum_reverb_predelay_ms").isVoid()
+        || !node.getProperty(prefix + "_drum_reverb_size").isVoid()
+        || !node.getProperty(prefix + "_drum_reverb_er_tail").isVoid();
+
+    const float legacyReverb = safeFloat(node, prefix + "_reverb", sound.reverb);
+    if (hasDrumReverbState)
+    {
+        sound.drumReverb = createDefaultDrumReverbState();
+        sound.drumReverb.enabled = safeBool(node, prefix + "_drum_reverb_enabled", sound.drumReverb.enabled);
+        sound.drumReverb.mix = safeFloat(node, prefix + "_drum_reverb_mix", sound.drumReverb.mix);
+        sound.drumReverb.predelayMs = safeFloat(node, prefix + "_drum_reverb_predelay_ms", sound.drumReverb.predelayMs);
+        sound.drumReverb.size = safeFloat(node, prefix + "_drum_reverb_size", sound.drumReverb.size);
+        sound.drumReverb.erTail = safeFloat(node, prefix + "_drum_reverb_er_tail", sound.drumReverb.erTail);
+        sanitizeDrumReverbState(sound.drumReverb);
+        sound.reverb = legacyReverbFromDrumReverbState(sound.drumReverb);
+    }
+    else
+    {
+        sound.reverb = legacyReverb;
+        applyLegacyReverbToDrumReverbState(sound.drumReverb, legacyReverb);
+    }
+
+    const bool hasDrumTransientState = !node.getProperty(prefix + "_drum_transient_attack").isVoid()
+        || !node.getProperty(prefix + "_drum_transient_sustain").isVoid()
+        || !node.getProperty(prefix + "_drum_transient_gain_db").isVoid();
+
+    const float legacyTransient = safeFloat(node, prefix + "_transient", sound.transient);
+    const float legacyDrive = safeFloat(node, prefix + "_drive", sound.drive);
+    if (hasDrumTransientState)
+    {
+        sound.drumTransient = createDefaultDrumTransientState();
+        sound.drumTransient.attack = safeFloat(node, prefix + "_drum_transient_attack", sound.drumTransient.attack);
+        sound.drumTransient.sustain = safeFloat(node, prefix + "_drum_transient_sustain", sound.drumTransient.sustain);
+        sound.drumTransient.gainDb = safeFloat(node, prefix + "_drum_transient_gain_db", sound.drumTransient.gainDb);
+        sound.drumTransient.smooth = safeBool(node, prefix + "_drum_transient_smooth", sound.drumTransient.smooth);
+        sound.drumTransient.limit = safeBool(node, prefix + "_drum_transient_limit", sound.drumTransient.limit);
+        sanitizeDrumTransientState(sound.drumTransient);
+        sound.transient = legacyTransientFromDrumTransientState(sound.drumTransient);
+        sound.drive = legacyDriveFromDrumTransientState(sound.drumTransient);
+    }
+    else
+    {
+        sound.transient = legacyTransient;
+        sound.drive = legacyDrive;
+        applyLegacyTransientToDrumTransientState(sound.drumTransient, legacyTransient, legacyDrive);
+    }
+
+    const bool hasMonstaFxState = !node.getProperty(prefix + "_monsta_fx_enabled").isVoid()
+        || !node.getProperty(prefix + "_monsta_fx_dry").isVoid()
+        || !node.getProperty(prefix + "_monsta_fx_wet").isVoid()
+        || !node.getProperty(prefix + "_monsta_fx_chaos_seed").isVoid();
+
+    sound.monstaFx = createDefaultMonstaFxState();
+    if (hasMonstaFxState)
+    {
+        sound.monstaFx.enabled = safeBool(node, prefix + "_monsta_fx_enabled", sound.monstaFx.enabled);
+        sound.monstaFx.order = safeInt(node, prefix + "_monsta_fx_order", sound.monstaFx.order);
+        sound.monstaFx.dry = safeFloat(node, prefix + "_monsta_fx_dry", sound.monstaFx.dry);
+        sound.monstaFx.wet = safeFloat(node, prefix + "_monsta_fx_wet", sound.monstaFx.wet);
+        sound.monstaFx.chaosSeed = static_cast<std::uint32_t>(safeInt(node,
+                                          prefix + "_monsta_fx_chaos_seed",
+                                          static_cast<int>(sound.monstaFx.chaosSeed)));
+    }
+
+    sound.monstaFx.pendingChaosReseed = false;
+    sanitizeMonstaFxState(sound.monstaFx);
+
+    sound.compression = legacyCompression;
     sound.gate = safeFloat(node, prefix + "_gate", sound.gate);
-    sound.transient = safeFloat(node, prefix + "_transient", sound.transient);
-    sound.drive = safeFloat(node, prefix + "_drive", sound.drive);
+    reconcileLegacySoundLayerState(sound);
 }
 
 juce::ValueTree serializeRuntimeLane(const RuntimeLaneDefinition& lane)
@@ -401,12 +718,27 @@ void sanitizeSoundLayerState(SoundLayerState& sound)
 {
     sound.pan = std::clamp(sound.pan, -1.0f, 1.0f);
     sound.width = std::clamp(sound.width, 0.0f, 2.0f);
-    sound.eqTone = std::clamp(sound.eqTone, -1.0f, 1.0f);
+    sound.stereoFieldOrder = std::clamp(sound.stereoFieldOrder, 0, 3);
+    sound.stereoFieldFocus = std::clamp(sound.stereoFieldFocus, 0.0f, 1.0f);
+    sound.stereoFieldEdge = std::clamp(sound.stereoFieldEdge, 0.0f, 1.0f);
+    sound.stereoFieldLowCenterProtect = std::clamp(sound.stereoFieldLowCenterProtect, 0.0f, 1.0f);
+    sound.stereoFieldAirSpread = std::clamp(sound.stereoFieldAirSpread, 0.0f, 1.0f);
+    sound.eq.selectedBand = clampEqBandIndex(sound.eq.selectedBand);
+    for (auto& band : sound.eq.bands)
+    {
+        band.freqHz = std::clamp(band.freqHz, 20.0f, 20000.0f);
+        band.gainDb = std::clamp(band.gainDb, -24.0f, 24.0f);
+        band.q = std::clamp(band.q, 0.1f, 10.0f);
+        band.shape = static_cast<EqBandShape>(std::clamp(static_cast<int>(band.shape), 0, 2));
+    }
     sound.compression = std::clamp(sound.compression, 0.0f, 1.0f);
+    sanitizeDrumReverbState(sound.drumReverb);
+    sanitizeDrumTransientState(sound.drumTransient);
     sound.reverb = std::clamp(sound.reverb, 0.0f, 1.0f);
     sound.gate = std::clamp(sound.gate, 0.0f, 1.0f);
     sound.transient = std::clamp(sound.transient, 0.0f, 1.0f);
     sound.drive = std::clamp(sound.drive, 0.0f, 1.0f);
+    reconcileLegacySoundLayerState(sound);
 }
 
 void sanitizeStyleInfluenceState(PatternProject& project)
@@ -527,6 +859,9 @@ void sanitizeTrackStates(PatternProject& project)
         track.laneVolume = std::clamp(track.laneVolume, 0.0f, 1.5f);
         track.selectedSampleIndex = std::max(0, track.selectedSampleIndex);
         sanitizeSoundLayerState(track.sound);
+
+        if (track.hasPerformanceBaseParams)
+            sanitizeGeneratorParams(track.performanceBaseParams);
     }
 }
 
@@ -536,62 +871,37 @@ void sanitizeTrackNotes(PatternProject& project)
 
     for (auto& track : project.tracks)
     {
-        const auto* info = TrackRegistry::find(track.type);
-
-        for (auto& note : track.notes)
-        {
-            note.pitch = std::clamp(note.pitch, 0, 127);
-            if (note.pitch == 0 && info != nullptr)
-                note.pitch = info->defaultMidiNote;
-
-            note.step = std::clamp(note.step, 0, maxStep);
-            note.length = std::clamp(note.length, 1, 64);
-            note.velocity = std::clamp(note.velocity, 1, 127);
-            note.microOffset = std::clamp(note.microOffset, -960, 960);
-            note.semanticRole = note.semanticRole.trim();
-            if (track.type != TrackType::Sub808)
-            {
-                note.isSlide = false;
-                note.isLegato = false;
-                note.glideToNext = false;
-            }
-        }
+        sanitizeLegacyNotes(track.notes, track.type, maxStep);
 
         if (track.type == TrackType::Sub808)
         {
             if (track.sub808Notes.empty() && !track.notes.empty())
                 track.sub808Notes = toSub808NoteEvents(track.notes);
 
-            for (auto& note : track.sub808Notes)
+            sanitizeSub808Notes(track.sub808Notes, maxStep);
+
+            if (track.baseSub808Notes.empty())
             {
-                note.pitch = std::clamp(note.pitch, 0, 127);
-                note.step = std::clamp(note.step, 0, maxStep);
-                note.length = std::clamp(note.length, 1, 64);
-                note.velocity = std::clamp(note.velocity, 1, 127);
-                note.microOffset = std::clamp(note.microOffset, -960, 960);
-                note.semanticRole = note.semanticRole.trim();
+                if (!track.baseNotes.empty())
+                    track.baseSub808Notes = toSub808NoteEvents(track.baseNotes);
+                else if (!track.sub808Notes.empty())
+                    track.baseSub808Notes = track.sub808Notes;
             }
 
-            std::sort(track.sub808Notes.begin(), track.sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
-            {
-                if (a.step != b.step)
-                    return a.step < b.step;
-                return a.pitch < b.pitch;
-            });
+            sanitizeSub808Notes(track.baseSub808Notes, maxStep);
 
             track.notes = toLegacyNoteEvents(track.sub808Notes);
+            track.baseNotes = toLegacyNoteEvents(track.baseSub808Notes);
         }
         else
         {
             track.sub808Notes.clear();
-        }
+            sanitizeLegacyNotes(track.baseNotes, track.type, maxStep);
+            track.baseSub808Notes.clear();
 
-        std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
-        {
-            if (a.step != b.step)
-                return a.step < b.step;
-            return a.pitch < b.pitch;
-        });
+            if (track.baseNotes.empty() && !track.notes.empty())
+                track.baseNotes = track.notes;
+        }
     }
 }
 
@@ -807,8 +1117,11 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
         track.selectedSampleIndex = safeInt(trackNode, "selected_sample_index", 0);
         track.selectedSampleName = trackNode.getProperty("selected_sample_name", {}).toString();
         deserializeSoundLayer(trackNode, track.sound, "sound");
+        deserializePerformanceBaseParams(trackNode, track);
         track.notes.clear();
+        track.baseNotes.clear();
         track.sub808Notes.clear();
+        track.baseSub808Notes.clear();
         track.sub808Settings.mono = safeBool(trackNode, "sub808_mono", true);
         track.sub808Settings.cutItself = safeBool(trackNode, "sub808_cut_itself", true);
         track.sub808Settings.glideTimeMs = safeInt(trackNode, "sub808_glide_time_ms", 120);
@@ -822,7 +1135,9 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
         for (int n = 0; n < trackNode.getNumChildren(); ++n)
         {
             const auto noteNode = trackNode.getChild(n);
-            if (!noteNode.hasType(kNoteNode))
+            const bool isVisibleNote = noteNode.hasType(kNoteNode);
+            const bool isBaseNote = noteNode.hasType(kBaseNoteNode);
+            if (!isVisibleNote && !isBaseNote)
                 continue;
 
             NoteEvent note;
@@ -838,13 +1153,26 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
             note.glideToNext = safeBool(noteNode, "glide_to_next", false);
 
             if (track.type == TrackType::Sub808)
-                track.sub808Notes.push_back(toSub808NoteEvent(note));
+            {
+                if (isBaseNote)
+                    track.baseSub808Notes.push_back(toSub808NoteEvent(note));
+                else
+                    track.sub808Notes.push_back(toSub808NoteEvent(note));
+            }
             else
-                track.notes.push_back(note);
+            {
+                if (isBaseNote)
+                    track.baseNotes.push_back(note);
+                else
+                    track.notes.push_back(note);
+            }
         }
 
         if (track.type == TrackType::Sub808)
+        {
             track.notes = toLegacyNoteEvents(track.sub808Notes);
+            track.baseNotes = toLegacyNoteEvents(track.baseSub808Notes);
+        }
     }
 
     validate(restored);
@@ -899,17 +1227,27 @@ juce::ValueTree PatternProjectSerialization::serializeTrack(const TrackState& tr
     node.setProperty("sub808_overlap_mode", static_cast<int>(track.sub808Settings.overlapMode), nullptr);
     node.setProperty("sub808_scale_snap_policy", static_cast<int>(track.sub808Settings.scaleSnapPolicy), nullptr);
     serializeSoundLayer(node, track.sound, "sound");
+    serializePerformanceBaseParams(node, track);
 
     if (track.type == TrackType::Sub808)
     {
         const auto serializedSub808Notes = track.sub808Notes.empty() ? toSub808NoteEvents(track.notes) : track.sub808Notes;
+        const auto serializedBaseSub808Notes = track.baseSub808Notes.empty()
+            ? (track.baseNotes.empty() ? serializedSub808Notes : toSub808NoteEvents(track.baseNotes))
+            : track.baseSub808Notes;
         for (const auto& note : serializedSub808Notes)
             node.addChild(serializeNote(toLegacyNoteEvent(note)), -1, nullptr);
+        for (const auto& note : serializedBaseSub808Notes)
+            node.addChild(serializeNoteNode(kBaseNoteNode, toLegacyNoteEvent(note)), -1, nullptr);
     }
     else
     {
         for (const auto& note : track.notes)
             node.addChild(serializeNote(note), -1, nullptr);
+
+        const auto& serializedBaseNotes = track.baseNotes.empty() ? track.notes : track.baseNotes;
+        for (const auto& note : serializedBaseNotes)
+            node.addChild(serializeNoteNode(kBaseNoteNode, note), -1, nullptr);
     }
 
     return node;
@@ -917,17 +1255,6 @@ juce::ValueTree PatternProjectSerialization::serializeTrack(const TrackState& tr
 
 juce::ValueTree PatternProjectSerialization::serializeNote(const NoteEvent& note)
 {
-    juce::ValueTree node(kNoteNode);
-    node.setProperty("pitch", note.pitch, nullptr);
-    node.setProperty("step", note.step, nullptr);
-    node.setProperty("length", note.length, nullptr);
-    node.setProperty("velocity", note.velocity, nullptr);
-    node.setProperty("micro_offset", note.microOffset, nullptr);
-    node.setProperty("is_ghost", note.isGhost, nullptr);
-    node.setProperty("semantic_role", note.semanticRole, nullptr);
-    node.setProperty("is_slide", note.isSlide, nullptr);
-    node.setProperty("is_legato", note.isLegato, nullptr);
-    node.setProperty("glide_to_next", note.glideToNext, nullptr);
-    return node;
+    return serializeNoteNode(kNoteNode, note);
 }
 } // namespace bbg

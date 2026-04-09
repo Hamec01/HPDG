@@ -1,14 +1,19 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <mutex>
 #include <optional>
+#include <vector>
 
 #include <juce_dsp/juce_dsp.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "../Audio/DrumCompressorBlock.h"
+#include "../Audio/MonstaFxBlock.h"
 #include "../Core/PatternProject.h"
+#include "../Core/EqDisplayAnalyzerState.h"
 #include "../Core/SoundTargetDescriptor.h"
 #include "../Core/TransportSnapshot.h"
 #include "../Engine/BoomBapEngine.h"
@@ -142,6 +147,7 @@ public:
     std::optional<TrackType> getSoundModuleTrack() const;
     void setSoundModuleTarget(const SoundTargetDescriptor& descriptor);
     SoundTargetDescriptor getSoundModuleTarget() const;
+    float getSoundLayerGainReductionDb(const SoundTargetDescriptor& descriptor) const;
     void setTrackSoundLayer(TrackType track, const SoundLayerState& state);
     void setTrackSoundLayer(const RuntimeLaneId& laneId, const SoundLayerState& state);
     void setGlobalSoundLayer(const SoundLayerState& state);
@@ -168,6 +174,7 @@ public:
     juce::File createTemporaryTrackMidiFile(const RuntimeLaneId& laneId) const;
 
     PatternProject getProjectSnapshot() const;
+    EqDisplayAnalyzerState getEqDisplayAnalyzerState() const;
     TransportSnapshot getLastTransportSnapshot() const;
     void applySelectedStylePreset(bool force);
 
@@ -216,17 +223,68 @@ private:
         int lengthTicks = 960;
     };
 
+    using StereoIirFilter = juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>>;
+
+    struct DrumReverbBlock
+    {
+        void prepare(const juce::dsp::ProcessSpec& spec);
+        void reset();
+        void process(juce::AudioBuffer<float>& buffer, const DrumReverbState& state);
+
+    private:
+        void ensureScratchCapacity(int channels, int samples);
+        float processWetSample(float sample, int channel, float highPassCoeff, float lowPassCoeff);
+
+        double sampleRate = 44100.0;
+        int maximumBlockSize = 0;
+        int maximumPredelaySamples = 0;
+        int predelayWritePosition = 0;
+        juce::AudioBuffer<float> predelayBuffer;
+        juce::AudioBuffer<float> dryBuffer;
+        juce::AudioBuffer<float> earlyBuffer;
+        juce::AudioBuffer<float> tailBuffer;
+        juce::Reverb earlyReverb;
+        juce::Reverb tailReverb;
+        std::vector<float> wetHighpassState;
+        std::vector<float> wetLowpassState;
+    };
+
+    struct DrumStereoFieldBlock
+    {
+        void prepare(const juce::dsp::ProcessSpec& spec);
+        void reset();
+        void process(juce::AudioBuffer<float>& buffer, const SoundLayerState& state);
+
+    private:
+        double sampleRate = 44100.0;
+        float lowSideState = 0.0f;
+        float airSideState = 0.0f;
+    };
+
+    struct DrumTransientBlock
+    {
+        void prepare(const juce::dsp::ProcessSpec& spec);
+        void reset();
+        void process(juce::AudioBuffer<float>& buffer, const DrumTransientState& state);
+
+    private:
+        double sampleRate = 44100.0;
+        float fastEnvelope = 0.0f;
+        float slowEnvelope = 0.0f;
+        float sustainEnvelope = 0.0f;
+    };
+
     struct SoundFxRuntimeState
     {
+        std::array<StereoIirFilter, kEqBandCount> eqBands;
         juce::dsp::StateVariableTPTFilter<float> lowPass;
         juce::dsp::StateVariableTPTFilter<float> highPass;
-        juce::dsp::Compressor<float> compressor;
-        juce::Reverb reverb;
+        DrumCompressorBlock compressor;
+        MonstaFxBlock monstaFx;
+        DrumReverbBlock reverb;
+        DrumTransientBlock transient;
+        DrumStereoFieldBlock stereoField;
         float gateEnvelope = 0.0f;
-        float transientFast = 0.0f;
-        float transientSlow = 0.0f;
-        int driveDownsampleCounter = 0;
-        std::array<float, 2> driveHeldSample { 0.0f, 0.0f };
     };
 
     struct MasterFxRuntimeState
@@ -241,6 +299,8 @@ private:
     void advanceSeedForGeneration(std::optional<TrackType> trackForRg);
     void setSeedParameterValue(int newSeed);
     void setFloatParameterValue(const juce::String& paramId, float value);
+    void syncLivePerformanceStateLocked(const GeneratorParams& liveParams);
+    void captureEditedTrackPerformanceBaseLocked(TrackType trackType);
     void rebuildMidiCache();
     void refreshHatFxDragSourceLocked();
     void applyHatFxDragDensityLocked();
@@ -248,11 +308,17 @@ private:
     void rescanLaneSamplesLocked();
     void updateSampleAwareContextLocked();
     void applySampleAwarePostProcessLocked();
+    void resetEqDisplayAnalyzer();
+    void captureEqDisplayAnalyzer(const juce::AudioBuffer<float>& buffer);
+    void runEqDisplayAnalyzerFrame();
     void prepareSoundFxRuntimeState(SoundFxRuntimeState& state);
     void resetSoundFxRuntimeState(SoundFxRuntimeState& state);
     void prepareMasterFxRuntimeState(MasterFxRuntimeState& state);
     void resetMasterFxRuntimeState(MasterFxRuntimeState& state);
-    void applySoundLayerFx(juce::AudioBuffer<float>& buffer, const SoundLayerState& state, SoundFxRuntimeState& runtime);
+    void applySoundLayerFx(juce::AudioBuffer<float>& buffer,
+                           const SoundLayerState& state,
+                           SoundFxRuntimeState& runtime,
+                           const MonstaFxTimelineContext& monstaTimeline);
     void applyMasterFx(juce::AudioBuffer<float>& buffer);
     void applyMasterFx(juce::AudioBuffer<float>& buffer, MasterFxRuntimeState& runtime, float masterVol, float compAmount, float lofiAmount) const;
     std::vector<PreviewEvent> buildPreviewEventsForProject(const PatternProject& sourceProject, double sampleRate) const;
@@ -272,9 +338,9 @@ private:
     mutable std::mutex projectMutex;
     PatternProject project;
     BoomBapEngine boomBapEngine;
+    DrillEngine drillEngine;
     RapEngine rapEngine;
     TrapEngine trapEngine;
-    DrillEngine drillEngine;
     juce::AudioProcessorValueTreeState apvts;
 
     juce::MidiMessageSequence midiCache;
@@ -286,8 +352,8 @@ private:
     juce::dsp::StateVariableTPTFilter<float> previewLofiFilter;
     int lofiDownsampleCounter = 0;
     std::array<float, 2> lofiHeldSample { 0.0f, 0.0f };
-    std::array<juce::AudioBuffer<float>, 11> previewLaneBuffers;
-    std::array<SoundFxRuntimeState, 11> laneFxRuntimeStates;
+    std::array<juce::AudioBuffer<float>, kTrackTypeCount> previewLaneBuffers;
+    std::array<SoundFxRuntimeState, kTrackTypeCount> laneFxRuntimeStates;
     SoundFxRuntimeState globalFxRuntimeState;
     MasterFxRuntimeState masterFxRuntimeState;
     std::vector<PreviewEvent> previewEvents;
@@ -321,10 +387,24 @@ private:
     bool sampleAwareModeEnabled = false;
     bool analysisReady = false;
 
+    static constexpr int kEqDisplayAnalyzerFftOrder = 10;
+    static constexpr int kEqDisplayAnalyzerFftSize = 1 << kEqDisplayAnalyzerFftOrder;
+    juce::dsp::FFT eqDisplayAnalyzerFft { kEqDisplayAnalyzerFftOrder };
+    juce::dsp::WindowingFunction<float> eqDisplayAnalyzerWindow { static_cast<size_t>(kEqDisplayAnalyzerFftSize),
+                                                                  juce::dsp::WindowingFunction<float>::hann,
+                                                                  true };
+    std::array<float, kEqDisplayAnalyzerFftSize> eqDisplayAnalyzerFifo {};
+    std::array<float, kEqDisplayAnalyzerFftSize * 2> eqDisplayAnalyzerFftData {};
+    int eqDisplayAnalyzerFifoIndex = 0;
+    std::array<std::atomic<float>, kEqDisplayAnalyzerBinCount> eqDisplayAnalyzerMagnitudes {};
+    std::atomic<float> eqDisplayAnalyzerRms { 0.0f };
+    std::atomic<bool> eqDisplayAnalyzerActive { false };
+
     juce::AudioBuffer<float> liveCaptureBuffer;
     bool isCapturingInput = false;
     int capturedSamples = 0;
 
+    JUCE_DECLARE_WEAK_REFERENCEABLE(BoomBapGeneratorAudioProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BoomBapGeneratorAudioProcessor)
 };
 } // namespace bbg
