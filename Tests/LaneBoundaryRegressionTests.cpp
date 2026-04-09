@@ -4,6 +4,7 @@
 
 #include <juce_events/juce_events.h>
 
+#include "../Source/Core/ProjectLaneAccess.h"
 #include "../Source/Core/RuntimeLaneLifecycle.h"
 #include "../Source/Plugin/PluginProcessor.h"
 
@@ -20,6 +21,14 @@ void expect(bool condition, const juce::String& message)
 {
     if (!condition)
         fail(message);
+}
+
+float maxAbsSample(const juce::AudioBuffer<float>& buffer)
+{
+    float peak = 0.0f;
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        peak = juce::jmax(peak, buffer.getMagnitude(channel, 0, buffer.getNumSamples()));
+    return peak;
 }
 
 RuntimeLaneId requireBackedLaneId(const PatternProject& project, TrackType type)
@@ -119,6 +128,102 @@ void testLaneAwareSampleCommandPath()
     expect(!invalidLaneResult, "Missing lane sample command must fail safely.");
 }
 
+void testPreviewProcessBlockProducesAudio()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(44100.0, 512);
+
+    auto project = processor.getProjectSnapshot();
+    for (auto& track : project.tracks)
+    {
+        track.enabled = false;
+        track.notes.clear();
+        track.sub808Notes.clear();
+        track.baseNotes.clear();
+        track.baseSub808Notes.clear();
+    }
+
+    auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+    expect(kick != nullptr, "Preview audio smoke requires a Kick track.");
+    kick->enabled = true;
+    kick->muted = false;
+    kick->solo = false;
+    kick->laneVolume = 1.0f;
+    kick->notes.push_back({ 36, 0, 1, 120, 0, false, "preview_smoke", false, false, false });
+
+    project.params.bars = 1;
+    project.previewStartStep = 0;
+    processor.restoreEditorProjectSnapshot(project);
+    processor.startPreview();
+
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    float peak = 0.0f;
+
+    for (int block = 0; block < 12; ++block)
+    {
+        buffer.clear();
+        midi.clear();
+        processor.processBlock(buffer, midi);
+        peak = juce::jmax(peak, maxAbsSample(buffer));
+    }
+
+    processor.stopPreview();
+    expect(peak > 1.0e-4f, "Preview processBlock must produce non-silent audio.");
+}
+
+void testPreviewProcessBlockWithNeutralEqProducesAudio()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(44100.0, 512);
+
+    auto project = processor.getProjectSnapshot();
+    for (auto& track : project.tracks)
+    {
+        track.enabled = false;
+        track.notes.clear();
+        track.sub808Notes.clear();
+        track.baseNotes.clear();
+        track.baseSub808Notes.clear();
+    }
+
+    auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+    expect(kick != nullptr, "Preview EQ smoke requires a Kick track.");
+    kick->enabled = true;
+    kick->muted = false;
+    kick->solo = false;
+    kick->laneVolume = 1.0f;
+    kick->notes.push_back({ 36, 0, 1, 120, 0, false, "preview_eq_smoke", false, false, false });
+
+    project.params.bars = 1;
+    project.previewStartStep = 0;
+    project.globalSound.eq.selectedBand = 2;
+    project.globalSound.eq.bands[2].enabled = true;
+    project.globalSound.eq.bands[2].shape = EqBandShape::Bell;
+    project.globalSound.eq.bands[2].freqHz = 180.0f;
+    project.globalSound.eq.bands[2].gainDb = 0.0f;
+    project.globalSound.eq.bands[2].q = 1.0f;
+    project.globalSound.eqTone = legacyEqToneFromEqState(project.globalSound.eq);
+
+    processor.restoreEditorProjectSnapshot(project);
+    processor.startPreview();
+
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    float peak = 0.0f;
+
+    for (int block = 0; block < 12; ++block)
+    {
+        buffer.clear();
+        midi.clear();
+        processor.processBlock(buffer, midi);
+        peak = juce::jmax(peak, maxAbsSample(buffer));
+    }
+
+    processor.stopPreview();
+    expect(peak > 1.0e-4f, "Neutral EQ must not mute preview audio.");
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -146,6 +251,8 @@ int main()
     failures += runTest("Lane-aware export path", testLaneAwareExportTrackPath);
     failures += runTest("Lane-aware temporary MIDI path", testLaneAwareTemporaryMidiPath);
     failures += runTest("Lane-aware sample command path", testLaneAwareSampleCommandPath);
+    failures += runTest("Preview processBlock audio smoke", testPreviewProcessBlockProducesAudio);
+    failures += runTest("Preview processBlock neutral EQ smoke", testPreviewProcessBlockWithNeutralEqProducesAudio);
 
     if (failures == 0)
     {

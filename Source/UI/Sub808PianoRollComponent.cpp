@@ -46,14 +46,20 @@ enum class ToolCursorIcon
     Eraser
 };
 
+juce::AffineTransform toolCursorTransform(float hotspotX, float hotspotY)
+{
+    return juce::AffineTransform::rotation(-0.72f, 14.0f, 18.0f)
+        .followedBy(juce::AffineTransform::scale(0.88f, 0.88f, hotspotX, hotspotY));
+}
+
 juce::MouseCursor makeToolCursor(ToolCursorIcon icon)
 {
     juce::Image image(juce::Image::ARGB, 32, 32, true);
     juce::Graphics g(image);
-    auto transform = juce::AffineTransform::rotation(-0.72f, 14.0f, 18.0f);
 
     if (icon == ToolCursorIcon::Pencil)
     {
+        const auto transform = toolCursorTransform(20.0f, 28.0f);
         juce::Path body;
         body.addRoundedRectangle(10.0f, 10.0f, 6.0f, 16.0f, 1.4f);
         body.applyTransform(transform);
@@ -91,6 +97,7 @@ juce::MouseCursor makeToolCursor(ToolCursorIcon icon)
 
     if (icon == ToolCursorIcon::Brush)
     {
+        const auto transform = toolCursorTransform(5.0f, 5.0f);
         juce::Path handle;
         handle.addRoundedRectangle(11.0f, 11.0f, 5.0f, 14.0f, 1.5f);
         handle.applyTransform(transform);
@@ -118,6 +125,7 @@ juce::MouseCursor makeToolCursor(ToolCursorIcon icon)
 
     if (icon == ToolCursorIcon::Blade)
     {
+        const auto transform = toolCursorTransform(5.0f, 5.0f);
         juce::Path blade;
         blade.addRoundedRectangle(8.0f, 12.0f, 14.0f, 8.0f, 2.0f);
         blade.applyTransform(transform);
@@ -142,6 +150,7 @@ juce::MouseCursor makeToolCursor(ToolCursorIcon icon)
         return juce::MouseCursor(image, 5, 5);
     }
 
+    const auto transform = toolCursorTransform(5.0f, 5.0f);
     juce::Path eraser;
     eraser.addRoundedRectangle(8.0f, 10.0f, 13.0f, 10.0f, 2.0f);
     eraser.applyTransform(transform);

@@ -50,10 +50,13 @@ constexpr int kRackMaxWidth = 980;
 constexpr int kGridMinWidth = 420;
 constexpr int kSplitterVisualWidth = 2;
 constexpr int kSplitterHitWidth = 10;
+constexpr int kSectionSplitterVisualHeight = 2;
+constexpr int kSectionSplitterHitHeight = 10;
 constexpr int kPaneGap = 4;
 constexpr int kSoundModuleMinHeight = 210;
 constexpr int kSoundModuleMaxHeight = 300;
 constexpr int kEditorToolBarHeight = 34;
+constexpr int kMinUpperWorkspaceHeight = 150;
 constexpr auto kHotkeysRootProp = "ui.hotkeys";
 constexpr int kDesignWidth = 1460;
 constexpr int kDesignHeight = 820;
@@ -109,9 +112,9 @@ public:
     std::function<void(const juce::MouseEvent&)> onDragMove;
     std::function<void(const juce::MouseEvent&)> onRelease;
 
-    SplitterHandleComponent()
+    explicit SplitterHandleComponent(juce::MouseCursor::StandardCursorType cursorType)
     {
-        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        setMouseCursor(juce::MouseCursor(cursorType));
         setInterceptsMouseClicks(true, false);
     }
 
@@ -671,7 +674,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
                                                endSoundModuleGesture();
                                            });
 
-    auto* splitter = new SplitterHandleComponent();
+    auto* splitter = new SplitterHandleComponent(juce::MouseCursor::LeftRightResizeCursor);
     splitter->onPress = [this](const juce::MouseEvent& event)
     {
         layoutController.beginSplitterDrag(static_cast<int>(event.getEventRelativeTo(&laneSurface).position.x));
@@ -696,6 +699,33 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     splitterHandle.reset(splitter);
     laneSurface.addAndMakeVisible(*splitterHandle);
     splitterHandle->toFront(false);
+
+    auto* sectionSplitter = new SplitterHandleComponent(juce::MouseCursor::UpDownResizeCursor);
+    sectionSplitter->onPress = [this](const juce::MouseEvent& event)
+    {
+        const auto virtualPos = toVirtualPoint(event.getEventRelativeTo(this).position);
+        layoutController.beginLowerPanelSplitterDrag(static_cast<int>(virtualPos.y));
+    };
+    sectionSplitter->onDragMove = [this](const juce::MouseEvent& event)
+    {
+        if (!layoutController.isLowerPanelSplitterDragging())
+            return;
+
+        const auto virtualPos = toVirtualPoint(event.getEventRelativeTo(this).position);
+        layoutController.updateLowerPanelSplitterDrag(static_cast<int>(virtualPos.y));
+        resized();
+    };
+    sectionSplitter->onRelease = [this](const juce::MouseEvent&)
+    {
+        if (!layoutController.isLowerPanelSplitterDragging())
+            return;
+
+        layoutController.endLowerPanelSplitterDrag();
+        saveUiLayoutState();
+    };
+    sectionSplitterHandle.reset(sectionSplitter);
+    addAndMakeVisible(*sectionSplitterHandle);
+    sectionSplitterHandle->toFront(false);
 
     grid.setWantsKeyboardFocus(true);
     grid.setMouseClickGrabsKeyboardFocus(true);
@@ -793,15 +823,17 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     editorToolBar.addAndMakeVisible(eraseToolButton);
     editorToolBar.setInterceptsMouseClicks(true, true);
     editorToolLabel.setText("Tools", juce::dontSendNotification);
-    editorToolLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(178, 188, 202));
+    editorToolLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(214, 205, 191));
     editorToolLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
 
     auto setupToolButton = [this](juce::TextButton& button, GridEditorComponent::EditorTool tool)
     {
         button.setClickingTogglesState(true);
         button.setRadioGroupId(22007);
-        button.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(98, 152, 220));
-        button.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(48, 56, 68));
+        button.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(214, 148, 79));
+        button.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(40, 34, 30));
+        button.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(226, 220, 210));
+        button.setColour(juce::TextButton::textColourOnId, juce::Colour::fromRGB(18, 16, 14));
         button.onClick = [this, tool]
         {
             setActiveEditorTool(tool);
@@ -813,6 +845,24 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     setupToolButton(selectToolButton, GridEditorComponent::EditorTool::Select);
     setupToolButton(cutToolButton, GridEditorComponent::EditorTool::Cut);
     setupToolButton(eraseToolButton, GridEditorComponent::EditorTool::Erase);
+
+    auto setupUtilityButton = [](juce::TextButton& button, bool highlight)
+    {
+        button.setColour(juce::TextButton::buttonColourId,
+                         highlight ? juce::Colour::fromRGB(64, 47, 34)
+                                   : juce::Colour::fromRGB(34, 30, 26));
+        button.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(214, 148, 79));
+        button.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(230, 224, 214));
+        button.setColour(juce::TextButton::textColourOnId, juce::Colour::fromRGB(18, 16, 14));
+    };
+
+    setupUtilityButton(optionsToolButton, true);
+    setupUtilityButton(hotkeysToolButton, false);
+    setupUtilityButton(sub808ViewModeButton, false);
+    setupUtilityButton(pianoRollFullscreenButton, false);
+    setupUtilityButton(gridEditorFullscreenButton, false);
+    optionsToolButton.setTooltip("Global editor options");
+    hotkeysToolButton.setTooltip("Hotkey map and custom bindings");
 
     sub808PianoRoll.onToolChanged = [this](GridEditorComponent::EditorTool tool)
     {
@@ -826,24 +876,18 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     {
         showHotkeysMenu();
     };
-    sub808ViewModeButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(48, 56, 68));
-    sub808ViewModeButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(215, 223, 235));
     sub808ViewModeButton.onClick = [this]
     {
         showSub808ViewModeMenu();
     };
     pianoRollFullscreenButton.setButtonText("Window");
     pianoRollFullscreenButton.setClickingTogglesState(true);
-    pianoRollFullscreenButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(98, 152, 220));
-    pianoRollFullscreenButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(48, 56, 68));
     pianoRollFullscreenButton.onClick = [this]
     {
         toggleSub808PianoRollFullscreen();
     };
     
     gridEditorFullscreenButton.setClickingTogglesState(true);
-    gridEditorFullscreenButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(98, 152, 220));
-    gridEditorFullscreenButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(48, 56, 68));
     gridEditorFullscreenButton.onClick = [this]
     {
         toggleGridEditorFullscreen();
@@ -1368,7 +1412,7 @@ bool BoomBGeneratorAudioProcessorEditor::keyStateChanged(bool isKeyDown, juce::C
 
 void BoomBGeneratorAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour::fromRGB(12, 14, 18));
+    g.fillAll(juce::Colour::fromRGB(10, 11, 13));
 
     if (!splitterBounds.isEmpty())
     {
@@ -1376,8 +1420,31 @@ void BoomBGeneratorAudioProcessorEditor::paint(juce::Graphics& g)
         const auto top = currentUiOffsetY + static_cast<float>(splitterBounds.getY()) * currentUiScale;
         const auto bottom = currentUiOffsetY + static_cast<float>(splitterBounds.getBottom()) * currentUiScale;
 
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 44));
+        g.setColour(juce::Colour::fromRGBA(232, 176, 96, 90));
         g.drawLine(x, top, x, bottom, static_cast<float>(kSplitterVisualWidth));
+    }
+
+    if (!sectionSplitterBounds.isEmpty())
+    {
+        const auto y = currentUiOffsetY + static_cast<float>(sectionSplitterBounds.getCentreY()) * currentUiScale;
+        const auto left = currentUiOffsetX + static_cast<float>(sectionSplitterBounds.getX()) * currentUiScale;
+        const auto right = currentUiOffsetX + static_cast<float>(sectionSplitterBounds.getRight()) * currentUiScale;
+
+        g.setColour(juce::Colour::fromRGBA(232, 176, 96, 80));
+        g.drawLine(left, y, right, y, static_cast<float>(kSectionSplitterVisualHeight));
+
+        auto grip = juce::Rectangle<float>(0.0f, 0.0f, 54.0f * currentUiScale, 10.0f * currentUiScale);
+        grip.setCentre((left + right) * 0.5f, y);
+        g.setColour(juce::Colour::fromRGBA(22, 19, 17, 210));
+        g.fillRoundedRectangle(grip, 5.0f * currentUiScale);
+        g.setColour(juce::Colour::fromRGBA(252, 214, 143, 180));
+        for (int i = -1; i <= 1; ++i)
+        {
+            const auto dot = juce::Rectangle<float>(0.0f, 0.0f, 4.0f * currentUiScale, 4.0f * currentUiScale)
+                                 .withCentre({ grip.getCentreX() + static_cast<float>(i) * 10.0f * currentUiScale,
+                                               grip.getCentreY() });
+            g.fillEllipse(dot);
+        }
     }
 }
 
@@ -1436,6 +1503,9 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         soundModule.setBounds({});
         optionsToolButton.setVisible(false);
         hotkeysToolButton.setVisible(false);
+        sectionSplitterBounds = {};
+        if (sectionSplitterHandle != nullptr)
+            sectionSplitterHandle->setBounds({});
 
         const int maxRackByAvailableSpace = juce::jmax(kRackMinWidth, area.getWidth() - kGridMinWidth - kSplitterHitWidth - kPaneGap);
         const int rackMax = juce::jmax(kRackMinWidth, juce::jmin(kRackMaxWidth, maxRackByAvailableSpace));
@@ -1506,6 +1576,9 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         splitterBounds = {};
         if (splitterHandle != nullptr)
             splitterHandle->setBounds({});
+        sectionSplitterBounds = {};
+        if (sectionSplitterHandle != nullptr)
+            sectionSplitterHandle->setBounds({});
         optionsToolButton.setVisible(false);
         hotkeysToolButton.setVisible(false);
         const int gridToToolsGap = 2;
@@ -1539,21 +1612,14 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         trackList.setDisplayMode(laneRackModeForWidth(layoutState.leftPanelWidth));
         const bool showGlobalTools = !alternateEditorVisible;
         const int toolsHeight = showGlobalTools ? kEditorToolBarHeight : 0;
-        const int toolsToBottomGap = 10;
         const int gridToToolsGap = 2;
-        int soundModuleHeight = juce::jlimit(kSoundModuleMinHeight,
-                                             kSoundModuleMaxHeight,
-                                             static_cast<int>(std::round(static_cast<float>(area.getHeight()) * 0.26f)));
-        if (area.getHeight() < (kSoundModuleMinHeight + 220))
-            soundModuleHeight = 0;
-
-        if (alternateEditorVisible)
-            soundModuleHeight = 0;
-
         const int laneSectionHeight = juce::jmax(1, trackList.getLaneSectionHeight());
-        const int bottomPanelHeight = alternateEditorVisible ? juce::jmax(120, area.getHeight() - laneSectionHeight - toolsHeight - toolsToBottomGap)
-                                                             : juce::jmax(soundModuleHeight, 180);
-        const int maxLaneHeight = juce::jmax(1, area.getHeight() - toolsHeight - toolsToBottomGap - bottomPanelHeight);
+        const int minBottomPanelHeight = alternateEditorVisible ? 140 : 180;
+        const int maxBottomPanelHeight = juce::jmax(minBottomPanelHeight,
+                                                    area.getHeight() - toolsHeight - gridToToolsGap - kSectionSplitterHitHeight - kMinUpperWorkspaceHeight);
+        layoutState.lowerPanelHeight = juce::jlimit(minBottomPanelHeight, maxBottomPanelHeight, layoutState.lowerPanelHeight);
+        const int bottomPanelHeight = layoutState.lowerPanelHeight;
+        const int maxLaneHeight = juce::jmax(1, area.getHeight() - toolsHeight - gridToToolsGap - kSectionSplitterHitHeight - bottomPanelHeight);
         const int laneSurfaceHeight = juce::jlimit(1, maxLaneHeight, laneSectionHeight);
         laneSurface.setBounds(area.removeFromTop(laneSurfaceHeight));
 
@@ -1592,7 +1658,18 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         }
 
         if (area.getHeight() > 0)
-            area.removeFromTop(juce::jmin(toolsToBottomGap, area.getHeight()));
+        {
+            auto sectionSplitterArea = area.removeFromTop(juce::jmin(kSectionSplitterHitHeight, area.getHeight()));
+            sectionSplitterBounds = sectionSplitterArea;
+            if (sectionSplitterHandle != nullptr)
+                sectionSplitterHandle->setBounds(sectionSplitterArea);
+        }
+        else
+        {
+            sectionSplitterBounds = {};
+            if (sectionSplitterHandle != nullptr)
+                sectionSplitterHandle->setBounds({});
+        }
 
         auto bottomArea = area;
         auto leftColumn = bottomArea.removeFromLeft(layoutState.leftPanelWidth);
@@ -1632,10 +1709,11 @@ void BoomBGeneratorAudioProcessorEditor::resized()
     }
 
     // Keep global Options/Hotkeys in top-left corner only in normal mode
-    if (!pianoRollFullscreenMode)
+    if (!gridEditorFullscreenMode && !pianoRollFullscreenMode)
     {
-        optionsToolButton.setBounds(6, 6, 72, 24);
-        hotkeysToolButton.setBounds(82, 6, 74, 24);
+        optionsToolButton.setBounds(8, 8, 82, 24);
+        hotkeysToolButton.setBounds(94, 8, 86, 24);
+        optionsToolButton.setVisible(true);
         hotkeysToolButton.setVisible(true);
     }
     else
@@ -1687,6 +1765,8 @@ void BoomBGeneratorAudioProcessorEditor::resized()
     editorToolBar.setTransform(transform);
     optionsToolButton.setTransform(transform);
     hotkeysToolButton.setTransform(transform);
+    if (sectionSplitterHandle != nullptr)
+        sectionSplitterHandle->setTransform(transform);
     sub808ViewModeButton.setTransform(transform);
     pianoRollFullscreenButton.setTransform(transform);
     gridEditorFullscreenButton.setTransform(transform);
@@ -2430,27 +2510,53 @@ void BoomBGeneratorAudioProcessorEditor::mouseDown(const juce::MouseEvent& event
     {
         layoutController.beginSplitterDrag(static_cast<int>(virtualPos.x));
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        return;
+    }
+
+    if (sectionSplitterBounds.contains(static_cast<int>(virtualPos.x), static_cast<int>(virtualPos.y)))
+    {
+        layoutController.beginLowerPanelSplitterDrag(static_cast<int>(virtualPos.y));
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     }
 }
 
 void BoomBGeneratorAudioProcessorEditor::mouseDrag(const juce::MouseEvent& event)
 {
-    if (!layoutController.isSplitterDragging())
-        return;
-
     const auto virtualPos = toVirtualPoint(event.position);
-    layoutController.updateSplitterDrag(static_cast<int>(virtualPos.x));
-    resized();
+    if (layoutController.isSplitterDragging())
+    {
+        layoutController.updateSplitterDrag(static_cast<int>(virtualPos.x));
+        resized();
+        return;
+    }
+
+    if (layoutController.isLowerPanelSplitterDragging())
+    {
+        layoutController.updateLowerPanelSplitterDrag(static_cast<int>(virtualPos.y));
+        resized();
+    }
 }
 
 void BoomBGeneratorAudioProcessorEditor::mouseUp(const juce::MouseEvent& event)
 {
     juce::ignoreUnused(event);
-    if (!layoutController.isSplitterDragging())
-        return;
+    bool layoutChanged = false;
 
-    layoutController.endSplitterDrag();
-    saveUiLayoutState();
+    if (layoutController.isSplitterDragging())
+    {
+        layoutController.endSplitterDrag();
+        layoutChanged = true;
+    }
+
+    if (layoutController.isLowerPanelSplitterDragging())
+    {
+        layoutController.endLowerPanelSplitterDrag();
+        layoutChanged = true;
+    }
+
+    if (layoutChanged)
+        saveUiLayoutState();
+
     setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
@@ -2993,17 +3099,8 @@ bool BoomBGeneratorAudioProcessorEditor::resetHotkeyActionToDefault(const juce::
 void BoomBGeneratorAudioProcessorEditor::showEditorOptionsMenu()
 {
     juce::PopupMenu menu;
-    
-    // Tool selection
-    menu.addItem(10, "Pencil");
-    menu.addItem(11, "Brush");
-    menu.addItem(12, "Select");
-    menu.addItem(13, "Cut");
-    menu.addItem(14, "Erase");
-    menu.addSeparator();
-    menu.addItem(3, "Open References...");
-    menu.addItem(1, "Reset Hotkeys to default");
-    menu.addItem(2, "Show Hotkeys");
+    menu.addItem(1, "Open References...");
+    menu.addItem(2, "Open StyleLab...");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&optionsToolButton).withParentComponent(this),
                        [safeEditor = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)](int choice)
@@ -3011,27 +3108,17 @@ void BoomBGeneratorAudioProcessorEditor::showEditorOptionsMenu()
                            if (safeEditor == nullptr)
                                return;
 
-                           if (choice >= 10 && choice <= 14)
-                           {
-                               safeEditor->grid.setEditorTool(static_cast<GridEditorComponent::EditorTool>(choice - 10));
-                               safeEditor->syncEditorToolButtons(static_cast<GridEditorComponent::EditorTool>(choice - 10));
-                               return;
-                           }
-
                            if (choice == 1)
-                           {
-                               safeEditor->restoreDefaultHotkeys();
-                               return;
-                           }
-
-                           if (choice == 3)
                            {
                                safeEditor->showStyleLabReferenceBrowserWindow();
                                return;
                            }
 
                            if (choice == 2)
-                               safeEditor->showHotkeysMenu();
+                           {
+                               safeEditor->showStyleLabWindow();
+                               return;
+                           }
                        });
 }
 
@@ -3487,12 +3574,19 @@ void BoomBGeneratorAudioProcessorEditor::setSub808DetachedWindowVisible(bool sho
 
 void BoomBGeneratorAudioProcessorEditor::updateCursorForMousePosition(juce::Point<float> point)
 {
-    if (layoutController.isSplitterDragging())
+    if (layoutController.isAnySplitterDragging())
         return;
 
     const auto virtualPos = toVirtualPoint(point);
-    const bool onSplitter = splitterBounds.contains(static_cast<int>(virtualPos.x), static_cast<int>(virtualPos.y));
-    setMouseCursor(onSplitter ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::NormalCursor);
+    const bool onVerticalSplitter = splitterBounds.contains(static_cast<int>(virtualPos.x), static_cast<int>(virtualPos.y));
+    const bool onHorizontalSplitter = sectionSplitterBounds.contains(static_cast<int>(virtualPos.x), static_cast<int>(virtualPos.y));
+
+    if (onVerticalSplitter)
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    else if (onHorizontalSplitter)
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+    else
+        setMouseCursor(juce::MouseCursor::NormalCursor);
 }
 
 bool BoomBGeneratorAudioProcessorEditor::isStandaloneWindowMaximized() const

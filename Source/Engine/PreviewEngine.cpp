@@ -238,6 +238,106 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
     }
 }
 
+void PreviewEngine::renderSeparated(std::array<juce::AudioBuffer<float>, kTrackTypeCount>& buffers,
+                                    int startSample,
+                                    int numSamples)
+{
+    if (numSamples <= 0 || buffers.empty())
+        return;
+
+    const auto totalSamples = buffers.front().getNumSamples();
+    const int start = juce::jlimit(0, totalSamples, startSample);
+    const int end = juce::jlimit(start, totalSamples, start + numSamples);
+
+    const auto readSampleAt = [](const juce::AudioBuffer<float>& source, double position)
+    {
+        const int channelCount = source.getNumChannels();
+        const int sampleCount = source.getNumSamples();
+        const int baseIndex = juce::jlimit(0, juce::jmax(0, sampleCount - 1), static_cast<int>(position));
+        const int nextIndex = juce::jlimit(0, juce::jmax(0, sampleCount - 1), baseIndex + 1);
+        const float fraction = static_cast<float>(position - static_cast<double>(baseIndex));
+
+        const auto monoAt = [&](int index)
+        {
+            if (channelCount <= 1)
+                return source.getSample(0, index);
+            return 0.5f * (source.getSample(0, index) + source.getSample(1, index));
+        };
+
+        const float base = monoAt(baseIndex);
+        const float next = monoAt(nextIndex);
+        return base + (next - base) * fraction;
+    };
+
+    for (int sample = start; sample < end; ++sample)
+    {
+        std::array<float, kTrackTypeCount> mixedByTrack {};
+
+        for (auto& voice : voices)
+        {
+            if (!voice.active || voice.sample == nullptr)
+                continue;
+
+            if (voice.startDelaySamples > 0)
+            {
+                --voice.startDelaySamples;
+                continue;
+            }
+
+            if (voice.hasPendingTransition)
+            {
+                if (voice.pendingTransitionDelaySamples > 0)
+                {
+                    --voice.pendingTransitionDelaySamples;
+                }
+                else
+                {
+                    applyPendingTransition(voice);
+                }
+            }
+
+            const auto* bufferRef = voice.sample;
+            const int length = bufferRef->getNumSamples();
+            if (voice.samplePosition >= static_cast<double>(length))
+            {
+                voice.active = false;
+                continue;
+            }
+
+            const float src = readSampleAt(*bufferRef, voice.samplePosition);
+            mixedByTrack[static_cast<size_t>(trackTypeIndex(voice.trackType))] += src * voice.velocity;
+
+            if (voice.glideSamplesRemaining > 0)
+            {
+                voice.playbackRate += voice.glideStepPerSample;
+                --voice.glideSamplesRemaining;
+                if (voice.glideSamplesRemaining <= 0)
+                    voice.playbackRate = voice.targetPlaybackRate;
+            }
+
+            voice.samplePosition += static_cast<double>(voice.playbackRate);
+
+            if (voice.remainingSamples > 0)
+            {
+                --voice.remainingSamples;
+                if (voice.remainingSamples <= 0)
+                    voice.active = false;
+            }
+        }
+
+        for (int trackIndex = 0; trackIndex < kTrackTypeCount; ++trackIndex)
+        {
+            auto& trackBuffer = buffers[static_cast<size_t>(trackIndex)];
+            const float value = mixedByTrack[static_cast<size_t>(trackIndex)];
+            if (std::abs(value) <= 1.0e-8f)
+                continue;
+
+            for (int channel = 0; channel < trackBuffer.getNumChannels(); ++channel)
+                trackBuffer.addSample(channel, sample, value);
+        }
+    }
+}
+
 PreviewEngine::Voice* PreviewEngine::findActiveVoice(TrackType trackType)
 {
     for (auto& voice : voices)

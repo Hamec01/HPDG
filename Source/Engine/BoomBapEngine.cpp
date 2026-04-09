@@ -7,6 +7,7 @@
 #include "../Core/TrackSemantics.h"
 #include "GrooveEngine.h"
 #include "HumanizeEngine.h"
+#include "PatternPerformanceTransformEngine.h"
 #include "StyleInfluence.h"
 #include "StyleDefaults.h"
 #include "VelocityEngine.h"
@@ -524,6 +525,7 @@ void BoomBapEngine::generate(PatternProject& project)
     applyPhraseEndingAccents(project, style, rng, phrasePlan, mutableTracks);
     postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
     validatePattern(project, blueprint, lanePlan, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void BoomBapEngine::regenerateTrack(PatternProject& project, TrackType trackType)
@@ -600,6 +602,7 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
     applyCarrierMode(project, style, phrasePlan, lanePlan, grooveContext, rng, mutableTracks);
     postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
     validatePattern(project, blueprint, lanePlan, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType trackType)
@@ -681,6 +684,7 @@ void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType 
 
     postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
     validatePattern(project, blueprint, lanePlan, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void BoomBapEngine::mutatePattern(PatternProject& project)
@@ -829,6 +833,7 @@ void BoomBapEngine::mutateTrack(PatternProject& project, TrackType trackType)
     std::unordered_set<TrackType> mutableTracks { trackType };
     postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
     validatePattern(project, blueprint, lanePlan, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void BoomBapEngine::regenerateTrackInternal(PatternProject& project,

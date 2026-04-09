@@ -5,10 +5,12 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "DragGestureButton.h"
+#include "HardwareKnob.h"
 
 namespace bbg
 {
-class MainHeaderComponent : public juce::Component
+class MainHeaderComponent : public juce::Component,
+                            private juce::Slider::Listener
 {
 public:
     enum class HeaderControlsMode
@@ -29,6 +31,7 @@ public:
     void setHeaderControlsMode(HeaderControlsMode mode);
     void setStartPlayWithDawEnabled(bool enabled);
     void setGridModeIndicatorText(const juce::String& text);
+    void setStyleLabDiagnosticsText(const juce::String& text);
     void setPreviewPlaybackModeId(int id);
     HeaderControlsMode getHeaderControlsMode() const { return controlsMode; }
     int getPreferredHeight() const;
@@ -56,11 +59,11 @@ public:
     juce::Slider bpmSlider;
     juce::ToggleButton bpmLockToggle { "Lock" };
     juce::ToggleButton syncTempoToggle { "Sync" };
-    juce::Slider swingSlider;
-    juce::Slider velocitySlider;
-    juce::Slider timingSlider;
-    juce::Slider humanizeSlider;
-    juce::Slider densitySlider;
+    RotaryKnobSlider swingSlider;
+    RotaryKnobSlider velocitySlider;
+    RotaryKnobSlider timingSlider;
+    RotaryKnobSlider humanizeSlider;
+    RotaryKnobSlider densitySlider;
     juce::ComboBox tempoInterpretationCombo;
     juce::ComboBox barsCombo;
     juce::ComboBox genreCombo;
@@ -73,8 +76,6 @@ public:
     juce::Slider zoomSlider;
     juce::Slider laneHeightSlider;
     juce::Slider masterVolumeSlider;
-    juce::Slider masterCompressorSlider;
-    juce::Slider masterLofiSlider;
     juce::TextButton playButton { "Play" };
     juce::TextButton transportToStartButton { "|<" };
     juce::TextButton transportStepBackButton { "<<" };
@@ -90,17 +91,32 @@ public:
 
 private:
     void setupSlider(juce::Slider& slider, double min, double max, double step, const juce::String& suffix = {});
+    void setupKnob(RotaryKnobSlider& slider,
+                   juce::Label& valueLabel,
+                   const juce::String& popupTitle,
+                   double min,
+                   double max,
+                   double step,
+                   std::function<juce::String(double)> formatter,
+                   std::function<double(const juce::String&)> parser = {});
+    void sliderValueChanged(juce::Slider* slider) override;
     void updateAdvancedModeButtonText();
 
     juce::Label titleLabel;
     juce::Label subtitleLabel;
+    juce::Label diagnosticsLabel;
 
     juce::Label bpmLabel;
     juce::Label swingLabel;
+    juce::Label swingValueLabel;
     juce::Label velocityLabel;
+    juce::Label velocityValueLabel;
     juce::Label timingLabel;
+    juce::Label timingValueLabel;
     juce::Label humanizeLabel;
+    juce::Label humanizeValueLabel;
     juce::Label densityLabel;
+    juce::Label densityValueLabel;
     juce::Label tempoInterpretationLabel;
     juce::Label barsLabel;
     juce::Label genreLabel;
@@ -115,12 +131,10 @@ private:
     juce::Label laneHeightLabel;
     juce::Label masterSectionLabel;
     juce::Label masterVolumeLabel;
-    juce::Label masterCompressorLabel;
-    juce::Label masterLofiLabel;
     juce::TextButton advancedModeButton { "ADV" };
 
 public:
-    juce::Slider hatFxDensitySlider;
+    RotaryKnobSlider hatFxDensitySlider;
     juce::ToggleButton hatFxDensityLockToggle { "Lk" };
 
     HeaderControlsMode controlsMode = HeaderControlsMode::Expanded;

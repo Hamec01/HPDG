@@ -6,6 +6,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include "../Core/RuntimeLaneLifecycle.h"
+#include "../Core/Sub808Types.h"
 #include "../Core/TrackRegistry.h"
 #include "../Plugin/PluginProcessor.h"
 #include "../Services/MidiImportService.h"
@@ -24,19 +25,20 @@ public:
 
     void exportFullPattern(juce::Component* parent) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
         auto chooser = std::make_shared<juce::FileChooser>(
             "Export full pattern MIDI",
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Full", ".mid"),
             "*.mid");
 
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                             [this, chooser](const juce::FileChooser& fc)
+                             [weakThis, chooser](const juce::FileChooser& fc)
                              {
                                  const auto result = fc.getResult();
-                                 if (result == juce::File())
+                                 if (weakThis == nullptr || result == juce::File())
                                      return;
 
-                                 audioProcessor.exportFullPatternToFile(result);
+                                 weakThis->audioProcessor.exportFullPatternToFile(result);
                              });
 
         juce::ignoreUnused(parent);
@@ -44,19 +46,20 @@ public:
 
     void exportLoopWav(juce::Component* parent, const std::function<void(const juce::String&)>& logDrag) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
         auto chooser = std::make_shared<juce::FileChooser>(
             "Export loop WAV",
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Loop", ".wav"),
             "*.wav");
 
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                             [this, chooser, logDrag](const juce::FileChooser& fc)
+                             [weakThis, chooser, logDrag](const juce::FileChooser& fc)
                              {
                                  const auto result = fc.getResult();
-                                 if (result == juce::File())
+                                 if (weakThis == nullptr || result == juce::File())
                                      return;
 
-                                 const bool ok = audioProcessor.exportLoopWavToFile(result);
+                                 const bool ok = weakThis->audioProcessor.exportLoopWavToFile(result);
                                  if (!ok)
                                      logDrag("exportLoopWav failed path=" + result.getFullPathName());
                              });
@@ -66,19 +69,20 @@ public:
 
     void exportTrack(TrackType type, juce::Component* parent) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
         auto chooser = std::make_shared<juce::FileChooser>(
             "Export track MIDI",
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Track", ".mid"),
             "*.mid");
 
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                             [this, chooser, type](const juce::FileChooser& fc)
+                             [weakThis, chooser, type](const juce::FileChooser& fc)
                              {
                                  const auto result = fc.getResult();
-                                 if (result == juce::File())
+                                 if (weakThis == nullptr || result == juce::File())
                                      return;
 
-                                 audioProcessor.exportTrackToFile(type, result);
+                                 weakThis->audioProcessor.exportTrackToFile(type, result);
                              });
 
         juce::ignoreUnused(parent);
@@ -86,19 +90,20 @@ public:
 
     void exportTrack(const RuntimeLaneId& laneId, juce::Component* parent) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
         auto chooser = std::make_shared<juce::FileChooser>(
             "Export track MIDI",
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getNonexistentChildFile("HPDG_Track", ".mid"),
             "*.mid");
 
         chooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
-                             [this, chooser, laneId](const juce::FileChooser& fc)
+                             [weakThis, chooser, laneId](const juce::FileChooser& fc)
                              {
                                  const auto result = fc.getResult();
-                                 if (result == juce::File())
+                                 if (weakThis == nullptr || result == juce::File())
                                      return;
 
-                                 audioProcessor.exportTrackToFile(laneId, result);
+                                 weakThis->audioProcessor.exportTrackToFile(laneId, result);
                              });
 
         juce::ignoreUnused(parent);
@@ -247,6 +252,8 @@ public:
                         RefreshFn&& refreshFromProcessor,
                         const std::function<void(const juce::String&)>& logDrag) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
+        auto safeParent = juce::Component::SafePointer<juce::Component>(parent);
         juce::PopupMenu menu;
         menu.addItem(1, "Load new sample (.wav)");
         menu.addItem(2, "Delete selected sample");
@@ -257,13 +264,16 @@ public:
         const juce::Rectangle<int> targetArea(mousePos.x, mousePos.y, 1, 1);
 
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(targetArea).withParentComponent(parent),
-                           [this,
-                            parent,
+                           [weakThis,
+                            safeParent,
                             type,
                             pushHistory = std::forward<PushHistoryFn>(pushHistory),
                             refreshFromProcessor = std::forward<RefreshFn>(refreshFromProcessor),
                             logDrag](int choice) mutable
                            {
+                               if (weakThis == nullptr)
+                                   return;
+
                                if (choice == 1)
                                {
                                    auto chooser = std::make_shared<juce::FileChooser>(
@@ -272,17 +282,17 @@ public:
                                        "*.wav");
 
                                    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                                                        [this, chooser, type, pushHistory = std::move(pushHistory), refreshFromProcessor = std::move(refreshFromProcessor), logDrag](const juce::FileChooser& fc) mutable
+                                                        [weakThis, chooser, type, pushHistory = std::move(pushHistory), refreshFromProcessor = std::move(refreshFromProcessor), logDrag](const juce::FileChooser& fc) mutable
                                                         {
                                                             const auto result = fc.getResult();
-                                                            if (result == juce::File())
+                                                            if (weakThis == nullptr || result == juce::File())
                                                                 return;
 
-                                                            const auto before = audioProcessor.getProjectSnapshot();
+                                                            const auto before = weakThis->audioProcessor.getProjectSnapshot();
                                                             juce::String error;
                                                             auto trackType = type;
-                                                            const bool ok = audioProcessor.importLaneSample(trackType, result, &error);
-                                                            const auto after = audioProcessor.getProjectSnapshot();
+                                                            const bool ok = weakThis->audioProcessor.importLaneSample(trackType, result, &error);
+                                                            const auto after = weakThis->audioProcessor.getProjectSnapshot();
                                                             pushHistory(before, after);
                                                             refreshFromProcessor();
                                                             if (!ok && error.isNotEmpty())
@@ -293,11 +303,11 @@ public:
 
                                if (choice == 2)
                                {
-                                   const auto before = audioProcessor.getProjectSnapshot();
+                                   const auto before = weakThis->audioProcessor.getProjectSnapshot();
                                    juce::String error;
                                    auto trackType = type;
-                                   const bool ok = audioProcessor.deleteSelectedLaneSample(trackType, &error);
-                                   const auto after = audioProcessor.getProjectSnapshot();
+                                   const bool ok = weakThis->audioProcessor.deleteSelectedLaneSample(trackType, &error);
+                                   const auto after = weakThis->audioProcessor.getProjectSnapshot();
                                    pushHistory(before, after);
                                    refreshFromProcessor();
                                    if (!ok && error.isNotEmpty())
@@ -307,12 +317,12 @@ public:
 
                                if (choice == 3)
                                {
-                                   const auto folder = audioProcessor.getLaneSampleDirectory(type);
+                                   const auto folder = weakThis->audioProcessor.getLaneSampleDirectory(type);
                                    folder.createDirectory();
                                    folder.revealToUser();
                                }
 
-                               juce::ignoreUnused(parent);
+                               juce::ignoreUnused(safeParent);
                            });
     }
 
@@ -323,6 +333,8 @@ public:
                         RefreshFn&& refreshFromProcessor,
                         const std::function<void(const juce::String&)>& logDrag) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
+        auto safeParent = juce::Component::SafePointer<juce::Component>(parent);
         juce::PopupMenu menu;
         menu.addItem(1, "Load new sample (.wav)");
         menu.addItem(2, "Delete selected sample");
@@ -333,13 +345,16 @@ public:
         const juce::Rectangle<int> targetArea(mousePos.x, mousePos.y, 1, 1);
 
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(targetArea).withParentComponent(parent),
-                           [this,
-                            parent,
+                           [weakThis,
+                            safeParent,
                             laneId,
                             pushHistory = std::forward<PushHistoryFn>(pushHistory),
                             refreshFromProcessor = std::forward<RefreshFn>(refreshFromProcessor),
                             logDrag](int choice) mutable
                            {
+                               if (weakThis == nullptr)
+                                   return;
+
                                if (choice == 1)
                                {
                                    auto chooser = std::make_shared<juce::FileChooser>(
@@ -348,16 +363,16 @@ public:
                                        "*.wav");
 
                                    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                                                        [this, chooser, laneId, pushHistory = std::move(pushHistory), refreshFromProcessor = std::move(refreshFromProcessor), logDrag](const juce::FileChooser& fc) mutable
+                                                        [weakThis, chooser, laneId, pushHistory = std::move(pushHistory), refreshFromProcessor = std::move(refreshFromProcessor), logDrag](const juce::FileChooser& fc) mutable
                                                         {
                                                             const auto result = fc.getResult();
-                                                            if (result == juce::File())
+                                                            if (weakThis == nullptr || result == juce::File())
                                                                 return;
 
-                                                            const auto before = audioProcessor.getProjectSnapshot();
+                                                            const auto before = weakThis->audioProcessor.getProjectSnapshot();
                                                             juce::String error;
-                                                            const bool ok = audioProcessor.importLaneSample(laneId, result, &error);
-                                                            const auto after = audioProcessor.getProjectSnapshot();
+                                                            const bool ok = weakThis->audioProcessor.importLaneSample(laneId, result, &error);
+                                                            const auto after = weakThis->audioProcessor.getProjectSnapshot();
                                                             pushHistory(before, after);
                                                             refreshFromProcessor();
                                                             if (!ok && error.isNotEmpty())
@@ -368,10 +383,10 @@ public:
 
                                if (choice == 2)
                                {
-                                   const auto before = audioProcessor.getProjectSnapshot();
+                                   const auto before = weakThis->audioProcessor.getProjectSnapshot();
                                    juce::String error;
-                                   const bool ok = audioProcessor.deleteSelectedLaneSample(laneId, &error);
-                                   const auto after = audioProcessor.getProjectSnapshot();
+                                   const bool ok = weakThis->audioProcessor.deleteSelectedLaneSample(laneId, &error);
+                                   const auto after = weakThis->audioProcessor.getProjectSnapshot();
                                    pushHistory(before, after);
                                    refreshFromProcessor();
                                    if (!ok && error.isNotEmpty())
@@ -381,12 +396,12 @@ public:
 
                                if (choice == 3)
                                {
-                                   const auto folder = audioProcessor.getLaneSampleDirectory(laneId);
+                                   const auto folder = weakThis->audioProcessor.getLaneSampleDirectory(laneId);
                                    folder.createDirectory();
                                    folder.revealToUser();
                                }
 
-                               juce::ignoreUnused(parent);
+                               juce::ignoreUnused(safeParent);
                            });
     }
 
@@ -452,19 +467,21 @@ public:
                                     juce::Component* parent,
                                     ApplySnapshotChangeFn&& applyProjectSnapshotChange) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
+        auto safeParent = juce::Component::SafePointer<juce::Component>(parent);
         auto chooser = std::make_shared<juce::FileChooser>(
             "Import MIDI to lane",
             juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
             "*.mid;*.midi");
 
         chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
-                             [this, parent, chooser, laneId, applyProjectSnapshotChange = std::forward<ApplySnapshotChangeFn>(applyProjectSnapshotChange)](const juce::FileChooser& fc) mutable
+                             [weakThis, safeParent, chooser, laneId, applyProjectSnapshotChange = std::forward<ApplySnapshotChangeFn>(applyProjectSnapshotChange)](const juce::FileChooser& fc) mutable
                              {
                                  const auto result = fc.getResult();
-                                 if (result == juce::File())
+                                 if (weakThis == nullptr || result == juce::File())
                                      return;
 
-                                 const auto before = audioProcessor.getProjectSnapshot();
+                                 const auto before = weakThis->audioProcessor.getProjectSnapshot();
                                  const auto* lane = findRuntimeLaneById(before.runtimeLaneProfile, laneId);
                                  if (lane == nullptr || !lane->runtimeTrackType.has_value())
                                  {
@@ -472,7 +489,7 @@ public:
                                                                             "Lane Import",
                                                                             "This lane is not backed by an instrument track, so MIDI import is unavailable.",
                                                                             "OK",
-                                                                            parent);
+                                                                            safeParent.getComponent());
                                      return;
                                  }
 
@@ -485,7 +502,7 @@ public:
                                                                             "Lane Import",
                                                                             importResult.errorMessage.isNotEmpty() ? importResult.errorMessage : "Failed to import MIDI into this lane.",
                                                                             "OK",
-                                                                            parent);
+                                                                            safeParent.getComponent());
                                      return;
                                  }
 
@@ -496,6 +513,12 @@ public:
                                      if (track.laneId == laneId)
                                      {
                                          track.notes = importResult.notes;
+                                         track.baseNotes = importResult.notes;
+                                         if (track.type == TrackType::Sub808)
+                                         {
+                                             track.sub808Notes = toSub808NoteEvents(importResult.notes);
+                                             track.baseSub808Notes = track.sub808Notes;
+                                         }
                                          updatedLane = true;
                                          break;
                                      }
@@ -508,6 +531,12 @@ public:
                                          if (track.type == *lane->runtimeTrackType)
                                          {
                                              track.notes = importResult.notes;
+                                             track.baseNotes = importResult.notes;
+                                             if (track.type == TrackType::Sub808)
+                                             {
+                                                 track.sub808Notes = toSub808NoteEvents(importResult.notes);
+                                                 track.baseSub808Notes = track.sub808Notes;
+                                             }
                                              updatedLane = true;
                                              break;
                                          }
@@ -520,7 +549,7 @@ public:
                                                                             "Lane Import",
                                                                             "Lane track state could not be resolved for MIDI import.",
                                                                             "OK",
-                                                                            parent);
+                                                                            safeParent.getComponent());
                                      return;
                                  }
 
@@ -533,7 +562,7 @@ public:
                                                                             importResult.summary + "\n\nImported MIDI is longer than the current pattern. Increase Bars to at least "
                                                                                 + juce::String(importResult.requiredBars) + " to view the full lane.",
                                                                             "OK",
-                                                                            parent);
+                                                                            safeParent.getComponent());
                                  }
                              });
     }
@@ -606,9 +635,14 @@ public:
         };
 
         auto component = std::make_unique<LaneNameDialogComponent>(lane->laneName);
-        component->onSubmit = [this, parent, laneId, applyProjectSnapshotChange = std::forward<ApplySnapshotChangeFn>(applyProjectSnapshotChange)](const juce::String& submittedName) mutable
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
+        auto safeParent = juce::Component::SafePointer<juce::Component>(parent);
+        component->onSubmit = [weakThis, safeParent, laneId, applyProjectSnapshotChange = std::forward<ApplySnapshotChangeFn>(applyProjectSnapshotChange)](const juce::String& submittedName) mutable
         {
-            const auto current = audioProcessor.getProjectSnapshot();
+            if (weakThis == nullptr)
+                return;
+
+            const auto current = weakThis->audioProcessor.getProjectSnapshot();
             auto after = current;
             const auto newLaneName = submittedName.trim();
             if (!RuntimeLaneLifecycle::renameLane(after, laneId, newLaneName))
@@ -617,7 +651,7 @@ public:
                                                        "Rename Lane",
                                                        newLaneName.isEmpty() ? "Lane name cannot be empty." : "Lane rename failed.",
                                                        "OK",
-                                                       parent);
+                                                       safeParent.getComponent());
                 return;
             }
 
@@ -666,6 +700,7 @@ public:
     void showAddLaneMenu(juce::Component* parent,
                          ApplySnapshotChangeFn&& applyProjectSnapshotChange) const
     {
+        auto weakThis = juce::WeakReference<EditorCommandController>(const_cast<EditorCommandController*>(this));
         const auto project = audioProcessor.getProjectSnapshot();
         const auto availableRegistryTypes = RuntimeLaneLifecycle::listAvailableRegistryLaneTypes(project);
 
@@ -689,12 +724,12 @@ public:
         const auto mousePos = juce::Desktop::getInstance().getMainMouseSource().getScreenPosition().roundToInt();
         const juce::Rectangle<int> targetArea(mousePos.x, mousePos.y, 1, 1);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(targetArea).withParentComponent(parent),
-                           [this, applyProjectSnapshotChange = std::forward<ApplySnapshotChangeFn>(applyProjectSnapshotChange), menuTrackTypes](int choice) mutable
+                           [weakThis, applyProjectSnapshotChange = std::forward<ApplySnapshotChangeFn>(applyProjectSnapshotChange), menuTrackTypes](int choice) mutable
                            {
-                               if (choice <= 0)
+                               if (weakThis == nullptr || choice <= 0)
                                    return;
 
-                               const auto before = audioProcessor.getProjectSnapshot();
+                               const auto before = weakThis->audioProcessor.getProjectSnapshot();
                                auto after = before;
                                bool changed = false;
 
@@ -719,5 +754,7 @@ public:
 
 private:
     BoomBapGeneratorAudioProcessor& audioProcessor;
+
+    JUCE_DECLARE_WEAK_REFERENCEABLE(EditorCommandController)
 };
 } // namespace bbg

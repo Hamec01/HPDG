@@ -1,25 +1,22 @@
 #pragma once
 
-#include <random>
 #include <unordered_set>
-#include <vector>
 
-#include "GenreEngine.h"
 #include "Drill/Drill808Generator.h"
-#include "Drill/DrillCrossTrackResolver.h"
 #include "Drill/DrillHatFxGenerator.h"
 #include "Drill/DrillHatGenerator.h"
 #include "Drill/DrillKickGenerator.h"
+#include "Drill/DrillPatternValidator.h"
 #include "Drill/DrillPhrasePlanner.h"
 #include "Drill/DrillSnareGenerator.h"
-#include "Drill/DrillStyleProfile.h"
+#include "GenreEngine.h"
 
 namespace bbg
 {
 class DrillEngine final : public GenreEngine
 {
 public:
-    DrillEngine();
+    DrillEngine() = default;
 
     void generate(PatternProject& project) override;
     void regenerateTrack(PatternProject& project, TrackType trackType) override;
@@ -29,73 +26,17 @@ public:
     void mutateTrack(PatternProject& project, TrackType trackType);
 
 private:
-    void regenerateTrackInternal(PatternProject& project,
-                                 TrackState& track,
-                                 const DrillStyleProfile& style,
-                                 const std::vector<DrillPhraseRole>& phrase,
-                                 std::mt19937& rng) const;
+    void applyPhrasePlan(PatternProject& project, const DrillPhrasePlan& plan) const;
+    void runGenerationPass(PatternProject& project,
+                           const std::unordered_set<TrackType>& mutableTracks,
+                           int seedSalt) const;
+    static std::unordered_set<TrackType> expandMutableTracks(TrackType trackType);
 
-    void generateDrillSnareBackbone(PatternProject& project,
-                                    const DrillStyleProfile& style,
-                                    const std::vector<DrillPhraseRole>& phrase,
-                                    std::mt19937& rng,
-                                    const std::unordered_set<TrackType>& mutableTracks) const;
-    void generateDrillHiHatStructure(PatternProject& project,
-                                     const DrillStyleProfile& style,
-                                     const std::vector<DrillPhraseRole>& phrase,
-                                     const DrillGrooveBlueprint* blueprint,
-                                     std::mt19937& rng,
-                                     const std::unordered_set<TrackType>& mutableTracks) const;
-    void generateDrillKickSkeleton(PatternProject& project,
-                                   const DrillStyleProfile& style,
-                                   const std::vector<DrillPhraseRole>& phrase,
-                                   const DrillGrooveBlueprint* blueprint,
-                                   std::mt19937& rng,
-                                   const std::unordered_set<TrackType>& mutableTracks) const;
-    void generateSub808RhythmFromDrillKicks(PatternProject& project,
-                                            const DrillStyleProfile& style,
-                                                                                        const Drill808StyleSpec& spec,
-                                            const std::vector<DrillPhraseRole>& phrase,
-                                            const DrillGrooveBlueprint* blueprint,
-                                            std::mt19937& rng,
-                                            const std::unordered_set<TrackType>& mutableTracks) const;
-    void assignDrillSub808Pitches(PatternProject& project,
-                                  const DrillStyleProfile& style,
-                                                                    const Drill808StyleSpec& spec,
-                                  const std::vector<DrillPhraseRole>& phrase,
-                                  const DrillGrooveBlueprint* blueprint,
-                                  std::mt19937& rng,
-                                  const std::unordered_set<TrackType>& mutableTracks) const;
-    void applyDrillSub808Slides(PatternProject& project,
-                                                                const Drill808StyleSpec& spec,
-                                const std::vector<DrillPhraseRole>& phrase,
-                                const DrillGrooveBlueprint* blueprint,
-                                std::mt19937& rng,
-                                const std::unordered_set<TrackType>& mutableTracks) const;
-    void generateDrillHatFX(PatternProject& project,
-                            const DrillStyleProfile& style,
-                            const std::vector<DrillPhraseRole>& phrase,
-                            const DrillGrooveBlueprint* blueprint,
-                            std::mt19937& rng,
-                            const std::unordered_set<TrackType>& mutableTracks) const;
-    void generateDrillSupportLanes(PatternProject& project,
-                                   const DrillStyleProfile& style,
-                                   const DrillStyleSpec& spec,
-                                   const std::vector<DrillPhraseRole>& phrase,
-                                   const DrillGrooveBlueprint* blueprint,
-                                   std::mt19937& rng,
-                                   const std::unordered_set<TrackType>& mutableTracks) const;
-    void applyDrillHumanization(PatternProject& project,
-                                const DrillStyleProfile& style,
-                                std::mt19937& rng,
-                                const std::unordered_set<TrackType>& mutableTracks) const;
-    void validatePattern(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks) const;
-
-    DrillKickGenerator kickGenerator;
-    DrillSnareGenerator snareGenerator;
-    DrillHatGenerator hatGenerator;
-    DrillHatFxGenerator hatFxGenerator;
     Drill808Generator subGenerator;
-    DrillCrossTrackResolver crossTrackResolver;
+    DrillHatFxGenerator hatFxGenerator;
+    DrillHatGenerator hatGenerator;
+    DrillKickGenerator kickGenerator;
+    DrillPatternValidator validator;
+    DrillSnareGenerator snareGenerator;
 };
 } // namespace bbg

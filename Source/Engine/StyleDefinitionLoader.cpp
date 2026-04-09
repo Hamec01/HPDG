@@ -4,7 +4,6 @@
 #include <map>
 
 #include "BoomBap/BoomBapStyleProfile.h"
-#include "Drill/DrillStyleProfile.h"
 #include "Rap/RapStyleProfile.h"
 #include "StyleDefaults.h"
 #include "Trap/TrapStyleProfile.h"
@@ -16,7 +15,17 @@ namespace bbg
 {
 namespace
 {
-constexpr int kMaxRankedReferences = 3;
+constexpr int kDefaultMaxRankedReferences = 0;
+
+int configuredMaxRankedReferences()
+{
+    const auto value = juce::SystemStats::getEnvironmentVariable("HPDG_STYLELAB_TOP_N", {});
+    if (value.trim().isEmpty())
+        return kDefaultMaxRankedReferences;
+
+    const int parsed = value.getIntValue();
+    return parsed > 0 ? parsed : 0;
+}
 
 juce::String sanitizePathSegment(const juce::String& input)
 {
@@ -60,9 +69,9 @@ int clampedSubstyleIndex(GenreType genre, int substyleIndex)
     {
         switch (genre)
         {
+            case GenreType::Drill: return getDrillSubstyleNames();
             case GenreType::Rap: return getRapSubstyleNames();
             case GenreType::Trap: return getTrapSubstyleNames();
-            case GenreType::Drill: return getDrillSubstyleNames();
             case GenreType::BoomBap:
             default: return getBoomBapSubstyleNames();
         }
@@ -80,9 +89,9 @@ int substyleIndexForName(GenreType genre, const juce::String& substyleName)
     {
         switch (genre)
         {
+            case GenreType::Drill: return getDrillSubstyleNames();
             case GenreType::Rap: return getRapSubstyleNames();
             case GenreType::Trap: return getTrapSubstyleNames();
-            case GenreType::Drill: return getDrillSubstyleNames();
             case GenreType::BoomBap:
             default: return getBoomBapSubstyleNames();
         }
@@ -109,6 +118,97 @@ void applyDrillHatSummaryHints(ResolvedStyleDefinition& definition,
                                const StyleLabReferenceDrillHatMotionSummary& hatSummary);
 ReferenceHatCorpus buildReferenceHatCorpus(const std::vector<StyleLabReferenceRecord>& records);
 ReferenceKickCorpus buildReferenceKickCorpus(const std::vector<StyleLabReferenceRecord>& records);
+BrooklynReferenceProfile buildBrooklynReferenceProfile(const std::vector<StyleLabReferenceRecord>& records,
+                                                       const std::vector<float>& weights);
+struct ParsedReferenceRhythm;
+std::optional<ParsedReferenceRhythm> parseReferenceRhythm(const StyleLabReferenceRecord& record);
+
+struct BrooklynParsedReferenceNote
+{
+    int tick = 0;
+    int velocity = 96;
+};
+
+bool metadataTrackMatchesBrooklyn(const juce::DynamicObject& trackObject, TrackType type)
+{
+    const auto token = juce::String(toString(type));
+    const auto runtimeTrackType = trackObject.getProperty("runtimeTrackType").toString().trim();
+    const auto trackType = trackObject.getProperty("trackType").toString().trim();
+    return runtimeTrackType == token || trackType == token;
+}
+
+std::vector<BrooklynParsedReferenceNote> collectBrooklynMetadataNotes(const juce::Array<juce::var>& tracks,
+                                                                      std::initializer_list<TrackType> trackTypes)
+{
+    std::vector<BrooklynParsedReferenceNote> notes;
+
+    for (const auto& trackVar : tracks)
+    {
+        auto* trackObject = trackVar.getDynamicObject();
+        if (trackObject == nullptr)
+            continue;
+
+        bool matches = false;
+        for (const auto trackType : trackTypes)
+        {
+            if (metadataTrackMatchesBrooklyn(*trackObject, trackType))
+            {
+                matches = true;
+                break;
+            }
+        }
+
+        if (!matches)
+            continue;
+
+        auto* laneParams = trackObject->getProperty("laneParams").getDynamicObject();
+        if (laneParams == nullptr)
+            continue;
+
+        auto* noteArray = laneParams->getProperty("notes").getArray();
+        if (noteArray == nullptr)
+            continue;
+
+        notes.reserve(notes.size() + static_cast<size_t>(noteArray->size()));
+        for (const auto& noteVar : *noteArray)
+        {
+            auto* noteObject = noteVar.getDynamicObject();
+            if (noteObject == nullptr)
+                continue;
+
+            const auto stepVar = noteObject->getProperty("step");
+            const auto microOffsetVar = noteObject->getProperty("microOffsetTicks");
+            const auto startTickVar = noteObject->getProperty("startTick");
+            const auto velocityVar = noteObject->getProperty("velocity");
+            const int step = stepVar.isVoid() ? 0 : static_cast<int>(stepVar);
+            const int microOffset = microOffsetVar.isVoid() ? 0 : static_cast<int>(microOffsetVar);
+            const int startTick = startTickVar.isVoid()
+                ? (step * HiResTiming::kTicks1_16 + microOffset)
+                : static_cast<int>(startTickVar);
+            const int velocity = velocityVar.isVoid() ? 96 : static_cast<int>(velocityVar);
+            notes.push_back({ std::max(0, startTick), std::clamp(velocity, 1, 127) });
+        }
+    }
+
+    std::sort(notes.begin(), notes.end(), [](const BrooklynParsedReferenceNote& left, const BrooklynParsedReferenceNote& right)
+    {
+        if (left.tick != right.tick)
+            return left.tick < right.tick;
+        return left.velocity > right.velocity;
+    });
+
+    notes.erase(std::unique(notes.begin(), notes.end(), [](const BrooklynParsedReferenceNote& left, const BrooklynParsedReferenceNote& right)
+    {
+        return left.tick == right.tick;
+    }), notes.end());
+
+    return notes;
+}
+
+constexpr int brooklynFastClusterGapThreshold()
+{
+    return std::max(HiResTiming::kTicks1_32, HiResTiming::kTicks1_24) + 8;
+}
 
 float weightedAverage(const std::vector<float>& values, const std::vector<float>& weights)
 {
@@ -129,12 +229,12 @@ float weightedAverage(const std::vector<float>& values, const std::vector<float>
 
 GenreType genreTypeFromDisplayName(const juce::String& genreName)
 {
+    if (genreName.equalsIgnoreCase("Drill"))
+        return GenreType::Drill;
     if (genreName.equalsIgnoreCase("Rap"))
         return GenreType::Rap;
     if (genreName.equalsIgnoreCase("Trap"))
         return GenreType::Trap;
-    if (genreName.equalsIgnoreCase("Drill"))
-        return GenreType::Drill;
     return GenreType::BoomBap;
 }
 
@@ -176,6 +276,20 @@ float backedLaneRatio(const StyleLabReferenceRecord& record)
     return clampUnit(static_cast<float>(record.backedLaneCount) / static_cast<float>(record.totalRuntimeLaneCount));
 }
 
+int availableSubstyleDirectoryCount(const juce::File& genreDirectory)
+{
+    if (!genreDirectory.isDirectory())
+        return 0;
+
+    int count = 0;
+    for (const auto& entry : juce::RangedDirectoryIterator(genreDirectory, false, "*", juce::File::findDirectories))
+    {
+        juce::ignoreUnused(entry);
+        ++count;
+    }
+    return count;
+}
+
 std::vector<float> referenceAggregationWeights(size_t count)
 {
     static constexpr float kBaseWeights[] = { 1.0f, 0.65f, 0.45f };
@@ -192,6 +306,89 @@ struct RankedReferenceEntry
     StyleLabReferenceRecord record;
     juce::Time sortTime;
 };
+
+enum class ReferenceLaneTarget
+{
+    Hat = 0,
+    Kick
+};
+
+StyleLabReferenceZeroReason dominantZeroReason(int parsingFailed,
+                                               int laneMappingEmpty,
+                                               int incompatibleSpan,
+                                               int filteredByDensity)
+{
+    const int counts[] { parsingFailed, laneMappingEmpty, incompatibleSpan, filteredByDensity };
+    const StyleLabReferenceZeroReason reasons[] {
+        StyleLabReferenceZeroReason::ParsingFailed,
+        StyleLabReferenceZeroReason::LaneMappingEmpty,
+        StyleLabReferenceZeroReason::IncompatibleReferenceSpan,
+        StyleLabReferenceZeroReason::FilteredByDensity
+    };
+
+    int bestIndex = -1;
+    int bestCount = 0;
+    for (int index = 0; index < 4; ++index)
+    {
+        if (counts[index] > bestCount)
+        {
+            bestIndex = index;
+            bestCount = counts[index];
+        }
+    }
+
+    return bestIndex >= 0 ? reasons[bestIndex] : StyleLabReferenceZeroReason::NoRefsSelected;
+}
+
+juce::String buildLaneDiagnosticDetail(ReferenceLaneTarget target,
+                                       int requestedCount,
+                                       int parsingFailed,
+                                       int laneMappingEmpty,
+                                       int incompatibleSpan,
+                                       int filteredByDensity)
+{
+    const auto laneLabel = target == ReferenceLaneTarget::Hat ? "hat" : "kick";
+    juce::StringArray parts;
+
+    if (parsingFailed > 0)
+        parts.add(juce::String(parsingFailed) + "/" + juce::String(requestedCount) + " selected refs could not be parsed into " + laneLabel + " input.");
+    if (laneMappingEmpty > 0)
+        parts.add(juce::String(laneMappingEmpty) + "/" + juce::String(requestedCount) + " selected refs had no " + laneLabel + " lane note data in referenceProject.tracks[].laneParams.notes.");
+    if (incompatibleSpan > 0)
+        parts.add(juce::String(incompatibleSpan) + "/" + juce::String(requestedCount) + " selected refs had an incompatible bar span.");
+    if (filteredByDensity > 0)
+        parts.add(juce::String(filteredByDensity) + "/" + juce::String(requestedCount) + " selected refs were filtered by density.");
+
+    return parts.joinIntoString(" ");
+}
+
+StyleLabReferenceLaneDiagnostics zeroLaneDiagnostics(bool styleSwitchDisabled,
+                                                     int candidateDirectoryCount,
+                                                     int parseFailureCount,
+                                                     const juce::String& loadMessage)
+{
+    StyleLabReferenceLaneDiagnostics diagnostics;
+    diagnostics.requestedCount = 0;
+    diagnostics.resolvedCount = 0;
+
+    if (styleSwitchDisabled)
+    {
+        diagnostics.zeroReason = StyleLabReferenceZeroReason::RefsDisabledByStyleSwitch;
+        diagnostics.detail = "Current genre/substyle has no Style Lab reference folder, but other style folders exist in this genre.";
+        return diagnostics;
+    }
+
+    if (candidateDirectoryCount > 0 && parseFailureCount >= candidateDirectoryCount)
+    {
+        diagnostics.zeroReason = StyleLabReferenceZeroReason::ParsingFailed;
+        diagnostics.detail = juce::String(parseFailureCount) + "/" + juce::String(candidateDirectoryCount) + " candidate metadata files failed to parse.";
+        return diagnostics;
+    }
+
+    diagnostics.zeroReason = StyleLabReferenceZeroReason::NoRefsSelected;
+    diagnostics.detail = loadMessage.isNotEmpty() ? loadMessage : "No matching Style Lab refs were selected for this style.";
+    return diagnostics;
+}
 
 bool isNumericVar(const juce::var& value)
 {
@@ -336,7 +533,10 @@ std::vector<StyleLabReferenceRecord> rankAndSelectReferences(std::vector<StyleLa
     });
 
     std::vector<StyleLabReferenceRecord> selected;
-    const auto limit = std::min<size_t>(rankedEntries.size(), kMaxRankedReferences);
+    const int configuredLimit = configuredMaxRankedReferences();
+    const auto limit = configuredLimit > 0
+        ? std::min<size_t>(rankedEntries.size(), static_cast<size_t>(configuredLimit))
+        : rankedEntries.size();
     selected.reserve(limit);
     for (size_t index = 0; index < limit; ++index)
         selected.push_back(std::move(rankedEntries[index].record));
@@ -352,7 +552,15 @@ void applyRankedReferenceAggregation(ResolvedStyleDefinition& definition,
 
     definition.sourceReferenceCountUsed = static_cast<int>(selectedRecords.size());
     definition.primaryReferenceId = selectedRecords.front().directory.getFileName();
-    definition.loadStrategy = selectedRecords.size() > 1 ? "ranked-reference-set" : "single-best-reference";
+    const int configuredLimit = configuredMaxRankedReferences();
+    if (selectedRecords.size() <= 1)
+        definition.loadStrategy = "single-best-reference";
+    else if (configuredLimit > 0)
+        definition.loadStrategy = "ranked-reference-top-n";
+    else
+        definition.loadStrategy = "ranked-reference-all";
+    definition.styleHints.set("stylelab.reference_top_n", configuredLimit);
+    definition.styleHints.set("stylelab.reference_selected_count", static_cast<int>(selectedRecords.size()));
 
     const auto weights = referenceAggregationWeights(selectedRecords.size());
     std::vector<ResolvedStyleDefinition> resolvedReferences;
@@ -363,18 +571,32 @@ void applyRankedReferenceAggregation(ResolvedStyleDefinition& definition,
     applyWeightedStyleHints(definition, resolvedReferences, weights);
     applyReferenceMetadataHints(definition, selectedRecords, weights);
 
-    if (genre == GenreType::Drill)
+    auto referenceHatCorpus = buildReferenceHatCorpus(selectedRecords);
+    if (referenceHatCorpus.available)
+        definition.referenceHatCorpus = std::move(referenceHatCorpus);
+    else
+        definition.referenceHatCorpus.reset();
+
+    auto referenceKickCorpus = buildReferenceKickCorpus(selectedRecords);
+    if (referenceKickCorpus.available)
+        definition.referenceKickCorpus = std::move(referenceKickCorpus);
+    else
+        definition.referenceKickCorpus.reset();
+
+    auto referenceHatSkeleton = extractReferenceHatSkeleton(selectedRecords.front());
+    if (referenceHatSkeleton.available && !referenceHatSkeleton.barMaps.empty())
     {
-        const auto corpus = buildReferenceHatCorpus(selectedRecords);
-        if (corpus.available)
-            definition.referenceHatCorpus = corpus;
-
-        const auto kickCorpus = buildReferenceKickCorpus(selectedRecords);
-        if (kickCorpus.available)
-            definition.referenceKickCorpus = kickCorpus;
-
-        applyDrillHatSummaryHints(definition, weightedDrillHatSummary(selectedRecords, weights));
+        referenceHatSkeleton.sourceId = selectedRecords.front().directory.getFileName();
+        definition.referenceHatSkeleton = std::move(referenceHatSkeleton);
     }
+    else
+    {
+        definition.referenceHatSkeleton.reset();
+    }
+
+    if (genre == GenreType::Drill)
+        applyDrillHatSummaryHints(definition, weightedDrillHatSummary(selectedRecords, weights));
+
 }
 
 void applyDrillHatSummaryHints(ResolvedStyleDefinition& definition,
@@ -448,6 +670,7 @@ ReferenceHatCorpus buildReferenceHatCorpus(const std::vector<StyleLabReferenceRe
         auto skeleton = extractReferenceHatSkeleton(record);
         if (!skeleton.available || skeleton.barMaps.empty())
             continue;
+        skeleton.sourceId = record.directory.getFileName();
         corpus.variants.push_back(std::move(skeleton));
     }
 
@@ -470,6 +693,213 @@ ReferenceKickCorpus buildReferenceKickCorpus(const std::vector<StyleLabReference
     corpus.sourceReferenceCount = static_cast<int>(corpus.variants.size());
     corpus.available = !corpus.variants.empty();
     return corpus;
+}
+
+BrooklynReferenceBarRole roleForReferenceBar(int totalBars, int barIndex)
+{
+    if (totalBars <= 1)
+        return BrooklynReferenceBarRole::Ending;
+    if (totalBars == 2)
+        return barIndex == 0 ? BrooklynReferenceBarRole::Statement : BrooklynReferenceBarRole::Ending;
+    if (totalBars == 3)
+    {
+        if (barIndex == 0)
+            return BrooklynReferenceBarRole::Statement;
+        if (barIndex == 1)
+            return BrooklynReferenceBarRole::Response;
+        return BrooklynReferenceBarRole::Ending;
+    }
+
+    switch (barIndex % 4)
+    {
+        case 0: return BrooklynReferenceBarRole::Statement;
+        case 1: return BrooklynReferenceBarRole::Response;
+        case 2: return BrooklynReferenceBarRole::Lift;
+        default: return BrooklynReferenceBarRole::Ending;
+    }
+}
+
+void normalizeBrooklynStepWeights(std::array<float, 16>& weights, float divisor)
+{
+    if (divisor <= 0.0f)
+        return;
+
+    for (auto& weight : weights)
+        weight = clampUnit(weight / divisor);
+}
+
+BrooklynReferenceProfile buildBrooklynReferenceProfile(const std::vector<StyleLabReferenceRecord>& records,
+                                                       const std::vector<float>& weights)
+{
+    BrooklynReferenceProfile profile;
+    std::array<float, 4> roleWeightTotals { 0.0f, 0.0f, 0.0f, 0.0f };
+    std::array<float, 4> subLengthTotals { 0.0f, 0.0f, 0.0f, 0.0f };
+    std::array<float, 4> subLengthWeights { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    for (size_t recordIndex = 0; recordIndex < records.size() && recordIndex < weights.size(); ++recordIndex)
+    {
+        const auto& record = records[recordIndex];
+        if (!record.metadataFile.existsAsFile())
+            continue;
+
+        const auto json = juce::JSON::parse(record.metadataFile.loadFileAsString());
+        auto* rootObject = json.getDynamicObject();
+        if (rootObject == nullptr)
+            continue;
+
+        auto* referenceProject = rootObject->getProperty("referenceProject").getDynamicObject();
+        if (referenceProject == nullptr)
+            continue;
+
+        auto* tracks = referenceProject->getProperty("tracks").getArray();
+        if (tracks == nullptr)
+            continue;
+
+        const auto kicks = collectBrooklynMetadataNotes(*tracks, { TrackType::Kick, TrackType::GhostKick });
+        const auto hats = collectBrooklynMetadataNotes(*tracks, { TrackType::HiHat });
+        const auto snares = collectBrooklynMetadataNotes(*tracks, { TrackType::Snare, TrackType::ClapGhostSnare });
+        const auto openHats = collectBrooklynMetadataNotes(*tracks, { TrackType::OpenHat });
+        const auto subs = collectBrooklynMetadataNotes(*tracks, { TrackType::Sub808 });
+        const int totalBars = std::max(1, record.bars);
+        const float recordWeight = weights[recordIndex];
+
+        for (int bar = 0; bar < totalBars; ++bar)
+        {
+            const auto role = roleForReferenceBar(totalBars, bar);
+            const auto roleIndex = static_cast<size_t>(role);
+            auto& roleProfile = profile.roles[roleIndex];
+            roleWeightTotals[roleIndex] += recordWeight;
+
+            const int barStart = bar * HiResTiming::kTicksPerBar4_4;
+            const int barEnd = barStart + HiResTiming::kTicksPerBar4_4;
+            int kickCount = 0;
+            int hatCount = 0;
+            int openHatCount = 0;
+            int subCount = 0;
+            bool hadBurst = false;
+
+            for (const auto& note : kicks)
+            {
+                if (note.tick < barStart || note.tick >= barEnd)
+                    continue;
+
+                const int localTick = note.tick - barStart;
+                const int step16 = std::clamp(HiResTiming::quantizeTicks(localTick, HiResTiming::kTicks1_16) / HiResTiming::kTicks1_16, 0, 15);
+                roleProfile.kickStepWeight[static_cast<size_t>(step16)] += recordWeight;
+                ++kickCount;
+                if (step16 >= 13)
+                    roleProfile.phraseEdgeKickRate += recordWeight;
+            }
+
+            std::vector<int> barSnareTicks;
+            for (const auto& note : snares)
+                if (note.tick >= barStart && note.tick < barEnd)
+                    barSnareTicks.push_back(note.tick);
+
+            std::vector<int> barHatTicks;
+            for (const auto& note : hats)
+            {
+                if (note.tick < barStart || note.tick >= barEnd)
+                    continue;
+
+                const int localTick = note.tick - barStart;
+                const int step16 = std::clamp(HiResTiming::quantizeTicks(localTick, HiResTiming::kTicks1_16) / HiResTiming::kTicks1_16, 0, 15);
+                roleProfile.hatStepWeight[static_cast<size_t>(step16)] += recordWeight;
+                barHatTicks.push_back(note.tick);
+                ++hatCount;
+
+                for (const int snareTick : barSnareTicks)
+                {
+                    const int delta = snareTick - note.tick;
+                    if (delta > 0 && delta <= HiResTiming::kTicks1_8)
+                    {
+                        roleProfile.preSnareAccentRate += recordWeight;
+                        break;
+                    }
+                }
+            }
+
+            std::sort(barHatTicks.begin(), barHatTicks.end());
+            for (size_t tickIndex = 1; tickIndex < barHatTicks.size(); ++tickIndex)
+            {
+                const int delta = barHatTicks[tickIndex] - barHatTicks[tickIndex - 1];
+                if (delta > 0 && delta <= brooklynFastClusterGapThreshold())
+                {
+                    hadBurst = true;
+                    break;
+                }
+            }
+
+            for (const auto& note : openHats)
+            {
+                if (note.tick < barStart || note.tick >= barEnd)
+                    continue;
+
+                const int localTick = note.tick - barStart;
+                const int step16 = std::clamp(HiResTiming::quantizeTicks(localTick, HiResTiming::kTicks1_16) / HiResTiming::kTicks1_16, 0, 15);
+                roleProfile.openHatStepWeight[static_cast<size_t>(step16)] += recordWeight;
+                ++openHatCount;
+            }
+
+            std::vector<int> barSubTicks;
+            for (const auto& note : subs)
+            {
+                if (note.tick < barStart || note.tick >= barEnd)
+                    continue;
+
+                const int localTick = note.tick - barStart;
+                const int step16 = std::clamp(HiResTiming::quantizeTicks(localTick, HiResTiming::kTicks1_16) / HiResTiming::kTicks1_16, 0, 15);
+                roleProfile.subStartStepWeight[static_cast<size_t>(step16)] += recordWeight;
+                barSubTicks.push_back(note.tick);
+                ++subCount;
+            }
+
+            std::sort(barSubTicks.begin(), barSubTicks.end());
+            for (size_t tickIndex = 0; tickIndex < barSubTicks.size(); ++tickIndex)
+            {
+                const int tick = barSubTicks[tickIndex];
+                const int nextTick = tickIndex + 1 < barSubTicks.size() ? barSubTicks[tickIndex + 1] : barEnd;
+                const int effectiveNextTick = std::clamp(nextTick, tick + HiResTiming::kTicks1_16, barEnd);
+                const float lengthSteps = static_cast<float>(std::max(1, effectiveNextTick - tick)) / static_cast<float>(HiResTiming::kTicks1_16);
+                subLengthTotals[roleIndex] += lengthSteps * recordWeight;
+                subLengthWeights[roleIndex] += recordWeight;
+            }
+
+            roleProfile.avgKickHitsPerBar += static_cast<float>(kickCount) * recordWeight;
+            roleProfile.avgHatHitsPerBar += static_cast<float>(hatCount) * recordWeight;
+            roleProfile.avgOpenHatHitsPerBar += static_cast<float>(openHatCount) * recordWeight;
+            roleProfile.avgSubStartsPerBar += static_cast<float>(subCount) * recordWeight;
+            if (hadBurst)
+                roleProfile.burstRate += recordWeight;
+        }
+    }
+
+    for (size_t roleIndex = 0; roleIndex < profile.roles.size(); ++roleIndex)
+    {
+        auto& roleProfile = profile.roles[roleIndex];
+        const float roleWeight = roleWeightTotals[roleIndex];
+        if (roleWeight <= 0.0f)
+            continue;
+
+        normalizeBrooklynStepWeights(roleProfile.kickStepWeight, roleWeight);
+        normalizeBrooklynStepWeights(roleProfile.hatStepWeight, roleWeight);
+        normalizeBrooklynStepWeights(roleProfile.openHatStepWeight, roleWeight);
+        normalizeBrooklynStepWeights(roleProfile.subStartStepWeight, roleWeight);
+        roleProfile.avgKickHitsPerBar /= roleWeight;
+        roleProfile.avgHatHitsPerBar /= roleWeight;
+        roleProfile.avgOpenHatHitsPerBar /= roleWeight;
+        roleProfile.avgSubStartsPerBar /= roleWeight;
+        roleProfile.avgSubLengthSteps = subLengthWeights[roleIndex] > 0.0f
+            ? subLengthTotals[roleIndex] / subLengthWeights[roleIndex]
+            : 0.0f;
+        roleProfile.phraseEdgeKickRate = clampUnit(roleProfile.phraseEdgeKickRate / roleWeight);
+        roleProfile.preSnareAccentRate = clampUnit(roleProfile.preSnareAccentRate / roleWeight);
+        roleProfile.burstRate = clampUnit(roleProfile.burstRate / roleWeight);
+        profile.available = true;
+    }
+
+    profile.sourceCount = profile.available ? static_cast<int>(records.size()) : 0;
+    return profile;
 }
 
 float normalizedSwing(float swingPercent)
@@ -515,6 +945,78 @@ bool metadataTrackMatches(const juce::DynamicObject& trackObject, TrackType type
     const auto runtimeTrackType = trackObject.getProperty("runtimeTrackType").toString().trim();
     const auto trackType = trackObject.getProperty("trackType").toString().trim();
     return runtimeTrackType == token || trackType == token;
+}
+
+StyleLabReferenceLaneDiagnostics diagnoseLaneResolution(const std::vector<StyleLabReferenceRecord>& selectedRecords,
+                                                        ReferenceLaneTarget target)
+{
+    StyleLabReferenceLaneDiagnostics diagnostics;
+    diagnostics.requestedCount = static_cast<int>(selectedRecords.size());
+
+    int parsingFailed = 0;
+    int laneMappingEmpty = 0;
+    int incompatibleSpan = 0;
+    int filteredByDensity = 0;
+
+    for (const auto& record : selectedRecords)
+    {
+        const auto rhythm = parseReferenceRhythm(record);
+        if (!rhythm.has_value())
+        {
+            ++parsingFailed;
+            continue;
+        }
+
+        if (rhythm->bars <= 0)
+        {
+            ++incompatibleSpan;
+            continue;
+        }
+
+        if (target == ReferenceLaneTarget::Hat)
+        {
+            auto skeleton = extractReferenceHatSkeleton(record);
+            if (skeleton.available && !skeleton.barMaps.empty())
+            {
+                ++diagnostics.resolvedCount;
+                continue;
+            }
+
+            if (rhythm->hats.empty())
+                ++laneMappingEmpty;
+            else
+                ++filteredByDensity;
+            continue;
+        }
+
+        auto pattern = extractReferenceKickPattern(record);
+        if (pattern.available && !pattern.barPatterns.empty())
+        {
+            ++diagnostics.resolvedCount;
+            continue;
+        }
+
+        if (rhythm->kicks.empty())
+            ++laneMappingEmpty;
+        else
+            ++filteredByDensity;
+    }
+
+    if (diagnostics.resolvedCount <= 0)
+    {
+        diagnostics.zeroReason = dominantZeroReason(parsingFailed,
+                                                    laneMappingEmpty,
+                                                    incompatibleSpan,
+                                                    filteredByDensity);
+        diagnostics.detail = buildLaneDiagnosticDetail(target,
+                                                       diagnostics.requestedCount,
+                                                       parsingFailed,
+                                                       laneMappingEmpty,
+                                                       incompatibleSpan,
+                                                       filteredByDensity);
+    }
+
+    return diagnostics;
 }
 
 std::vector<ParsedReferenceNote> collectMetadataNotes(const juce::Array<juce::var>& tracks,
@@ -652,9 +1154,6 @@ double anchorProximityValue(int tick, const std::vector<int>& anchors)
 ReferenceHatSkeleton extractReferenceHatSkeleton(const StyleLabReferenceRecord& record)
 {
     ReferenceHatSkeleton skeleton;
-    if (record.genre.compareIgnoreCase("Drill") != 0)
-        return skeleton;
-
     const auto rhythm = parseReferenceRhythm(record);
     if (!rhythm.has_value() || rhythm->hats.empty())
         return skeleton;
@@ -800,9 +1299,6 @@ ReferenceHatSkeleton extractReferenceHatSkeleton(const StyleLabReferenceRecord& 
 ReferenceKickPattern extractReferenceKickPattern(const StyleLabReferenceRecord& record)
 {
     ReferenceKickPattern pattern;
-    if (record.genre.compareIgnoreCase("Drill") != 0)
-        return pattern;
-
     const auto rhythm = parseReferenceRhythm(record);
     if (!rhythm.has_value() || rhythm->kicks.empty())
         return pattern;
@@ -1052,12 +1548,46 @@ void populateGenreStyleHints(ResolvedStyleDefinition& definition, GenreType genr
         }
         case GenreType::Drill:
         {
-            const auto& style = getDrillProfile(substyleIndex);
-            const auto styleSpec = getDrillStyleSpec(style.substyle);
-            definition.styleHints.set("drill.anchor_rigidity", clampUnit(styleSpec.phraseEdgeAnchorProbability + styleSpec.followKickProbability * 0.25f));
-            definition.styleHints.set("drill.hat_motion", clampUnit(static_cast<float>(style.baseRoll + style.baseAccent)));
-            definition.styleHints.set("drill.kick_808_coupling", clampUnit(styleSpec.followKickProbability));
-            definition.styleHints.set("drill.gap_intent", clampUnit(styleSpec.counterGapProbability + (styleSpec.preferSparseSpace ? 0.2f : 0.0f)));
+            const auto& style = getGenreStyleDefaults(genre, substyleIndex);
+            const auto& hatLane = getLaneStyleDefaults(style, TrackType::HiHat);
+            const auto& hatFxLane = getLaneStyleDefaults(style, TrackType::HatFX);
+            const auto& clapLane = getLaneStyleDefaults(style, TrackType::ClapGhostSnare);
+            const auto& subLane = getLaneStyleDefaults(style, TrackType::Sub808);
+
+            definition.styleHints.set("drill.hat_motion",
+                                      clampUnit(hatLane.densityBias * 0.40f
+                                                + hatLane.rgVariationIntensity * 0.36f
+                                                + hatFxLane.hatFxIntensity * 0.24f));
+            definition.styleHints.set("drill.hat_roll_length",
+                                      clampUnit(hatLane.rgVariationIntensity * 0.58f
+                                                + hatFxLane.hatFxIntensity * 0.26f));
+            definition.styleHints.set("drill.hat_density_variation",
+                                      clampUnit(hatLane.rgVariationIntensity * 0.72f
+                                                + hatLane.phraseEndingProbability * 0.14f));
+            definition.styleHints.set("drill.hat_accent_pattern",
+                                      clampUnit(hatFxLane.hatFxIntensity * 0.46f
+                                                + clapLane.noteProbability * 0.28f
+                                                + hatLane.phraseEndingProbability * 0.14f));
+            definition.styleHints.set("drill.hat_burst",
+                                      clampUnit(hatFxLane.hatFxIntensity * 0.52f
+                                                + hatLane.rgVariationIntensity * 0.22f
+                                                + hatLane.phraseEndingProbability * 0.12f));
+            definition.styleHints.set("drill.hat_triplet",
+                                      clampUnit(hatLane.rgVariationIntensity * 0.38f
+                                                + hatLane.phraseEndingProbability * 0.34f
+                                                + hatLane.densityBias * 0.12f));
+            definition.styleHints.set("drill.gap_intent",
+                                      clampUnit(0.22f
+                                                + hatLane.phraseEndingProbability * 0.46f
+                                                + (1.0f - clampUnit(style.densityDefault)) * 0.20f));
+            definition.styleHints.set("drill.support_accent",
+                                      clampUnit(0.20f
+                                                + clapLane.noteProbability * 0.44f
+                                                + hatFxLane.hatFxIntensity * 0.26f));
+            definition.styleHints.set("drill.low_end_coupling",
+                                      clampUnit(0.22f
+                                                + subLane.sub808Activity * 0.62f
+                                                + subLane.densityBias * 0.10f));
             break;
         }
         default:
@@ -1069,32 +1599,52 @@ void populateGenreStyleHints(ResolvedStyleDefinition& definition, GenreType genr
 std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const juce::String& genreName,
                                                                          const juce::String& substyleName,
                                                                          const juce::File& rootDirectory,
-                                                                         juce::String* errorMessage)
+                                                                         juce::String* errorMessage,
+                                                                         StyleLabReferenceDebugDiagnostics* referenceDiagnostics)
 {
+    StyleLabReferenceDebugDiagnostics diagnostics;
     juce::String status;
-    const auto styleDirectory = rootDirectory
-        .getChildFile(sanitizePathSegment(genreName))
-        .getChildFile(sanitizePathSegment(substyleName));
+    const auto genreDirectory = rootDirectory.getChildFile(sanitizePathSegment(genreName));
+    const auto genre = genreTypeFromDisplayName(genreName);
+    const auto substyleNames = juce::StringArray { substyleName };
+    const bool styleSwitchDisabled = !genreDirectory.getChildFile(sanitizePathSegment(substyleName)).isDirectory()
+        && availableSubstyleDirectoryCount(genreDirectory) > 0;
 
-    if (!styleDirectory.isDirectory())
+    std::vector<juce::File> styleDirectories;
+    for (const auto& compatibleSubstyleName : substyleNames)
+    {
+        const auto styleDirectory = genreDirectory.getChildFile(sanitizePathSegment(compatibleSubstyleName));
+        if (styleDirectory.isDirectory())
+            styleDirectories.push_back(styleDirectory);
+    }
+
+    if (styleDirectories.empty())
     {
         status = "No Style Lab reference directory for " + genreName + " / " + substyleName + ".";
+        diagnostics.loadMessage = status;
+        diagnostics.hat = zeroLaneDiagnostics(styleSwitchDisabled, 0, 0, status);
+        diagnostics.kick = diagnostics.hat;
+        if (referenceDiagnostics != nullptr)
+            *referenceDiagnostics = diagnostics;
         if (errorMessage != nullptr)
             *errorMessage = status;
         return std::nullopt;
     }
 
     std::vector<juce::File> candidates;
-    for (const auto& entry : juce::RangedDirectoryIterator(styleDirectory, false, "*", juce::File::findDirectories))
+    for (const auto& styleDirectory : styleDirectories)
     {
-        const auto directory = entry.getFile();
-        if (directory.getChildFile("metadata.json").existsAsFile())
-            candidates.push_back(directory);
+        for (const auto& entry : juce::RangedDirectoryIterator(styleDirectory, false, "*", juce::File::findDirectories))
+        {
+            const auto directory = entry.getFile();
+            if (directory.getChildFile("metadata.json").existsAsFile())
+                candidates.push_back(directory);
+        }
     }
-
-    const auto genre = genreTypeFromDisplayName(genreName);
+    diagnostics.candidateDirectoryCount = static_cast<int>(candidates.size());
 
     std::vector<StyleLabReferenceRecord> matchingRecords;
+    int parseFailureCount = 0;
     for (const auto& directory : candidates)
     {
         juce::String parseError;
@@ -1102,26 +1652,51 @@ std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const j
         const auto record = StyleLabReferenceBrowserService::parseMetadataJson(metadataJson, directory, &parseError);
         if (!record.has_value())
         {
+            ++parseFailureCount;
             status = "Failed to parse Style Lab metadata at " + directory.getFullPathName() + ": " + parseError;
             continue;
         }
 
-        if (!record->genre.equalsIgnoreCase(genreName) || !record->substyle.equalsIgnoreCase(substyleName))
+        const bool substyleMatch = record->substyle.equalsIgnoreCase(substyleName);
+        if (!record->genre.equalsIgnoreCase(genreName) || !substyleMatch)
             continue;
 
         matchingRecords.push_back(*record);
     }
+    diagnostics.parseFailureCount = parseFailureCount;
+    diagnostics.matchingRecordCount = static_cast<int>(matchingRecords.size());
 
     if (!matchingRecords.empty())
     {
+        const int candidateRecordCount = static_cast<int>(matchingRecords.size());
         const auto selectedRecords = rankAndSelectReferences(std::move(matchingRecords));
+        diagnostics.selectedRecordCount = static_cast<int>(selectedRecords.size());
+        diagnostics.hat = diagnoseLaneResolution(selectedRecords, ReferenceLaneTarget::Hat);
+        diagnostics.kick = diagnoseLaneResolution(selectedRecords, ReferenceLaneTarget::Kick);
         auto definition = fromReferenceRecord(genre, selectedRecords.front());
         applyRankedReferenceAggregation(definition, genre, selectedRecords);
+        definition.styleHints.set("stylelab.reference_candidate_count", candidateRecordCount);
+        diagnostics.loadMessage = {};
+        definition.referenceDebugDiagnostics = diagnostics;
+
+        if (referenceDiagnostics != nullptr)
+            *referenceDiagnostics = diagnostics;
 
         if (errorMessage != nullptr)
             *errorMessage = {};
         return definition;
     }
+
+    diagnostics.selectedRecordCount = 0;
+    diagnostics.loadMessage = status.isNotEmpty() ? status : "No valid Style Lab reference metadata found.";
+    diagnostics.hat = zeroLaneDiagnostics(styleSwitchDisabled,
+                                          diagnostics.candidateDirectoryCount,
+                                          diagnostics.parseFailureCount,
+                                          diagnostics.loadMessage);
+    diagnostics.kick = diagnostics.hat;
+
+    if (referenceDiagnostics != nullptr)
+        *referenceDiagnostics = diagnostics;
 
     if (errorMessage != nullptr)
         *errorMessage = status.isNotEmpty() ? status : "No valid Style Lab reference metadata found.";
@@ -1197,12 +1772,6 @@ StyleDefinition StyleDefinitionLoader::fromReferenceRecord(GenreType genre, cons
     definition.lanes.clear();
     definition.lanes.reserve(record.runtimeLanes.size());
 
-    if (genre == GenreType::Drill)
-    {
-        definition.referenceHatSkeleton = extractReferenceHatSkeleton(record);
-        applyDrillHatSummaryHints(definition, analyzeDrillHatReference(record));
-    }
-
     for (const auto& sourceLane : record.runtimeLanes)
     {
         StyleDefinitionLane lane;
@@ -1234,6 +1803,25 @@ StyleDefinition StyleDefinitionLoader::fromReferenceRecord(GenreType genre, cons
         definition.lanes.push_back(std::move(lane));
     }
 
+    const std::vector<StyleLabReferenceRecord> singleRecord { record };
+    auto referenceHatSkeleton = extractReferenceHatSkeleton(record);
+    if (referenceHatSkeleton.available && !referenceHatSkeleton.barMaps.empty())
+    {
+        referenceHatSkeleton.sourceId = record.directory.getFileName();
+        definition.referenceHatSkeleton = std::move(referenceHatSkeleton);
+    }
+
+    auto referenceHatCorpus = buildReferenceHatCorpus(singleRecord);
+    if (referenceHatCorpus.available)
+        definition.referenceHatCorpus = std::move(referenceHatCorpus);
+
+    auto referenceKickCorpus = buildReferenceKickCorpus(singleRecord);
+    if (referenceKickCorpus.available)
+        definition.referenceKickCorpus = std::move(referenceKickCorpus);
+
+    if (genre == GenreType::Drill)
+        applyDrillHatSummaryHints(definition, analyzeDrillHatReference(record));
+
     return definition;
 }
 
@@ -1241,9 +1829,9 @@ juce::String StyleDefinitionLoader::genreDisplayName(GenreType genre)
 {
     switch (genre)
     {
+        case GenreType::Drill: return "Drill";
         case GenreType::Rap: return "Rap";
         case GenreType::Trap: return "Trap";
-        case GenreType::Drill: return "Drill";
         case GenreType::BoomBap:
         default: return "Boom Bap";
     }
@@ -1256,9 +1844,9 @@ juce::String StyleDefinitionLoader::substyleNameFor(GenreType genre, int substyl
     {
         switch (genre)
         {
+            case GenreType::Drill: return getDrillSubstyleNames();
             case GenreType::Rap: return getRapSubstyleNames();
             case GenreType::Trap: return getTrapSubstyleNames();
-            case GenreType::Drill: return getDrillSubstyleNames();
             case GenreType::BoomBap:
             default: return getBoomBapSubstyleNames();
         }

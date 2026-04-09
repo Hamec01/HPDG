@@ -113,17 +113,44 @@ juce::var laneDefinitionToVar(const StyleLabLaneDefinition& lane)
     return juce::var(object);
 }
 
+juce::var eqStateToVar(const EqState& eq)
+{
+    auto* object = new juce::DynamicObject();
+    object->setProperty("selectedBand", eq.selectedBand);
+
+    juce::Array<juce::var> bands;
+    for (const auto& band : eq.bands)
+    {
+        auto* bandObject = new juce::DynamicObject();
+        bandObject->setProperty("enabled", band.enabled);
+        bandObject->setProperty("freqHz", band.freqHz);
+        bandObject->setProperty("gainDb", band.gainDb);
+        bandObject->setProperty("q", band.q);
+        bandObject->setProperty("shape", static_cast<int>(band.shape));
+        bands.add(juce::var(bandObject));
+    }
+
+    object->setProperty("bands", juce::var(bands));
+    return juce::var(object);
+}
+
 juce::var soundLayerToVar(const SoundLayerState& sound)
 {
     auto* object = new juce::DynamicObject();
     object->setProperty("pan", sound.pan);
     object->setProperty("width", sound.width);
     object->setProperty("eqTone", sound.eqTone);
+    object->setProperty("eq", eqStateToVar(sound.eq));
     object->setProperty("compression", sound.compression);
     object->setProperty("reverb", sound.reverb);
     object->setProperty("gate", sound.gate);
     object->setProperty("transient", sound.transient);
     object->setProperty("drive", sound.drive);
+    object->setProperty("drumTransientAttack", sound.drumTransient.attack);
+    object->setProperty("drumTransientSustain", sound.drumTransient.sustain);
+    object->setProperty("drumTransientGainDb", sound.drumTransient.gainDb);
+    object->setProperty("drumTransientSmooth", sound.drumTransient.smooth);
+    object->setProperty("drumTransientLimit", sound.drumTransient.limit);
     return juce::var(object);
 }
 

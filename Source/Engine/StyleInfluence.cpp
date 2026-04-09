@@ -80,9 +80,30 @@ float normalizedSwing(float swingPercent)
     return clampUnit((swingPercent - 50.0f) / 14.0f);
 }
 
+void applyReferenceAssets(const ResolvedStyleDefinition& definition, PatternProject& project)
+{
+    project.styleInfluence.referenceHatSkeleton = definition.referenceHatSkeleton.value_or(ReferenceHatSkeleton {});
+    project.styleInfluence.referenceHatCorpus = definition.referenceHatCorpus.value_or(ReferenceHatCorpus {});
+    project.styleInfluence.referenceKickCorpus = definition.referenceKickCorpus.value_or(ReferenceKickCorpus {});
+    project.styleInfluence.brooklynReferenceProfile = definition.brooklynReferenceProfile.value_or(BrooklynReferenceProfile {});
+    project.styleInfluence.brooklynHatDiagnostics = {};
+    project.styleInfluence.referenceDebugDiagnostics = definition.referenceDebugDiagnostics;
+}
+
 void resetMusicalBiasState(PatternProject& project)
 {
+    const auto referenceHatSkeleton = project.styleInfluence.referenceHatSkeleton;
+    const auto referenceHatCorpus = project.styleInfluence.referenceHatCorpus;
+    const auto referenceKickCorpus = project.styleInfluence.referenceKickCorpus;
+    const auto brooklynReferenceProfile = project.styleInfluence.brooklynReferenceProfile;
+    const auto referenceDebugDiagnostics = project.styleInfluence.referenceDebugDiagnostics;
+
     project.styleInfluence = {};
+    project.styleInfluence.referenceHatSkeleton = referenceHatSkeleton;
+    project.styleInfluence.referenceHatCorpus = referenceHatCorpus;
+    project.styleInfluence.referenceKickCorpus = referenceKickCorpus;
+    project.styleInfluence.brooklynReferenceProfile = brooklynReferenceProfile;
+    project.styleInfluence.referenceDebugDiagnostics = referenceDebugDiagnostics;
 }
 
 void applyBoomBapMusicalHints(const ResolvedStyleDefinition& definition, PatternProject& project)
@@ -171,56 +192,74 @@ void applyDrillMusicalHints(const ResolvedStyleDefinition& definition, PatternPr
 {
     auto& params = project.params;
     auto& styleInfluence = project.styleInfluence;
-    styleInfluence.referenceHatSkeleton = definition.referenceHatSkeleton.value_or(ReferenceHatSkeleton {});
-    styleInfluence.referenceHatCorpus = definition.referenceHatCorpus.value_or(ReferenceHatCorpus {});
-    styleInfluence.referenceKickCorpus = definition.referenceKickCorpus.value_or(ReferenceKickCorpus {});
+
     const auto sharedSwing = hintValue(definition.styleHints, "groove.swing", normalizedSwing(params.swingPercent));
     const auto sharedTiming = hintValue(definition.styleHints, "groove.timing", params.timingAmount);
     const auto sharedHumanize = hintValue(definition.styleHints, "groove.humanize", params.humanizeAmount);
     const auto sharedDensity = hintValue(definition.styleHints, "groove.density", params.densityAmount);
 
-    const auto anchorRigidity = hintValue(definition.styleHints, "drill.anchor_rigidity", 0.7f);
-    const auto hatMotion = hintValue(definition.styleHints, "drill.hat_motion", 0.5f);
-    const auto kick808Coupling = hintValue(definition.styleHints, "drill.kick_808_coupling", 0.65f);
-    const auto gapIntent = hintValue(definition.styleHints, "drill.gap_intent", 0.3f);
-    const auto refRollLength = hintValue(definition.styleHints, "drill.ref_hat_roll_length", hatMotion * 0.52f);
-    const auto refDensityVariation = hintValue(definition.styleHints, "drill.ref_hat_density_variation", hatMotion * 0.44f);
-    const auto refAccentAlternation = hintValue(definition.styleHints, "drill.ref_hat_accent_alternation", hatMotion * 0.40f);
-    const auto refGapIntent = hintValue(definition.styleHints, "drill.ref_hat_gap_intent", gapIntent);
-    const auto refBurst = hintValue(definition.styleHints, "drill.ref_hat_burst", hatMotion * 0.48f);
-    const auto refTriplet = hintValue(definition.styleHints, "drill.ref_hat_triplet", hatMotion * 0.42f);
-    const auto styleAwareMotion = clampUnit(hatMotion * 0.48f
-                                            + refRollLength * 0.14f
-                                            + refDensityVariation * 0.10f
-                                            + refAccentAlternation * 0.08f
-                                            + refBurst * 0.12f
-                                            + refTriplet * 0.08f);
+    const auto hatDensityBias = laneHintValue(definition, TrackType::HiHat, "lane.densityBias", 1.0f);
+    const auto hatVariationBias = laneHintValue(definition, TrackType::HiHat, "lane.rgVariationIntensity", 0.8f);
+    const auto hatFxIntensity = laneHintValue(definition, TrackType::HatFX, "lane.hatFxIntensity", 0.4f);
+    const auto supportDensity = laneHintValue(definition, TrackType::ClapGhostSnare, "lane.noteProbability", 0.25f);
+    const auto lowEndActivity = laneHintValue(definition, TrackType::Sub808, "lane.sub808Activity", 0.85f);
 
-    blendSwing(params.swingPercent, clampUnit(sharedSwing * 0.4f), 0.25f);
-    blendParam(params.timingAmount, clampUnit(sharedTiming * 0.45f + (1.0f - anchorRigidity) * 0.18f), 0.55f);
-    blendParam(params.humanizeAmount, clampUnit(sharedHumanize * 0.35f + styleAwareMotion * 0.08f + (1.0f - anchorRigidity) * 0.10f), 0.5f);
+    const auto hatMotion = hintValue(definition.styleHints,
+                                     "drill.hat_motion",
+                                     clampUnit(hatDensityBias * 0.52f + hatVariationBias * 0.30f + hatFxIntensity * 0.18f));
+    const auto gapIntent = hintValue(definition.styleHints,
+                                     "drill.gap_intent",
+                                     clampUnit(0.28f + (1.0f - clampUnit(sharedDensity)) * 0.18f + hatFxIntensity * 0.20f));
+    const auto supportAccent = hintValue(definition.styleHints,
+                                         "drill.support_accent",
+                                         clampUnit(0.24f + supportDensity * 0.46f + hatFxIntensity * 0.30f));
+    const auto lowEndCoupling = hintValue(definition.styleHints,
+                                          "drill.low_end_coupling",
+                                          clampUnit(0.28f + lowEndActivity * 0.60f + sharedDensity * 0.10f));
+    const auto rollLength = hintValue(definition.styleHints,
+                                      "drill.ref_hat_roll_length",
+                                      hintValue(definition.styleHints,
+                                                "drill.hat_roll_length",
+                                                clampUnit(hatVariationBias * 0.62f + hatFxIntensity * 0.22f)));
+    const auto densityVariation = hintValue(definition.styleHints,
+                                            "drill.ref_hat_density_variation",
+                                            hintValue(definition.styleHints,
+                                                      "drill.hat_density_variation",
+                                                      clampUnit(hatVariationBias * 0.72f + gapIntent * 0.12f)));
+    const auto accentPattern = hintValue(definition.styleHints,
+                                         "drill.ref_hat_accent_alternation",
+                                         hintValue(definition.styleHints,
+                                                   "drill.hat_accent_pattern",
+                                                   clampUnit(hatFxIntensity * 0.54f + supportDensity * 0.30f + gapIntent * 0.10f)));
+    const auto burst = hintValue(definition.styleHints,
+                                 "drill.ref_hat_burst",
+                                 hintValue(definition.styleHints,
+                                           "drill.hat_burst",
+                                           clampUnit(hatFxIntensity * 0.58f + densityVariation * 0.24f + hatMotion * 0.10f)));
+    const auto triplet = hintValue(definition.styleHints,
+                                   "drill.ref_hat_triplet",
+                                   hintValue(definition.styleHints,
+                                             "drill.hat_triplet",
+                                             clampUnit(rollLength * 0.28f + densityVariation * 0.34f + hatMotion * 0.18f)));
+
+    blendSwing(params.swingPercent, clampUnit(sharedSwing * 0.32f + gapIntent * 0.04f), 0.18f);
+    blendParam(params.timingAmount, clampUnit(sharedTiming * 0.72f + hatMotion * 0.10f + gapIntent * 0.08f), 0.35f);
+    blendParam(params.humanizeAmount,
+               clampUnit(sharedHumanize * 0.66f + densityVariation * 0.12f + hatMotion * 0.08f),
+               0.35f);
     blendParam(params.densityAmount,
-               clampUnit(sharedDensity * 0.60f
-                         + styleAwareMotion * 0.08f
-                         + refDensityVariation * 0.08f
-                         + refBurst * 0.08f
-                         + kick808Coupling * 0.10f
-                         - refGapIntent * 0.10f),
-               0.7f);
+               clampUnit(sharedDensity * 0.58f + hatDensityBias * 0.14f + hatFxIntensity * 0.08f + lowEndActivity * 0.10f),
+               0.55f);
 
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 0.94f + styleAwareMotion * 0.18f + refDensityVariation * 0.06f, 0.7f);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::HatFX).activityWeight, 0.96f + styleAwareMotion * 0.16f + refBurst * 0.10f, 0.72f);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::Bass).balanceWeight, 1.0f + kick808Coupling * 0.26f, 0.8f);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::Perc).activityWeight, 0.78f - refGapIntent * 0.16f, 0.7f);
-    blendWeight(styleInfluence.lowEndCouplingWeight, 1.0f + kick808Coupling * 0.24f, 0.85f);
-    blendWeight(styleInfluence.hatMotionWeight, 0.94f + styleAwareMotion * 0.26f + refBurst * 0.06f, 0.8f);
-    blendWeight(styleInfluence.anchorRigidityWeight, 1.0f + anchorRigidity * 0.20f, 0.85f);
-    blendWeight(styleInfluence.drillHatRollLengthWeight, 0.88f + refRollLength * 0.44f, 0.9f);
-    blendWeight(styleInfluence.drillHatDensityVariationWeight, 0.86f + refDensityVariation * 0.46f, 0.9f);
-    blendWeight(styleInfluence.drillHatAccentPatternWeight, 0.86f + refAccentAlternation * 0.44f, 0.9f);
-    blendWeight(styleInfluence.drillHatGapIntentWeight, 0.84f + refGapIntent * 0.44f, 0.9f);
-    blendWeight(styleInfluence.drillHatBurstWeight, 0.86f + refBurst * 0.48f, 0.9f);
-    blendWeight(styleInfluence.drillHatTripletWeight, 0.84f + refTriplet * 0.50f, 0.9f);
+    blendWeight(styleInfluence.hatMotionWeight, 0.88f + hatMotion * 0.60f, 0.85f);
+    blendWeight(styleInfluence.supportAccentWeight, 0.90f + supportAccent * 0.45f, 0.8f);
+    blendWeight(styleInfluence.lowEndCouplingWeight, 0.92f + lowEndCoupling * 0.55f, 0.85f);
+    blendWeight(styleInfluence.drillHatRollLengthWeight, 0.82f + rollLength * 0.75f, 0.85f);
+    blendWeight(styleInfluence.drillHatDensityVariationWeight, 0.86f + densityVariation * 0.70f, 0.8f);
+    blendWeight(styleInfluence.drillHatAccentPatternWeight, 0.88f + accentPattern * 0.65f, 0.8f);
+    blendWeight(styleInfluence.drillHatGapIntentWeight, 0.86f + gapIntent * 0.60f, 0.8f);
+    blendWeight(styleInfluence.drillHatBurstWeight, 0.82f + burst * 0.70f, 0.8f);
+    blendWeight(styleInfluence.drillHatTripletWeight, 0.82f + triplet * 0.72f, 0.8f);
 }
 
 TrackState* findTrackByRuntimeType(PatternProject& project, TrackType type)
@@ -341,6 +380,8 @@ bool StyleInfluenceHelpers::applyToProject(const ResolvedStyleDefinition& defini
             track->laneRole = defaultLaneRoleForTrackType(*sourceLane.runtimeTrackType);
         }
     }
+
+    applyReferenceAssets(definition, next);
 
     PatternProjectSerialization::validate(next);
     project = std::move(next);

@@ -3,89 +3,209 @@
 #include <algorithm>
 
 #include "../../Core/TrackRegistry.h"
-#include "../TempoInterpretation.h"
 
 namespace bbg
 {
 namespace
 {
-float tensionGhostChance(DrillSubstyle substyle)
+enum class DrillSnareDecorationMode
 {
-    switch (substyle)
+    BackboneOnly = 0,
+    ClapLayer,
+    PushGhost,
+    DragGhost
+};
+
+bool isGhostMode(DrillSnareDecorationMode mode)
+{
+    return mode == DrillSnareDecorationMode::PushGhost || mode == DrillSnareDecorationMode::DragGhost;
+}
+
+DrillSnareDecorationMode chooseDecorationMode(const DrillPhraseBarPlan& bar, std::mt19937& rng)
+{
+    switch (bar.supportAccent)
     {
-        case DrillSubstyle::BrooklynDrill: return 0.48f;
-        case DrillSubstyle::NYDrill: return 0.34f;
-        case DrillSubstyle::DarkDrill: return 0.2f;
-        case DrillSubstyle::UKDrill:
-        default: return 0.28f;
+        case DrillSupportAccentIntent::None:
+            return DrillSnareDecorationMode::BackboneOnly;
+
+        case DrillSupportAccentIntent::Light:
+        {
+            std::discrete_distribution<int> pick { 72, 28 };
+            return pick(rng) == 1 ? DrillSnareDecorationMode::ClapLayer : DrillSnareDecorationMode::BackboneOnly;
+        }
+
+        case DrillSupportAccentIntent::Push:
+        {
+            std::discrete_distribution<int> pick {
+                bar.role == DrillPhraseBarRole::Lift ? 14.0 : 18.0,
+                bar.role == DrillPhraseBarRole::Lift ? 28.0 : 34.0,
+                bar.role == DrillPhraseBarRole::Lift ? 58.0 : 48.0
+            };
+
+            switch (pick(rng))
+            {
+                case 1: return DrillSnareDecorationMode::ClapLayer;
+                case 2: return DrillSnareDecorationMode::PushGhost;
+                default: return DrillSnareDecorationMode::BackboneOnly;
+            }
+        }
+
+        case DrillSupportAccentIntent::Drag:
+        default:
+        {
+            std::discrete_distribution<int> pick {
+                bar.role == DrillPhraseBarRole::Release ? 12.0 : 18.0,
+                bar.role == DrillPhraseBarRole::Release ? 24.0 : 30.0,
+                bar.role == DrillPhraseBarRole::Release ? 64.0 : 52.0
+            };
+
+            switch (pick(rng))
+            {
+                case 1: return DrillSnareDecorationMode::ClapLayer;
+                case 2: return DrillSnareDecorationMode::DragGhost;
+                default: return DrillSnareDecorationMode::BackboneOnly;
+            }
+        }
     }
 }
 
-float endingAccentChance(DrillSubstyle substyle)
+std::vector<int> candidateGhostStepsForMode(const DrillPhraseBarPlan& bar,
+                                            DrillSnareDecorationMode mode,
+                                            int primarySnare)
 {
-    switch (substyle)
-    {
-        case DrillSubstyle::BrooklynDrill: return 0.46f;
-        case DrillSubstyle::NYDrill: return 0.34f;
-        case DrillSubstyle::DarkDrill: return 0.16f;
-        case DrillSubstyle::UKDrill:
-        default: return 0.24f;
-    }
-}
-}
+    std::vector<int> candidates;
+    candidates.reserve(bar.anchorMap.supportAccentSteps.size());
 
-void DrillSnareGenerator::generate(TrackState& track,
-                                   const GeneratorParams& params,
-                                   const DrillStyleProfile& style,
-                                   const std::vector<DrillPhraseRole>& phrase,
+    for (const int supportStep : bar.anchorMap.supportAccentSteps)
+    {
+        if (supportStep < 0 || supportStep == primarySnare)
+            continue;
+
+        const int distance = std::abs(supportStep - primarySnare);
+        if (distance < 1 || distance > 2)
+            continue;
+
+        if (mode == DrillSnareDecorationMode::PushGhost && supportStep > primarySnare)
+            continue;
+        if (mode == DrillSnareDecorationMode::DragGhost && supportStep < primarySnare)
+            continue;
+
+        candidates.push_back(supportStep);
+    }
+
+    std::sort(candidates.begin(), candidates.end(), [primarySnare, mode](int lhs, int rhs)
+    {
+        const int leftDistance = std::abs(lhs - primarySnare);
+        const int rightDistance = std::abs(rhs - primarySnare);
+        if (leftDistance != rightDistance)
+            return leftDistance < rightDistance;
+        if (mode == DrillSnareDecorationMode::PushGhost)
+            return lhs > rhs;
+        return lhs < rhs;
+    });
+
+    candidates.erase(std::unique(candidates.begin(), candidates.end()), candidates.end());
+    return candidates;
+}
+} // namespace
+
+void DrillSnareGenerator::generate(TrackState& snareTrack,
+                                   TrackState* clapGhostTrack,
+                                   const PatternProject& project,
+                                   const DrillPhrasePlan& phrasePlan,
                                    std::mt19937& rng) const
 {
-    track.notes.clear();
-    const auto* info = TrackRegistry::find(track.type);
-    const int pitch = info != nullptr ? info->defaultMidiNote : 38;
+    juce::ignoreUnused(project);
 
-    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
-    std::uniform_int_distribution<int> vel(style.snareVelocityMin, style.snareVelocityMax);
+    snareTrack.notes.clear();
+    snareTrack.subProfile = "Main";
+    snareTrack.laneRole = "drill_snare";
 
-    const auto tempoBand = selectTempoBand(params.bpm, params, 120.0f, 140.0f, 100.0f, 130.0f);
-    const bool halfTimeAware = tempoBand != TempoBand::Base;
-    const int bars = std::max(1, params.bars);
-    const auto substyle = style.substyle;
-    const float tensionChance = tensionGhostChance(substyle);
-    const float endingChance = endingAccentChance(substyle);
-    for (int bar = 0; bar < bars; ++bar)
+    if (clapGhostTrack != nullptr)
     {
-        const auto role = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : DrillPhraseRole::Base;
+        clapGhostTrack->notes.clear();
+        clapGhostTrack->subProfile = "Main";
+        clapGhostTrack->laneRole = "drill_clap_ghost";
+    }
 
-        if (halfTimeAware)
+    const auto* snareInfo = TrackRegistry::find(TrackType::Snare);
+    const auto* clapInfo = TrackRegistry::find(TrackType::ClapGhostSnare);
+    const int snarePitch = snareInfo != nullptr ? snareInfo->defaultMidiNote : 38;
+    const int clapPitch = clapInfo != nullptr ? clapInfo->defaultMidiNote : 39;
+
+    std::uniform_int_distribution<int> snareVelocity(98, 118);
+    std::uniform_int_distribution<int> layerVelocity(68, 90);
+    std::uniform_int_distribution<int> ghostVelocity(42, 70);
+    std::uniform_int_distribution<int> layerDrag(6, 14);
+    std::uniform_int_distribution<int> pushOffset(-14, -4);
+    std::uniform_int_distribution<int> dragOffset(8, 20);
+
+    for (const auto& bar : phrasePlan.bars)
+    {
+        const int barStart = bar.barIndex * 16;
+        const int primarySnare = bar.anchorMap.snareAnchorSteps[0];
+        const auto decorationMode = chooseDecorationMode(bar, rng);
+
+        for (const int stepInBar : bar.anchorMap.snareAnchorSteps)
         {
-            // Keep the half-time frame explicit even when everything else is broken.
-            track.notes.push_back({ pitch, bar * 16 + 8, 1, vel(rng), 0, false });
+            if (stepInBar < 0)
+                continue;
 
-            if (substyle == DrillSubstyle::BrooklynDrill && chance(rng) < 0.3f)
-                track.notes.push_back({ pitch, bar * 16 + 11, 1, std::max(style.snareVelocityMin, vel(rng) - 7), 0, false });
-            else if (substyle == DrillSubstyle::NYDrill && chance(rng) < 0.2f)
-                track.notes.push_back({ pitch, bar * 16 + 12, 1, std::max(style.snareVelocityMin, vel(rng) - 9), 0, false });
-            else if (substyle == DrillSubstyle::DarkDrill && role == DrillPhraseRole::Ending && chance(rng) < 0.08f)
-                track.notes.push_back({ pitch, bar * 16 + 14, 1, std::max(style.snareVelocityMin, vel(rng) - 14), 0, true });
+            NoteEvent note;
+            note.pitch = snarePitch;
+            note.step = barStart + stepInBar;
+            note.length = 1;
+            note.velocity = snareVelocity(rng);
+            note.microOffset = 0;
+            note.isGhost = false;
+            note.semanticRole = "drill_snare_backbone";
+            snareTrack.notes.push_back(note);
 
-            if (role == DrillPhraseRole::Tension && chance(rng) < tensionChance)
-                track.notes.push_back({ pitch, bar * 16 + 7, 1, std::max(style.snareVelocityMin, vel(rng) - 12), 0, true });
-
-            float edgeChance = endingChance;
-            if (tempoBand == TempoBand::Fast)
-                edgeChance += 0.08f;
-            if (role == DrillPhraseRole::Ending && chance(rng) < std::clamp(edgeChance, 0.0f, 0.92f))
-                track.notes.push_back({ pitch, bar * 16 + 15, 1, std::max(style.snareVelocityMin, vel(rng) - 8), 0, false });
+            if (clapGhostTrack != nullptr && decorationMode == DrillSnareDecorationMode::ClapLayer)
+            {
+                NoteEvent layer;
+                layer.pitch = clapPitch;
+                layer.step = barStart + stepInBar;
+                layer.length = 1;
+                layer.velocity = layerVelocity(rng);
+                layer.microOffset = layerDrag(rng);
+                layer.isGhost = false;
+                layer.semanticRole = "drill_clap_layer";
+                clapGhostTrack->notes.push_back(layer);
+            }
         }
-        else
+
+        if (clapGhostTrack == nullptr || primarySnare < 0 || !isGhostMode(decorationMode))
+            continue;
+
+        const auto ghostCandidates = candidateGhostStepsForMode(bar, decorationMode, primarySnare);
+        if (ghostCandidates.empty())
+            continue;
+
+        NoteEvent ghost;
+        ghost.pitch = clapPitch;
+        ghost.step = barStart + ghostCandidates.front();
+        ghost.length = 1;
+        ghost.velocity = ghostVelocity(rng);
+        ghost.microOffset = decorationMode == DrillSnareDecorationMode::DragGhost ? dragOffset(rng) : pushOffset(rng);
+        ghost.isGhost = true;
+        ghost.semanticRole = "drill_snare_ghost";
+        clapGhostTrack->notes.push_back(ghost);
+    }
+
+    std::sort(snareTrack.notes.begin(), snareTrack.notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
+    {
+        return lhs.step < rhs.step;
+    });
+
+    if (clapGhostTrack != nullptr)
+    {
+        std::sort(clapGhostTrack->notes.begin(), clapGhostTrack->notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
         {
-            // 4/12 backbone keeps the frame readable in slower interpretation.
-            track.notes.push_back({ pitch, bar * 16 + 4, 1, vel(rng), 0, false });
-            track.notes.push_back({ pitch, bar * 16 + 12, 1, vel(rng), 0, false });
-            if (role == DrillPhraseRole::Tension && chance(rng) < tensionChance)
-                track.notes.push_back({ pitch, bar * 16 + 11, 1, std::max(style.snareVelocityMin, vel(rng) - 10), 0, true });
-        }
+            if (lhs.step != rhs.step)
+                return lhs.step < rhs.step;
+            return lhs.velocity > rhs.velocity;
+        });
     }
 }
 } // namespace bbg

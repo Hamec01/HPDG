@@ -158,5 +158,6 @@ private:
     juce::Slider driveSlider;
     std::vector<TrackType> soundTargetTracks;
     std::optional<TrackType> currentSoundTarget;
+    SoundLayerState currentSoundPanelState;
 };
 } // namespace bbg

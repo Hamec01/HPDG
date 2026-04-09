@@ -13,10 +13,12 @@ public:
     struct State
     {
         int leftPanelWidth = 420;
+        int lowerPanelHeight = 236;
         MainHeaderComponent::HeaderControlsMode headerControlsMode = MainHeaderComponent::HeaderControlsMode::Expanded;
     };
 
     static constexpr int defaultLeftPanelWidth = 420;
+    static constexpr int defaultLowerPanelHeight = 236;
 
     const State& getState() const
     {
@@ -33,6 +35,9 @@ public:
         if (tree.hasProperty(kUiLeftWidthProp))
             state.leftPanelWidth = static_cast<int>(tree.getProperty(kUiLeftWidthProp));
 
+        if (tree.hasProperty(kUiLowerPanelHeightProp))
+            state.lowerPanelHeight = static_cast<int>(tree.getProperty(kUiLowerPanelHeightProp));
+
         if (tree.hasProperty(kUiHeaderModeProp))
         {
             const int stored = static_cast<int>(tree.getProperty(kUiHeaderModeProp));
@@ -48,6 +53,7 @@ public:
     void save(juce::ValueTree& tree) const
     {
         tree.setProperty(kUiLeftWidthProp, state.leftPanelWidth, nullptr);
+        tree.setProperty(kUiLowerPanelHeightProp, state.lowerPanelHeight, nullptr);
 
         int modeValue = 0;
         if (state.headerControlsMode == MainHeaderComponent::HeaderControlsMode::Compact)
@@ -73,6 +79,12 @@ public:
         return state.leftPanelWidth;
     }
 
+    int clampLowerPanelHeight(int minHeight, int maxHeight)
+    {
+        state.lowerPanelHeight = juce::jlimit(minHeight, maxHeight, state.lowerPanelHeight);
+        return state.lowerPanelHeight;
+    }
+
     void beginSplitterDrag(int startX)
     {
         splitterDragging = true;
@@ -85,6 +97,23 @@ public:
         return splitterDragging;
     }
 
+    void beginLowerPanelSplitterDrag(int startY)
+    {
+        lowerPanelSplitterDragging = true;
+        lowerPanelSplitterDragStartY = startY;
+        lowerPanelStartHeight = state.lowerPanelHeight;
+    }
+
+    bool isLowerPanelSplitterDragging() const
+    {
+        return lowerPanelSplitterDragging;
+    }
+
+    bool isAnySplitterDragging() const
+    {
+        return splitterDragging || lowerPanelSplitterDragging;
+    }
+
     int updateSplitterDrag(int currentX)
     {
         if (!splitterDragging)
@@ -94,9 +123,23 @@ public:
         return state.leftPanelWidth;
     }
 
+    int updateLowerPanelSplitterDrag(int currentY)
+    {
+        if (!lowerPanelSplitterDragging)
+            return state.lowerPanelHeight;
+
+        state.lowerPanelHeight = lowerPanelStartHeight - (currentY - lowerPanelSplitterDragStartY);
+        return state.lowerPanelHeight;
+    }
+
     void endSplitterDrag()
     {
         splitterDragging = false;
+    }
+
+    void endLowerPanelSplitterDrag()
+    {
+        lowerPanelSplitterDragging = false;
     }
 
     bool isGridEditorFullscreenMode() const
@@ -125,6 +168,7 @@ public:
     }
 
     static constexpr auto kUiLeftWidthProp = "ui.leftPanelWidth";
+    static constexpr auto kUiLowerPanelHeightProp = "ui.lowerPanelHeight";
     static constexpr auto kUiHeaderModeProp = "ui.headerControlsMode";
     static constexpr int rackMinWidth = 240;
     static constexpr int rackCompactThreshold = 320;
@@ -135,6 +179,9 @@ private:
     bool splitterDragging = false;
     int splitterDragStartX = 0;
     int splitterStartWidth = defaultLeftPanelWidth;
+    bool lowerPanelSplitterDragging = false;
+    int lowerPanelSplitterDragStartY = 0;
+    int lowerPanelStartHeight = defaultLowerPanelHeight;
     bool pianoRollFullscreenMode = false;
     bool gridEditorFullscreenMode = false;
 };

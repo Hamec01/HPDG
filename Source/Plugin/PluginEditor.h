@@ -16,6 +16,7 @@
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
 #include "../UI/SoundModuleComponent.h"
+#include "../UI/SoundModuleController.h"
 #include "../UI/StyleLabDraftState.h"
 #include "../UI/Sub808PianoRollComponent.h"
 #include "../UI/TrackListComponent.h"
@@ -60,6 +61,8 @@ private:
     bool keyPressed(const juce::KeyPress& key, juce::Component* originatingComponent) override;
     bool keyStateChanged(bool isKeyDown, juce::Component* originatingComponent) override;
     void timerCallback() override;
+    void beginSoundModuleGesture();
+    void endSoundModuleGesture();
     void refreshFromProcessor(bool refreshTrackRows = true);
     void setPreviewPlayback(bool shouldStart);
     void togglePreviewPlayback();
@@ -151,6 +154,7 @@ private:
     TrackListComponent trackList;
     SampleAnalysisPanelComponent analysisPanel;
     SoundModuleComponent soundModule;
+    SoundModuleController soundModuleController;
     juce::Component editorToolBar;
     juce::Label editorToolLabel;
     juce::TextButton pencilToolButton { "Pencil" };
@@ -181,7 +185,9 @@ private:
     EditorHistoryController historyController;
     HotkeyController hotkeyController;
     juce::Rectangle<int> splitterBounds;
+    juce::Rectangle<int> sectionSplitterBounds;
     std::unique_ptr<juce::Component> splitterHandle;
+    std::unique_ptr<juce::Component> sectionSplitterHandle;
     float currentUiScale = 1.0f;
     float currentUiOffsetX = 0.0f;
     float currentUiOffsetY = 0.0f;
@@ -191,6 +197,8 @@ private:
     std::optional<StyleLabDraftState> styleLabDraftState;
     std::vector<RuntimeLaneId> laneDisplayOrder;
     GridEditorComponent::EditorRegionState editorRegionState;
+    bool soundModuleGestureActive = false;
+    std::optional<PatternProject> soundModuleGestureBefore;
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -212,8 +220,6 @@ private:
     std::unique_ptr<SliderAttachment> seedAttachment;
     std::unique_ptr<ButtonAttachment> seedLockAttachment;
     std::unique_ptr<SliderAttachment> masterVolumeAttachment;
-    std::unique_ptr<SliderAttachment> masterCompressorAttachment;
-    std::unique_ptr<SliderAttachment> masterLofiAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BoomBGeneratorAudioProcessorEditor)
 };

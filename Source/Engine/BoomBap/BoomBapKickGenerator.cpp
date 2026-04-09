@@ -1,6 +1,7 @@
 #include "BoomBapKickGenerator.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "BoomBapPatternLibrary.h"
 #include "../../Core/PatternProject.h"
@@ -74,7 +75,12 @@ struct ReferenceBoomBapKickFeel
     float anchorRatio = 0.0f;
     float supportRatio = 0.0f;
     float punctuationRatio = 0.0f;
+    float anchorVelocity = 0.0f;
+    float supportVelocity = 0.0f;
+    float punctuationVelocity = 0.0f;
     std::array<float, 16> presence {};
+    std::array<float, 16> velocitySum {};
+    std::array<float, 16> velocityWeight {};
 };
 
 ReferenceBoomBapKickFeel buildReferenceBoomBapKickFeel(const StyleInfluenceState& styleInfluence, int bar)
@@ -88,6 +94,12 @@ ReferenceBoomBapKickFeel buildReferenceBoomBapKickFeel(const StyleInfluenceState
     float anchors = 0.0f;
     float supports = 0.0f;
     float punctuation = 0.0f;
+    float anchorVelocityTotal = 0.0f;
+    float supportVelocityTotal = 0.0f;
+    float punctuationVelocityTotal = 0.0f;
+    float anchorVelocityWeight = 0.0f;
+    float supportVelocityWeight = 0.0f;
+    float punctuationVelocityWeight = 0.0f;
 
     for (const auto& variant : styleInfluence.referenceKickCorpus.variants)
     {
@@ -105,13 +117,28 @@ ReferenceBoomBapKickFeel buildReferenceBoomBapKickFeel(const StyleInfluenceState
         for (const auto& note : pattern.notes)
         {
             const int step = std::clamp(note.step16, 0, 15);
+            const float velocity = static_cast<float>(std::clamp(note.velocity, 1, 127));
             feel.presence[static_cast<size_t>(step)] += 1.0f;
+            feel.velocitySum[static_cast<size_t>(step)] += velocity;
+            feel.velocityWeight[static_cast<size_t>(step)] += 1.0f;
             if (step == 0 || step == 8)
+            {
                 anchors += 1.0f;
+                anchorVelocityTotal += velocity;
+                anchorVelocityWeight += 1.0f;
+            }
             else if (step >= 11)
+            {
                 punctuation += 1.0f;
+                punctuationVelocityTotal += velocity;
+                punctuationVelocityWeight += 1.0f;
+            }
             else
+            {
                 supports += 1.0f;
+                supportVelocityTotal += velocity;
+                supportVelocityWeight += 1.0f;
+            }
         }
     }
 
@@ -126,7 +153,35 @@ ReferenceBoomBapKickFeel buildReferenceBoomBapKickFeel(const StyleInfluenceState
     feel.anchorRatio = totalNotes > 0.0f ? anchors / totalNotes : 0.0f;
     feel.supportRatio = totalNotes > 0.0f ? supports / totalNotes : 0.0f;
     feel.punctuationRatio = totalNotes > 0.0f ? punctuation / totalNotes : 0.0f;
+    feel.anchorVelocity = anchorVelocityWeight > 0.0f ? anchorVelocityTotal / anchorVelocityWeight : 0.0f;
+    feel.supportVelocity = supportVelocityWeight > 0.0f ? supportVelocityTotal / supportVelocityWeight : 0.0f;
+    feel.punctuationVelocity = punctuationVelocityWeight > 0.0f ? punctuationVelocityTotal / punctuationVelocityWeight : 0.0f;
     return feel;
+}
+
+int blendedReferenceKickVelocity(const ReferenceBoomBapKickFeel& feel,
+                                 int stepInBar,
+                                 KickHitRole role,
+                                 int fallbackVelocity,
+                                 const BoomBapStyleProfile& style)
+{
+    if (!feel.available)
+        return fallbackVelocity;
+
+    float target = static_cast<float>(fallbackVelocity);
+    const float laneAverage = role == KickHitRole::Anchor
+        ? feel.anchorVelocity
+        : (role == KickHitRole::Pickup ? feel.punctuationVelocity : feel.supportVelocity);
+
+    if (laneAverage > 0.0f)
+        target = target * 0.58f + laneAverage * 0.42f;
+
+    const int clampedStep = std::clamp(stepInBar, 0, 15);
+    const float stepWeight = feel.velocityWeight[static_cast<size_t>(clampedStep)];
+    if (stepWeight > 0.0f)
+        target = target * 0.52f + (feel.velocitySum[static_cast<size_t>(clampedStep)] / stepWeight) * 0.48f;
+
+    return std::clamp(static_cast<int>(std::round(target)), style.kickVelocityMin, style.kickVelocityMax);
 }
 } // namespace
 
@@ -216,12 +271,22 @@ void BoomBapKickGenerator::generate(TrackState& track,
                 continue;
 
             int step = bar * 16 + stepInBar;
+            int velocity = velDist(rng);
+            if (referenceFeel.available)
+                velocity = blendedReferenceKickVelocity(referenceFeel, stepInBar, KickHitRole::Anchor, velocity, style);
+            if (style.substyle == BoomBapSubstyle::Classic)
+                velocity = std::clamp(velocity + 2, style.kickVelocityMin, style.kickVelocityMax);
+
+            int microOffset = microDist(rng);
+            if (style.substyle == BoomBapSubstyle::Classic)
+                microOffset = std::clamp(microOffset, -4, 8);
+
             track.notes.push_back({
                 pitch,
                 step,
                 1,
-                velDist(rng),
-                microDist(rng),
+                velocity,
+                microOffset,
                 false
             });
         }
@@ -250,6 +315,19 @@ void BoomBapKickGenerator::generate(TrackState& track,
                 else
                     keepChance *= std::clamp(0.86f + presence * 0.3f + referenceFeel.supportRatio * 0.18f, 0.72f, 1.24f);
             }
+            if (style.substyle == BoomBapSubstyle::Classic && hitRole != KickHitRole::Anchor)
+            {
+                if (hitRole == KickHitRole::Support)
+                    keepChance = std::min(keepChance, role == PhraseRole::Ending ? 0.62f : 0.54f);
+                else
+                    keepChance = std::min(keepChance, role == PhraseRole::Ending ? 0.46f : 0.30f);
+
+                if (role == PhraseRole::Base)
+                    keepChance = std::clamp(keepChance * 0.84f, 0.03f, 1.0f);
+
+                if (hitRole == KickHitRole::Pickup && role != PhraseRole::Ending && stepInBar >= 13)
+                    keepChance = std::clamp(keepChance * 0.62f, 0.03f, 1.0f);
+            }
             if (tempoBand != TempoBand::Base && hitRole != KickHitRole::Anchor)
                 keepChance = std::clamp(keepChance * (tempoBand == TempoBand::Fast ? 0.58f : 0.72f), 0.03f, 1.0f);
 
@@ -269,12 +347,27 @@ void BoomBapKickGenerator::generate(TrackState& track,
                 step = std::min(step + 1, bar * 16 + 15);
 
             usedSteps[static_cast<size_t>(stepInBar)] = true;
+            int velocity = velDist(rng);
+            if (referenceFeel.available)
+                velocity = blendedReferenceKickVelocity(referenceFeel, stepInBar, hitRole, velocity, style);
+            if (style.substyle == BoomBapSubstyle::Classic && hitRole != KickHitRole::Pickup)
+                velocity = std::clamp(velocity + 2, style.kickVelocityMin, style.kickVelocityMax);
+
+            int microOffset = microDist(rng);
+            if (style.substyle == BoomBapSubstyle::Classic)
+            {
+                if (hitRole == KickHitRole::Anchor)
+                    microOffset = std::clamp(microOffset, -4, 8);
+                else
+                    microOffset = std::clamp(microOffset, -8, 14);
+            }
+
             track.notes.push_back({
                 pitch,
                 step,
                 1,
-                velDist(rng),
-                microDist(rng),
+                velocity,
+                microOffset,
                 false
             });
         }

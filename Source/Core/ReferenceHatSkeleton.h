@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include <juce_core/juce_core.h>
+
 namespace bbg
 {
 struct ReferenceHatNote
@@ -34,6 +36,7 @@ struct ReferenceHatSkeleton
 {
     bool available = false;
     int sourceBars = 0;
+    juce::String sourceId;
     std::vector<ReferenceHatBarSkeleton> barMaps;
     std::vector<ReferenceHatCluster> rollClusters;
     std::vector<ReferenceHatCluster> tripletClusters;

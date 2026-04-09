@@ -6,6 +6,7 @@
 #include "../Core/TrackSemantics.h"
 #include "../Core/TrackRegistry.h"
 #include "HiResTiming.h"
+#include "PatternPerformanceTransformEngine.h"
 #include "StyleInfluence.h"
 #include "StyleDefaults.h"
 
@@ -351,6 +352,7 @@ void TrapEngine::generate(PatternProject& project)
     generateTrapSupportLanes(project, style, styleSpec, phrase, rng, mutableTracks);
     applyTrapHumanization(project, style, rng, mutableTracks);
     validatePattern(project, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void TrapEngine::regenerateTrack(PatternProject& project, TrackType trackType)
@@ -383,6 +385,7 @@ void TrapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
     generateTrapSupportLanes(project, style, styleSpec, phrase, rng, mutableTracks);
     applyTrapHumanization(project, style, rng, mutableTracks);
     validatePattern(project, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void TrapEngine::regenerateTrackVariation(PatternProject& project, TrackType trackType)
@@ -428,6 +431,8 @@ void TrapEngine::regenerateTrackVariation(PatternProject& project, TrackType tra
     dedupeAndSort(target->notes);
     target->variationId += 1;
     target->mutationDepth = std::clamp(target->mutationDepth + 0.08f, 0.0f, 1.0f);
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
 }
 
 void TrapEngine::mutatePattern(PatternProject& project)
@@ -533,6 +538,7 @@ void TrapEngine::mutateTrack(PatternProject& project, TrackType trackType)
         dedupeAndSort(track->notes);
         track->variationId += 1;
         track->mutationDepth = std::clamp(track->mutationDepth + 0.14f, 0.0f, 1.0f);
+        PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
         return;
     }
 
@@ -572,6 +578,8 @@ void TrapEngine::mutateTrack(PatternProject& project, TrackType trackType)
     dedupeAndSort(track->notes);
     track->variationId += 1;
     track->mutationDepth = std::clamp(track->mutationDepth + 0.12f, 0.0f, 1.0f);
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
 }
 
 void TrapEngine::regenerateTrackInternal(PatternProject& project,

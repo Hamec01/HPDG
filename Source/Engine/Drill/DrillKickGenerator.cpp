@@ -2,587 +2,438 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
-#include <vector>
 
-#include "../../Core/PatternProject.h"
 #include "../../Core/TrackRegistry.h"
-#include "../TempoInterpretation.h"
 
 namespace bbg
 {
 namespace
 {
-struct KickRoleCaps
+struct PlannedKickNote
 {
-    int maxSupportPerBar = 1;
-    int maxPhraseEdgePerBar = 1;
-    int maxTotalPerBar = 3;
+    int stepInBar = 0;
+    int velocity = 108;
+    juce::String semanticRole;
+    int priority = 0;
+    bool preserve = false;
 };
 
-int minHitsPerBar(DrillSubstyle substyle)
-{
-    switch (substyle)
-    {
-        case DrillSubstyle::BrooklynDrill: return 2;
-        case DrillSubstyle::NYDrill: return 2;
-        case DrillSubstyle::DarkDrill: return 1;
-        case DrillSubstyle::UKDrill: return 2;
-    }
-
-    return 1;
-}
-
-int maxHitsPerBar(DrillSubstyle substyle)
-{
-    switch (substyle)
-    {
-        case DrillSubstyle::BrooklynDrill: return 4;
-        case DrillSubstyle::NYDrill: return 3;
-        case DrillSubstyle::DarkDrill: return 2;
-        case DrillSubstyle::UKDrill: return 3;
-    }
-
-    return 4;
-}
-
-KickRoleCaps kickRoleCaps(DrillSubstyle substyle)
-{
-    switch (substyle)
-    {
-        case DrillSubstyle::UKDrill: return { 1, 1, 3 };
-        case DrillSubstyle::BrooklynDrill: return { 2, 1, 4 };
-        case DrillSubstyle::NYDrill: return { 2, 1, 3 };
-        case DrillSubstyle::DarkDrill: return { 1, 1, 2 };
-    }
-
-    return { 1, 1, 3 };
-}
-
-bool isPhraseEdgeStep(int stepInBar)
-{
-    return stepInBar >= 13;
-}
-
-int eventWindowIndex(int stepInBar)
-{
-    return std::clamp(stepInBar / 4, 0, 3);
-}
-
-DrillKickEventType classifyKickRole(int stepInBar, const DrillGrooveSlot* slot)
-{
-    if (stepInBar == 0 || stepInBar == 10)
-        return DrillKickEventType::AnchorKick;
-    if ((slot != nullptr && slot->phraseEdgeWeight >= 0.7f) || isPhraseEdgeStep(stepInBar))
-        return DrillKickEventType::PhraseEdgeKick;
-    return DrillKickEventType::SupportKick;
-}
-
-std::vector<int> candidateSteps(DrillSubstyle substyle, bool halfTimeAware)
-{
-    if (!halfTimeAware)
-    {
-        switch (substyle)
-        {
-            case DrillSubstyle::UKDrill: return { 0, 10, 6, 15 };
-            case DrillSubstyle::BrooklynDrill: return { 0, 10, 6, 13, 15 };
-            case DrillSubstyle::NYDrill: return { 0, 10, 6, 13 };
-            case DrillSubstyle::DarkDrill: return { 0, 10, 15 };
-        }
-    }
-
-    switch (substyle)
-    {
-        case DrillSubstyle::UKDrill: return { 0, 10, 6, 15 };
-        case DrillSubstyle::BrooklynDrill: return { 0, 10, 6, 13, 15 };
-        case DrillSubstyle::NYDrill: return { 0, 10, 6, 13 };
-        case DrillSubstyle::DarkDrill: return { 0, 10, 15 };
-    }
-
-    return { 0, 6, 10, 15 };
-}
-
-float stepWeight(DrillSubstyle substyle, int stepInBar)
-{
-    switch (substyle)
-    {
-        case DrillSubstyle::UKDrill:
-            if (stepInBar == 0) return 1.0f;
-            if (stepInBar == 10) return 0.9f;
-            if (stepInBar == 6 || stepInBar == 15) return 0.62f;
-            return 0.4f;
-        case DrillSubstyle::BrooklynDrill:
-            if (stepInBar == 0) return 1.0f;
-            if (stepInBar == 10 || stepInBar == 13) return 0.82f;
-            if (stepInBar == 6 || stepInBar == 15) return 0.74f;
-            return 0.5f;
-        case DrillSubstyle::NYDrill:
-            if (stepInBar == 0) return 1.0f;
-            if (stepInBar == 10) return 0.82f;
-            if (stepInBar == 6 || stepInBar == 13 || stepInBar == 15) return 0.64f;
-            return 0.42f;
-        case DrillSubstyle::DarkDrill:
-            if (stepInBar == 0) return 1.0f;
-            if (stepInBar == 10) return 0.72f;
-            if (stepInBar == 15) return 0.46f;
-            return 0.24f;
-    }
-
-    return 0.5f;
-}
-
-float anchorRigidityWeight(const StyleInfluenceState& styleInfluence)
-{
-    return std::clamp(styleInfluence.anchorRigidityWeight, 0.7f, 1.5f);
-}
-
-const ReferenceKickBarPattern* referenceKickBarFor(const ReferenceKickPattern* pattern, int bar)
-{
-    if (pattern == nullptr || !pattern->available || pattern->barPatterns.empty())
-        return nullptr;
-
-    const int sourceBars = std::max(1, pattern->sourceBars > 0 ? pattern->sourceBars : static_cast<int>(pattern->barPatterns.size()));
-    const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
-    if (normalizedBar < 0 || normalizedBar >= static_cast<int>(pattern->barPatterns.size()))
-        return nullptr;
-    return &pattern->barPatterns[static_cast<size_t>(normalizedBar)];
-}
-
-bool hasReferenceKickCorpus(const StyleInfluenceState& styleInfluence)
-{
-    return styleInfluence.referenceKickCorpus.available
-        && !styleInfluence.referenceKickCorpus.variants.empty();
-}
-
-struct ReferenceKickStepProfile
+struct ReferenceDrillKickFeel
 {
     bool available = false;
     float density = 0.0f;
+    float anchorRatio = 0.0f;
+    float supportRatio = 0.0f;
+    float pickupRatio = 0.0f;
     std::array<float, 16> presence {};
-    std::array<float, 16> velocityBias {};
+    std::array<float, 16> velocitySum {};
+    std::array<float, 16> velocityWeight {};
 };
 
-ReferenceKickStepProfile buildReferenceKickStepProfile(const ReferenceKickCorpus* corpus, int bar)
+struct PrimaryReferenceKickPattern
 {
-    ReferenceKickStepProfile profile;
-    if (corpus == nullptr || !corpus->available || corpus->variants.empty())
-        return profile;
+    bool available = false;
+    std::vector<ReferenceKickNote> notes;
+};
+
+int maxKickEvents(const DrillPhraseBarPlan& bar)
+{
+    switch (bar.role)
+    {
+        case DrillPhraseBarRole::Lift:
+            return (bar.kickDensity == DrillKickDensityIntent::Push && bar.lowEnd == DrillLowEndIntent::Move) ? 3 : 2;
+        case DrillPhraseBarRole::Release:
+            return bar.kickDensity == DrillKickDensityIntent::Push ? 3 : 2;
+        case DrillPhraseBarRole::Statement:
+            return bar.kickDensity == DrillKickDensityIntent::Sparse ? 1 : 2;
+        case DrillPhraseBarRole::Response:
+        default:
+            return 2;
+    }
+}
+
+bool collidesWithSnare(const DrillPhraseBarPlan& bar, int stepInBar)
+{
+    for (const int snareStep : bar.anchorMap.snareAnchorSteps)
+    {
+        if (snareStep >= 0 && snareStep == stepInBar)
+            return true;
+    }
+
+    return false;
+}
+
+bool isAnchorLikeKickStep(int stepInBar)
+{
+    return stepInBar == 0;
+}
+
+bool isPickupLikeKickStep(int stepInBar)
+{
+    return stepInBar >= 12;
+}
+
+juce::String semanticRoleForKickStep(int stepInBar)
+{
+    if (isAnchorLikeKickStep(stepInBar))
+        return "drill_kick_anchor";
+    if (isPickupLikeKickStep(stepInBar))
+        return "drill_kick_pickup";
+    return "drill_kick_support";
+}
+
+int referenceVelocityForKickStep(const ReferenceDrillKickFeel& feel, int stepInBar, int fallbackVelocity)
+{
+    const int clampedStep = std::clamp(stepInBar, 0, 15);
+    const float weight = feel.velocityWeight[static_cast<size_t>(clampedStep)];
+    if (weight <= 0.0f)
+        return fallbackVelocity;
+
+    const float average = feel.velocitySum[static_cast<size_t>(clampedStep)] / weight;
+    return std::clamp(static_cast<int>(std::round((average + static_cast<float>(fallbackVelocity)) * 0.5f)),
+                      72,
+                      122);
+}
+
+int positiveModulo(int value, int modulus)
+{
+    if (modulus <= 0)
+        return 0;
+
+    const int remainder = value % modulus;
+    return remainder < 0 ? remainder + modulus : remainder;
+}
+
+size_t rotatedReferenceVariantStartIndex(size_t variantCount, int selectionSeed, int barIndex)
+{
+    if (variantCount == 0)
+        return 0;
+
+    return static_cast<size_t>(positiveModulo(selectionSeed + barIndex * 7, static_cast<int>(variantCount)));
+}
+
+ReferenceDrillKickFeel buildReferenceDrillKickFeel(const StyleInfluenceState& styleInfluence,
+                                                   int bar,
+                                                   int selectionSeed)
+{
+    ReferenceDrillKickFeel feel;
+    if (!styleInfluence.referenceKickCorpus.available || styleInfluence.referenceKickCorpus.variants.empty())
+        return feel;
 
     int contributingBars = 0;
     float totalNotes = 0.0f;
-    for (const auto& variant : corpus->variants)
+    float anchors = 0.0f;
+    float supports = 0.0f;
+    float pickups = 0.0f;
+
+    const auto startIndex = rotatedReferenceVariantStartIndex(styleInfluence.referenceKickCorpus.variants.size(), selectionSeed, bar);
+    for (size_t offset = 0; offset < styleInfluence.referenceKickCorpus.variants.size(); ++offset)
     {
-        const auto* barPattern = referenceKickBarFor(&variant, bar);
-        if (barPattern == nullptr)
+        const auto& variant = styleInfluence.referenceKickCorpus.variants[(startIndex + offset) % styleInfluence.referenceKickCorpus.variants.size()];
+        if (!variant.available || variant.barPatterns.empty())
             continue;
 
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        const auto& pattern = variant.barPatterns[static_cast<size_t>(normalizedBar)];
         ++contributingBars;
-        totalNotes += static_cast<float>(barPattern->notes.size());
-        for (const auto& note : barPattern->notes)
+        totalNotes += static_cast<float>(pattern.notes.size());
+        for (const auto& note : pattern.notes)
         {
             const int step = std::clamp(note.step16, 0, 15);
-            profile.presence[static_cast<size_t>(step)] += 1.0f;
-            profile.velocityBias[static_cast<size_t>(step)] += static_cast<float>(std::clamp(note.velocity, 1, 127)) / 127.0f;
+            feel.presence[static_cast<size_t>(step)] += 1.0f;
+            feel.velocitySum[static_cast<size_t>(step)] += static_cast<float>(note.velocity);
+            feel.velocityWeight[static_cast<size_t>(step)] += 1.0f;
+            if (isAnchorLikeKickStep(step))
+                anchors += 1.0f;
+            else if (isPickupLikeKickStep(step))
+                pickups += 1.0f;
+            else
+                supports += 1.0f;
         }
+
+        break;
     }
 
     if (contributingBars <= 0)
-        return profile;
+        return feel;
 
-    profile.available = true;
     const float invBars = 1.0f / static_cast<float>(contributingBars);
-    for (size_t index = 0; index < profile.presence.size(); ++index)
-    {
-        profile.presence[index] *= invBars;
-        profile.velocityBias[index] = profile.presence[index] > 0.0f
-            ? std::clamp(profile.velocityBias[index] * invBars, 0.0f, 1.0f)
-            : 0.0f;
-    }
-    profile.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
-    return profile;
+    for (auto& value : feel.presence)
+        value *= invBars;
+    for (auto& value : feel.velocitySum)
+        value *= invBars;
+    for (auto& value : feel.velocityWeight)
+        value *= invBars;
+
+    feel.available = true;
+    feel.density = std::clamp((totalNotes * invBars) / 4.0f, 0.0f, 1.0f);
+    feel.anchorRatio = totalNotes > 0.0f ? anchors / totalNotes : 0.0f;
+    feel.supportRatio = totalNotes > 0.0f ? supports / totalNotes : 0.0f;
+    feel.pickupRatio = totalNotes > 0.0f ? pickups / totalNotes : 0.0f;
+    return feel;
 }
 
-std::vector<int> referenceKickLeadSteps(const ReferenceKickStepProfile& profile)
+void sortAndUniqueReferenceKickNotes(std::vector<ReferenceKickNote>& notes)
 {
-    std::vector<std::pair<float, int>> ranked;
-    for (int step = 0; step < 16; ++step)
+    std::sort(notes.begin(), notes.end(), [](const ReferenceKickNote& lhs, const ReferenceKickNote& rhs)
     {
-        if (profile.presence[static_cast<size_t>(step)] < 0.34f)
-            continue;
-        ranked.push_back({ profile.presence[static_cast<size_t>(step)] + profile.velocityBias[static_cast<size_t>(step)] * 0.12f, step });
-    }
-
-    std::sort(ranked.begin(), ranked.end(), [](const auto& left, const auto& right)
-    {
-        if (left.first != right.first)
-            return left.first > right.first;
-        return left.second < right.second;
+        if (lhs.step16 != rhs.step16)
+            return lhs.step16 < rhs.step16;
+        return lhs.velocity > rhs.velocity;
     });
 
-    std::vector<int> steps;
-    for (const auto& item : ranked)
-        steps.push_back(item.second);
-    return steps;
+    notes.erase(std::unique(notes.begin(), notes.end(), [](const ReferenceKickNote& lhs, const ReferenceKickNote& rhs)
+    {
+        return lhs.step16 == rhs.step16;
+    }), notes.end());
 }
 
-std::vector<int> buildUKKickStepsFromCorpus(const ReferenceKickCorpus* corpus,
-                                            int bar,
-                                            float rigidity,
-                                            std::mt19937& rng)
+PrimaryReferenceKickPattern buildPrimaryReferenceKickPattern(const StyleInfluenceState& styleInfluence,
+                                                             int bar,
+                                                             int selectionSeed)
 {
-    std::vector<const ReferenceKickBarPattern*> candidates;
-    if (corpus == nullptr)
-        return { 0, 10 };
+    PrimaryReferenceKickPattern pattern;
+    if (!styleInfluence.referenceKickCorpus.available || styleInfluence.referenceKickCorpus.variants.empty())
+        return pattern;
 
-    for (const auto& variant : corpus->variants)
+    const auto startIndex = rotatedReferenceVariantStartIndex(styleInfluence.referenceKickCorpus.variants.size(), selectionSeed, bar);
+    for (size_t offset = 0; offset < styleInfluence.referenceKickCorpus.variants.size(); ++offset)
     {
-        if (const auto* barPattern = referenceKickBarFor(&variant, bar); barPattern != nullptr && !barPattern->notes.empty())
-            candidates.push_back(barPattern);
-    }
-
-    if (candidates.empty())
-        return { 0, 10 };
-
-    std::array<int, 16> counts {};
-    std::array<int, 16> velocitySums {};
-    for (const auto* candidate : candidates)
-    {
-        for (const auto& note : candidate->notes)
-        {
-            const int step = std::clamp(note.step16, 0, 15);
-            ++counts[static_cast<size_t>(step)];
-            velocitySums[static_cast<size_t>(step)] += note.velocity;
-        }
-    }
-
-    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
-    std::vector<int> selected { 0 };
-    if (counts[10] > 0 && chance(rng) < std::clamp(static_cast<float>(counts[10]) / static_cast<float>(candidates.size()) + 0.2f, 0.55f, 1.0f))
-        selected.push_back(10);
-
-    for (const int step : { 6, 13, 15, 4, 8, 12 })
-    {
-        const float freq = static_cast<float>(counts[step]) / static_cast<float>(candidates.size());
-        if (freq <= 0.0f)
+        const auto& variant = styleInfluence.referenceKickCorpus.variants[(startIndex + offset) % styleInfluence.referenceKickCorpus.variants.size()];
+        if (!variant.available || variant.barPatterns.empty())
             continue;
 
-        float gate = freq;
-        if (step == 6 || step == 15 || step == 13)
-            gate += 0.10f;
-        gate *= std::clamp(1.28f - rigidity * 0.22f, 0.68f, 1.1f);
-        gate = std::clamp(gate, 0.0f, 0.92f);
-        if (chance(rng) < gate)
-            selected.push_back(step);
-        if (static_cast<int>(selected.size()) >= 4)
-            break;
+        const int sourceBars = std::max(1, variant.sourceBars > 0 ? variant.sourceBars : static_cast<int>(variant.barPatterns.size()));
+        const int normalizedBar = ((bar % sourceBars) + sourceBars) % sourceBars;
+        if (normalizedBar < 0 || normalizedBar >= static_cast<int>(variant.barPatterns.size()))
+            continue;
+
+        pattern.notes = variant.barPatterns[static_cast<size_t>(normalizedBar)].notes;
+        sortAndUniqueReferenceKickNotes(pattern.notes);
+        pattern.available = !pattern.notes.empty();
+        if (pattern.available)
+            return pattern;
     }
 
-    std::sort(selected.begin(), selected.end());
-    selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
-
-    if (selected.size() <= 2 && counts[6] > 0 && chance(rng) < 0.55f)
-        selected.push_back(6);
-
-    std::sort(selected.begin(), selected.end());
-    selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
-
-    if (selected.size() > 4)
-        selected.resize(4);
-
-    return selected;
-}
+    return pattern;
 }
 
-void DrillKickGenerator::generate(TrackState& track,
-                                  const GeneratorParams& params,
-                                  const DrillStyleProfile& style,
-                                  const StyleInfluenceState& styleInfluence,
-                                  const std::vector<DrillPhraseRole>& phrase,
-                                  const DrillGrooveBlueprint* blueprint,
+bool isPlannedKickAnchor(const DrillPhraseBarPlan& bar, int stepInBar)
+{
+    for (const int anchorStep : bar.anchorMap.kickAnchorSteps)
+        if (anchorStep == stepInBar)
+            return true;
+    return false;
+}
+
+bool isLowEndAnchor(const DrillPhraseBarPlan& bar, int stepInBar)
+{
+    for (const int anchorStep : bar.anchorMap.lowEndAnchorSteps)
+        if (anchorStep == stepInBar)
+            return true;
+    return false;
+}
+
+void addKickCandidate(std::vector<PlannedKickNote>& notes,
+                      int stepInBar,
+                      int velocity,
+                      const juce::String& semanticRole,
+                      int priority,
+                      bool preserve)
+{
+    auto existing = std::find_if(notes.begin(), notes.end(), [stepInBar](const PlannedKickNote& note)
+    {
+        return note.stepInBar == stepInBar;
+    });
+
+    if (existing == notes.end())
+    {
+        notes.push_back({ stepInBar, velocity, semanticRole, priority, preserve });
+        return;
+    }
+
+    if (preserve && !existing->preserve)
+        existing->preserve = true;
+    if (priority > existing->priority)
+        existing->priority = priority;
+    if (velocity > existing->velocity)
+        existing->velocity = velocity;
+    if (existing->semanticRole != "drill_kick_anchor" && semanticRole == "drill_kick_anchor")
+        existing->semanticRole = semanticRole;
+    else if (existing->semanticRole == "drill_kick_support" && semanticRole == "drill_kick_pickup")
+        existing->semanticRole = semanticRole;
+}
+
+void addReferenceRetentionCandidates(std::vector<PlannedKickNote>& notes,
+                                     const PrimaryReferenceKickPattern& referencePattern,
+                                     const DrillPhraseBarPlan& bar,
+                                     int maxEvents,
+                                     int primaryAnchorStep)
+{
+    if (!referencePattern.available || referencePattern.notes.empty() || maxEvents <= 0)
+        return;
+
+    struct RankedReferenceStep
+    {
+        ReferenceKickNote note;
+        float score = 0.0f;
+    };
+
+    std::vector<RankedReferenceStep> ranked;
+    ranked.reserve(referencePattern.notes.size());
+
+    bool hasPrimaryAnchor = false;
+    for (const auto& note : referencePattern.notes)
+    {
+        const int stepInBar = std::clamp(note.step16, 0, 15);
+        if (stepInBar == primaryAnchorStep)
+            hasPrimaryAnchor = true;
+        if (collidesWithSnare(bar, stepInBar))
+            continue;
+
+        float score = isAnchorLikeKickStep(stepInBar) ? 90.0f : (isPickupLikeKickStep(stepInBar) ? 76.0f : 68.0f);
+        score += static_cast<float>(std::clamp(note.velocity, 1, 127)) * 0.22f;
+        if (isPlannedKickAnchor(bar, stepInBar))
+            score += 12.0f;
+        if (isLowEndAnchor(bar, stepInBar))
+            score += 8.0f;
+        if (bar.lowEnd == DrillLowEndIntent::Move && !isPickupLikeKickStep(stepInBar))
+            score += 6.0f;
+        if (bar.role == DrillPhraseBarRole::Release && isPickupLikeKickStep(stepInBar))
+            score += 10.0f;
+
+        ranked.push_back({ { stepInBar, note.velocity }, score });
+    }
+
+    if (ranked.empty())
+        return;
+
+    std::sort(ranked.begin(), ranked.end(), [](const RankedReferenceStep& lhs, const RankedReferenceStep& rhs)
+    {
+        if (lhs.score != rhs.score)
+            return lhs.score > rhs.score;
+        if (lhs.note.velocity != rhs.note.velocity)
+            return lhs.note.velocity > rhs.note.velocity;
+        return lhs.note.step16 < rhs.note.step16;
+    });
+
+    const int reservedForAnchor = hasPrimaryAnchor ? 0 : 1;
+    const int availableSlots = std::max(0, maxEvents - reservedForAnchor);
+    if (availableSlots <= 0)
+        return;
+
+    const int targetRetained = std::min(availableSlots,
+                                        std::max(1, static_cast<int>(std::round(static_cast<float>(availableSlots) * 0.75f))));
+
+    for (int index = 0; index < targetRetained && index < static_cast<int>(ranked.size()); ++index)
+    {
+        const auto& note = ranked[static_cast<size_t>(index)].note;
+        const int stepInBar = std::clamp(note.step16, 0, 15);
+        addKickCandidate(notes,
+                         stepInBar,
+                         std::clamp(note.velocity, 72, 122),
+                         semanticRoleForKickStep(stepInBar),
+                         144 - index,
+                         true);
+    }
+}
+} // namespace
+
+void DrillKickGenerator::generate(TrackState& kickTrack,
+                                  const PatternProject& project,
+                                  const DrillPhrasePlan& phrasePlan,
+                                  const TrackState* snareTrack,
                                   std::mt19937& rng) const
 {
-    track.notes.clear();
-    const auto* info = TrackRegistry::find(track.type);
+    juce::ignoreUnused(project, snareTrack);
+
+    kickTrack.notes.clear();
+    kickTrack.subProfile = "Main";
+    kickTrack.laneRole = "drill_kick";
+
+    const auto* info = TrackRegistry::find(TrackType::Kick);
     const int pitch = info != nullptr ? info->defaultMidiNote : 36;
+    std::uniform_int_distribution<int> anchorVelocity(100, 118);
+    std::uniform_int_distribution<int> supportVelocity(76, 104);
+    std::uniform_int_distribution<int> pickupVelocity(82, 108);
+    std::uniform_int_distribution<int> priorityJitter(0, 7);
 
-    const int bars = std::max(1, params.bars);
-    const auto tempoBand = selectTempoBand(params.bpm, params, 120.0f, 140.0f, 100.0f, 130.0f);
-    const bool halfTimeAware = tempoBand != TempoBand::Base;
-    float density = std::clamp(params.densityAmount * style.kickDensityBias, 0.15f, 1.0f);
-    if (halfTimeAware)
-        density *= 0.92f;
-    if (style.substyle == DrillSubstyle::DarkDrill)
-        density *= 0.74f;
-    density = std::clamp(density, 0.08f, 1.0f);
-    const float rigidity = anchorRigidityWeight(styleInfluence);
-    const ReferenceKickCorpus* referenceCorpus = hasReferenceKickCorpus(styleInfluence)
-        ? &styleInfluence.referenceKickCorpus
-        : nullptr;
-
-    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
-    std::uniform_int_distribution<int> vel(style.kickVelocityMin, style.kickVelocityMax);
-    const auto candidates = candidateSteps(style.substyle, halfTimeAware);
-    const int minHits = minHitsPerBar(style.substyle);
-    const int maxHits = maxHitsPerBar(style.substyle);
-    const auto caps = kickRoleCaps(style.substyle);
-
-    for (int bar = 0; bar < bars; ++bar)
+    for (const auto& bar : phrasePlan.bars)
     {
-        const auto role = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : DrillPhraseRole::Base;
-        const auto referenceProfile = buildReferenceKickStepProfile(referenceCorpus, bar);
-        const auto referenceLeadSteps = referenceKickLeadSteps(referenceProfile);
-        std::vector<int> selected;
-        selected.reserve(6);
-        std::array<int, 4> majorEventsByWindow { 0, 0, 0, 0 };
-        int supportCount = 0;
-        int phraseEdgeCount = 0;
-           const int supportCap = std::max(0,
-                        static_cast<int>(std::round(static_cast<float>(caps.maxSupportPerBar)
-                                    * std::clamp(1.55f - rigidity,
-                                        0.0f,
-                                        1.2f))));
-           const int phraseEdgeCap = std::max(0,
-                          static_cast<int>(std::round(static_cast<float>(caps.maxPhraseEdgePerBar)
-                                       * std::clamp(1.55f - rigidity,
-                                           0.0f,
-                                           1.0f))));
+        const int barStart = bar.barIndex * 16;
+        const int maxEvents = maxKickEvents(bar);
+        const auto referencePattern = buildPrimaryReferenceKickPattern(project.styleInfluence, bar.barIndex, project.params.seed);
+        const auto referenceFeel = buildReferenceDrillKickFeel(project.styleInfluence, bar.barIndex, project.params.seed);
+        std::vector<PlannedKickNote> plannedNotes;
+        plannedNotes.reserve(6);
 
-        const float barBudget = (blueprint != nullptr && bar < static_cast<int>(blueprint->barPlans.size()))
-            ? std::clamp(blueprint->barPlans[static_cast<size_t>(bar)].densityBudget, 0.0f, 1.0f)
-            : std::clamp(density, 0.0f, 1.0f);
-        const int dynamicMaxHits = std::max(1, static_cast<int>(std::round(static_cast<float>(maxHits) * std::clamp(0.55f + barBudget * 0.85f, 0.4f, 1.25f))));
-        const int referenceBonusHits = referenceProfile.available && referenceProfile.density > 0.58f && role != DrillPhraseRole::Response ? 1 : 0;
-        const int effectiveMaxHits = std::min({ maxHits, dynamicMaxHits + referenceBonusHits, caps.maxTotalPerBar });
-        const int effectiveMinHits = std::min(minHits, effectiveMaxHits);
+        const int primaryAnchorStep = bar.anchorMap.kickAnchorSteps[0] >= 0 ? bar.anchorMap.kickAnchorSteps[0] : 0;
+        addReferenceRetentionCandidates(plannedNotes, referencePattern, bar, maxEvents, primaryAnchorStep);
 
-        auto tryAdd = [&](int step)
+        for (size_t index = 0; index < bar.anchorMap.kickAnchorSteps.size(); ++index)
         {
-            if (std::find(selected.begin(), selected.end(), step) != selected.end())
-                return;
-            if (static_cast<int>(selected.size()) >= effectiveMaxHits)
-                return;
-
-            const int absoluteStep = bar * 16 + step;
-            const auto* slot = blueprint != nullptr ? blueprint->slotAt(absoluteStep) : nullptr;
-            const auto eventType = classifyKickRole(step, slot);
-            const int window = eventWindowIndex(step);
-
-            if (majorEventsByWindow[static_cast<size_t>(window)] >= 1 && step != 0)
-                return;
-
-            if (eventType == DrillKickEventType::SupportKick && supportCount >= supportCap)
-                return;
-            if (eventType == DrillKickEventType::PhraseEdgeKick && phraseEdgeCount >= phraseEdgeCap)
-                return;
-
-            if (eventType == DrillKickEventType::PhraseEdgeKick)
-            {
-                const bool phraseEdgeOccupied = majorEventsByWindow[static_cast<size_t>(window)] > 0;
-                if (phraseEdgeOccupied)
-                    return;
-
-                if (slot != nullptr && (slot->kickPlaced || slot->majorEventReserved))
-                    return;
-            }
-
-            float gate = stepWeight(style.substyle, step);
-            gate *= 0.42f + density * 0.64f;
-            gate *= std::clamp(0.6f + barBudget * 0.8f, 0.35f, 1.2f);
-            if (step == 0)
-                gate = 1.0f;
-
-            if (referenceProfile.available)
-            {
-                const float presence = referenceProfile.presence[static_cast<size_t>(step)];
-                const float velocityBias = referenceProfile.velocityBias[static_cast<size_t>(step)];
-                float referenceGate = 0.82f + presence * (step == 0 || step == 10 ? 0.34f : 0.62f) + velocityBias * 0.08f;
-                if (eventType == DrillKickEventType::PhraseEdgeKick && presence >= 0.36f)
-                    referenceGate += 0.08f;
-                if (style.substyle == DrillSubstyle::UKDrill)
-                    referenceGate += presence * 0.06f;
-                if (referenceProfile.density < 0.28f && eventType == DrillKickEventType::SupportKick)
-                    referenceGate *= 0.88f;
-                gate *= std::clamp(referenceGate, 0.52f, 1.42f);
-            }
-
-            if (eventType == DrillKickEventType::AnchorKick)
-                gate *= std::clamp(0.9f + rigidity * 0.14f, 0.8f, 1.15f);
-            else
-                gate *= std::clamp(1.3f - rigidity * 0.28f, 0.58f, 1.1f);
-
-            if (slot != nullptr)
-            {
-                if (slot->kickForbidden)
-                    return;
-
-                gate *= std::clamp(slot->kickCandidateWeight * 1.15f, 0.0f, 1.35f);
-
-                if (slot->snareProtection)
-                {
-                    if (step != 0 && step != 10)
-                        gate *= 0.24f;
-                    else
-                        gate *= 0.66f;
-                }
-
-                const bool phraseEdgeStep = slot->phraseEdgeWeight >= 0.7f || step >= 13;
-                if (phraseEdgeStep && slot->majorEventReserved)
-                {
-                    if (eventType == DrillKickEventType::PhraseEdgeKick)
-                        return;
-                    if (step != 0 && step != 10)
-                        gate *= 0.36f;
-                }
-
-                if (slot->majorEventReserved && !phraseEdgeStep && step != 0)
-                    gate *= 0.7f;
-            }
-
-            if (role == DrillPhraseRole::Ending && step >= 13)
-                gate += 0.2f;
-            if (role == DrillPhraseRole::Tension && (step == 6 || step == 10 || step == 13))
-                gate += 0.14f;
-            if (role == DrillPhraseRole::Response)
-            {
-                if (eventType == DrillKickEventType::SupportKick)
-                    gate *= 0.68f;
-                if (eventType == DrillKickEventType::PhraseEdgeKick)
-                    gate *= 0.48f;
-            }
-            if (style.substyle == DrillSubstyle::DarkDrill && step != 0 && step != 10)
-                gate *= 0.68f;
-
-            const int extras = supportCount + phraseEdgeCount;
-            if (role == DrillPhraseRole::Response && extras >= 1 && eventType != DrillKickEventType::AnchorKick)
-                return;
-            if (role == DrillPhraseRole::Tension && extras >= 2 && eventType != DrillKickEventType::AnchorKick)
-                return;
-
-            if (step != 0 && static_cast<int>(selected.size()) >= std::max(1, effectiveMaxHits - 1) && barBudget < 0.5f)
-                gate *= 0.55f;
-
-            if (chance(rng) < std::clamp(gate, 0.06f, 0.98f))
-            {
-                selected.push_back(step);
-                ++majorEventsByWindow[static_cast<size_t>(window)];
-                if (eventType == DrillKickEventType::SupportKick)
-                    ++supportCount;
-                else if (eventType == DrillKickEventType::PhraseEdgeKick)
-                    ++phraseEdgeCount;
-            }
-        };
-
-        // Start with deterministic anchor pulse and preferred support point.
-        selected.push_back(0);
-        ++majorEventsByWindow[0];
-        if (std::find(candidates.begin(), candidates.end(), 10) != candidates.end())
-            tryAdd(10);
-        for (const int step : referenceLeadSteps)
-        {
-            if (step == 0 || step == 10)
+            const int stepInBar = bar.anchorMap.kickAnchorSteps[index];
+            if (stepInBar < 0 || collidesWithSnare(bar, stepInBar))
                 continue;
-            if (referenceProfile.presence[static_cast<size_t>(step)] < 0.42f)
+
+            const juce::String semanticRole = semanticRoleForKickStep(stepInBar);
+            const int fallbackVelocity = semanticRole == "drill_kick_anchor"
+                ? anchorVelocity(rng)
+                : (semanticRole == "drill_kick_pickup" ? pickupVelocity(rng) : supportVelocity(rng));
+            int priority = index == 0 ? 140 : 118 - static_cast<int>(index) * 6;
+            if (referenceFeel.available)
+            {
+                const float presence = referenceFeel.presence[static_cast<size_t>(stepInBar)];
+                if (presence > 0.0f)
+                    priority += static_cast<int>(std::round(presence * 14.0f));
+            }
+
+            addKickCandidate(plannedNotes,
+                             stepInBar,
+                             referenceFeel.available ? referenceVelocityForKickStep(referenceFeel, stepInBar, fallbackVelocity) : fallbackVelocity,
+                             semanticRole,
+                             priority + priorityJitter(rng),
+                             index == 0);
+        }
+
+        std::sort(plannedNotes.begin(), plannedNotes.end(), [](const PlannedKickNote& lhs, const PlannedKickNote& rhs)
+        {
+            if (lhs.preserve != rhs.preserve)
+                return lhs.preserve > rhs.preserve;
+            if (lhs.priority != rhs.priority)
+                return lhs.priority > rhs.priority;
+            if (lhs.velocity != rhs.velocity)
+                return lhs.velocity > rhs.velocity;
+            return lhs.stepInBar < rhs.stepInBar;
+        });
+
+        std::array<bool, 16> usedSteps {};
+        int added = 0;
+        for (const auto& note : plannedNotes)
+        {
+            if (added >= maxEvents || note.stepInBar < 0 || note.stepInBar >= 16 || usedSteps[static_cast<size_t>(note.stepInBar)])
                 continue;
-            tryAdd(step);
-            if (static_cast<int>(selected.size()) >= std::min(effectiveMaxHits, 3))
-                break;
-        }
-        for (const int step : candidates)
-            if (step != 0 && step != 10)
-                tryAdd(step);
 
-        // Ensure a minimum body for substyles that need more pressure.
-        if (static_cast<int>(selected.size()) < effectiveMinHits)
-        {
-            for (const int step : candidates)
-            {
-                if (step == 0)
-                    continue;
-                if (std::find(selected.begin(), selected.end(), step) == selected.end())
-                {
-                    const int absoluteStep = bar * 16 + step;
-                    const auto* slot = blueprint != nullptr ? blueprint->slotAt(absoluteStep) : nullptr;
-                    const auto eventType = classifyKickRole(step, slot);
-                    const int window = eventWindowIndex(step);
-                    if (majorEventsByWindow[static_cast<size_t>(window)] >= 1)
-                        continue;
-                    if (eventType == DrillKickEventType::SupportKick && supportCount >= supportCap)
-                        continue;
-                    if (eventType == DrillKickEventType::PhraseEdgeKick && phraseEdgeCount >= phraseEdgeCap)
-                        continue;
-                    if (slot != nullptr && (slot->kickForbidden || slot->snareProtection || (slot->majorEventReserved && slot->phraseEdgeWeight >= 0.7f)))
-                        continue;
-                    selected.push_back(step);
-                    ++majorEventsByWindow[static_cast<size_t>(window)];
-                    if (eventType == DrillKickEventType::SupportKick)
-                        ++supportCount;
-                    else if (eventType == DrillKickEventType::PhraseEdgeKick)
-                        ++phraseEdgeCount;
-                }
-                if (static_cast<int>(selected.size()) >= effectiveMinHits)
-                    break;
-            }
+            usedSteps[static_cast<size_t>(note.stepInBar)] = true;
+            kickTrack.notes.push_back({ pitch, barStart + note.stepInBar, 1, note.velocity, 0, false, note.semanticRole, false, false, false });
+            ++added;
         }
 
-        std::sort(selected.begin(), selected.end());
-        selected.erase(std::unique(selected.begin(), selected.end()), selected.end());
-
-        // Prevent dense adjacent machine-like clusters.
-        std::vector<int> filtered;
-        filtered.reserve(selected.size());
-        for (int step : selected)
-        {
-            if (!filtered.empty() && std::abs(step - filtered.back()) <= 1 && step != 15)
-            {
-                if (style.substyle == DrillSubstyle::BrooklynDrill && chance(rng) < 0.35f)
-                    filtered.push_back(step);
-                continue;
-            }
-            filtered.push_back(step);
-        }
-
-        for (int step : filtered)
-        {
-            const int absoluteStep = bar * 16 + step;
-            const auto* slot = blueprint != nullptr ? blueprint->slotAt(absoluteStep) : nullptr;
-
-            int velocity = vel(rng);
-            if (step == 0 || step == 10)
-                velocity = std::clamp(velocity + 4, style.kickVelocityMin, style.kickVelocityMax);
-            else if (slot != nullptr && slot->phraseEdgeWeight >= 0.7f)
-                velocity = std::clamp(velocity + 2, style.kickVelocityMin, style.kickVelocityMax);
-            else
-                velocity = std::clamp(velocity - 4, style.kickVelocityMin, style.kickVelocityMax);
-
-            track.notes.push_back({ pitch, absoluteStep, 1, velocity, 0, false });
-        }
-
-        // Keep phrase-edge punctuation only when that phrase-edge window is free.
-        if (role == DrillPhraseRole::Ending && std::find(filtered.begin(), filtered.end(), 15) == filtered.end())
-        {
-            const float edgeGate = style.substyle == DrillSubstyle::DarkDrill ? 0.22f : 0.5f;
-            const int absoluteStep = bar * 16 + 15;
-            const auto* slot = blueprint != nullptr ? blueprint->slotAt(absoluteStep) : nullptr;
-            const int edgeWindow = eventWindowIndex(15);
-            const bool phraseWindowFree = majorEventsByWindow[static_cast<size_t>(edgeWindow)] == 0;
-            const bool allowedByBlueprint = slot == nullptr
-                || (!slot->kickForbidden && !slot->snareProtection && !(slot->majorEventReserved && slot->phraseEdgeWeight >= 0.7f) && !slot->kickPlaced);
-            if (phraseWindowFree && phraseEdgeCount < phraseEdgeCap && allowedByBlueprint && chance(rng) < edgeGate)
-            {
-                track.notes.push_back({ pitch, bar * 16 + 15, 1, vel(rng), 0, false });
-            }
-        }
     }
 
-    std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    std::sort(kickTrack.notes.begin(), kickTrack.notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
-        return a.velocity > b.velocity;
+        if (lhs.step != rhs.step)
+            return lhs.step < rhs.step;
+        return lhs.velocity > rhs.velocity;
     });
-    track.notes.erase(std::unique(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+    kickTrack.notes.erase(std::unique(kickTrack.notes.begin(), kickTrack.notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        return a.step == b.step;
-    }), track.notes.end());
+        return lhs.step == rhs.step;
+    }), kickTrack.notes.end());
 }
 } // namespace bbg

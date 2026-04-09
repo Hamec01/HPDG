@@ -89,7 +89,7 @@ const std::vector<OpenHatPreset>& getBoomBapOpenHatPresets();
 const std::vector<PercDecorationPreset>& getBoomBapPercPresets();
 
 const SnareFeelProfile& chooseSnareFeelProfile(BoomBapSubstyle substyle, float density, std::mt19937& rng);
-const HatPatternProfile& chooseHatPatternProfile(BoomBapSubstyle substyle, float density, std::mt19937& rng);
+const HatPatternProfile& chooseHatPatternProfile(BoomBapSubstyle substyle, float density, PhraseRole role, std::mt19937& rng);
 const GhostBehaviorPreset& chooseGhostPreset(BoomBapSubstyle substyle, std::mt19937& rng);
 const OpenHatPreset& chooseOpenHatPreset(BoomBapSubstyle substyle, std::mt19937& rng);
 const PercDecorationPreset& choosePercPreset(BoomBapSubstyle substyle, std::mt19937& rng);

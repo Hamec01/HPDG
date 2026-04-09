@@ -108,6 +108,7 @@ void BoomBapGhostGenerator::generateGhostKick(TrackState& ghostKickTrack,
     std::uniform_int_distribution<int> offset(1, style.ghostTimingMaxTicks);
 
     std::vector<int> perBarCount(static_cast<size_t>(std::max(1, static_cast<int>(phraseRoles.size()))), 0);
+    const int maxEventsPerBar = style.substyle == BoomBapSubstyle::Classic ? 1 : preset.maxEventsPerBar;
 
     for (const auto& hit : kickTrack.notes)
     {
@@ -128,8 +129,11 @@ void BoomBapGhostGenerator::generateGhostKick(TrackState& ghostKickTrack,
         if (referenceFeel.available)
             gate *= std::clamp(0.86f + referenceFeel.kickSupportRatio * 0.28f + referenceFeel.gapRatio * 0.12f, 0.74f, 1.22f);
 
-        if (bar < static_cast<int>(perBarCount.size()) && perBarCount[static_cast<size_t>(bar)] >= preset.maxEventsPerBar)
+        if (bar < static_cast<int>(perBarCount.size()) && perBarCount[static_cast<size_t>(bar)] >= maxEventsPerBar)
             continue;
+
+        if (style.substyle == BoomBapSubstyle::Classic)
+            gate = std::min(gate, role == PhraseRole::Ending ? 0.18f : 0.10f);
 
         if (chance(rng) > gate)
             continue;

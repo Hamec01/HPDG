@@ -34,12 +34,48 @@ juce::String formatVolumeValue(double value)
 
 juce::String formatPanValue(double value)
 {
-    return juce::String(static_cast<int>(std::round(value)));
+    const int rounded = static_cast<int>(std::round(value));
+    if (rounded == 0)
+        return "C";
+
+    return juce::String(rounded < 0 ? "L" : "R") + juce::String(std::abs(rounded));
 }
 
 juce::String formatWidthValue(double value)
 {
     return juce::String(static_cast<int>(std::round(value))) + "%";
+}
+
+double parseNumericText(const juce::String& text)
+{
+    return text.retainCharacters("0123456789.-").getDoubleValue();
+}
+
+double parsePanText(const juce::String& text)
+{
+    const auto trimmed = text.trim().toUpperCase();
+    if (trimmed.isEmpty() || trimmed == "C")
+        return 0.0;
+
+    const double value = parseNumericText(trimmed);
+    if (trimmed.startsWith("L") || trimmed.startsWith("-"))
+        return -value;
+
+    return value;
+}
+
+void configureRackKnob(RotaryKnobSlider& knob,
+                       const juce::String& popupTitle,
+                       double min,
+                       double max,
+                       double step,
+                       const std::function<juce::String(double)>& formatter,
+                       const std::function<double(const juce::String&)>& parser)
+{
+    knob.setPopupTitle(popupTitle);
+    knob.setRange(min, max, step);
+    knob.textFromValueFunction = formatter;
+    knob.valueFromTextFunction = parser;
 }
 
 bool isGhostHelperLane(const RuntimeLaneRowState& state)
@@ -160,9 +196,11 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     , isCore(initialState.isCore)
     , supportsDragExport(initialState.supportsDragExport)
     , isGhostTrack(initialState.isGhostTrack)
+    , currentSoundState(initialState.sound)
 {
     helperLaneUi = isHelperLaneVisual(initialState);
     explicitDependencyUi = hasExplicitDependencyRelation(initialState);
+    currentSub808Settings = initialState.sub808Settings;
 
     nameLabel.setText(initialState.laneName, juce::dontSendNotification);
     nameLabel.setJustificationType(juce::Justification::centredLeft);
@@ -273,26 +311,38 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     volumeLabel.setText("Vol", juce::dontSendNotification);
     volumeLabel.setJustificationType(juce::Justification::centredLeft);
     volumeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 168, 182));
-    volumeValueLabel.setJustificationType(juce::Justification::centredRight);
+    volumeValueLabel.setJustificationType(juce::Justification::centred);
     volumeValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(238, 214, 186));
-    volumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    volumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    volumeSlider.setRange(0.0, 1.5, 0.01);
+    volumeValueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    configureRackKnob(volumeSlider,
+                      "Volume",
+                      0.0,
+                      1.5,
+                      0.01,
+                      [] (double value) { return formatVolumeValue(value); },
+                      [] (const juce::String& text) { return parseNumericText(text); });
     volumeSlider.setValue(0.85, juce::dontSendNotification);
     volumeSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(220, 150, 76));
-    volumeSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(238, 170, 95));
+    volumeSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(220, 150, 76));
+    volumeSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(248, 196, 126));
+    volumeSlider.setTooltip("Lane volume");
 
     panLabel.setText("Pan", juce::dontSendNotification);
     panLabel.setJustificationType(juce::Justification::centredLeft);
     panLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 168, 182));
-    panValueLabel.setJustificationType(juce::Justification::centredRight);
+    panValueLabel.setJustificationType(juce::Justification::centred);
     panValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(190, 224, 255));
-    panSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    panSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    panSlider.setRange(-100.0, 100.0, 1.0);
+    panValueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    configureRackKnob(panSlider,
+                      "Pan",
+                      -100.0,
+                      100.0,
+                      1.0,
+                      [] (double value) { return formatPanValue(value); },
+                      [] (const juce::String& text) { return parsePanText(text); });
     panSlider.setValue(0.0, juce::dontSendNotification);
     panSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(110, 168, 236));
-    panSlider.setColour(juce::Slider::backgroundColourId, juce::Colour::fromRGBA(255, 255, 255, 20));
+    panSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(118, 176, 244));
     panSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(190, 224, 255));
     panSlider.setTooltip("Pan: -100 left, 0 center, +100 right");
 
@@ -400,14 +450,12 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
         if (!onLaneSoundChanged)
             return;
 
-        SoundLayerState state;
-        state.pan = panStateFromUi(panSlider.getValue());
-        state.width = widthStateFromUi(widthSlider.getValue());
-        onLaneSoundChanged(laneId, state);
+        currentSoundState.pan = panStateFromUi(panSlider.getValue());
+        currentSoundState.width = widthStateFromUi(widthSlider.getValue());
+        onLaneSoundChanged(laneId, currentSoundState);
     };
 
     panSlider.onValueChange = emitLaneSoundChange;
-    widthSlider.onValueChange = emitLaneSoundChange;
 
     overflowMenuButton.onClick = [this]
     {
@@ -507,16 +555,14 @@ void TrackRowComponent::paint(juce::Graphics& g)
 void TrackRowComponent::resized()
 {
     auto area = getLocalBounds().reduced(6, 4);
-    auto layoutParamColumn = [](juce::Rectangle<int> columnArea,
-                                juce::Label& label,
-                                juce::Label& valueLabel,
-                                juce::Slider& slider)
+    auto layoutKnobColumn = [](juce::Rectangle<int> columnArea,
+                               juce::Label& valueLabel,
+                               juce::Component& knob)
     {
-        auto topRow = columnArea.removeFromTop(10);
-        label.setBounds(topRow.removeFromLeft(columnArea.getWidth() / 2 + 12));
-        valueLabel.setBounds(topRow);
-        columnArea.removeFromTop(2);
-        slider.setBounds(columnArea.removeFromTop(12));
+        valueLabel.setBounds(columnArea.removeFromBottom(11));
+        auto knobArea = columnArea.reduced(0, 1);
+        const int diameter = juce::jmin(28, juce::jmin(knobArea.getWidth(), knobArea.getHeight()));
+        knob.setBounds(knobArea.withSizeKeepingCentre(diameter, diameter));
     };
 
     if (displayMode == LaneRackDisplayMode::Minimal)
@@ -604,7 +650,7 @@ void TrackRowComponent::resized()
     enableButton.setBounds(area.removeFromLeft(buttonWidth).reduced(1));
 
     area.removeFromLeft(6);
-    auto sampleArea = area.removeFromLeft(176);
+    auto sampleArea = area.removeFromLeft(188);
     prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
     sampleArea.removeFromLeft(2);
     nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
@@ -612,16 +658,18 @@ void TrackRowComponent::resized()
     sampleNameLabel.setBounds(sampleArea.reduced(1));
 
     area.removeFromLeft(6);
-    auto volumeArea = area.removeFromLeft(88);
-    layoutParamColumn(volumeArea, volumeLabel, volumeValueLabel, volumeSlider);
+    auto volumeArea = area.removeFromLeft(58);
+    layoutKnobColumn(volumeArea, volumeValueLabel, volumeSlider);
 
     area.removeFromLeft(4);
-    auto panArea = area.removeFromLeft(90);
-    layoutParamColumn(panArea, panLabel, panValueLabel, panSlider);
+    auto panArea = area.removeFromLeft(58);
+    layoutKnobColumn(panArea, panValueLabel, panSlider);
 
-    area.removeFromLeft(4);
-    auto widthArea = area.removeFromLeft(96);
-    layoutParamColumn(widthArea, widthLabel, widthValueLabel, widthSlider);
+    volumeLabel.setBounds({});
+    panLabel.setBounds({});
+    widthLabel.setBounds({});
+    widthValueLabel.setBounds({});
+    widthSlider.setBounds({});
 
     bassKeyLabel.setBounds({});
     bassKeyCombo.setBounds({});
@@ -682,15 +730,15 @@ void TrackRowComponent::applyDisplayModeVisibility()
     lockButton.setVisible(full);
     enableButton.setVisible(full || compact);
 
-    volumeLabel.setVisible(full);
+    volumeLabel.setVisible(false);
     volumeValueLabel.setVisible(full);
     volumeSlider.setVisible(full);
-    panLabel.setVisible(full);
+    panLabel.setVisible(false);
     panValueLabel.setVisible(full);
     panSlider.setVisible(full);
-    widthLabel.setVisible(full);
-    widthValueLabel.setVisible(full);
-    widthSlider.setVisible(full);
+    widthLabel.setVisible(false);
+    widthValueLabel.setVisible(false);
+    widthSlider.setVisible(false);
 
     sampleNameLabel.setVisible(true);
 
@@ -714,7 +762,7 @@ void TrackRowComponent::applyDisplayModeVisibility()
 
     volumeSlider.setEnabled(hasRuntimeTrack());
     panSlider.setEnabled(hasRuntimeTrack());
-    widthSlider.setEnabled(hasRuntimeTrack());
+    widthSlider.setEnabled(false);
     dragDensitySlider.setEnabled(false);
     dragDensityLockButton.setEnabled(false);
 
@@ -743,6 +791,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     muteButton.setToggleState(state.muted, juce::dontSendNotification);
     lockButton.setToggleState(state.locked, juce::dontSendNotification);
     enableButton.setToggleState(state.enabled, juce::dontSendNotification);
+    currentSoundState = state.sound;
     volumeSlider.setValue(state.laneVolume, juce::dontSendNotification);
     panSlider.setValue(panUiFromState(state.sound.pan), juce::dontSendNotification);
     widthSlider.setValue(widthUiFromState(state.sound.width), juce::dontSendNotification);
@@ -766,7 +815,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     overflowMenuButton.setEnabled(true);
     volumeSlider.setEnabled(hasRuntimeTrack());
     panSlider.setEnabled(hasRuntimeTrack());
-    widthSlider.setEnabled(hasRuntimeTrack());
+    widthSlider.setEnabled(false);
     dragDensitySlider.setEnabled(false);
     dragDensityLockButton.setEnabled(false);
 
@@ -826,7 +875,6 @@ void TrackRowComponent::updateParameterValueLabels()
 {
     volumeValueLabel.setText(formatVolumeValue(volumeSlider.getValue()), juce::dontSendNotification);
     panValueLabel.setText(formatPanValue(panSlider.getValue()), juce::dontSendNotification);
-    widthValueLabel.setText(formatWidthValue(widthSlider.getValue()), juce::dontSendNotification);
 }
 
 void TrackRowComponent::showOverflowMenu()

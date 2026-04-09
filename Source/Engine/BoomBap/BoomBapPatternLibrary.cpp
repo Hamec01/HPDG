@@ -216,10 +216,47 @@ const SnareFeelProfile& chooseSnareFeelProfile(BoomBapSubstyle substyle, float d
     const auto& all = getBoomBapSnareFeelProfiles();
     std::vector<int> candidates;
 
+    const auto addNamedCandidate = [&all, &candidates](const char* profileName, int weight)
+    {
+        if (weight <= 0)
+            return;
+
+        for (int i = 0; i < static_cast<int>(all.size()); ++i)
+        {
+            if (all[static_cast<size_t>(i)].name != profileName)
+                continue;
+
+            for (int copy = 0; copy < weight; ++copy)
+                candidates.push_back(i);
+            break;
+        }
+    };
+
     switch (substyle)
     {
         case BoomBapSubstyle::Classic:
-            candidates = density > 0.55f ? std::vector<int> { 0, 2, 3, 9 } : std::vector<int> { 0, 1, 4, 5 };
+            if (density < 0.40f)
+            {
+                addNamedCandidate("Straight", 5);
+                addNamedCandidate("Lazy", 3);
+                addNamedCandidate("DryUnderground", 2);
+            }
+            else if (density < 0.65f)
+            {
+                addNamedCandidate("Straight", 4);
+                addNamedCandidate("Lazy", 3);
+                addNamedCandidate("DryUnderground", 2);
+                addNamedCandidate("Beat2Pocket", 1);
+                addNamedCandidate("Beat4Pocket", 1);
+            }
+            else
+            {
+                addNamedCandidate("Straight", 3);
+                addNamedCandidate("Lazy", 2);
+                addNamedCandidate("DryUnderground", 2);
+                addNamedCandidate("Beat2Pocket", 2);
+                addNamedCandidate("Beat4Pocket", 2);
+            }
             break;
         case BoomBapSubstyle::Dusty:
             candidates = density < 0.5f ? std::vector<int> { 7, 4, 5, 1 } : std::vector<int> { 7, 1, 2 };
@@ -257,11 +294,74 @@ const SnareFeelProfile& chooseSnareFeelProfile(BoomBapSubstyle substyle, float d
     return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
 }
 
-const HatPatternProfile& chooseHatPatternProfile(BoomBapSubstyle substyle, float density, std::mt19937& rng)
+const HatPatternProfile& chooseHatPatternProfile(BoomBapSubstyle substyle, float density, PhraseRole role, std::mt19937& rng)
 {
     const auto& all = getBoomBapHatPatternProfiles();
     std::vector<int> candidates;
     const auto mask = getSubstyleMask(substyle);
+
+    const auto addNamedPattern = [&all, &candidates, density](const char* patternName, int weight, bool ignoreDensity)
+    {
+        if (weight <= 0)
+            return;
+
+        for (int i = 0; i < static_cast<int>(all.size()); ++i)
+        {
+            const auto& pattern = all[static_cast<size_t>(i)];
+            if (pattern.name != patternName)
+                continue;
+            if (!ignoreDensity && (density < pattern.minDensity || density > pattern.maxDensity))
+                continue;
+
+            for (int copy = 0; copy < weight; ++copy)
+                candidates.push_back(i);
+            break;
+        }
+    };
+
+    if (substyle == BoomBapSubstyle::Classic)
+    {
+        switch (role)
+        {
+            case PhraseRole::Base:
+                addNamedPattern("1/8 Straight", 7, true);
+                addNamedPattern("1/8 Swung", 5, true);
+                addNamedPattern("Broken A", density >= 0.58f ? 1 : 0, false);
+                break;
+            case PhraseRole::Variation:
+                addNamedPattern("1/8 Straight", 5, true);
+                addNamedPattern("1/8 Swung", 5, true);
+                addNamedPattern("Broken A", 1, false);
+                addNamedPattern("Pocket Push", density >= 0.68f ? 1 : 0, false);
+                break;
+            case PhraseRole::Contrast:
+                addNamedPattern("1/8 Swung", 6, true);
+                addNamedPattern("1/8 Straight", 3, true);
+                addNamedPattern("Broken A", 2, false);
+                addNamedPattern("Pocket Push", 1, false);
+                break;
+            case PhraseRole::Ending:
+                addNamedPattern("1/8 Straight", 4, true);
+                addNamedPattern("1/8 Swung", 3, true);
+                addNamedPattern("Broken A", 1, false);
+                addNamedPattern("Bar Ending Phrase", 3, true);
+                addNamedPattern("Pocket Push", density >= 0.60f ? 1 : 0, false);
+                break;
+            default:
+                addNamedPattern("1/8 Straight", 6, true);
+                addNamedPattern("1/8 Swung", 4, true);
+                break;
+        }
+
+        if (density >= 0.78f && role != PhraseRole::Base)
+            addNamedPattern("1/16 Soft", 1, false);
+
+        if (!candidates.empty())
+        {
+            std::uniform_int_distribution<int> pick(0, static_cast<int>(candidates.size() - 1));
+            return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
+        }
+    }
 
     for (int i = 0; i < static_cast<int>(all.size()); ++i)
     {

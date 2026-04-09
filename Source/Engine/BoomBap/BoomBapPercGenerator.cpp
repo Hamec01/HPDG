@@ -82,6 +82,7 @@ void BoomBapPercGenerator::generate(TrackState& track,
     const int bars = std::max(1, params.bars);
     const float density = std::clamp(params.densityAmount * style.percDensityBias, 0.0f, 1.0f);
     std::vector<int> barEvents(static_cast<size_t>(bars), 0);
+    const int maxEventsPerBar = style.substyle == BoomBapSubstyle::Classic ? 1 : preset.maxEventsPerBar;
 
     for (int bar = 0; bar < bars; ++bar)
     {
@@ -94,7 +95,14 @@ void BoomBapPercGenerator::generate(TrackState& track,
             if (!candidate)
                 continue;
 
-            if (barEvents[static_cast<size_t>(bar)] >= preset.maxEventsPerBar)
+            if (style.substyle == BoomBapSubstyle::Classic)
+            {
+                const bool classicCandidate = step == 10 || (role == PhraseRole::Ending && step == 14);
+                if (!classicCandidate)
+                    continue;
+            }
+
+            if (barEvents[static_cast<size_t>(bar)] >= maxEventsPerBar)
                 continue;
 
             float gate = preset.eventProbability * style.percChance * (0.15f + density * 0.85f);
@@ -109,7 +117,15 @@ void BoomBapPercGenerator::generate(TrackState& track,
             if (referenceFeel.available)
                 gate *= std::clamp(0.88f + referenceFeel.supportRatio * 0.22f + referenceFeel.gapRatio * 0.1f, 0.76f, 1.18f);
 
-            if (chance(rng) > std::clamp(gate, 0.01f, 0.65f))
+            if (style.substyle == BoomBapSubstyle::Classic)
+            {
+                gate *= (role == PhraseRole::Ending ? 0.36f : 0.18f);
+                if (step == 14)
+                    gate *= 1.25f;
+            }
+
+            const float gateMax = style.substyle == BoomBapSubstyle::Classic ? 0.26f : 0.65f;
+            if (chance(rng) > std::clamp(gate, 0.01f, gateMax))
                 continue;
 
             track.notes.push_back({ pitch, bar * 16 + step, 1, velocity(rng), micro(rng), false });

@@ -102,7 +102,15 @@ void BoomBapOpenHatGenerator::generate(TrackState& track,
         if (referenceFeel.available)
             gate *= std::clamp(0.88f + referenceFeel.supportRatio * 0.24f + referenceFeel.gapRatio * 0.12f, 0.76f, 1.2f);
 
-        if (chance(rng) > std::clamp(gate, 0.01f, 0.75f))
+        if (style.substyle == BoomBapSubstyle::Classic)
+        {
+            gate *= endOfHalfBar ? (role == PhraseRole::Ending ? 0.62f : 0.38f) : 0.18f;
+            if (afterKickPulse)
+                gate *= 0.72f;
+        }
+
+        const float gateMax = style.substyle == BoomBapSubstyle::Classic ? 0.32f : 0.75f;
+        if (chance(rng) > std::clamp(gate, 0.01f, gateMax))
             continue;
 
         track.notes.push_back({ pitch, hat.step, (role == PhraseRole::Ending) ? 2 : 1, vel(rng), hat.microOffset, false });

@@ -7,6 +7,7 @@
 #include "../Core/TrackSemantics.h"
 #include "../Core/TrackRegistry.h"
 #include "HiResTiming.h"
+#include "PatternPerformanceTransformEngine.h"
 #include "Rap/LofiRapStyleSpec.h"
 #include "Rap/RapStyleSpec.h"
 #include "StyleInfluence.h"
@@ -549,6 +550,7 @@ void RapEngine::generate(PatternProject& project)
     generateDependentTracks(project, style, phrasePlan, rng, mutableTracks);
     postProcess(project, style, rng, mutableTracks);
     validatePattern(project, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void RapEngine::regenerateTrack(PatternProject& project, TrackType trackType)
@@ -574,6 +576,7 @@ void RapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
     generateDependentTracks(project, style, phrasePlan, rng, mutableTracks);
     postProcess(project, style, rng, mutableTracks);
     validatePattern(project, mutableTracks);
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
 void RapEngine::regenerateTrackVariation(PatternProject& project, TrackType trackType)
@@ -603,6 +606,8 @@ void RapEngine::regenerateTrackVariation(PatternProject& project, TrackType trac
     dedupeAndSort(target->notes);
     target->variationId += 1;
     target->mutationDepth = std::clamp(target->mutationDepth + 0.08f, 0.0f, 1.0f);
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
 }
 
 void RapEngine::mutatePattern(PatternProject& project)
@@ -702,6 +707,8 @@ void RapEngine::mutateTrack(PatternProject& project, TrackType trackType)
     dedupeAndSort(track->notes);
     track->mutationDepth = std::clamp(track->mutationDepth + 0.12f, 0.0f, 1.0f);
     track->variationId += 1;
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
 }
 
 void RapEngine::regenerateTrackInternal(PatternProject& project,

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 
 #include <juce_core/juce_core.h>
 
@@ -33,6 +34,8 @@ struct GenreStyleDefaults
     GenreType genre = GenreType::BoomBap;
     juce::String substyleName;
     float bpmDefault = 90.0f;
+    int bpmMin = 88;
+    int bpmMax = 92;
 
     float swingDefault = 56.0f;
     float velocityDefault = 0.50f;
@@ -43,9 +46,28 @@ struct GenreStyleDefaults
     std::array<LaneStyleDefaults, 11> laneDefaults {};
 };
 
+enum class GenerationBpmSource
+{
+    HostSync,
+    BpmLock,
+    DeterministicStyleRange
+};
+
+struct GenerationBpmSelection
+{
+    float bpm = 90.0f;
+    GenerationBpmSource source = GenerationBpmSource::DeterministicStyleRange;
+};
+
 int trackTypeToLaneIndex(TrackType trackType);
+int getSelectedSubstyleIndex(const GeneratorParams& params);
 const GenreStyleDefaults& getGenreStyleDefaults(GenreType genre, int substyleIndex);
 const LaneStyleDefaults& getLaneStyleDefaults(const GenreStyleDefaults& style, TrackType trackType);
+float chooseDeterministicStyleBpm(const GeneratorParams& params);
+GenerationBpmSelection resolveGenerationBpm(const GeneratorParams& params,
+                                            float currentBpm,
+                                            bool bpmLocked,
+                                            const std::optional<double>& hostTempo);
 
 juce::StringArray getBoomBapSubstyleNames();
 juce::StringArray getRapSubstyleNames();

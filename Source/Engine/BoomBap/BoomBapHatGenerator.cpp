@@ -1,6 +1,7 @@
 #include "BoomBapHatGenerator.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "BoomBapPatternLibrary.h"
 #include "../../Core/PatternProject.h"
@@ -71,7 +72,11 @@ struct ReferenceBoomBapHatFeel
     float supportRatio = 0.0f;
     float gapRatio = 0.0f;
     float looseRatio = 0.0f;
+    float carrierVelocity = 0.0f;
+    float supportVelocity = 0.0f;
     std::array<float, 8> slotWeight {};
+    std::array<float, 8> slotVelocity {};
+    std::array<float, 8> slotVelocityWeight {};
 };
 
 ReferenceBoomBapHatFeel buildReferenceBoomBapHatFeel(const StyleInfluenceState& styleInfluence, int bar)
@@ -83,6 +88,10 @@ ReferenceBoomBapHatFeel buildReferenceBoomBapHatFeel(const StyleInfluenceState& 
     float supportNotes = 0.0f;
     float looseNotes = 0.0f;
     float emptySlots = 0.0f;
+    float carrierVelocityTotal = 0.0f;
+    float supportVelocityTotal = 0.0f;
+    float carrierVelocityWeight = 0.0f;
+    float supportVelocityWeight = 0.0f;
 
     if (styleInfluence.referenceHatCorpus.available && !styleInfluence.referenceHatCorpus.variants.empty())
     {
@@ -107,13 +116,24 @@ ReferenceBoomBapHatFeel buildReferenceBoomBapHatFeel(const StyleInfluenceState& 
                                               31);
                 const int step16 = std::clamp(step32 / 2, 0, 15);
                 const int slot = std::clamp(step16 / 2, 0, 7);
+                const float velocity = static_cast<float>(std::clamp(note.velocity, 1, 127));
                 occupiedSlots[static_cast<size_t>(slot)] = true;
                 feel.slotWeight[static_cast<size_t>(slot)] += 1.0f;
+                feel.slotVelocity[static_cast<size_t>(slot)] += velocity;
+                feel.slotVelocityWeight[static_cast<size_t>(slot)] += 1.0f;
                 totalNotes += 1.0f;
                 if ((step16 % 4) == 0)
+                {
                     carrierNotes += 1.0f;
+                    carrierVelocityTotal += velocity;
+                    carrierVelocityWeight += 1.0f;
+                }
                 else
+                {
                     supportNotes += 1.0f;
+                    supportVelocityTotal += velocity;
+                    supportVelocityWeight += 1.0f;
+                }
                 if ((step32 % 4) == 1 || (step32 % 4) == 3)
                     looseNotes += 1.0f;
             }
@@ -170,13 +190,19 @@ ReferenceBoomBapHatFeel buildReferenceBoomBapHatFeel(const StyleInfluenceState& 
 
     feel.available = true;
     const float invBars = 1.0f / static_cast<float>(contributingBars);
-    for (auto& value : feel.slotWeight)
-        value *= invBars;
+    for (size_t i = 0; i < feel.slotWeight.size(); ++i)
+    {
+        feel.slotWeight[i] *= invBars;
+        if (feel.slotVelocityWeight[i] > 0.0f)
+            feel.slotVelocity[i] /= feel.slotVelocityWeight[i];
+    }
     feel.noteDensity = totalNotes * invBars;
     feel.carrierRatio = totalNotes > 0.0f ? carrierNotes / totalNotes : 0.0f;
     feel.supportRatio = totalNotes > 0.0f ? supportNotes / totalNotes : 0.0f;
     feel.gapRatio = emptySlots / (static_cast<float>(contributingBars) * 8.0f);
     feel.looseRatio = totalNotes > 0.0f ? looseNotes / totalNotes : 0.0f;
+    feel.carrierVelocity = carrierVelocityWeight > 0.0f ? carrierVelocityTotal / carrierVelocityWeight : 0.0f;
+    feel.supportVelocity = supportVelocityWeight > 0.0f ? supportVelocityTotal / supportVelocityWeight : 0.0f;
     return feel;
 }
 
@@ -219,6 +245,27 @@ float referenceBarShape(const ReferenceBoomBapHatFeel& feel, PhraseRole role, in
         shape -= 0.04f;
     return std::clamp(shape, 0.86f, 1.16f);
 }
+
+int blendedReferenceHatVelocity(const ReferenceBoomBapHatFeel& feel,
+                                int slot,
+                                bool strongGridPoint,
+                                int fallbackVelocity,
+                                const BoomBapStyleProfile& style)
+{
+    if (!feel.available)
+        return fallbackVelocity;
+
+    float target = static_cast<float>(fallbackVelocity);
+    const float laneAverage = strongGridPoint ? feel.carrierVelocity : feel.supportVelocity;
+    if (laneAverage > 0.0f)
+        target = target * 0.55f + laneAverage * 0.45f;
+
+    const int clampedSlot = std::clamp(slot, 0, 7);
+    if (feel.slotVelocityWeight[static_cast<size_t>(clampedSlot)] > 0.0f)
+        target = target * 0.55f + feel.slotVelocity[static_cast<size_t>(clampedSlot)] * 0.45f;
+
+    return std::clamp(static_cast<int>(std::round(target)), style.hatVelocityMin, style.hatVelocityMax);
+}
 }
 
 void BoomBapHatGenerator::generate(TrackState& track,
@@ -233,8 +280,6 @@ void BoomBapHatGenerator::generate(TrackState& track,
 
     const auto* info = TrackRegistry::find(track.type);
     const int pitch = info != nullptr ? info->defaultMidiNote : 42;
-
-    const auto& pattern = chooseHatPatternProfile(style.substyle, params.densityAmount, rng);
 
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     std::uniform_int_distribution<int> microDist(-style.hatTimingMaxTicks / 2, style.hatTimingMaxTicks / 2);
@@ -253,6 +298,7 @@ void BoomBapHatGenerator::generate(TrackState& track,
     for (int bar = 0; bar < bars; ++bar)
     {
         const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : PhraseRole::Base;
+        const auto& pattern = chooseHatPatternProfile(style.substyle, params.densityAmount, role, rng);
         const auto referenceFeel = buildReferenceBoomBapHatFeel(styleInfluence, bar);
         const float refCarrier = referenceCarrierBias(referenceFeel);
         const float refSupport = referenceSupportBias(referenceFeel);
@@ -272,8 +318,8 @@ void BoomBapHatGenerator::generate(TrackState& track,
             if (active == 0)
                 continue;
 
-            const bool strongGridPoint = (step % 4) == 0;
-            if (stripToCore && !strongGridPoint)
+            const bool baseStrongGridPoint = (step % 4) == 0;
+            if (stripToCore && !baseStrongGridPoint)
             {
                 if ((step % 2) == 1)
                     continue;
@@ -290,6 +336,8 @@ void BoomBapHatGenerator::generate(TrackState& track,
                     finalStep = substitution;
             }
 
+            const bool strongGridPoint = (finalStep % 4) == 0;
+
             float gate = std::clamp(0.24f + baseDensity * 0.52f + roleVar * 0.2f, 0.14f, 1.0f);
             gate *= std::clamp(0.55f + barHatActivity * 0.9f, 0.3f, 1.32f);
             gate *= syncopationGateScale(barBlueprint, step);
@@ -305,6 +353,23 @@ void BoomBapHatGenerator::generate(TrackState& track,
                     gate *= refSupport;
                 if (!strongGridPoint && referenceFeel.gapRatio > 0.5f && referenceFeel.slotWeight[static_cast<size_t>(slot)] < 0.22f)
                     gate *= std::clamp((0.82f + (refLoose - 1.0f) * 0.35f), 0.68f, 1.0f);
+            }
+
+            if (style.substyle == BoomBapSubstyle::Classic)
+            {
+                if (strongGridPoint)
+                {
+                    gate = std::clamp(gate * 1.12f, 0.16f, 1.0f);
+                }
+                else
+                {
+                    const float offbeatScale = referenceFeel.available
+                        ? std::clamp(0.42f + referenceFeel.supportRatio * 0.42f + referenceFeel.gapRatio * 0.08f, 0.34f, 0.78f)
+                        : 0.54f;
+                    gate = std::clamp(gate * offbeatScale, 0.02f, 0.82f);
+                    if (role == PhraseRole::Base && finalStep >= 12)
+                        gate = std::clamp(gate * 0.82f, 0.02f, 0.72f);
+                }
             }
 
             if (style.substyle == BoomBapSubstyle::LofiRap)
@@ -331,6 +396,13 @@ void BoomBapHatGenerator::generate(TrackState& track,
                 const float gritMul = 1.0f + (barGrit - 0.3f) * 0.26f;
                 velocity = std::clamp(static_cast<int>(static_cast<float>(velocity) * gritMul), style.hatVelocityMin, style.hatVelocityMax);
             }
+            if (referenceFeel.available)
+            {
+                const int slot = std::clamp(finalStep / 2, 0, 7);
+                velocity = blendedReferenceHatVelocity(referenceFeel, slot, strongGridPoint, velocity, style);
+            }
+            if (style.substyle == BoomBapSubstyle::Classic)
+                velocity = std::clamp(velocity + (strongGridPoint ? 3 : -4), style.hatVelocityMin, style.hatVelocityMax);
 
             const float looseScale = std::clamp((0.65f + barLooseness * 0.9f) * (referenceFeel.available ? refLoose : 1.0f), 0.4f, 1.5f);
             int microOffset = static_cast<int>(static_cast<float>(microDist(rng)) * looseScale);
@@ -342,6 +414,14 @@ void BoomBapHatGenerator::generate(TrackState& track,
 
             if (barBlueprint != nullptr && finalStep >= 12)
                 microOffset += static_cast<int>(barBlueprint->endLiftAmount * 4.0f);
+
+            if (style.substyle == BoomBapSubstyle::Classic)
+            {
+                if (strongGridPoint)
+                    microOffset = std::clamp(microOffset, -4, 8);
+                else
+                    microOffset = std::clamp(microOffset, -10, 18);
+            }
 
             microOffset = std::clamp(microOffset, -24, 36);
 

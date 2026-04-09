@@ -297,6 +297,7 @@ void TrackListComponent::setSoundPanelState(const std::vector<TrackState>& track
     }
 
     currentSoundTarget = selectedTarget;
+    currentSoundPanelState = soundState;
     soundTargetCombo.setSelectedId(selectedId, juce::dontSendNotification);
 
     panSlider.setValue(soundState.pan, juce::dontSendNotification);
@@ -852,15 +853,19 @@ void TrackListComponent::setupSoundPanel()
         if (!onSoundLayerChanged)
             return;
 
-        SoundLayerState state;
+        SoundLayerState state = currentSoundPanelState;
         state.pan = static_cast<float>(panSlider.getValue());
         state.width = static_cast<float>(widthSlider.getValue());
         state.eqTone = static_cast<float>(eqSlider.getValue());
+        auto& band = selectedEqBand(state.eq);
+        band.gainDb = std::clamp(state.eqTone * 12.0f, -12.0f, 12.0f);
+        band.enabled = std::abs(band.gainDb) > 0.001f;
         state.compression = static_cast<float>(compSlider.getValue());
         state.reverb = static_cast<float>(reverbSlider.getValue());
         state.gate = static_cast<float>(gateSlider.getValue());
         state.transient = static_cast<float>(transientSlider.getValue());
         state.drive = static_cast<float>(driveSlider.getValue());
+        currentSoundPanelState = state;
         onSoundLayerChanged(currentSoundTarget, state);
     };
 

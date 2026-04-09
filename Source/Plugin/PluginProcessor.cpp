@@ -189,6 +189,670 @@ double eqAnalyzerFrequencyFromNormalized(double normalized)
     const double maxLog = std::log10(kEqAnalyzerMaxFrequencyHz);
     return std::pow(10.0, minLog + juce::jlimit(0.0, 1.0, normalized) * (maxLog - minLog));
 }
+
+juce::String genreDisplayName(GenreType genre)
+{
+    switch (genre)
+    {
+        case GenreType::Rap: return "Rap";
+        case GenreType::Trap: return "Trap";
+        case GenreType::Drill: return "Drill";
+        case GenreType::BoomBap:
+        default: return "Boom Bap";
+    }
+}
+
+juce::String analysisModeDisplayName(AnalysisMode mode)
+{
+    switch (mode)
+    {
+        case AnalysisMode::AnalyzeOnly: return "Analyze Only";
+        case AnalysisMode::GenerateFromSample: return "Generate From Sample";
+        case AnalysisMode::Off:
+        default: return "Off";
+    }
+}
+
+juce::String referenceZeroReasonDisplayName(StyleLabReferenceZeroReason reason)
+{
+    switch (reason)
+    {
+        case StyleLabReferenceZeroReason::RefsDisabledByStyleSwitch: return "refs disabled by style switch";
+        case StyleLabReferenceZeroReason::LaneMappingEmpty: return "lane mapping empty";
+        case StyleLabReferenceZeroReason::IncompatibleReferenceSpan: return "incompatible reference span";
+        case StyleLabReferenceZeroReason::FilteredByDensity: return "filtered by density";
+        case StyleLabReferenceZeroReason::ParsingFailed: return "parsing failed";
+        case StyleLabReferenceZeroReason::NoRefsSelected: return "no refs selected";
+        case StyleLabReferenceZeroReason::None:
+        default: return {};
+    }
+}
+
+juce::String selectedSubstyleDisplayName(const GeneratorParams& params)
+{
+    return getGenreStyleDefaults(params.genre, getSelectedSubstyleIndex(params)).substyleName;
+}
+
+juce::String formatUnitPercent(float value)
+{
+    return juce::String(static_cast<int>(std::round(juce::jlimit(0.0f, 1.0f, value) * 100.0f))) + "%";
+}
+
+juce::String formatDeltaText(int delta)
+{
+    if (delta > 0)
+        return "+" + juce::String(delta);
+
+    return juce::String(delta);
+}
+
+juce::String phraseSummaryForDisplay(const juce::String& summary)
+{
+    if (summary.trim().isEmpty())
+        return "none";
+
+    juce::StringArray roles = juce::StringArray::fromTokens(summary, "|", "");
+    for (auto& role : roles)
+        role = role.trim();
+    roles.removeEmptyStrings();
+
+    return roles.isEmpty() ? summary : roles.joinIntoString(" -> ");
+}
+
+juce::String joinLimited(const juce::StringArray& items, int maxItems)
+{
+    if (items.isEmpty())
+        return {};
+
+    juce::StringArray limited;
+    for (int index = 0; index < items.size() && index < maxItems; ++index)
+        limited.add(items[index]);
+
+    auto text = limited.joinIntoString(", ");
+    if (items.size() > maxItems)
+        text += " +" + juce::String(items.size() - maxItems) + " more";
+    return text;
+}
+
+const TrackState* findTrackInProject(const PatternProject& project, TrackType type)
+{
+    auto it = std::find_if(project.tracks.begin(), project.tracks.end(), [type](const TrackState& track)
+    {
+        return track.type == type;
+    });
+
+    return it != project.tracks.end() ? &(*it) : nullptr;
+}
+
+std::vector<NoteEvent> effectiveNotesForTrack(const TrackState& track)
+{
+    if (track.type == TrackType::Sub808)
+        return toLegacyNoteEvents(sub808NotesForRead(track));
+
+    return track.notes;
+}
+
+bool noteEventsEqual(const NoteEvent& left, const NoteEvent& right)
+{
+    return left.pitch == right.pitch
+        && left.step == right.step
+        && left.length == right.length
+        && left.velocity == right.velocity
+        && left.microOffset == right.microOffset
+        && left.isGhost == right.isGhost
+        && left.semanticRole == right.semanticRole
+        && left.isSlide == right.isSlide
+        && left.isLegato == right.isLegato
+        && left.glideToNext == right.glideToNext;
+}
+
+bool tracksHaveSameMusicalContent(const TrackState* beforeTrack, const TrackState* afterTrack)
+{
+    if (beforeTrack == nullptr || afterTrack == nullptr)
+        return beforeTrack == afterTrack;
+
+    const auto beforeNotes = effectiveNotesForTrack(*beforeTrack);
+    const auto afterNotes = effectiveNotesForTrack(*afterTrack);
+    if (beforeNotes.size() != afterNotes.size())
+        return false;
+
+    for (size_t index = 0; index < beforeNotes.size(); ++index)
+    {
+        if (!noteEventsEqual(beforeNotes[index], afterNotes[index]))
+            return false;
+    }
+
+    return true;
+}
+
+struct ReferenceCorpusMetrics
+{
+    bool available = false;
+    int sourceCount = 0;
+    int variantCount = 0;
+    int totalBars = 0;
+    float avgHitsPerBar = 0.0f;
+    float avgVelocity = 0.0f;
+    float anchorRatio = 0.0f;
+    float supportRatio = 0.0f;
+    float lateRatio = 0.0f;
+    juce::StringArray sourceIds;
+};
+
+ReferenceCorpusMetrics summarizeHatCorpus(const StyleInfluenceState& styleInfluence)
+{
+    ReferenceCorpusMetrics metrics;
+    const auto& corpus = styleInfluence.referenceHatCorpus;
+    metrics.available = corpus.available && !corpus.variants.empty();
+    metrics.variantCount = static_cast<int>(corpus.variants.size());
+
+    float totalNotes = 0.0f;
+    float totalVelocity = 0.0f;
+    float anchorNotes = 0.0f;
+    float supportNotes = 0.0f;
+    float lateNotes = 0.0f;
+
+    for (const auto& variant : corpus.variants)
+    {
+        if (!variant.available || variant.barMaps.empty())
+            continue;
+
+        if (variant.sourceId.isNotEmpty())
+            metrics.sourceIds.addIfNotAlreadyThere(variant.sourceId);
+
+        for (const auto& barMap : variant.barMaps)
+        {
+            ++metrics.totalBars;
+            for (const auto& note : barMap.notes)
+            {
+                const int step16 = std::clamp(note.tickInBar / 120, 0, 15);
+                totalNotes += 1.0f;
+                totalVelocity += static_cast<float>(note.velocity);
+                if ((step16 % 2) == 0)
+                    anchorNotes += 1.0f;
+                else
+                    supportNotes += 1.0f;
+                if (step16 >= 12)
+                    lateNotes += 1.0f;
+            }
+        }
+    }
+
+    if (metrics.sourceIds.isEmpty() && styleInfluence.referenceHatSkeleton.available && styleInfluence.referenceHatSkeleton.sourceId.isNotEmpty())
+        metrics.sourceIds.add(styleInfluence.referenceHatSkeleton.sourceId);
+
+    metrics.sourceCount = juce::jmax(corpus.sourceReferenceCount, metrics.sourceIds.size(), metrics.variantCount);
+
+    if (totalNotes > 0.0f)
+    {
+        metrics.avgVelocity = totalVelocity / totalNotes;
+        metrics.anchorRatio = anchorNotes / totalNotes;
+        metrics.supportRatio = supportNotes / totalNotes;
+        metrics.lateRatio = lateNotes / totalNotes;
+    }
+
+    if (metrics.totalBars > 0)
+        metrics.avgHitsPerBar = totalNotes / static_cast<float>(metrics.totalBars);
+
+    return metrics;
+}
+
+ReferenceCorpusMetrics summarizeKickCorpus(const StyleInfluenceState& styleInfluence)
+{
+    ReferenceCorpusMetrics metrics;
+    const auto& corpus = styleInfluence.referenceKickCorpus;
+    metrics.available = corpus.available && !corpus.variants.empty();
+    metrics.variantCount = static_cast<int>(corpus.variants.size());
+
+    float totalNotes = 0.0f;
+    float totalVelocity = 0.0f;
+    float anchorNotes = 0.0f;
+    float supportNotes = 0.0f;
+    float lateNotes = 0.0f;
+
+    for (const auto& variant : corpus.variants)
+    {
+        if (!variant.available || variant.barPatterns.empty())
+            continue;
+
+        for (const auto& barPattern : variant.barPatterns)
+        {
+            ++metrics.totalBars;
+            for (const auto& note : barPattern.notes)
+            {
+                totalNotes += 1.0f;
+                totalVelocity += static_cast<float>(note.velocity);
+                if (note.step16 == 0 || note.step16 == 8)
+                    anchorNotes += 1.0f;
+                else
+                    supportNotes += 1.0f;
+                if (note.step16 >= 11)
+                    lateNotes += 1.0f;
+            }
+        }
+    }
+
+    metrics.sourceCount = juce::jmax(corpus.sourceReferenceCount, metrics.variantCount);
+
+    if (totalNotes > 0.0f)
+    {
+        metrics.avgVelocity = totalVelocity / totalNotes;
+        metrics.anchorRatio = anchorNotes / totalNotes;
+        metrics.supportRatio = supportNotes / totalNotes;
+        metrics.lateRatio = lateNotes / totalNotes;
+    }
+
+    if (metrics.totalBars > 0)
+        metrics.avgHitsPerBar = totalNotes / static_cast<float>(metrics.totalBars);
+
+    return metrics;
+}
+
+struct LaneMetrics
+{
+    int noteCount = 0;
+    int anchorCount = 0;
+    int supportCount = 0;
+    int lateCount = 0;
+    int ghostCount = 0;
+    int slideCount = 0;
+    float avgVelocity = 0.0f;
+};
+
+LaneMetrics analyzeLaneMetrics(const TrackState& track)
+{
+    LaneMetrics metrics;
+    const auto notes = effectiveNotesForTrack(track);
+    metrics.noteCount = static_cast<int>(notes.size());
+    if (notes.empty())
+        return metrics;
+
+    int velocitySum = 0;
+    for (const auto& note : notes)
+    {
+        velocitySum += note.velocity;
+        const int stepInBar = ((note.step % 16) + 16) % 16;
+
+        switch (track.type)
+        {
+            case TrackType::Kick:
+            case TrackType::GhostKick:
+            case TrackType::Sub808:
+                if (stepInBar == 0 || stepInBar == 8)
+                    ++metrics.anchorCount;
+                else
+                    ++metrics.supportCount;
+                break;
+
+            case TrackType::Snare:
+            case TrackType::ClapGhostSnare:
+                if (stepInBar == 4 || stepInBar == 12)
+                    ++metrics.anchorCount;
+                else
+                    ++metrics.supportCount;
+                break;
+
+            default:
+                if ((stepInBar % 2) == 0)
+                    ++metrics.anchorCount;
+                else
+                    ++metrics.supportCount;
+                break;
+        }
+
+        if (stepInBar >= 12)
+            ++metrics.lateCount;
+        if (note.isGhost || track.type == TrackType::GhostKick)
+            ++metrics.ghostCount;
+        if (note.isSlide || note.isLegato || note.glideToNext)
+            ++metrics.slideCount;
+    }
+
+    metrics.avgVelocity = static_cast<float>(velocitySum) / static_cast<float>(metrics.noteCount);
+    return metrics;
+}
+
+juce::String laneReasonForTrack(const PatternProject& project,
+                               const TrackState& track,
+                               const LaneMetrics& metrics,
+                               bool hatRefsAvailable,
+                               bool kickRefsAvailable)
+{
+    switch (track.type)
+    {
+        case TrackType::Kick:
+            return "anchors " + juce::String(metrics.anchorCount)
+                + ", support " + juce::String(metrics.supportCount)
+                + (kickRefsAvailable
+                       ? "; kick refs biased anchor/pickup balance and velocity."
+                       : "; driven by style kick density and pocket rules.");
+
+        case TrackType::GhostKick:
+            return "support punches " + juce::String(metrics.noteCount)
+                + ", late-bar moves " + juce::String(metrics.lateCount)
+                + (kickRefsAvailable
+                       ? "; ghost lane shadowed kick-reference punctuation."
+                       : "; support lane came from style defaults.");
+
+        case TrackType::Snare:
+            return "backbeats " + juce::String(metrics.anchorCount)
+                + ", extra hits " + juce::String(metrics.supportCount)
+                + "; kept the readable backbeat intact.";
+
+        case TrackType::ClapGhostSnare:
+            return "support/ghost hits " + juce::String(metrics.noteCount)
+                + ", ghosts " + juce::String(metrics.ghostCount)
+                + "; layered around the snare pocket.";
+
+        case TrackType::HiHat:
+            if (project.params.genre == GenreType::Trap)
+            {
+                return "grid anchors " + juce::String(metrics.anchorCount)
+                    + ", fast support " + juce::String(metrics.supportCount)
+                    + (hatRefsAvailable
+                           ? "; hat refs biased subdivision shape and velocity."
+                           : "; subdivision came from trap hat density rules.");
+            }
+
+            if (project.params.genre == GenreType::Drill)
+            {
+                return "motif anchors " + juce::String(metrics.anchorCount)
+                    + ", motion hits " + juce::String(metrics.supportCount)
+                    + (hatRefsAvailable
+                           ? "; hat refs biased motion, gaps and accents."
+                           : "; motion came from drill hat weights.");
+            }
+
+            return "carrier anchors " + juce::String(metrics.anchorCount)
+                + ", support hits " + juce::String(metrics.supportCount)
+                + (hatRefsAvailable
+                       ? "; hat refs biased density, gaps and velocity feel."
+                       : "; carrier feel came from style defaults.");
+
+        case TrackType::OpenHat:
+            return "accent hits " + juce::String(metrics.noteCount)
+                + ", ending accents " + juce::String(metrics.lateCount)
+                + (hatRefsAvailable
+                       ? "; openings followed hat-reference space."
+                       : "; accent lane followed style probability gates.");
+
+        case TrackType::Ride:
+            return "alternate carrier hits " + juce::String(metrics.noteCount)
+                + (hatRefsAvailable
+                       ? "; ride density reacted to hat-reference spacing."
+                       : "; ride usage followed style carrier decisions.");
+
+        case TrackType::Cymbal:
+            return "transition markers " + juce::String(metrics.noteCount)
+                + ", ending accents " + juce::String(metrics.lateCount)
+                + "; kept as section punctuation.";
+
+        case TrackType::Perc:
+            return "texture hits " + juce::String(metrics.noteCount)
+                + ", late-bar accents " + juce::String(metrics.lateCount)
+                + "; filled available support space without crowding anchors.";
+
+        case TrackType::HatFX:
+            return "FX hits " + juce::String(metrics.noteCount)
+                + ", support motion " + juce::String(metrics.supportCount)
+                + "; used as accent motion rather than backbone.";
+
+        case TrackType::Sub808:
+            return "low-end anchors " + juce::String(metrics.anchorCount)
+                + ", support notes " + juce::String(metrics.supportCount)
+                + ", slides " + juce::String(metrics.slideCount)
+                + (kickRefsAvailable
+                       ? "; low-end followed kick-reference coupling."
+                       : "; low-end followed the style coupling rules.");
+
+        default:
+            return "notes " + juce::String(metrics.noteCount) + ".";
+    }
+}
+
+juce::String buildDecisionBasisLine(const PatternProject& project)
+{
+    switch (project.params.genre)
+    {
+        case GenreType::Rap:
+            return "Decision basis: kick weight " + juce::String(laneBiasFor(project.styleInfluence, TrackType::Kick).activityWeight, 2)
+                + " | hat weight " + juce::String(laneBiasFor(project.styleInfluence, TrackType::HiHat).activityWeight, 2)
+                + " | clap balance " + juce::String(laneBiasFor(project.styleInfluence, TrackType::ClapGhostSnare).balanceWeight, 2);
+
+        case GenreType::Trap:
+            return "Decision basis: hat weight " + juce::String(laneBiasFor(project.styleInfluence, TrackType::HiHat).activityWeight, 2)
+                + " | bounce " + juce::String(project.styleInfluence.bounceWeight, 2)
+                + " | low-end coupling " + juce::String(project.styleInfluence.lowEndCouplingWeight, 2)
+                + " | bass balance " + juce::String(laneBiasFor(project.styleInfluence, TrackType::Sub808).balanceWeight, 2);
+
+        case GenreType::Drill:
+            return "Decision basis: hat motion " + juce::String(project.styleInfluence.hatMotionWeight, 2)
+                + " | gap intent " + juce::String(project.styleInfluence.drillHatGapIntentWeight, 2)
+                + " | accent alternation " + juce::String(project.styleInfluence.drillHatAccentPatternWeight, 2)
+                + " | low-end coupling " + juce::String(project.styleInfluence.lowEndCouplingWeight, 2);
+
+        case GenreType::BoomBap:
+        default:
+            return "Decision basis: kick weight " + juce::String(laneBiasFor(project.styleInfluence, TrackType::Kick).activityWeight, 2)
+                + " | hat weight " + juce::String(laneBiasFor(project.styleInfluence, TrackType::HiHat).activityWeight, 2)
+                + " | support accent " + juce::String(project.styleInfluence.supportAccentWeight, 2);
+    }
+}
+
+juce::String buildOutcomeOverview(const PatternProject& project)
+{
+    const auto* kick = findTrackInProject(project, TrackType::Kick);
+    const auto* snare = findTrackInProject(project, TrackType::Snare);
+    const auto* hat = findTrackInProject(project, TrackType::HiHat);
+    const auto* ride = findTrackInProject(project, TrackType::Ride);
+    const auto* hatFx = findTrackInProject(project, TrackType::HatFX);
+    const auto* sub = findTrackInProject(project, TrackType::Sub808);
+
+    const auto kickMetrics = kick != nullptr ? analyzeLaneMetrics(*kick) : LaneMetrics {};
+    const auto snareMetrics = snare != nullptr ? analyzeLaneMetrics(*snare) : LaneMetrics {};
+    const auto hatMetrics = hat != nullptr ? analyzeLaneMetrics(*hat) : LaneMetrics {};
+    const auto rideMetrics = ride != nullptr ? analyzeLaneMetrics(*ride) : LaneMetrics {};
+    const auto hatFxMetrics = hatFx != nullptr ? analyzeLaneMetrics(*hatFx) : LaneMetrics {};
+    const auto subMetrics = sub != nullptr ? analyzeLaneMetrics(*sub) : LaneMetrics {};
+
+    switch (project.params.genre)
+    {
+        case GenreType::Trap:
+            return "Structure: kick " + juce::String(kickMetrics.noteCount)
+                + " | 808 " + juce::String(subMetrics.noteCount)
+                + " | hats " + juce::String(hatMetrics.noteCount)
+                + " | hat FX " + juce::String(hatFxMetrics.noteCount);
+
+        case GenreType::Drill:
+            return "Structure: kick " + juce::String(kickMetrics.noteCount)
+                + " | 808 " + juce::String(subMetrics.noteCount)
+                + " | hats " + juce::String(hatMetrics.noteCount)
+                + " | phrase " + phraseSummaryForDisplay(project.phraseRoleSummary);
+
+        case GenreType::Rap:
+            return "Pocket: kick anchors " + juce::String(kickMetrics.anchorCount)
+                + " | snare backbeats " + juce::String(snareMetrics.anchorCount)
+                + " | hats " + juce::String(hatMetrics.noteCount);
+
+        case GenreType::BoomBap:
+        default:
+        {
+            const juce::String carrier = rideMetrics.noteCount > 0
+                ? (hatMetrics.noteCount > 0 ? "hybrid" : "ride")
+                : "hihat";
+            return "Pocket: kick anchors " + juce::String(kickMetrics.anchorCount)
+                + " | snare backbeats " + juce::String(snareMetrics.anchorCount)
+                + " | carrier " + carrier;
+        }
+    }
+}
+
+juce::String buildReferenceLaneDebugLine(const juce::String& label,
+                                        const StyleLabReferenceLaneDiagnostics& diagnostics,
+                                        const ReferenceCorpusMetrics& metrics,
+                                        bool includeIds)
+{
+    juce::String line = "- " + label + " refs: requested " + juce::String(diagnostics.requestedCount)
+        + " | resolved " + juce::String(diagnostics.resolvedCount);
+
+    if (metrics.available)
+    {
+        line += " | sources " + juce::String(metrics.sourceCount)
+             + " | variants " + juce::String(metrics.variantCount)
+             + " | avg hits/bar " + juce::String(metrics.avgHitsPerBar, 1)
+             + " | avg vel " + juce::String(metrics.avgVelocity, 1)
+             + " | anchor share " + formatUnitPercent(metrics.anchorRatio);
+        if (!includeIds)
+            line += " | late-hit share " + formatUnitPercent(metrics.lateRatio);
+        if (includeIds && !metrics.sourceIds.isEmpty())
+            line += " | ids " + joinLimited(metrics.sourceIds, 2);
+        return line;
+    }
+
+    const auto zeroReason = referenceZeroReasonDisplayName(diagnostics.zeroReason);
+    if (zeroReason.isNotEmpty())
+        line += " | reason " + zeroReason;
+    if (diagnostics.detail.isNotEmpty())
+        line += " | detail " + diagnostics.detail;
+    return line;
+}
+
+juce::String buildLaneChangeLine(const PatternProject& afterProject,
+                                 const TrackState& afterTrack,
+                                 const TrackState* beforeTrack,
+                                 bool hatRefsAvailable,
+                                 bool kickRefsAvailable)
+{
+    const auto afterMetrics = analyzeLaneMetrics(afterTrack);
+    const int beforeCount = beforeTrack != nullptr ? static_cast<int>(effectiveNotesForTrack(*beforeTrack).size()) : 0;
+    const int delta = afterMetrics.noteCount - beforeCount;
+
+    juce::String changeText;
+    if (beforeCount == 0 && afterMetrics.noteCount > 0)
+        changeText = "new";
+    else if (beforeCount > 0 && afterMetrics.noteCount == 0)
+        changeText = "cleared";
+    else if (delta == 0)
+        changeText = "reshaped";
+    else
+        changeText = formatDeltaText(delta);
+
+    juce::String line = "- " + juce::String(toString(afterTrack.type))
+        + ": " + juce::String(afterMetrics.noteCount) + " notes"
+        + " (" + changeText + ")";
+
+    if (afterMetrics.noteCount > 0)
+        line += ", avg vel " + juce::String(afterMetrics.avgVelocity, 1);
+
+    line += ". " + laneReasonForTrack(afterProject, afterTrack, afterMetrics, hatRefsAvailable, kickRefsAvailable);
+    return line;
+}
+
+juce::String buildGenerationDebugReport(const juce::String& actionLabel,
+                                        const PatternProject& beforeProject,
+                                        const PatternProject& afterProject,
+                                        const std::optional<TrackType>& focusTrack,
+                                        bool sampleAwareModeEnabled,
+                                        bool analysisReady)
+{
+    const auto hatCorpus = summarizeHatCorpus(afterProject.styleInfluence);
+    const auto kickCorpus = summarizeKickCorpus(afterProject.styleInfluence);
+    const auto& referenceDebug = afterProject.styleInfluence.referenceDebugDiagnostics;
+
+    juce::StringArray lines;
+    juce::String actionText = actionLabel;
+    if (focusTrack.has_value())
+        actionText += " [" + juce::String(toString(*focusTrack)) + "]";
+
+    lines.add("Last action: " + actionText);
+    lines.add("Style: " + genreDisplayName(afterProject.params.genre)
+              + " / " + selectedSubstyleDisplayName(afterProject.params)
+              + " | " + juce::String(juce::jmax(1, afterProject.params.bars)) + " bars"
+              + " | " + juce::String(afterProject.params.bpm, 1) + " BPM"
+              + " | seed " + juce::String(afterProject.params.seed));
+
+    if (afterProject.phraseLengthBars > 0 || afterProject.phraseRoleSummary.isNotEmpty())
+    {
+        lines.add("Phrase plan: " + phraseSummaryForDisplay(afterProject.phraseRoleSummary)
+                  + " | span " + juce::String(juce::jmax(1, afterProject.phraseLengthBars)) + " bars");
+    }
+
+    lines.add(buildDecisionBasisLine(afterProject));
+    lines.add(buildOutcomeOverview(afterProject));
+
+    if (!sampleAwareModeEnabled)
+    {
+        lines.add("Audio-reactive layer: off.");
+    }
+    else if (!analysisReady)
+    {
+        lines.add("Audio-reactive layer: armed, but no analysis was ready for this pass.");
+    }
+    else if (!afterProject.sampleContext.enabled || afterProject.sampleContext.featureMap.steps.empty())
+    {
+        lines.add("Audio-reactive layer: analysis existed, but no feature map reached the generation pass.");
+    }
+    else
+    {
+        lines.add("Audio-reactive layer: on | reactivity " + juce::String(afterProject.sampleContext.reactivity, 2)
+                  + " | support vs contrast " + juce::String(afterProject.sampleContext.supportVsContrast, 2));
+    }
+
+    lines.add("Reference influence:");
+    lines.add("- Ref scan: candidates " + juce::String(referenceDebug.candidateDirectoryCount)
+              + " | matched " + juce::String(referenceDebug.matchingRecordCount)
+              + " | selected " + juce::String(referenceDebug.selectedRecordCount)
+              + " | parse failures " + juce::String(referenceDebug.parseFailureCount));
+    lines.add(buildReferenceLaneDebugLine("Hat", referenceDebug.hat, hatCorpus, true));
+    lines.add(buildReferenceLaneDebugLine("Kick", referenceDebug.kick, kickCorpus, false));
+
+    if (hatCorpus.available || kickCorpus.available)
+    {
+        lines.add("- Use mode: influence only. The generator borrows shape, density, timing space and velocity feel instead of copying notes verbatim.");
+    }
+    else
+    {
+        lines.add("- With no loaded refs, this pass relied on style defaults, lane biases and front-panel knobs.");
+    }
+
+    if (afterProject.styleInfluence.brooklynHatDiagnostics.available)
+    {
+        const auto& diagnostics = afterProject.styleInfluence.brooklynHatDiagnostics;
+        juce::String line = "- Brooklyn match: " + diagnostics.primaryReferenceId;
+        if (diagnostics.secondaryReferenceId.isNotEmpty())
+            line += " + " + diagnostics.secondaryReferenceId;
+        line += " | blend " + juce::String(diagnostics.usedBlend ? "yes" : "no")
+             + " | similarity " + juce::String(diagnostics.similarityScore, 2)
+             + " | pool " + juce::String(diagnostics.candidatePoolSize);
+        lines.add(line);
+    }
+
+    lines.add("Lane changes:");
+    bool hasLaneChanges = false;
+    for (const auto& afterTrack : afterProject.tracks)
+    {
+        const auto* beforeTrack = findTrackInProject(beforeProject, afterTrack.type);
+        if (tracksHaveSameMusicalContent(beforeTrack, &afterTrack))
+            continue;
+
+        hasLaneChanges = true;
+        lines.add(buildLaneChangeLine(afterProject,
+                                      afterTrack,
+                                      beforeTrack,
+                                      hatCorpus.available,
+                                      kickCorpus.available));
+    }
+
+    if (!hasLaneChanges)
+    {
+        if (focusTrack.has_value())
+            lines.add("- " + juce::String(toString(*focusTrack)) + ": unchanged under the current locks/constraints.");
+        else
+            lines.add("- No lane note content changed in this pass.");
+    }
+
+    return lines.joinIntoString("\n");
+}
 } // namespace
 
 juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcessor::createParameterLayout()
@@ -767,6 +1431,7 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
 void BoomBapGeneratorAudioProcessor::generatePattern()
 {
     std::scoped_lock lock(projectMutex);
+    const auto beforeProject = project;
     advanceSeedForGeneration(std::nullopt);
     auto generationParams = buildParamsFromState(lastTransport);
     const auto bpmSelection = resolveGenerationBpm(generationParams,
@@ -780,6 +1445,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
 
     generationParams.bpm = bpmSelection.bpm;
     project.params = generationParams;
+    project.sampleContext = currentSampleContext;
     switch (project.params.genre)
     {
         case GenreType::Drill: drillEngine.generate(project); break;
@@ -788,6 +1454,12 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
         case GenreType::BoomBap:
         default: boomBapEngine.generate(project); break;
     }
+    project.generationDebugReport = buildGenerationDebugReport("Generate Pattern",
+                                                               beforeProject,
+                                                               project,
+                                                               std::nullopt,
+                                                               sampleAwareModeEnabled,
+                                                               analysisReady);
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -795,8 +1467,10 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
 void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
+    const auto beforeProject = project;
     advanceSeedForGeneration(track);
     project.params = buildParamsFromState(lastTransport);
+    project.sampleContext = currentSampleContext;
     switch (project.params.genre)
     {
         case GenreType::Drill: drillEngine.generateTrackNew(project, track); break;
@@ -805,6 +1479,12 @@ void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
         case GenreType::BoomBap:
         default: boomBapEngine.generateTrackNew(project, track); break;
     }
+    project.generationDebugReport = buildGenerationDebugReport("Generate Track",
+                                                               beforeProject,
+                                                               project,
+                                                               track,
+                                                               sampleAwareModeEnabled,
+                                                               analysisReady);
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -812,8 +1492,10 @@ void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
 void BoomBapGeneratorAudioProcessor::regenerateTrack(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
+    const auto beforeProject = project;
     advanceSeedForGeneration(track);
     project.params = buildParamsFromState(lastTransport);
+    project.sampleContext = currentSampleContext;
     switch (project.params.genre)
     {
         case GenreType::Drill: drillEngine.regenerateTrackVariation(project, track); break;
@@ -822,6 +1504,12 @@ void BoomBapGeneratorAudioProcessor::regenerateTrack(TrackType track)
         case GenreType::BoomBap:
         default: boomBapEngine.regenerateTrackVariation(project, track); break;
     }
+    project.generationDebugReport = buildGenerationDebugReport("Regenerate Variation",
+                                                               beforeProject,
+                                                               project,
+                                                               track,
+                                                               sampleAwareModeEnabled,
+                                                               analysisReady);
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -838,8 +1526,10 @@ void BoomBapGeneratorAudioProcessor::regenerateTrack(const RuntimeLaneId& laneId
 void BoomBapGeneratorAudioProcessor::mutatePattern()
 {
     std::scoped_lock lock(projectMutex);
+    const auto beforeProject = project;
     advanceSeedForGeneration(std::nullopt);
     project.params = buildParamsFromState(lastTransport);
+    project.sampleContext = currentSampleContext;
     switch (project.params.genre)
     {
         case GenreType::Drill: drillEngine.mutatePattern(project); break;
@@ -848,6 +1538,12 @@ void BoomBapGeneratorAudioProcessor::mutatePattern()
         case GenreType::BoomBap:
         default: boomBapEngine.mutatePattern(project); break;
     }
+    project.generationDebugReport = buildGenerationDebugReport("Mutate Pattern",
+                                                               beforeProject,
+                                                               project,
+                                                               std::nullopt,
+                                                               sampleAwareModeEnabled,
+                                                               analysisReady);
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -855,8 +1551,10 @@ void BoomBapGeneratorAudioProcessor::mutatePattern()
 void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
+    const auto beforeProject = project;
     advanceSeedForGeneration(track);
     project.params = buildParamsFromState(lastTransport);
+    project.sampleContext = currentSampleContext;
     switch (project.params.genre)
     {
         case GenreType::Drill: drillEngine.mutateTrack(project, track); break;
@@ -865,6 +1563,12 @@ void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
         case GenreType::BoomBap:
         default: boomBapEngine.mutateTrack(project, track); break;
     }
+    project.generationDebugReport = buildGenerationDebugReport("Mutate Track",
+                                                               beforeProject,
+                                                               project,
+                                                               track,
+                                                               sampleAwareModeEnabled,
+                                                               analysisReady);
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -1728,14 +2432,19 @@ juce::String BoomBapGeneratorAudioProcessor::getGenerationDebugSummary() const
 {
     std::scoped_lock lock(projectMutex);
     juce::StringArray lines;
-    lines.add("Analysis mode: " + juce::String(static_cast<int>(analysisMode)));
+    lines.add("Analysis mode: " + analysisModeDisplayName(analysisMode));
     lines.add("Sample-aware: " + juce::String(sampleAwareModeEnabled ? "on" : "off"));
     lines.add("Analysis ready: " + juce::String(analysisReady ? "yes" : "no"));
     lines.add("Detected BPM: " + juce::String(currentAnalysisResult.detectedBpm, 2));
     lines.add("Bars: " + juce::String(currentAnalysisResult.analyzedBars));
     lines.add("Support vs Contrast: " + juce::String(currentSampleContext.supportVsContrast, 2));
     lines.add("Reactivity: " + juce::String(currentSampleContext.reactivity, 2));
-    return lines.joinIntoString("\n");
+
+    const auto analysisSummary = lines.joinIntoString("\n");
+    if (project.generationDebugReport.trim().isEmpty())
+        return analysisSummary;
+
+    return project.generationDebugReport + "\n\nAnalysis\n" + analysisSummary;
 }
 
 void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)

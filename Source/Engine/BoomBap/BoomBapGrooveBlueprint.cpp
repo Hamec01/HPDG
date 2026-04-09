@@ -35,7 +35,7 @@ SubstyleBehavior behaviorForSubstyle(BoomBapSubstyle substyle)
 {
     switch (substyle)
     {
-        case BoomBapSubstyle::Classic: return { 0.56f, 0.62f, 0.44f, 0.57f, 0.56f, 0.30f, 0.24f, 0.08f };
+        case BoomBapSubstyle::Classic: return { 0.54f, 0.52f, 0.39f, 0.56f, 0.54f, 0.24f, 0.22f, 0.12f };
         case BoomBapSubstyle::Dusty: return { 0.40f, 0.46f, 0.38f, 0.58f, 0.62f, 0.48f, 0.54f, 0.24f };
         case BoomBapSubstyle::Jazzy: return { 0.48f, 0.64f, 0.62f, 0.64f, 0.66f, 0.44f, 0.28f, 0.10f };
         case BoomBapSubstyle::Aggressive: return { 0.68f, 0.72f, 0.36f, 0.52f, 0.42f, 0.20f, 0.44f, 0.05f };

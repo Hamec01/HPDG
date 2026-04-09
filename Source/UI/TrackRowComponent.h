@@ -9,6 +9,7 @@
 #include "../Core/RuntimeLaneProfile.h"
 #include "../Core/TrackState.h"
 #include "DragGestureButton.h"
+#include "HardwareKnob.h"
 
 namespace bbg
 {
@@ -136,10 +137,10 @@ private:
     juce::ToggleButton enableButton { "E" };
     juce::Label volumeLabel;
     juce::Label volumeValueLabel;
-    juce::Slider volumeSlider;
+    RotaryKnobSlider volumeSlider;
     juce::Label panLabel;
     juce::Label panValueLabel;
-    juce::Slider panSlider;
+    RotaryKnobSlider panSlider;
     juce::Label widthLabel;
     juce::Label widthValueLabel;
     juce::Slider widthSlider;
@@ -162,5 +163,6 @@ private:
     int currentBassKeyChoice = 0;
     int currentBassScaleChoice = 0;
     Sub808LaneSettings currentSub808Settings;
+    SoundLayerState currentSoundState;
 };
 } // namespace bbg

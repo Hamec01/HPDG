@@ -13,13 +13,16 @@ ResolvedStyleDefinition StyleDefinitionResolver::resolve(GenreType genre,
     const auto substyleName = StyleDefinitionLoader::substyleNameFor(genre, substyleIndex);
 
     juce::String loadMessage;
+    StyleLabReferenceDebugDiagnostics referenceDiagnostics;
     if (const auto loaded = StyleDefinitionLoader::loadLatestForStyle(genreName,
                                                                       substyleName,
                                                                       StyleLabReferenceService::getReferenceRootDirectory(),
-                                                                      &loadMessage))
+                                                                      &loadMessage,
+                                                                      &referenceDiagnostics))
     {
         auto definition = *loaded;
         definition.genre = genre;
+        definition.referenceDebugDiagnostics = referenceDiagnostics;
         if (statusMessage != nullptr)
             *statusMessage = definition.loadStrategy == "ranked-reference-set"
                 ? "Style Lab ranked reference set"
@@ -29,7 +32,9 @@ ResolvedStyleDefinition StyleDefinitionResolver::resolve(GenreType genre,
 
     if (statusMessage != nullptr)
         *statusMessage = loadMessage;
-    return StyleDefinitionLoader::buildFallback(genre, substyleIndex);
+    auto definition = StyleDefinitionLoader::buildFallback(genre, substyleIndex);
+    definition.referenceDebugDiagnostics = referenceDiagnostics;
+    return definition;
 }
 
 bool StyleDefinitionResolver::applyToProject(const ResolvedStyleDefinition& definition,

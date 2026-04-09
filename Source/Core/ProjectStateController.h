@@ -13,6 +13,8 @@ namespace bbg
 {
 namespace ProjectStateController
 {
+inline void setPreviewLoopRegion(PatternProject& project, const std::optional<juce::Range<int>>& tickRange);
+
 namespace detail
 {
 inline int floorDiv(int a, int b)
@@ -79,6 +81,95 @@ inline void setPreviewStartStep(PatternProject& project, int step)
 inline void setPreviewPlaybackMode(PatternProject& project, PreviewPlaybackMode mode)
 {
     project.previewPlaybackMode = mode;
+}
+
+inline void setBars(PatternProject& project, int bars)
+{
+    const int clampedBars = juce::jlimit(1, 16, bars);
+    const int maxTicks = juce::jmax(1, clampedBars * 16 * ticksPerStep());
+
+    project.params.bars = clampedBars;
+    project.phraseLengthBars = juce::jlimit(1, 16, project.phraseLengthBars);
+    project.phraseLengthBars = juce::jmin(project.phraseLengthBars, clampedBars);
+
+    for (auto& track : project.tracks)
+    {
+        track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+        {
+            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            return ticks < 0 || ticks >= maxTicks;
+        }), track.notes.end());
+
+        for (auto& note : track.notes)
+            detail::normalizeNoteEvent(note, clampedBars);
+
+        std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
+        {
+            if (a.step != b.step)
+                return a.step < b.step;
+            return a.pitch < b.pitch;
+        });
+
+        track.baseNotes.erase(std::remove_if(track.baseNotes.begin(), track.baseNotes.end(), [&](const NoteEvent& note)
+        {
+            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            return ticks < 0 || ticks >= maxTicks;
+        }), track.baseNotes.end());
+
+        for (auto& note : track.baseNotes)
+            detail::normalizeNoteEvent(note, clampedBars);
+
+        std::sort(track.baseNotes.begin(), track.baseNotes.end(), [](const NoteEvent& a, const NoteEvent& b)
+        {
+            if (a.step != b.step)
+                return a.step < b.step;
+            return a.pitch < b.pitch;
+        });
+
+        track.sub808Notes.erase(std::remove_if(track.sub808Notes.begin(), track.sub808Notes.end(), [&](const Sub808NoteEvent& note)
+        {
+            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            return ticks < 0 || ticks >= maxTicks;
+        }), track.sub808Notes.end());
+
+        for (auto& note : track.sub808Notes)
+            detail::normalizeSub808NoteEvent(note, clampedBars);
+
+        std::sort(track.sub808Notes.begin(), track.sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
+        {
+            if (a.step != b.step)
+                return a.step < b.step;
+            return a.pitch < b.pitch;
+        });
+
+        track.baseSub808Notes.erase(std::remove_if(track.baseSub808Notes.begin(), track.baseSub808Notes.end(), [&](const Sub808NoteEvent& note)
+        {
+            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            return ticks < 0 || ticks >= maxTicks;
+        }), track.baseSub808Notes.end());
+
+        for (auto& note : track.baseSub808Notes)
+            detail::normalizeSub808NoteEvent(note, clampedBars);
+
+        std::sort(track.baseSub808Notes.begin(), track.baseSub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
+        {
+            if (a.step != b.step)
+                return a.step < b.step;
+            return a.pitch < b.pitch;
+        });
+
+        if (track.type == TrackType::Sub808)
+        {
+            track.notes = toLegacyNoteEvents(track.sub808Notes);
+            track.baseNotes = toLegacyNoteEvents(track.baseSub808Notes);
+        }
+
+        if (track.hasPerformanceBaseParams)
+            track.performanceBaseParams.bars = clampedBars;
+    }
+
+    setPreviewStartStep(project, project.previewStartStep);
+    setPreviewLoopRegion(project, project.previewLoopTicks);
 }
 
 inline void restoreEditorProjectSnapshot(PatternProject& project,
@@ -351,7 +442,11 @@ inline void setSoundLayerForTarget(PatternProject& project, const SoundTargetDes
 inline void clearTrack(PatternProject& project, TrackType trackType)
 {
     if (auto* state = ProjectLaneAccess::findTrackState(project, trackType))
+    {
+        if (trackType == TrackType::Sub808)
+            state->sub808Notes.clear();
         state->notes.clear();
+    }
 }
 
 inline void clearTrack(PatternProject& project, const RuntimeLaneId& laneId)

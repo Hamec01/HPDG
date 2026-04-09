@@ -23,6 +23,82 @@ struct LaneMusicalBiasState
     float balanceWeight = 1.0f;
 };
 
+enum class BrooklynReferenceBarRole
+{
+    Statement = 0,
+    Response,
+    Lift,
+    Ending
+};
+
+struct BrooklynReferenceBarRoleProfile
+{
+    std::array<float, 16> kickStepWeight {};
+    std::array<float, 16> hatStepWeight {};
+    std::array<float, 16> openHatStepWeight {};
+    std::array<float, 16> subStartStepWeight {};
+    float avgKickHitsPerBar = 0.0f;
+    float avgHatHitsPerBar = 0.0f;
+    float avgOpenHatHitsPerBar = 0.0f;
+    float avgSubStartsPerBar = 0.0f;
+    float avgSubLengthSteps = 0.0f;
+    float phraseEdgeKickRate = 0.0f;
+    float preSnareAccentRate = 0.0f;
+    float burstRate = 0.0f;
+};
+
+struct BrooklynReferenceProfile
+{
+    bool available = false;
+    int sourceCount = 0;
+    std::array<BrooklynReferenceBarRoleProfile, 4> roles {};
+
+    const BrooklynReferenceBarRoleProfile& profileForRole(BrooklynReferenceBarRole role) const
+    {
+        return roles[static_cast<size_t>(role)];
+    }
+};
+
+struct BrooklynHatReferenceDiagnostics
+{
+    bool available = false;
+    juce::String primaryReferenceId;
+    juce::String secondaryReferenceId;
+    bool usedBlend = false;
+    float similarityScore = 0.0f;
+    int candidatePoolSize = 0;
+};
+
+enum class StyleLabReferenceZeroReason
+{
+    None = 0,
+    NoRefsSelected,
+    RefsDisabledByStyleSwitch,
+    LaneMappingEmpty,
+    IncompatibleReferenceSpan,
+    FilteredByDensity,
+    ParsingFailed
+};
+
+struct StyleLabReferenceLaneDiagnostics
+{
+    int requestedCount = 0;
+    int resolvedCount = 0;
+    StyleLabReferenceZeroReason zeroReason = StyleLabReferenceZeroReason::None;
+    juce::String detail;
+};
+
+struct StyleLabReferenceDebugDiagnostics
+{
+    int candidateDirectoryCount = 0;
+    int parseFailureCount = 0;
+    int matchingRecordCount = 0;
+    int selectedRecordCount = 0;
+    StyleLabReferenceLaneDiagnostics hat;
+    StyleLabReferenceLaneDiagnostics kick;
+    juce::String loadMessage;
+};
+
 struct StyleInfluenceState
 {
     std::array<LaneMusicalBiasState, kTrackTypeCount> laneBiases {};
@@ -40,6 +116,9 @@ struct StyleInfluenceState
     ReferenceHatSkeleton referenceHatSkeleton;
     ReferenceHatCorpus referenceHatCorpus;
     ReferenceKickCorpus referenceKickCorpus;
+    BrooklynReferenceProfile brooklynReferenceProfile;
+    BrooklynHatReferenceDiagnostics brooklynHatDiagnostics;
+    StyleLabReferenceDebugDiagnostics referenceDebugDiagnostics;
 };
 
 inline LaneMusicalBiasState& laneBiasFor(StyleInfluenceState& state, TrackType type)
@@ -85,6 +164,7 @@ struct PatternProject
     int mutationCounter = 0;
     int phraseLengthBars = 1;
     juce::String phraseRoleSummary;
+    juce::String generationDebugReport;
     int previewStartStep = 0;
     PreviewPlaybackMode previewPlaybackMode = PreviewPlaybackMode::FromFlag;
     std::optional<juce::Range<int>> previewLoopTicks;

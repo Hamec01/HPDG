@@ -2,33 +2,24 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
-#include <map>
-#include <set>
 #include <stdexcept>
-#include <string>
-#include <vector>
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
 #include "../Source/Core/PatternProject.h"
-#include "../Source/Core/LaneDefaults.h"
 #include "../Source/Core/PatternProjectSerialization.h"
-#include "../Source/Core/ProjectLaneAccess.h"
 #include "../Source/Core/ProjectStateController.h"
-#include "../Source/Core/RuntimeLaneLifecycle.h"
-#include "../Source/Core/SoundTargetDescriptor.h"
-#include "../Source/Core/TrackRegistry.h"
-#include "../Source/Engine/Drill/DrillHatGenerator.h"
-#include "../Source/Engine/Drill/DrillStyleProfile.h"
+#include "../Source/Engine/DrillEngine.h"
+#include "../Source/Engine/Drill/DrillPatternValidator.h"
+#include "../Source/Engine/Drill/DrillPhrasePlanner.h"
+#include "../Source/Engine/Drill/DrillSnareGenerator.h"
+#include "../Source/Engine/HiResTiming.h"
+#include "../Source/Engine/MidiExportEngine.h"
+#include "../Source/Engine/PatternPerformanceTransformEngine.h"
+#include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Engine/StyleDefinitionLoader.h"
 #include "../Source/Engine/StyleInfluence.h"
-#include "../Source/Services/StyleLabReferenceService.h"
-#include "../Source/UI/EditorHistoryController.h"
-#include "../Source/UI/EditorLayoutController.h"
-#include "../Source/UI/GridEditActions.h"
-#include "../Source/UI/GridEditorComponent.h"
-#include "../Source/UI/HotkeyController.h"
-#include "../Source/Utils/TimingHelpers.h"
 
 namespace bbg
 {
@@ -45,66 +36,11 @@ void expect(bool condition, const juce::String& message)
         fail(message);
 }
 
-bool nearlyEqual(float left, float right, float epsilon = 0.0001f)
-{
-    return std::abs(left - right) <= epsilon;
-}
-
-bool noteEventEquals(const NoteEvent& left, const NoteEvent& right)
-{
-    return left.pitch == right.pitch
-        && left.step == right.step
-        && left.length == right.length
-        && left.velocity == right.velocity
-        && left.microOffset == right.microOffset
-    && left.isGhost == right.isGhost
-        && left.semanticRole == right.semanticRole
-        && left.isSlide == right.isSlide
-        && left.isLegato == right.isLegato
-        && left.glideToNext == right.glideToNext;
-}
-
-bool sub808NoteEventEquals(const Sub808NoteEvent& left, const Sub808NoteEvent& right)
-{
-    return left.pitch == right.pitch
-        && left.step == right.step
-        && left.length == right.length
-        && left.velocity == right.velocity
-        && left.microOffset == right.microOffset
-        && left.semanticRole == right.semanticRole
-        && left.isSlide == right.isSlide
-        && left.isLegato == right.isLegato
-        && left.glideToNext == right.glideToNext;
-}
-
-template <typename EventType, typename Compare>
-bool vectorEquals(const std::vector<EventType>& left, const std::vector<EventType>& right, Compare compare)
-{
-    if (left.size() != right.size())
-        return false;
-
-    for (size_t index = 0; index < left.size(); ++index)
-    {
-        if (!compare(left[index], right[index]))
-            return false;
-    }
-
-    return true;
-}
-
 juce::ValueTree wrapSerializedProject(const PatternProject& project)
 {
     juce::ValueTree root("ROOT");
     root.addChild(PatternProjectSerialization::serialize(project), -1, nullptr);
     return root;
-}
-
-PatternProject roundTrip(const PatternProject& project)
-{
-    PatternProject restored;
-    expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), restored),
-           "PatternProject deserialize failed during roundtrip.");
-    return restored;
 }
 
 TrackState* findTrackByType(PatternProject& project, TrackType type)
@@ -118,2059 +54,2363 @@ TrackState* findTrackByType(PatternProject& project, TrackType type)
     return nullptr;
 }
 
-TrackState makeTrack(TrackType type)
+bool hasNoteAt(const TrackState& track, int step, int microOffset, const juce::String& semanticRole)
 {
-    TrackState track;
-    track.type = type;
-    track.runtimeTrackType = type;
-    track.enabled = true;
-    return track;
+    return std::any_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+    {
+        return note.step == step && note.microOffset == microOffset && note.semanticRole == semanticRole;
+    });
 }
 
-const TrackState* findTrackByType(const PatternProject& project, TrackType type)
+bool hasNoteAtStepAndMicro(const TrackState& track, int step, int microOffset)
 {
-    for (const auto& track : project.tracks)
+    return std::any_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
     {
-        if (track.type == type)
-            return &track;
+        return note.step == step && note.microOffset == microOffset;
+    });
+}
+
+bool hasHatCarrierCoverageNearTick(const TrackState& track, int tick, int toleranceTicks)
+{
+    return std::any_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+    {
+        if (note.semanticRole != "drill_hat_backbone" && note.semanticRole != "drill_hat_reference_copy")
+            return false;
+        return std::abs(HiResTiming::noteTick(note) - tick) <= toleranceTicks;
+    });
+}
+
+bool isProtectedDrillHatSemantic(const juce::String& semanticRole)
+{
+    return semanticRole == "drill_hat_backbone" || semanticRole == "drill_hat_reference_copy";
+}
+
+bool hasSubStartAt(const TrackState& track, int step, const juce::String& semanticRole = {})
+{
+    return std::any_of(track.sub808Notes.begin(), track.sub808Notes.end(), [&](const Sub808NoteEvent& note)
+    {
+        return note.step == step && (semanticRole.isEmpty() || note.semanticRole == semanticRole);
+    });
+}
+
+bool matchesSnareAnchorStep(const std::array<int, 2>& anchors, int stepInBar)
+{
+    return std::any_of(anchors.begin(), anchors.end(), [stepInBar](int anchor)
+    {
+        return anchor >= 0 && anchor == stepInBar;
+    });
+}
+
+int activeSnareAnchorCount(const std::array<int, 2>& anchors)
+{
+    return static_cast<int>(std::count_if(anchors.begin(), anchors.end(), [](int anchor)
+    {
+        return anchor >= 0;
+    }));
+}
+
+bool noteSequencesEqual(const std::vector<NoteEvent>& lhs, const std::vector<NoteEvent>& rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+
+    for (size_t index = 0; index < lhs.size(); ++index)
+    {
+        const auto& a = lhs[index];
+        const auto& b = rhs[index];
+        if (a.pitch != b.pitch
+            || a.step != b.step
+            || a.length != b.length
+            || a.velocity != b.velocity
+            || a.microOffset != b.microOffset
+            || a.isGhost != b.isGhost
+            || a.semanticRole != b.semanticRole
+            || a.isSlide != b.isSlide
+            || a.isLegato != b.isLegato
+            || a.glideToNext != b.glideToNext)
+        {
+            return false;
+        }
     }
 
-    return nullptr;
+    return true;
 }
 
-TrackState* findTrackByLaneId(PatternProject& project, const RuntimeLaneId& laneId)
+bool sub808NoteSequencesEqual(const std::vector<Sub808NoteEvent>& lhs, const std::vector<Sub808NoteEvent>& rhs)
 {
-    for (auto& track : project.tracks)
+    if (lhs.size() != rhs.size())
+        return false;
+
+    for (size_t index = 0; index < lhs.size(); ++index)
     {
-        if (track.laneId == laneId)
-            return &track;
+        const auto& a = lhs[index];
+        const auto& b = rhs[index];
+        if (a.pitch != b.pitch
+            || a.step != b.step
+            || a.length != b.length
+            || a.velocity != b.velocity
+            || a.microOffset != b.microOffset
+            || a.semanticRole != b.semanticRole
+            || a.isSlide != b.isSlide
+            || a.isLegato != b.isLegato
+            || a.glideToNext != b.glideToNext)
+        {
+            return false;
+        }
     }
 
-    return nullptr;
+    return true;
 }
 
-const TrackState* findTrackByLaneId(const PatternProject& project, const RuntimeLaneId& laneId)
+bool sub808SequenceIsValidMonophonic(const std::vector<Sub808NoteEvent>& notes)
 {
-    for (const auto& track : project.tracks)
+    for (size_t index = 0; index + 1 < notes.size(); ++index)
     {
-        if (track.laneId == laneId)
-            return &track;
+        const auto& current = notes[index];
+        const auto& next = notes[index + 1];
+        const int allowedOverlap = (current.glideToNext || current.isLegato) ? 1 : 0;
+        if (current.step + current.length > next.step + allowedOverlap)
+            return false;
+        if (next.isSlide != current.glideToNext)
+            return false;
     }
 
-    return nullptr;
+    return true;
 }
 
-int countAbsoluteMicroOffset(const TrackState& track)
+bool noteMatchesBaseIdentity(const NoteEvent& note, const NoteEvent& baseNote)
 {
-    int total = 0;
-    for (const auto& note : track.notes)
-        total += std::abs(note.microOffset);
-    return total;
+    return note.pitch == baseNote.pitch
+        && note.step == baseNote.step
+        && note.length == baseNote.length
+        && note.isGhost == baseNote.isGhost
+        && note.semanticRole == baseNote.semanticRole
+        && note.isSlide == baseNote.isSlide
+        && note.isLegato == baseNote.isLegato
+        && note.glideToNext == baseNote.glideToNext;
 }
 
-int findTrackIndexByLaneId(const PatternProject& project, const RuntimeLaneId& laneId)
+bool allVisibleNotesDerivedFromBase(const TrackState& track, const std::vector<NoteEvent>& baseNotes)
 {
-    for (int index = 0; index < static_cast<int>(project.tracks.size()); ++index)
+    return std::all_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
     {
-        if (project.tracks[static_cast<size_t>(index)].laneId == laneId)
-            return index;
-    }
-
-    return -1;
+        return std::any_of(baseNotes.begin(), baseNotes.end(), [&](const NoteEvent& baseNote)
+        {
+            return noteMatchesBaseIdentity(note, baseNote);
+        });
+    });
 }
 
-juce::var parseJson(const juce::String& jsonText)
+struct MidiNoteOnSnapshot
 {
-    const auto parsed = juce::JSON::parse(jsonText);
-    expect(!parsed.isVoid(), "JSON parse failed.");
-    return parsed;
-}
+    int note = 0;
+    int tick = 0;
+    int velocity = 0;
+};
 
-juce::DynamicObject* requireObject(const juce::var& value, const juce::String& label)
+std::vector<MidiNoteOnSnapshot> collectMidiNoteOns(const juce::MidiMessageSequence& sequence)
 {
-    auto* object = value.getDynamicObject();
-    expect(object != nullptr, label + " must be an object.");
-    return object;
-}
+    std::vector<MidiNoteOnSnapshot> result;
+    result.reserve(static_cast<size_t>(sequence.getNumEvents()));
 
-juce::var propertyOf(const juce::var& value, const juce::String& propertyName, const juce::String& ownerLabel)
-{
-    auto* object = requireObject(value, ownerLabel);
-    const auto property = object->getProperty(propertyName);
-    expect(!property.isVoid(), ownerLabel + "." + propertyName + " is missing.");
-    return property;
-}
-
-const juce::Array<juce::var>& requireArray(const juce::var& value, const juce::String& label)
-{
-    auto* array = value.getArray();
-    expect(array != nullptr, label + " must be an array.");
-    return *array;
-}
-
-const juce::var* findObjectByStringProperty(const juce::Array<juce::var>& array,
-                                            const juce::String& propertyName,
-                                            const juce::String& expectedValue)
-{
-    for (const auto& item : array)
+    for (int index = 0; index < sequence.getNumEvents(); ++index)
     {
-        auto* object = item.getDynamicObject();
-        if (object == nullptr)
+        const auto* event = sequence.getEventPointer(index);
+        if (event == nullptr || !event->message.isNoteOn())
             continue;
 
-        if (object->getProperty(propertyName).toString() == expectedValue)
-            return &item;
+        result.push_back({ event->message.getNoteNumber(),
+                           static_cast<int>(std::lround(event->message.getTimeStamp())),
+                           event->message.getVelocity() });
     }
 
-    return nullptr;
+    return result;
 }
 
-void expectRuntimeLaneIntegrity(const PatternProject& project, const juce::String& label)
+bool hasMidiNoteOnAt(const std::vector<MidiNoteOnSnapshot>& noteOns, int note, int tick)
 {
-    std::set<juce::String> laneIds;
-    std::set<juce::String> laneNames;
-
-    for (const auto& lane : project.runtimeLaneProfile.lanes)
+    return std::any_of(noteOns.begin(), noteOns.end(), [&](const MidiNoteOnSnapshot& event)
     {
-        expect(lane.laneId.isNotEmpty(), label + ": laneId must not be empty.");
-        expect(laneIds.insert(lane.laneId).second, label + ": duplicate laneId detected: " + lane.laneId);
-        expect(laneNames.insert(lane.laneName.toLowerCase()).second,
-               label + ": duplicate laneName detected: " + lane.laneName);
-    }
-
-    expect(project.runtimeLaneOrder.size() == project.runtimeLaneProfile.lanes.size(),
-           label + ": runtimeLaneOrder size mismatch.");
-
-    std::set<RuntimeLaneId> orderIds;
-    for (const auto& laneId : project.runtimeLaneOrder)
-    {
-        expect(laneIds.count(laneId) == 1, label + ": runtimeLaneOrder contains unknown laneId: " + laneId);
-        expect(orderIds.insert(laneId).second, label + ": duplicate laneId in runtimeLaneOrder: " + laneId);
-    }
-
-    for (const auto& lane : project.runtimeLaneProfile.lanes)
-    {
-        const auto* track = findTrackByLaneId(project, lane.laneId);
-        if (lane.runtimeTrackType.has_value())
-        {
-            expect(track != nullptr, label + ": backed lane is missing track: " + lane.laneId);
-            expect(track->runtimeTrackType.has_value(), label + ": backed track missing runtimeTrackType.");
-            expect(track->type == *lane.runtimeTrackType, label + ": track.type mismatch for lane: " + lane.laneId);
-            expect(*track->runtimeTrackType == *lane.runtimeTrackType,
-                   label + ": runtimeTrackType mismatch for lane: " + lane.laneId);
-        }
-        else
-        {
-            expect(track == nullptr, label + ": unbacked lane must not create backing track: " + lane.laneId);
-        }
-    }
-
-    for (const auto& track : project.tracks)
-    {
-        const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, track.laneId);
-        expect(lane != nullptr, label + ": track points to missing laneId: " + track.laneId);
-        expect(lane->runtimeTrackType.has_value(), label + ": track must point to backed lane: " + track.laneId);
-        expect(*lane->runtimeTrackType == track.type, label + ": lane/track binding mismatch for laneId: " + track.laneId);
-    }
+        return event.note == note && event.tick == tick;
+    });
 }
 
-std::map<RuntimeLaneId, int> noteCountsByLane(const PatternProject& project)
+bool isPitchInScale(int pitch, int keyRoot, int scaleMode)
 {
-    std::map<RuntimeLaneId, int> counts;
-    for (const auto& track : project.tracks)
-    {
-        const int count = track.type == TrackType::Sub808
-            ? static_cast<int>((!track.sub808Notes.empty() ? track.sub808Notes : toSub808NoteEvents(track.notes)).size())
-            : static_cast<int>(track.notes.size());
-        counts[track.laneId] = count;
-    }
-    return counts;
-}
-
-std::vector<juce::String> laneStructureSignature(const PatternProject& project)
-{
-    std::vector<juce::String> signature;
-    signature.reserve(project.runtimeLaneProfile.lanes.size());
-    for (const auto& lane : project.runtimeLaneProfile.lanes)
-    {
-        signature.push_back(lane.laneId
-                            + "|" + lane.laneName
-                            + "|" + lane.groupName
-                            + "|" + juce::String(lane.runtimeTrackType.has_value() ? static_cast<int>(*lane.runtimeTrackType) : -1));
-    }
-    return signature;
-}
-
-int totalNoteCount(const PatternProject& project)
-{
-    int total = 0;
-    for (const auto& [laneId, count] : noteCountsByLane(project))
-    {
-        juce::ignoreUnused(laneId);
-        total += count;
-    }
-    return total;
-}
-
-juce::ValueTree makeLegacySerializedProjectFixture()
-{
-    juce::ValueTree root("ROOT");
-    juce::ValueTree pattern("PATTERN_PROJECT");
-    pattern.setProperty("schema_version", PatternProjectSerialization::kPatternSchemaVersion, nullptr);
-    pattern.setProperty("selected_track_index", 2, nullptr);
-    pattern.setProperty("sound_module_track_index", 0, nullptr);
-    pattern.setProperty("generation_counter", 3, nullptr);
-    pattern.setProperty("mutation_counter", 1, nullptr);
-    pattern.setProperty("phrase_length_bars", 4, nullptr);
-    pattern.setProperty("phrase_role_summary", "legacy fixture", nullptr);
-    pattern.setProperty("preview_start_step", 4, nullptr);
-    pattern.setProperty("preview_playback_mode", 1, nullptr);
-    pattern.setProperty("preview_loop_start_tick", 0, nullptr);
-    pattern.setProperty("preview_loop_end_tick", 64 * ticksPerStep(), nullptr);
-    pattern.setProperty("bars", 4, nullptr);
-    pattern.setProperty("global_sound_pan", -0.2f, nullptr);
-    pattern.setProperty("global_sound_width", 1.2f, nullptr);
-    pattern.setProperty("global_sound_eq_tone", 0.15f, nullptr);
-    pattern.setProperty("global_sound_compression", 0.4f, nullptr);
-    pattern.setProperty("global_sound_reverb", 0.25f, nullptr);
-    pattern.setProperty("global_sound_gate", 0.1f, nullptr);
-    pattern.setProperty("global_sound_transient", 0.3f, nullptr);
-    pattern.setProperty("global_sound_drive", 0.2f, nullptr);
-
-    juce::ValueTree profile("RUNTIME_LANE_PROFILE");
-    profile.setProperty("genre", "Rap", nullptr);
-    profile.setProperty("substyle", "Legacy", nullptr);
-
-    auto addLane = [&profile](TrackType type,
-                              const juce::String& laneId,
-                              const juce::String& laneName,
-                              const juce::String& groupName,
-                              int defaultMidiNote,
-                              bool enabledByDefault)
-    {
-        juce::ValueTree lane("RUNTIME_LANE");
-        lane.setProperty("lane_id", laneId, nullptr);
-        lane.setProperty("lane_name", laneName, nullptr);
-        lane.setProperty("group_name", groupName, nullptr);
-        lane.setProperty("dependency_name", "", nullptr);
-        lane.setProperty("generation_priority", 80, nullptr);
-        lane.setProperty("is_core", true, nullptr);
-        lane.setProperty("is_visible_in_editor", true, nullptr);
-        lane.setProperty("enabled_by_default", enabledByDefault, nullptr);
-        lane.setProperty("supports_drag_export", true, nullptr);
-        lane.setProperty("is_ghost_track", false, nullptr);
-        lane.setProperty("default_midi_note", defaultMidiNote, nullptr);
-        lane.setProperty("is_runtime_registry_lane", true, nullptr);
-        lane.setProperty("runtime_track_type", static_cast<int>(type), nullptr);
-        profile.addChild(lane, -1, nullptr);
-    };
-
-    addLane(TrackType::Sub808, "fixture:sub", "Fixture Sub", "Bass", 34, false);
-    addLane(TrackType::Kick, "fixture:kick", "Fixture Kick", "Kick", 36, true);
-    addLane(TrackType::Snare, "fixture:snare", "Fixture Snare", "Snare", 38, true);
-    pattern.addChild(profile, -1, nullptr);
-
-    juce::ValueTree order("RUNTIME_LANE_ORDER");
-    for (const auto& laneId : { juce::String("fixture:sub"), juce::String("fixture:kick"), juce::String("fixture:snare") })
-    {
-        juce::ValueTree entry("RUNTIME_LANE_ORDER_ENTRY");
-        entry.setProperty("lane_id", laneId, nullptr);
-        order.addChild(entry, -1, nullptr);
-    }
-    pattern.addChild(order, -1, nullptr);
-
-    auto addTrack = [&pattern](TrackType type,
-                               const juce::String& laneId,
-                               bool enabled,
-                               float laneVolume,
-                               std::initializer_list<NoteEvent> notes)
-    {
-        juce::ValueTree track("TRACK");
-        track.setProperty("type", static_cast<int>(type), nullptr);
-        track.setProperty("lane_id", laneId, nullptr);
-        track.setProperty("enabled", enabled, nullptr);
-        track.setProperty("muted", false, nullptr);
-        track.setProperty("solo", false, nullptr);
-        track.setProperty("locked", false, nullptr);
-        track.setProperty("template_id", 0, nullptr);
-        track.setProperty("variation_id", 0, nullptr);
-        track.setProperty("mutation_depth", 0.0f, nullptr);
-        track.setProperty("sub_profile", "", nullptr);
-        track.setProperty("lane_role", "fixture", nullptr);
-        track.setProperty("lane_volume", laneVolume, nullptr);
-        track.setProperty("selected_sample_index", 0, nullptr);
-        track.setProperty("selected_sample_name", "", nullptr);
-        track.setProperty("sub808_mono", true, nullptr);
-        track.setProperty("sub808_cut_itself", true, nullptr);
-        track.setProperty("sub808_glide_time_ms", 120, nullptr);
-        track.setProperty("sub808_overlap_mode", 0, nullptr);
-        track.setProperty("sub808_scale_snap_policy", 2, nullptr);
-        track.setProperty("sound_pan", 0.0f, nullptr);
-        track.setProperty("sound_width", 1.0f, nullptr);
-        track.setProperty("sound_eq_tone", 0.0f, nullptr);
-        track.setProperty("sound_compression", 0.0f, nullptr);
-        track.setProperty("sound_reverb", 0.0f, nullptr);
-        track.setProperty("sound_gate", 0.0f, nullptr);
-        track.setProperty("sound_transient", 0.0f, nullptr);
-        track.setProperty("sound_drive", 0.0f, nullptr);
-
-        for (const auto& note : notes)
-        {
-            juce::ValueTree noteNode("NOTE");
-            noteNode.setProperty("pitch", note.pitch, nullptr);
-            noteNode.setProperty("step", note.step, nullptr);
-            noteNode.setProperty("length", note.length, nullptr);
-            noteNode.setProperty("velocity", note.velocity, nullptr);
-            noteNode.setProperty("micro_offset", note.microOffset, nullptr);
-            noteNode.setProperty("is_ghost", note.isGhost, nullptr);
-            noteNode.setProperty("semantic_role", note.semanticRole, nullptr);
-            noteNode.setProperty("is_slide", note.isSlide, nullptr);
-            noteNode.setProperty("is_legato", note.isLegato, nullptr);
-            noteNode.setProperty("glide_to_next", note.glideToNext, nullptr);
-            track.addChild(noteNode, -1, nullptr);
-        }
-
-        pattern.addChild(track, -1, nullptr);
-    };
-
-    addTrack(TrackType::Kick,
-             "fixture:kick",
-             true,
-             1.0f,
-             {
-                 NoteEvent { 36, 0, 1, 112, 0, false, "anchor", false, false, false },
-                 NoteEvent { 36, 8, 2, 100, -12, false, "support", false, false, false }
-             });
-    addTrack(TrackType::Snare,
-             "fixture:snare",
-             true,
-             0.9f,
-             {
-                 NoteEvent { 38, 4, 1, 108, 0, false, "backbeat", false, false, false }
-             });
-    addTrack(TrackType::Sub808,
-             "fixture:sub",
-             false,
-             0.85f,
-             {
-                 NoteEvent { 34, 0, 8, 104, 0, false, "root", true, false, true },
-                 NoteEvent { 37, 8, 4, 96, 24, false, "lift", true, true, true }
-             });
-
-    root.addChild(pattern, -1, nullptr);
-    return root;
-}
-
-juce::ValueTree makeCorruptedSerializedProjectFixture()
-{
-    juce::ValueTree root("ROOT");
-    juce::ValueTree pattern("PATTERN_PROJECT");
-    pattern.setProperty("schema_version", PatternProjectSerialization::kPatternSchemaVersion, nullptr);
-    pattern.setProperty("selected_track_index", 999, nullptr);
-    pattern.setProperty("sound_module_track_index", -999, nullptr);
-    pattern.setProperty("generation_counter", -10, nullptr);
-    pattern.setProperty("mutation_counter", -4, nullptr);
-    pattern.setProperty("phrase_length_bars", 99, nullptr);
-    pattern.setProperty("preview_start_step", -64, nullptr);
-    pattern.setProperty("preview_playback_mode", 9, nullptr);
-    pattern.setProperty("preview_loop_start_tick", 999999, nullptr);
-    pattern.setProperty("preview_loop_end_tick", -5, nullptr);
-    pattern.setProperty("bars", 2, nullptr);
-    pattern.setProperty("global_sound_pan", 4.0f, nullptr);
-    pattern.setProperty("global_sound_width", -3.0f, nullptr);
-    pattern.setProperty("global_sound_eq_tone", 7.0f, nullptr);
-    pattern.setProperty("global_sound_compression", 5.0f, nullptr);
-    pattern.setProperty("global_sound_reverb", -1.0f, nullptr);
-    pattern.setProperty("global_sound_gate", 9.0f, nullptr);
-    pattern.setProperty("global_sound_transient", 9.0f, nullptr);
-    pattern.setProperty("global_sound_drive", -5.0f, nullptr);
-
-    juce::ValueTree profile("RUNTIME_LANE_PROFILE");
-    juce::ValueTree kickLane("RUNTIME_LANE");
-    kickLane.setProperty("lane_id", "", nullptr);
-    kickLane.setProperty("lane_name", "", nullptr);
-    kickLane.setProperty("group_name", " Kick ", nullptr);
-    kickLane.setProperty("dependency_name", "", nullptr);
-    kickLane.setProperty("generation_priority", 200, nullptr);
-    kickLane.setProperty("is_core", true, nullptr);
-    kickLane.setProperty("is_visible_in_editor", true, nullptr);
-    kickLane.setProperty("enabled_by_default", true, nullptr);
-    kickLane.setProperty("supports_drag_export", true, nullptr);
-    kickLane.setProperty("is_ghost_track", false, nullptr);
-    kickLane.setProperty("default_midi_note", -10, nullptr);
-    kickLane.setProperty("is_runtime_registry_lane", true, nullptr);
-    kickLane.setProperty("runtime_track_type", static_cast<int>(TrackType::Kick), nullptr);
-    profile.addChild(kickLane, -1, nullptr);
-
-    juce::ValueTree snareLane("RUNTIME_LANE");
-    snareLane.setProperty("lane_id", "", nullptr);
-    snareLane.setProperty("lane_name", "", nullptr);
-    snareLane.setProperty("group_name", " Snare ", nullptr);
-    snareLane.setProperty("dependency_name", "", nullptr);
-    snareLane.setProperty("generation_priority", -50, nullptr);
-    snareLane.setProperty("is_core", true, nullptr);
-    snareLane.setProperty("is_visible_in_editor", true, nullptr);
-    snareLane.setProperty("enabled_by_default", true, nullptr);
-    snareLane.setProperty("supports_drag_export", true, nullptr);
-    snareLane.setProperty("is_ghost_track", false, nullptr);
-    snareLane.setProperty("default_midi_note", 400, nullptr);
-    snareLane.setProperty("is_runtime_registry_lane", true, nullptr);
-    snareLane.setProperty("runtime_track_type", static_cast<int>(TrackType::Snare), nullptr);
-    profile.addChild(snareLane, -1, nullptr);
-    pattern.addChild(profile, -1, nullptr);
-
-    juce::ValueTree order("RUNTIME_LANE_ORDER");
-    for (const auto& laneId : { juce::String("missing"), juce::String("missing") })
-    {
-        juce::ValueTree entry("RUNTIME_LANE_ORDER_ENTRY");
-        entry.setProperty("lane_id", laneId, nullptr);
-        order.addChild(entry, -1, nullptr);
-    }
-    pattern.addChild(order, -1, nullptr);
-
-    juce::ValueTree authoring("AUTHORING");
-    juce::ValueTree trackPrefs("TRACK_PREFERENCES");
-    juce::ValueTree emptyPref("TRACK_PREFERENCE");
-    emptyPref.setProperty("lane_id", "", nullptr);
-    emptyPref.setProperty("preferred_density", 3.0f, nullptr);
-    trackPrefs.addChild(emptyPref, -1, nullptr);
-    authoring.addChild(trackPrefs, -1, nullptr);
-
-    juce::ValueTree noteMetadata("NOTE_METADATA");
-    juce::ValueTree laneMetadata("LANE_NOTE_METADATA");
-    laneMetadata.setProperty("lane_id", "corrupt:kick", nullptr);
-    juce::ValueTree noteAuthoring("NOTE_AUTHORING");
-    noteAuthoring.setProperty("step", -8, nullptr);
-    noteAuthoring.setProperty("micro_offset", 9999, nullptr);
-    noteAuthoring.setProperty("pitch", -3, nullptr);
-    noteAuthoring.setProperty("length", -2, nullptr);
-    noteAuthoring.setProperty("is_ghost", false, nullptr);
-    noteAuthoring.setProperty("anchor_locked", false, nullptr);
-    noteAuthoring.setProperty("importance_weight", 999, nullptr);
-    laneMetadata.addChild(noteAuthoring, -1, nullptr);
-    noteMetadata.addChild(laneMetadata, -1, nullptr);
-    authoring.addChild(noteMetadata, -1, nullptr);
-    pattern.addChild(authoring, -1, nullptr);
-
-    juce::ValueTree kickTrack("TRACK");
-    kickTrack.setProperty("type", static_cast<int>(TrackType::Kick), nullptr);
-    kickTrack.setProperty("lane_id", "", nullptr);
-    kickTrack.setProperty("enabled", true, nullptr);
-    kickTrack.setProperty("lane_volume", 9.0f, nullptr);
-    kickTrack.setProperty("selected_sample_index", -10, nullptr);
-    kickTrack.setProperty("sub808_glide_time_ms", 9000, nullptr);
-    kickTrack.setProperty("sub808_overlap_mode", 99, nullptr);
-    kickTrack.setProperty("sub808_scale_snap_policy", 99, nullptr);
-    kickTrack.setProperty("sound_pan", -9.0f, nullptr);
-    kickTrack.setProperty("sound_width", 9.0f, nullptr);
-    kickTrack.setProperty("sound_eq_tone", 9.0f, nullptr);
-    kickTrack.setProperty("sound_compression", -1.0f, nullptr);
-    kickTrack.setProperty("sound_reverb", 2.0f, nullptr);
-    kickTrack.setProperty("sound_gate", -1.0f, nullptr);
-    kickTrack.setProperty("sound_transient", 2.0f, nullptr);
-    kickTrack.setProperty("sound_drive", -1.0f, nullptr);
-    juce::ValueTree badKickNote("NOTE");
-    badKickNote.setProperty("pitch", 0, nullptr);
-    badKickNote.setProperty("step", -10, nullptr);
-    badKickNote.setProperty("length", 0, nullptr);
-    badKickNote.setProperty("velocity", 999, nullptr);
-    badKickNote.setProperty("micro_offset", 2000, nullptr);
-    badKickNote.setProperty("semantic_role", " bad ", nullptr);
-    badKickNote.setProperty("is_slide", true, nullptr);
-    badKickNote.setProperty("is_legato", true, nullptr);
-    badKickNote.setProperty("glide_to_next", true, nullptr);
-    kickTrack.addChild(badKickNote, -1, nullptr);
-    pattern.addChild(kickTrack, -1, nullptr);
-
-    root.addChild(pattern, -1, nullptr);
-    return root;
-}
-
-std::vector<RuntimeLaneId> backedLaneOrder(const PatternProject& project)
-{
-    std::vector<RuntimeLaneId> laneIds;
-    for (const auto& lane : project.runtimeLaneProfile.lanes)
-    {
-        if (lane.runtimeTrackType.has_value())
-            laneIds.push_back(lane.laneId);
-    }
-    return laneIds;
-}
-
-GridEditActions::ModelContext makeGridModelContext(PatternProject& project)
-{
-    return { project, ticksPerStep() };
-}
-
-std::vector<RuntimeLaneId> editableVisibleLaneOrder(const PatternProject& project)
-{
-    std::vector<RuntimeLaneId> laneIds;
-    for (const auto& laneId : ProjectLaneAccess::orderedLaneIds(project, {}, true))
-    {
-        const auto* lane = ProjectLaneAccess::findLaneDefinition(project, laneId);
-        if (lane != nullptr && !lane->editorCapabilities.usesAlternateEditor())
-            laneIds.push_back(laneId);
-    }
-
-    return laneIds;
-}
-
-GridEditActions::DragSnapshot makeGridDragSnapshot(const PatternProject& project, const GridEditActions::SelectedNoteRef& ref)
-{
-    const auto* track = ProjectLaneAccess::findTrackState(project, ref.laneId);
-    expect(track != nullptr, "Grid drag snapshot requires a live lane.");
-    expect(ref.index >= 0 && ref.index < static_cast<int>(track->notes.size()), "Grid drag snapshot requires a live note index.");
-
-    const auto& note = track->notes[static_cast<size_t>(ref.index)];
-    GridEditActions::DragSnapshot snapshot;
-    snapshot.laneId = ref.laneId;
-    snapshot.index = ref.index;
-    snapshot.sourceNote = note;
-    snapshot.startTick = GridEditActions::noteStartTick(note, ticksPerStep());
-    snapshot.startLength = std::max(1, note.length);
-    snapshot.startEndTick = snapshot.startTick + snapshot.startLength * ticksPerStep();
-    snapshot.startVelocity = note.velocity;
-    snapshot.startMicroOffset = note.microOffset;
-    snapshot.startPitch = note.pitch;
-    return snapshot;
-}
-
-void expectEditorRegionStateValid(const PatternProject& project,
-                                  const GridEditorComponent::EditorRegionState& state,
-                                  const juce::String& label)
-{
-    if (state.selectedTickRange.has_value())
-        expect(state.selectedTickRange->getEnd() > state.selectedTickRange->getStart(),
-               label + ": selectedTickRange must remain non-empty.");
-
-    if (state.loopTickRange.has_value())
-        expect(state.loopTickRange->getEnd() > state.loopTickRange->getStart(),
-               label + ": loopTickRange must remain non-empty.");
-
-    if (state.primaryLaneId.isNotEmpty())
-        expect(ProjectLaneAccess::containsLaneId(project, state.primaryLaneId),
-               label + ": primaryLaneId must resolve to a live lane.");
-
-    std::set<RuntimeLaneId> seenActiveLaneIds;
-    for (const auto& laneId : state.activeLaneIds)
-    {
-        expect(ProjectLaneAccess::containsLaneId(project, laneId),
-               label + ": activeLaneIds must contain only live lanes.");
-        expect(seenActiveLaneIds.insert(laneId).second,
-               label + ": activeLaneIds must not contain duplicates.");
-    }
+    static const std::array<int, 7> minor { 0, 2, 3, 5, 7, 8, 10 };
+    static const std::array<int, 7> major { 0, 2, 4, 5, 7, 9, 11 };
+    static const std::array<int, 7> harmonicMinor { 0, 2, 3, 5, 7, 8, 11 };
+    const auto& intervals = scaleMode == 1 ? major : (scaleMode == 2 ? harmonicMinor : minor);
+    const int pitchClass = ((pitch - keyRoot) % 12 + 12) % 12;
+    return std::find(intervals.begin(), intervals.end(), pitchClass) != intervals.end();
 }
 
 void testSerializationRoundTripSmoke()
 {
     auto project = createDefaultProject();
+    project.params.genre = GenreType::Trap;
     project.params.bars = 4;
-    project.params.bpm = 138.0f;
-
-    std::rotate(project.runtimeLaneOrder.begin(), project.runtimeLaneOrder.begin() + 3, project.runtimeLaneOrder.end());
+    project.params.trapSubstyle = 2;
 
     auto* kick = findTrackByType(project, TrackType::Kick);
-    auto* snare = findTrackByType(project, TrackType::Snare);
     auto* sub = findTrackByType(project, TrackType::Sub808);
-    expect(kick != nullptr && snare != nullptr && sub != nullptr, "Default project is missing required tracks.");
+    expect(kick != nullptr && sub != nullptr, "Smoke serialization test requires Kick and Sub808 tracks.");
 
-    kick->notes = {
-        NoteEvent { 36, 0, 1, 114, 12, false, "anchor", false, false, false },
-        NoteEvent { 36, 8, 2, 96, -24, false, "support", false, false, false }
+    kick->notes.push_back({ 36, 0, 1, 112, 0, false, "smoke_kick", false, false, false });
+    kick->baseNotes.push_back({ 36, 4, 1, 96, 0, false, "smoke_kick_base", false, false, false });
+    kick->performanceBaseParams.genre = GenreType::Trap;
+    kick->performanceBaseParams.swingPercent = 58.0f;
+    kick->performanceBaseParams.velocityAmount = 0.72f;
+    kick->performanceBaseParams.timingAmount = 0.48f;
+    kick->performanceBaseParams.humanizeAmount = 0.33f;
+    kick->performanceBaseParams.densityAmount = 0.61f;
+    kick->performanceBaseParams.bars = 4;
+    kick->performanceBaseParams.trapSubstyle = 2;
+    kick->hasPerformanceBaseParams = true;
+    sub->sub808Notes.push_back({ 36, 0, 4, 100, 0, "smoke_sub", false, false, false });
+    sub->notes = toLegacyNoteEvents(sub->sub808Notes);
+    sub->baseSub808Notes.push_back({ 43, 6, 2, 96, 4, "smoke_sub_base", true, false, true });
+    sub->baseNotes = toLegacyNoteEvents(sub->baseSub808Notes);
+    sub->performanceBaseParams.genre = GenreType::Trap;
+    sub->performanceBaseParams.swingPercent = 57.0f;
+    sub->performanceBaseParams.velocityAmount = 0.66f;
+    sub->performanceBaseParams.timingAmount = 0.36f;
+    sub->performanceBaseParams.humanizeAmount = 0.29f;
+    sub->performanceBaseParams.densityAmount = 0.58f;
+    sub->performanceBaseParams.bars = 4;
+    sub->performanceBaseParams.trapSubstyle = 2;
+    sub->hasPerformanceBaseParams = true;
+
+    PatternProject restored;
+    expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), restored),
+           "PatternProject deserialize failed during smoke roundtrip.");
+
+    auto* restoredKick = findTrackByType(restored, TrackType::Kick);
+    auto* restoredSub = findTrackByType(restored, TrackType::Sub808);
+    expect(restoredKick != nullptr && restoredSub != nullptr, "Restored smoke project lost required tracks.");
+    expect(restoredKick->notes.size() == 1, "Restored kick notes count should match serialized state.");
+        expect(restoredKick->baseNotes.size() == 1, "Restored kick base notes count should match serialized state.");
+        expect(restoredKick->baseNotes.front().semanticRole == "smoke_kick_base",
+            "Restored kick base notes should preserve their serialized semantic role.");
+        expect(restoredKick->hasPerformanceBaseParams,
+            "Restored kick should preserve per-track performance baseline params.");
+        expect(std::abs(restoredKick->performanceBaseParams.swingPercent - 58.0f) < 0.001f,
+            "Restored kick should preserve swing performance baseline.");
+    expect(restoredSub->sub808Notes.size() == 1, "Restored sub808 notes count should match serialized state.");
+        expect(restoredSub->baseSub808Notes.size() == 1, "Restored sub808 base notes count should match serialized state.");
+        expect(restoredSub->baseSub808Notes.front().semanticRole == "smoke_sub_base",
+            "Restored sub808 base notes should preserve their serialized semantic role.");
+        expect(noteSequencesEqual(restoredSub->baseNotes, toLegacyNoteEvents(restoredSub->baseSub808Notes)),
+            "Restored sub808 base legacy mirror should match the canonical baseSub808Notes state.");
+        expect(restoredSub->hasPerformanceBaseParams,
+            "Restored Sub808 should preserve per-track performance baseline params.");
+        expect(std::abs(restoredSub->performanceBaseParams.densityAmount - 0.58f) < 0.001f,
+            "Restored Sub808 should preserve density performance baseline.");
+    }
+
+    void testEqStateSerializationAndLegacyMigrationSmoke()
+    {
+        auto project = createDefaultProject();
+        project.globalSound.eq.selectedBand = 4;
+        auto& attackBand = project.globalSound.eq.bands[4];
+        attackBand.enabled = true;
+        attackBand.freqHz = 3450.0f;
+        attackBand.gainDb = 4.5f;
+        attackBand.q = 1.35f;
+        attackBand.shape = EqBandShape::Bell;
+        project.globalSound.eqTone = legacyEqToneFromEqState(project.globalSound.eq);
+
+        PatternProject restored;
+        expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), restored),
+            "EQ smoke deserialize failed on full nested EQ state.");
+        expect(restored.globalSound.eq.selectedBand == 4,
+            "Restored EQ should preserve selected band.");
+        const auto& restoredAttackBand = restored.globalSound.eq.bands[4];
+        expect(restoredAttackBand.enabled,
+            "Restored EQ should preserve per-band enabled state.");
+        expect(std::abs(restoredAttackBand.freqHz - 3450.0f) < 0.001f,
+            "Restored EQ should preserve per-band frequency.");
+        expect(std::abs(restoredAttackBand.gainDb - 4.5f) < 0.001f,
+            "Restored EQ should preserve per-band gain.");
+        expect(std::abs(restoredAttackBand.q - 1.35f) < 0.001f,
+            "Restored EQ should preserve per-band Q.");
+        expect(restoredAttackBand.shape == EqBandShape::Bell,
+            "Restored EQ should preserve per-band shape.");
+
+        auto legacyProject = createDefaultProject();
+        legacyProject.globalSound.eqTone = 0.5f;
+        auto legacyRoot = wrapSerializedProject(legacyProject);
+        auto patternNode = legacyRoot.getChild(0);
+        patternNode.removeProperty("global_sound_eq_selected_band", nullptr);
+        for (int bandIndex = 0; bandIndex < kEqBandCount; ++bandIndex)
+        {
+         const auto prefix = "global_sound_eq_band_" + juce::String(bandIndex);
+         patternNode.removeProperty(prefix + "_enabled", nullptr);
+         patternNode.removeProperty(prefix + "_freq_hz", nullptr);
+         patternNode.removeProperty(prefix + "_gain_db", nullptr);
+         patternNode.removeProperty(prefix + "_q", nullptr);
+         patternNode.removeProperty(prefix + "_shape", nullptr);
+        }
+
+        PatternProject restoredLegacy;
+        expect(PatternProjectSerialization::deserialize(legacyRoot, restoredLegacy),
+            "Legacy EQ smoke deserialize failed.");
+        expect(restoredLegacy.globalSound.eq.selectedBand == 2,
+            "Legacy eqTone migration should seed the body band.");
+        const auto& restoredBodyBand = restoredLegacy.globalSound.eq.bands[2];
+        expect(restoredBodyBand.enabled,
+            "Legacy eqTone migration should enable the seeded body band.");
+        expect(std::abs(restoredBodyBand.gainDb - 6.0f) < 0.001f,
+            "Legacy eqTone migration should convert tone to body-band gain.");
+    }
+
+    void testCompressorStateSerializationAndLegacyMigrationSmoke()
+    {
+        auto project = createDefaultProject();
+        auto& compressor = project.globalSound.compressor;
+        compressor = createDefaultCompressorState();
+        compressor.enabled = true;
+        compressor.order = 1;
+        compressor.ratio = 6.4f;
+        compressor.thresholdDb = -24.0f;
+        compressor.mix = 0.67f;
+        compressor.attackMs = 18.0f;
+        compressor.releaseMs = 132.0f;
+        compressor.saturation = 0.44f;
+        compressor.inputTrimDb = 2.5f;
+        compressor.outputTrimDb = -1.0f;
+        compressor.autoMakeup = true;
+        compressor.character = DrumCompressorCharacter::Punch;
+        compressor.saturationMode = DrumSaturationMode::Punch;
+        syncLegacySoundLayerState(project.globalSound);
+
+        PatternProject restored;
+        expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), restored),
+            "Compressor smoke deserialize failed on full nested compressor state.");
+
+        const auto& restoredCompressor = restored.globalSound.compressor;
+        expect(restoredCompressor.enabled,
+            "Restored compressor should preserve enabled state.");
+        expect(restoredCompressor.order == 1,
+            "Restored compressor should preserve pre/post order.");
+        expect(std::abs(restoredCompressor.ratio - 6.4f) < 0.001f,
+            "Restored compressor should preserve ratio.");
+        expect(std::abs(restoredCompressor.thresholdDb + 24.0f) < 0.001f,
+            "Restored compressor should preserve threshold.");
+        expect(std::abs(restoredCompressor.mix - 0.67f) < 0.001f,
+            "Restored compressor should preserve wet mix.");
+        expect(std::abs(restoredCompressor.attackMs - 18.0f) < 0.001f,
+            "Restored compressor should preserve attack.");
+        expect(std::abs(restoredCompressor.releaseMs - 132.0f) < 0.001f,
+            "Restored compressor should preserve release.");
+        expect(std::abs(restoredCompressor.saturation - 0.44f) < 0.001f,
+            "Restored compressor should preserve saturation amount.");
+        expect(std::abs(restoredCompressor.inputTrimDb - 2.5f) < 0.001f,
+            "Restored compressor should preserve input trim.");
+        expect(std::abs(restoredCompressor.outputTrimDb + 1.0f) < 0.001f,
+            "Restored compressor should preserve output trim.");
+        expect(restoredCompressor.autoMakeup,
+            "Restored compressor should preserve auto makeup.");
+        expect(restoredCompressor.character == DrumCompressorCharacter::Punch,
+            "Restored compressor should preserve character mode.");
+        expect(restoredCompressor.saturationMode == DrumSaturationMode::Punch,
+            "Restored compressor should preserve saturation mode.");
+        expect(std::abs(restored.globalSound.compression - 0.67f) < 0.001f,
+            "Restored compressor should keep the legacy compression mirror in sync.");
+
+        auto legacyProject = createDefaultProject();
+        legacyProject.globalSound.compression = 0.82f;
+        auto legacyRoot = wrapSerializedProject(legacyProject);
+        auto patternNode = legacyRoot.getChild(0);
+        patternNode.removeProperty("global_sound_compressor_enabled", nullptr);
+        patternNode.removeProperty("global_sound_compressor_order", nullptr);
+        patternNode.removeProperty("global_sound_compressor_ratio", nullptr);
+        patternNode.removeProperty("global_sound_compressor_threshold_db", nullptr);
+        patternNode.removeProperty("global_sound_compressor_mix", nullptr);
+        patternNode.removeProperty("global_sound_compressor_attack_ms", nullptr);
+        patternNode.removeProperty("global_sound_compressor_release_ms", nullptr);
+        patternNode.removeProperty("global_sound_compressor_saturation", nullptr);
+        patternNode.removeProperty("global_sound_compressor_input_trim_db", nullptr);
+        patternNode.removeProperty("global_sound_compressor_output_trim_db", nullptr);
+        patternNode.removeProperty("global_sound_compressor_auto_makeup", nullptr);
+        patternNode.removeProperty("global_sound_compressor_character", nullptr);
+        patternNode.removeProperty("global_sound_compressor_saturation_mode", nullptr);
+
+        PatternProject restoredLegacy;
+        expect(PatternProjectSerialization::deserialize(legacyRoot, restoredLegacy),
+            "Legacy compressor smoke deserialize failed.");
+
+        const auto& migratedCompressor = restoredLegacy.globalSound.compressor;
+        expect(migratedCompressor.enabled,
+            "Legacy compression migration should enable the nested compressor state.");
+        expect(std::abs(migratedCompressor.mix - 0.82f) < 0.001f,
+            "Legacy compression migration should map the old flat compression amount to wet mix.");
+        expect(migratedCompressor.character == DrumCompressorCharacter::Punch,
+            "Legacy compression migration should bias stronger amounts toward punch character.");
+        expect(migratedCompressor.saturationMode == DrumSaturationMode::Punch,
+            "Legacy compression migration should bias stronger amounts toward punch saturation.");
+        expect(restoredLegacy.globalSound.compression > 0.80f,
+            "Legacy compression migration should restore the flat compatibility mirror.");
+    }
+
+    void testBasePatternCaptureSmoke()
+    {
+        auto project = createDefaultProject();
+
+        auto* hat = findTrackByType(project, TrackType::HiHat);
+        auto* kick = findTrackByType(project, TrackType::Kick);
+        auto* sub = findTrackByType(project, TrackType::Sub808);
+        expect(hat != nullptr && kick != nullptr && sub != nullptr,
+            "Base-pattern capture smoke requires HiHat, Kick, and Sub808 tracks.");
+
+        hat->notes = { { 42, 1, 1, 90, 0, false, "visible_hat", false, false, false } };
+        hat->baseNotes = { { 42, 7, 1, 72, 0, false, "old_hat_base", false, false, false } };
+
+        kick->notes = { { 36, 0, 1, 116, 0, false, "visible_kick", false, false, false } };
+        kick->baseNotes = { { 36, 8, 1, 88, 0, false, "old_kick_base", false, false, false } };
+
+        sub->sub808Notes = { { 36, 0, 4, 98, 0, "visible_sub", false, false, false } };
+        sub->notes = toLegacyNoteEvents(sub->sub808Notes);
+        sub->baseSub808Notes = { { 43, 10, 2, 82, 6, "old_sub_base", true, false, true } };
+        sub->baseNotes = toLegacyNoteEvents(sub->baseSub808Notes);
+
+        PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::Kick, TrackType::Sub808 });
+
+        expect(hat->baseNotes.size() == 1 && hat->baseNotes.front().semanticRole == "old_hat_base",
+            "Base-pattern capture should not touch lanes outside the mutable set.");
+        expect(noteSequencesEqual(kick->baseNotes, kick->notes),
+            "Base-pattern capture should copy visible Kick notes into baseNotes.");
+        expect(sub808NoteSequencesEqual(sub->baseSub808Notes, sub->sub808Notes),
+            "Base-pattern capture should copy visible Sub808 notes into baseSub808Notes.");
+        expect(noteSequencesEqual(sub->baseNotes, sub->notes),
+            "Base-pattern capture should refresh the Sub808 legacy baseNotes mirror from baseSub808Notes.");
+}
+
+void testPerformanceTransformFromBaseSmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+    project.params.swingPercent = 52.0f;
+    project.params.velocityAmount = 0.34f;
+    project.params.timingAmount = 0.22f;
+    project.params.humanizeAmount = 0.12f;
+    project.params.densityAmount = 0.70f;
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    auto* perc = findTrackByType(project, TrackType::Perc);
+    expect(hat != nullptr && perc != nullptr,
+        "Performance transform smoke requires HiHat and Perc tracks.");
+
+    hat->notes = {
+        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
+        { 42, 1, 1, 76, 0, false, "drill_hat_support", false, false, false },
+        { 42, 3, 1, 72, 0, false, "drill_hat_support", false, false, false }
     };
-    snare->notes = {
-        NoteEvent { 38, 4, 1, 109, 0, false, "backbeat", false, false, false },
-        NoteEvent { 38, 12, 1, 101, 18, false, "response", false, false, false }
+    perc->notes = {
+        { 39, 5, 1, 74, 0, false, "perc_support", false, false, false },
+        { 39, 13, 1, 78, 0, false, "perc_fill", false, false, false }
     };
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Perc });
+
+    const auto baseHat = hat->baseNotes;
+    const auto basePerc = perc->baseNotes;
+
+    project.params.swingPercent = 57.0f;
+    project.params.velocityAmount = 0.80f;
+    project.params.timingAmount = 0.68f;
+    project.params.humanizeAmount = 0.54f;
+    project.params.densityAmount = 0.12f;
+
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    expect(hat->notes.size() < baseHat.size() || perc->notes.size() < basePerc.size(),
+        "Performance transform smoke should allow lower density to deterministically thin support notes from the base pattern.");
+    expect(!hasNoteAt(*hat, 1, 0, "drill_hat_support") || !hasNoteAt(*perc, 5, 0, "perc_support"),
+        "Performance transform smoke should move or thin non-rigid support notes when live controls diverge from the baseline.");
+    expect(hasNoteAt(*hat, 0, 0, "drill_hat_backbone"),
+        "Performance transform smoke should preserve rigid Drill backbone notes when applying live controls from base.");
+
+    project.params = hat->performanceBaseParams;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    expect(noteSequencesEqual(hat->notes, baseHat),
+        "Performance transform smoke should restore the HiHat visible pattern when controls return to the captured baseline.");
+    expect(noteSequencesEqual(perc->notes, basePerc),
+        "Performance transform smoke should restore the Perc visible pattern when controls return to the captured baseline.");
+}
+
+void testDensityAuthoringPrioritySmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::BoomBap;
+    project.params.bars = 1;
+    project.params.swingPercent = 54.0f;
+    project.params.velocityAmount = 0.42f;
+    project.params.timingAmount = 0.18f;
+    project.params.humanizeAmount = 0.16f;
+    project.params.densityAmount = 0.72f;
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    expect(hat != nullptr, "Density authoring smoke requires a HiHat track.");
+
+    hat->laneRole = "carrier";
+    hat->notes = {
+        { 42, 0, 1, 94, 0, false, "hat_backbone", false, false, false },
+        { 42, 7, 1, 82, 0, false, "hat_texture", false, false, false },
+        { 42, 11, 1, 74, 0, false, "hat_fill", false, false, false }
+    };
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat });
+    const auto baseHat = hat->baseNotes;
+
+    project.authoring.noteMetadataByLane[hat->laneId] = {
+        { { 7, 0, 42, 1, false }, true, 100 },
+        { { 11, 0, 42, 1, false }, false, 5 }
+    };
+
+    project.params.densityAmount = 0.10f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    expect(hasNoteAt(*hat, 0, 0, "hat_backbone"),
+        "Density authoring smoke should always keep the backbone note visible.");
+    expect(hasNoteAt(*hat, 7, 0, "hat_texture"),
+        "Density authoring smoke should preserve author-locked notes before semantic fallback thinning.");
+    expect(!hasNoteAt(*hat, 11, 0, "hat_fill"),
+        "Density authoring smoke should remove low-priority filler notes before protected material.");
+    expect(noteSequencesEqual(hat->baseNotes, baseHat),
+        "Density authoring smoke should leave the captured base HiHat pattern untouched.");
+
+    project.params = hat->performanceBaseParams;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    expect(noteSequencesEqual(hat->notes, baseHat),
+        "Density authoring smoke should restore the full visible HiHat pattern from base when density returns to baseline.");
+}
+
+void testSub808DensitySafetySmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Trap;
+    project.params.bars = 2;
+    project.params.swingPercent = 55.0f;
+    project.params.velocityAmount = 0.40f;
+    project.params.timingAmount = 0.20f;
+    project.params.humanizeAmount = 0.14f;
+    project.params.densityAmount = 0.84f;
+
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(sub != nullptr, "Sub808 density smoke requires a Sub808 track.");
+
+    sub->laneRole = "trap_sub";
     sub->sub808Notes = {
-        Sub808NoteEvent { 34, 0, 8, 108, 0, "root", false, false, false },
-        Sub808NoteEvent { 37, 8, 4, 101, 30, "lift", true, false, true }
+        { 36, 0, 2, 100, 0, "trap_sub_anchor", false, false, false },
+        { 38, 4, 2, 92, 0, "trap_sub_move", false, true, true },
+        { 41, 6, 2, 88, 0, "trap_sub_release", true, false, false },
+        { 36, 8, 4, 98, 0, "trap_sub_anchor", false, false, false }
     };
     sub->notes = toLegacyNoteEvents(sub->sub808Notes);
 
-    kick->laneVolume = 1.1f;
-    sub->laneVolume = 0.92f;
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::Sub808 });
+    const auto baseSub = sub->baseSub808Notes;
 
-    project.globalSound.pan = -0.21f;
-    project.globalSound.width = 1.35f;
-    project.globalSound.drive = 0.42f;
-    project.globalSound.reverb = 0.31f;
+    project.params.densityAmount = 0.18f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
 
-    const auto selectedLaneId = kick->laneId;
-    const auto soundLaneId = sub->laneId;
-    project.selectedTrackIndex = findTrackIndexByLaneId(project, selectedLaneId);
-    project.soundModuleTrackIndex = findTrackIndexByLaneId(project, soundLaneId);
+    expect(sub->sub808Notes.size() < baseSub.size(),
+        "Sub808 density smoke should reduce the number of visible Sub808 starts at lower density.");
+    expect(hasSubStartAt(*sub, 0, "trap_sub_anchor") && hasSubStartAt(*sub, 8, "trap_sub_anchor"),
+        "Sub808 density smoke should preserve core Trap sub anchors when thinning density.");
+    expect(sub->sub808Notes.front().length >= baseSub.front().length,
+        "Sub808 density smoke should turn removed intermediate starts into longer held notes.");
+    expect(sub808SequenceIsValidMonophonic(sub->sub808Notes),
+        "Sub808 density smoke should keep the visible Sub808 lane monophonic with valid glide flags.");
+    expect(sub808NoteSequencesEqual(sub->baseSub808Notes, baseSub),
+        "Sub808 density smoke should keep the captured baseSub808Notes untouched.");
+    expect(noteSequencesEqual(sub->notes, toLegacyNoteEvents(sub->sub808Notes)),
+        "Sub808 density smoke should keep the visible legacy mirror aligned with transformed Sub808 notes.");
 
-    const auto beforeLaneOrder = project.runtimeLaneOrder;
-    const auto beforeLaneIds = [&project]()
-    {
-        std::vector<RuntimeLaneId> out;
-        out.reserve(project.runtimeLaneProfile.lanes.size());
-        for (const auto& lane : project.runtimeLaneProfile.lanes)
-            out.push_back(lane.laneId);
-        return out;
-    }();
-    const auto beforeCounts = noteCountsByLane(project);
+    project.params = sub->performanceBaseParams;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
 
-    const auto restored = roundTrip(project);
-    expectRuntimeLaneIntegrity(restored, "serialization_roundtrip");
-
-    expect(restored.tracks.size() == project.tracks.size(), "Track count changed after roundtrip.");
-    expect(restored.runtimeLaneOrder == beforeLaneOrder, "runtimeLaneOrder changed after roundtrip.");
-
-    std::vector<RuntimeLaneId> restoredLaneIds;
-    restoredLaneIds.reserve(restored.runtimeLaneProfile.lanes.size());
-    for (const auto& lane : restored.runtimeLaneProfile.lanes)
-        restoredLaneIds.push_back(lane.laneId);
-    expect(restoredLaneIds == beforeLaneIds, "Lane identities changed after roundtrip.");
-
-    expect(noteCountsByLane(restored) == beforeCounts, "Per-lane note counts changed after roundtrip.");
-
-    expect(restored.selectedTrackIndex >= 0 && restored.selectedTrackIndex < static_cast<int>(restored.tracks.size()),
-           "Selected track index became invalid after roundtrip.");
-    expect(restored.tracks[static_cast<size_t>(restored.selectedTrackIndex)].laneId == selectedLaneId,
-           "Selected track lane changed after roundtrip.");
-    expect(restored.soundModuleTrackIndex >= 0 && restored.soundModuleTrackIndex < static_cast<int>(restored.tracks.size()),
-           "Sound module track index became invalid after roundtrip.");
-    expect(restored.tracks[static_cast<size_t>(restored.soundModuleTrackIndex)].laneId == soundLaneId,
-           "Sound module lane changed after roundtrip.");
-
-    expect(nearlyEqual(restored.globalSound.pan, project.globalSound.pan), "Global sound pan changed after roundtrip.");
-    expect(nearlyEqual(restored.globalSound.width, project.globalSound.width), "Global sound width changed after roundtrip.");
-    expect(nearlyEqual(restored.globalSound.drive, project.globalSound.drive), "Global sound drive changed after roundtrip.");
-    expect(nearlyEqual(restored.globalSound.reverb, project.globalSound.reverb), "Global sound reverb changed after roundtrip.");
+    expect(sub808NoteSequencesEqual(sub->sub808Notes, baseSub),
+        "Sub808 density smoke should restore the full base Sub808 sequence when density returns to baseline.");
 }
 
-    void testLegacySerializationRoundTripRegression()
-    {
-        PatternProject restored;
-        expect(PatternProjectSerialization::deserialize(makeLegacySerializedProjectFixture(), restored),
-            "Legacy fixture must deserialize successfully.");
-        expectRuntimeLaneIntegrity(restored, "legacy_roundtrip_initial");
-
-        const auto originalLaneStructure = laneStructureSignature(restored);
-        const auto originalLaneOrder = restored.runtimeLaneOrder;
-        const auto originalNoteCounts = noteCountsByLane(restored);
-        const int originalTotalNotes = totalNoteCount(restored);
-
-        PatternProject rerestored;
-        expect(PatternProjectSerialization::deserialize(wrapSerializedProject(restored), rerestored),
-            "Reserialized legacy fixture must deserialize successfully.");
-        expectRuntimeLaneIntegrity(rerestored, "legacy_roundtrip_rerestored");
-
-        expect(laneStructureSignature(rerestored) == originalLaneStructure,
-            "Legacy roundtrip must preserve runtime lane structure.");
-        expect(rerestored.runtimeLaneOrder == originalLaneOrder,
-            "Legacy roundtrip must preserve runtime lane order.");
-        expect(noteCountsByLane(rerestored) == originalNoteCounts,
-            "Legacy roundtrip must not lose per-lane note counts.");
-        expect(totalNoteCount(rerestored) == originalTotalNotes,
-            "Legacy roundtrip must not lose notes.");
-    }
-
-    void testCorruptedSerializationStateRecovery()
-    {
-        PatternProject restored;
-        expect(PatternProjectSerialization::deserialize(makeCorruptedSerializedProjectFixture(), restored),
-            "Corrupted fixture should still deserialize into a recoverable project.");
-        expectRuntimeLaneIntegrity(restored, "corrupted_recovery");
-
-        expect(restored.generationCounter == 0, "Corrupted generationCounter must clamp to zero.");
-        expect(restored.mutationCounter == 0, "Corrupted mutationCounter must clamp to zero.");
-        expect(restored.phraseLengthBars == 16, "Corrupted phraseLengthBars must clamp to 16.");
-        expect(restored.previewStartStep == 0, "Corrupted previewStartStep must clamp to zero.");
-        expect(static_cast<int>(restored.previewPlaybackMode) == 1, "Corrupted previewPlaybackMode must clamp.");
-        expect(!restored.previewLoopTicks.has_value(), "Invalid preview loop must be cleared.");
-        expect(restored.selectedTrackIndex >= 0 && restored.selectedTrackIndex < static_cast<int>(restored.tracks.size()),
-            "selectedTrackIndex must recover into valid range.");
-        expect(restored.soundModuleTrackIndex == -1, "Invalid soundModuleTrackIndex must clamp to -1.");
-
-        expect(nearlyEqual(restored.globalSound.pan, 1.0f), "Corrupted global pan must clamp.");
-        expect(nearlyEqual(restored.globalSound.width, 0.0f), "Corrupted global width must clamp.");
-        expect(nearlyEqual(restored.globalSound.eqTone, 1.0f), "Corrupted global eq tone must clamp.");
-        expect(nearlyEqual(restored.globalSound.compression, 1.0f), "Corrupted global compression must clamp.");
-        expect(nearlyEqual(restored.globalSound.reverb, 0.0f), "Corrupted global reverb must clamp.");
-        expect(nearlyEqual(restored.globalSound.gate, 1.0f), "Corrupted global gate must clamp.");
-        expect(nearlyEqual(restored.globalSound.transient, 1.0f), "Corrupted global transient must clamp.");
-        expect(nearlyEqual(restored.globalSound.drive, 0.0f), "Corrupted global drive must clamp.");
-
-        const auto* kick = findTrackByType(restored, TrackType::Kick);
-        expect(kick != nullptr, "Recovered project must contain Kick track.");
-        expect(static_cast<int>(kick->notes.size()) == 1, "Recovered Kick track must retain note payload.");
-        expect(kick->notes.front().pitch == TrackRegistry::find(TrackType::Kick)->defaultMidiNote,
-            "Recovered Kick note pitch must normalize to default MIDI note.");
-        expect(kick->notes.front().step == 0, "Recovered Kick note step must clamp.");
-        expect(kick->notes.front().length == 1, "Recovered Kick note length must clamp.");
-        expect(kick->notes.front().velocity == 127, "Recovered Kick note velocity must clamp.");
-        expect(kick->notes.front().microOffset == 960, "Recovered Kick note microOffset must clamp.");
-        expect(kick->notes.front().semanticRole == "bad", "Recovered Kick semanticRole must trim.");
-        expect(!kick->notes.front().isSlide && !kick->notes.front().isLegato && !kick->notes.front().glideToNext,
-            "Recovered non-Sub808 note articulation flags must reset.");
-        expect(kick->selectedSampleIndex == 0, "Recovered selectedSampleIndex must clamp to zero.");
-        expect(nearlyEqual(kick->laneVolume, 1.5f), "Recovered laneVolume must clamp.");
-
-        const auto authoringIt = restored.authoring.noteMetadataByLane.find("corrupt:kick");
-        expect(authoringIt != restored.authoring.noteMetadataByLane.end(),
-            "Recovered authoring note metadata should keep a live sanitized lane entry.");
-        expect(authoringIt->second.size() == 1, "Recovered authoring note metadata should keep one sanitized note.");
-        expect(authoringIt->second.front().noteKey.step == 0, "Recovered authoring note step must clamp.");
-        expect(authoringIt->second.front().noteKey.length == 1, "Recovered authoring note length must clamp.");
-        expect(authoringIt->second.front().importanceWeight == 100, "Recovered authoring importanceWeight must clamp.");
-    }
-
-    void testSerializationLaneReconciliation()
-    {
-        PatternProject project;
-        project.params.bars = 2;
-
-        RuntimeLaneDefinition subLane;
-        subLane.laneId = "canon:sub";
-        subLane.laneName = "Canon Sub";
-        subLane.groupName = "Bass";
-        subLane.generationPriority = 82;
-        subLane.isCore = true;
-        subLane.isVisibleInEditor = true;
-        subLane.enabledByDefault = false;
-        subLane.supportsDragExport = true;
-        subLane.defaultMidiNote = 34;
-        subLane.isRuntimeRegistryLane = true;
-        subLane.runtimeTrackType = TrackType::Sub808;
-
-        RuntimeLaneDefinition kickLane;
-        kickLane.laneId = "canon:kick";
-        kickLane.laneName = "Canon Kick";
-        kickLane.groupName = "Kick";
-        kickLane.generationPriority = 96;
-        kickLane.isCore = true;
-        kickLane.isVisibleInEditor = true;
-        kickLane.enabledByDefault = true;
-        kickLane.supportsDragExport = true;
-        kickLane.defaultMidiNote = 36;
-        kickLane.isRuntimeRegistryLane = true;
-        kickLane.runtimeTrackType = TrackType::Kick;
-
-        RuntimeLaneDefinition snareLane;
-        snareLane.laneId = "canon:snare";
-        snareLane.laneName = "Canon Snare";
-        snareLane.groupName = "Snare";
-        snareLane.generationPriority = 92;
-        snareLane.isCore = true;
-        snareLane.isVisibleInEditor = true;
-        snareLane.enabledByDefault = true;
-        snareLane.supportsDragExport = true;
-        snareLane.defaultMidiNote = 38;
-        snareLane.isRuntimeRegistryLane = true;
-        snareLane.runtimeTrackType = TrackType::Snare;
-
-        project.runtimeLaneProfile.lanes = { subLane, kickLane, snareLane };
-        project.runtimeLaneOrder = { "canon:sub", "canon:kick", "canon:snare" };
-
-        TrackState kick = makeTrack(TrackType::Kick);
-        kick.notes = { NoteEvent { 36, 0, 1, 110, 0, false, "kick_payload", false, false, false } };
-
-        TrackState snare = makeTrack(TrackType::Snare);
-        snare.notes = { NoteEvent { 38, 4, 1, 108, 0, false, "snare_payload", false, false, false } };
-
-        TrackState sub = makeTrack(TrackType::Sub808);
-        sub.notes = { NoteEvent { 34, 0, 8, 104, 0, false, "sub_payload", true, false, true } };
-        sub.sub808Notes.clear();
-
-        project.tracks = { kick, snare, sub };
-
-        PatternProjectSerialization::validate(project);
-        expectRuntimeLaneIntegrity(project, "lane_reconciliation");
-
-        std::vector<RuntimeLaneId> canonicalTrackLaneIds;
-        canonicalTrackLaneIds.reserve(project.tracks.size());
-        for (const auto& track : project.tracks)
-         canonicalTrackLaneIds.push_back(track.laneId);
-
-        expect(canonicalTrackLaneIds == backedLaneOrder(project),
-            "Track order must reconcile to runtime lane profile order.");
-
-        const auto* reconciledKick = findTrackByLaneId(project, "canon:kick");
-        const auto* reconciledSnare = findTrackByLaneId(project, "canon:snare");
-        const auto* reconciledSub = findTrackByLaneId(project, "canon:sub");
-        expect(reconciledKick != nullptr && reconciledSnare != nullptr && reconciledSub != nullptr,
-            "All backed runtime lanes must reconcile to canonical tracks.");
-        expect(reconciledKick->notes.front().semanticRole == "kick_payload",
-            "Kick payload must follow its runtime lane during reconciliation.");
-        expect(reconciledSnare->notes.front().semanticRole == "snare_payload",
-            "Snare payload must follow its runtime lane during reconciliation.");
-        expect(!reconciledSub->sub808Notes.empty() && reconciledSub->sub808Notes.front().semanticRole == "sub_payload",
-            "Sub808 payload must follow its runtime lane during reconciliation.");
-    }
-
-        void testSoundTargetResolution()
-        {
-            auto project = createDefaultProject();
-
-            const auto globalTarget = SoundTargetController::resolveProjectSelection(project);
-            expect(globalTarget.isGlobal(), "Default sound target must resolve to global when no track is selected.");
-
-            const auto backedKickTarget = SoundTargetController::resolveLegacySelection(project, TrackType::Kick);
-            expect(backedKickTarget.kind == SoundTargetDescriptorKind::BackedRuntimeLane,
-                "Legacy Kick target must resolve to a backed runtime lane descriptor.");
-            expect(backedKickTarget.laneId == TrackRegistry::defaultRuntimeLaneId(TrackType::Kick),
-                "Backed Kick target must resolve to the canonical Kick lane.");
-            expect(backedKickTarget.runtimeTrackType.has_value() && *backedKickTarget.runtimeTrackType == TrackType::Kick,
-                "Backed Kick target must preserve runtime track type.");
-
-            auto missingKickProject = project;
-            expect(RuntimeLaneLifecycle::deleteLane(missingKickProject, TrackRegistry::defaultRuntimeLaneId(TrackType::Kick)),
-                "Kick lane removal must succeed for missing-lane fallback test.");
-            PatternProjectSerialization::validate(missingKickProject);
-
-            const auto legacyFallback = SoundTargetController::resolveLegacySelection(missingKickProject, TrackType::Kick);
-            expect(legacyFallback.kind == SoundTargetDescriptorKind::LegacyTrackTypeAlias,
-                "Missing backed lane must fall back to legacy TrackType alias descriptor.");
-            expect(legacyFallback.legacyTrackTypeAlias.has_value() && *legacyFallback.legacyTrackTypeAlias == TrackType::Kick,
-                "Legacy fallback must preserve requested TrackType alias.");
-
-            auto staleTargetProject = project;
-            ProjectStateController::setSoundModuleTarget(staleTargetProject,
-                                    SoundTargetDescriptor::makeBackedRuntimeLane("missing:lane", TrackType::Kick));
-            PatternProjectSerialization::validate(staleTargetProject);
-            const auto staleResolved = SoundTargetController::resolveProjectSelection(staleTargetProject);
-                expect(staleResolved.kind == SoundTargetDescriptorKind::BackedRuntimeLane,
-                    "Missing selected sound lane must safely fall back to a live backed target.");
-                expect(staleResolved.laneId == TrackRegistry::defaultRuntimeLaneId(TrackType::Kick),
-                    "Missing selected sound lane must resolve back to the canonical Kick lane when available.");
-
-            expect(SoundTargetController::toLegacyTrackTypeAlias(backedKickTarget).has_value()
-                 && *SoundTargetController::toLegacyTrackTypeAlias(backedKickTarget) == TrackType::Kick,
-                "Legacy TrackType alias mapping must remain compatible for backed lanes.");
-            expect(SoundTargetController::toLegacyTrackTypeAlias(legacyFallback).has_value()
-                 && *SoundTargetController::toLegacyTrackTypeAlias(legacyFallback) == TrackType::Kick,
-                "Legacy TrackType alias mapping must remain compatible for alias fallback.");
-        }
-
-        void testSoundStatePersistence()
-        {
-            auto project = createDefaultProject();
-            project.globalSound.pan = -0.35f;
-            project.globalSound.width = 1.45f;
-            project.globalSound.eqTone = 0.22f;
-            project.globalSound.compression = 0.58f;
-            project.globalSound.reverb = 0.31f;
-            project.globalSound.gate = 0.14f;
-            project.globalSound.transient = 0.41f;
-            project.globalSound.drive = 0.27f;
-
-            auto* kick = findTrackByType(project, TrackType::Kick);
-            expect(kick != nullptr, "Sound persistence test requires Kick track.");
-            kick->sound.pan = 0.4f;
-            kick->sound.width = 1.3f;
-            kick->sound.eqTone = -0.18f;
-            kick->sound.compression = 0.49f;
-            kick->sound.reverb = 0.21f;
-            kick->sound.gate = 0.11f;
-            kick->sound.transient = 0.39f;
-            kick->sound.drive = 0.19f;
-
-            const auto kickTarget = SoundTargetController::resolveLegacySelection(project, TrackType::Kick);
-            ProjectStateController::setSoundModuleTarget(project, kickTarget);
-
-            auto restored = roundTrip(project);
-            const auto* restoredKick = findTrackByType(restored, TrackType::Kick);
-            expect(restoredKick != nullptr, "Round-tripped project must retain Kick track.");
-
-            expect(nearlyEqual(restored.globalSound.pan, project.globalSound.pan), "Global pan must persist across serialization.");
-            expect(nearlyEqual(restored.globalSound.width, project.globalSound.width), "Global width must persist across serialization.");
-            expect(nearlyEqual(restored.globalSound.eqTone, project.globalSound.eqTone), "Global EQ tone must persist across serialization.");
-            expect(nearlyEqual(restored.globalSound.compression, project.globalSound.compression), "Global compression must persist across serialization.");
-            expect(nearlyEqual(restored.globalSound.reverb, project.globalSound.reverb), "Global reverb must persist across serialization.");
-            expect(nearlyEqual(restored.globalSound.gate, project.globalSound.gate), "Global gate must persist across serialization.");
-            expect(nearlyEqual(restored.globalSound.transient, project.globalSound.transient), "Global transient must persist across serialization.");
-            expect(nearlyEqual(restored.globalSound.drive, project.globalSound.drive), "Global drive must persist across serialization.");
-
-            expect(nearlyEqual(restoredKick->sound.pan, kick->sound.pan), "Track pan must persist across serialization.");
-            expect(nearlyEqual(restoredKick->sound.width, kick->sound.width), "Track width must persist across serialization.");
-            expect(nearlyEqual(restoredKick->sound.eqTone, kick->sound.eqTone), "Track EQ tone must persist across serialization.");
-            expect(nearlyEqual(restoredKick->sound.compression, kick->sound.compression), "Track compression must persist across serialization.");
-            expect(nearlyEqual(restoredKick->sound.reverb, kick->sound.reverb), "Track reverb must persist across serialization.");
-            expect(nearlyEqual(restoredKick->sound.gate, kick->sound.gate), "Track gate must persist across serialization.");
-            expect(nearlyEqual(restoredKick->sound.transient, kick->sound.transient), "Track transient must persist across serialization.");
-            expect(nearlyEqual(restoredKick->sound.drive, kick->sound.drive), "Track drive must persist across serialization.");
-
-            const auto restoredTarget = SoundTargetController::resolveProjectSelection(restored);
-            expect(restoredTarget.kind == SoundTargetDescriptorKind::BackedRuntimeLane,
-                "Restored selected sound target must resolve to a live backed lane.");
-            expect(restoredTarget.laneId == kick->laneId,
-                "Restored selected sound target must continue to point at Kick lane.");
-
-            restored.soundModuleTrackIndex = 999;
-            PatternProjectSerialization::validate(restored);
-            const auto recoveredTarget = SoundTargetController::resolveProjectSelection(restored);
-                expect(!recoveredTarget.isGlobal(),
-                    "Validated selected sound target must recover to a live target instead of pointing into void.");
-                expect(restored.soundModuleTrackIndex >= 0 && restored.soundModuleTrackIndex < static_cast<int>(restored.tracks.size()),
-                    "Validated soundModuleTrackIndex must clamp into a live track range.");
-                const auto& recoveredTrack = restored.tracks[static_cast<size_t>(restored.soundModuleTrackIndex)];
-                const auto recoveredSound = SoundTargetController::resolveSoundState(restored, recoveredTarget);
-                expect(nearlyEqual(recoveredSound.pan, recoveredTrack.sound.pan)
-                     && nearlyEqual(recoveredSound.width, recoveredTrack.sound.width)
-                     && nearlyEqual(recoveredSound.eqTone, recoveredTrack.sound.eqTone)
-                     && nearlyEqual(recoveredSound.compression, recoveredTrack.sound.compression)
-                     && nearlyEqual(recoveredSound.reverb, recoveredTrack.sound.reverb)
-                     && nearlyEqual(recoveredSound.gate, recoveredTrack.sound.gate)
-                     && nearlyEqual(recoveredSound.transient, recoveredTrack.sound.transient)
-                     && nearlyEqual(recoveredSound.drive, recoveredTrack.sound.drive),
-                    "Recovered selected sound target must resolve to the actual live selected track sound state after validate.");
-        }
-
-             void testGridModelIntegrity()
-             {
-                 auto project = createDefaultProject();
-                 project.params.bars = 4;
-
-                 const auto kickLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Kick);
-                 const auto snareLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Snare);
-                 auto* kick = ProjectLaneAccess::findTrackState(project, kickLaneId);
-                 auto* snare = ProjectLaneAccess::findTrackState(project, snareLaneId);
-                 expect(kick != nullptr && snare != nullptr, "Grid integrity test requires Kick and Snare lanes.");
-
-                 kick->notes.clear();
-                 snare->notes.clear();
-
-                 const NoteEvent kickNote { 36, 0, 1, 104, 0, false, "anchor", false, false, false };
-                 const NoteEvent snareNote { 38, 4, 1, 108, 0, false, "backbeat", false, false, false };
-                 auto context = makeGridModelContext(project);
-
-                 expect(GridEditActions::addNote(context, kickLaneId, kickNote),
-                     "Grid addNote must insert into the requested laneId.");
-                 expect(GridEditActions::addNote(context, snareLaneId, snareNote),
-                     "Grid addNote must allow inserting into a neighboring lane.");
-                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes.size()) == 1,
-                     "Kick lane must receive its inserted note.");
-                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
-                     "Snare lane must receive its inserted note.");
-
-                 expect(GridEditActions::removeNotes(context, { { kickLaneId, 0 } }),
-                     "Grid removeNotes must delete the targeted lane note.");
-                 expect(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes.empty(),
-                     "Kick lane note removal must not leave stale payload.");
-                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
-                     "Deleting Kick notes must not affect neighboring Snare lane notes.");
-
-                 expect(GridEditActions::addNote(context, kickLaneId, kickNote),
-                     "Kick lane note must be restorable for duplicate/nudge tests.");
-
-                 std::reverse(project.tracks.begin(), project.tracks.end());
-
-                 std::vector<GridEditActions::ClipboardNote> clipboard {
-                  { kickLaneId, kickNote, 0, 0 }
-                 };
-                 std::vector<GridEditActions::SelectedNoteRef> insertedSelection;
-                 expect(GridEditActions::pasteNotes(context,
-                                     clipboard,
-                                     16 * ticksPerStep(),
-                                     editableVisibleLaneOrder(project),
-                                     std::nullopt,
-                                     &insertedSelection),
-                     "Grid pasteNotes duplicate path must succeed for a live laneId.");
-                 expect(insertedSelection.size() == 1 && insertedSelection.front().laneId == kickLaneId,
-                     "Duplicate path must preserve lane identity even when track storage order changes.");
-                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes.size()) == 2,
-                     "Duplicate path must insert the copied note into the source lane.");
-                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
-                     "Duplicate path must not spill into neighboring lanes.");
-
-                 auto movedSelection = insertedSelection;
-                 expect(!movedSelection.empty(), "Duplicate path must return a live inserted selection.");
-                 const auto movedSnapshot = makeGridDragSnapshot(project, movedSelection.front());
-                 const auto sourceKickStep = ProjectLaneAccess::findTrackState(project, kickLaneId)->notes[static_cast<size_t>(movedSelection.front().index)].step;
-
-                 std::vector<GridEditActions::SelectedNoteRef> nudgeResult;
-                 expect(GridEditActions::moveSelection(context,
-                                     movedSelection,
-                                     { movedSnapshot },
-                                     editableVisibleLaneOrder(project),
-                                     1,
-                                     0,
-                                     0,
-                                     &nudgeResult),
-                     "Grid moveSelection must nudge notes using laneId-based lookup.");
-                 expect(nudgeResult.size() == 1 && nudgeResult.front().laneId == kickLaneId,
-                     "Nudge path must preserve lane identity.");
-                 expect(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes[static_cast<size_t>(nudgeResult.front().index)].step == sourceKickStep + 1,
-                     "Nudge path must move the target note within its original lane.");
-                 expect(static_cast<int>(ProjectLaneAccess::findTrackState(project, snareLaneId)->notes.size()) == 1,
-                     "Nudge path must not mutate neighboring lanes.");
-
-                 const auto velocitySnapshot = makeGridDragSnapshot(project, nudgeResult.front());
-                 expect(GridEditActions::changeVelocityAbsolute(context, { velocitySnapshot }, 73),
-                     "Grid velocity edit path must resolve the selected note by laneId.");
-                 expect(ProjectLaneAccess::findTrackState(project, kickLaneId)->notes[static_cast<size_t>(nudgeResult.front().index)].velocity == 73,
-                     "Velocity edits must apply to the targeted lane note only.");
-
-                 const auto stableCounts = noteCountsByLane(project);
-                 const RuntimeLaneId missingLaneId = "missing:lane";
-                 expect(!GridEditActions::addNote(context, missingLaneId, kickNote),
-                     "Invalid laneId addNote must fail safely.");
-                 expect(!GridEditActions::removeNotes(context, { { missingLaneId, 0 } }),
-                     "Invalid laneId removeNotes must fail safely.");
-                 expect(!GridEditActions::pasteNotes(context,
-                                      { { missingLaneId, kickNote, 0, 0 } },
-                                      24 * ticksPerStep(),
-                                      editableVisibleLaneOrder(project)),
-                     "Invalid laneId pasteNotes must fail safely.");
-
-                 GridEditActions::DragSnapshot invalidSnapshot;
-                 invalidSnapshot.laneId = missingLaneId;
-                 invalidSnapshot.index = 0;
-                 invalidSnapshot.sourceNote = kickNote;
-                 invalidSnapshot.startTick = 0;
-                 invalidSnapshot.startLength = 1;
-                 invalidSnapshot.startEndTick = ticksPerStep();
-                 invalidSnapshot.startVelocity = kickNote.velocity;
-                 invalidSnapshot.startMicroOffset = kickNote.microOffset;
-                 invalidSnapshot.startPitch = kickNote.pitch;
-
-                 std::vector<GridEditActions::SelectedNoteRef> invalidMovedSelection;
-                 expect(!GridEditActions::moveSelection(context,
-                                      { { missingLaneId, 0 } },
-                                      { invalidSnapshot },
-                                      editableVisibleLaneOrder(project),
-                                      1,
-                                      0,
-                                      0,
-                                      &invalidMovedSelection),
-                     "Invalid laneId moveSelection must fail safely.");
-                 expect(!GridEditActions::changeVelocityDelta(context, { invalidSnapshot }, 9),
-                     "Invalid laneId velocity edits must fail safely.");
-                 expect(noteCountsByLane(project) == stableCounts,
-                     "Invalid laneId handling must not corrupt neighboring lane note counts.");
-             }
-
-             void testGridRegionStateConsistency()
-             {
-                 auto project = createDefaultProject();
-                 project.params.bars = 4;
-
-                 const auto kickLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Kick);
-                 const auto snareLaneId = ProjectLaneAccess::canonicalLaneIdForTrack(project, TrackType::Snare);
-                 auto* kick = ProjectLaneAccess::findTrackState(project, kickLaneId);
-                 auto* snare = ProjectLaneAccess::findTrackState(project, snareLaneId);
-                 expect(kick != nullptr && snare != nullptr, "Grid region consistency test requires Kick and Snare lanes.");
-
-                 kick->notes = {
-                  NoteEvent { 36, 0, 1, 112, 0, false, "anchor", false, false, false },
-                  NoteEvent { 36, 8, 1, 96, 0, false, "support", false, false, false }
-                 };
-                 snare->notes = {
-                  NoteEvent { 38, 4, 1, 108, 0, false, "backbeat", false, false, false }
-                 };
-                 const auto savedKickNotes = kick->notes;
-
-                 GridEditorComponent grid;
-                 const auto expectedLoop = juce::Range<int>(0, 16 * ticksPerStep());
-
-                 grid.setLaneDisplayOrder(project.runtimeLaneOrder);
-                 grid.setProject(project);
-                 grid.setSelectedTrack(kickLaneId);
-                 grid.setLoopRegion(expectedLoop);
-                 expect(grid.selectAllNotesInLane(kickLaneId), "Kick lane must be selectable before reorder.");
-
-                 auto state = grid.getEditorRegionState();
-                 expectEditorRegionStateValid(project, state, "grid_region_initial");
-                 expect(state.primaryLaneId == kickLaneId, "Initial primaryLaneId must match the selected Kick lane.");
-                 expect(state.selectedTickRange.has_value(), "Initial selectedTickRange must exist for selected Kick notes.");
-                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
-                     "Initial loopTickRange must remain aligned with the configured loop region.");
-
-                 auto reordered = project;
-                 std::rotate(reordered.runtimeLaneOrder.begin(), reordered.runtimeLaneOrder.begin() + 2, reordered.runtimeLaneOrder.end());
-                 std::reverse(reordered.tracks.begin(), reordered.tracks.end());
-
-                 grid.setLaneDisplayOrder(reordered.runtimeLaneOrder);
-                 grid.setProject(reordered);
-                 state = grid.getEditorRegionState();
-                 expectEditorRegionStateValid(reordered, state, "grid_region_reordered");
-                 expect(state.primaryLaneId == kickLaneId, "Lane reorder must not invalidate primaryLaneId when the selected lane still exists.");
-                 expect(state.selectedTickRange.has_value(), "Lane reorder must preserve selectedTickRange for live notes.");
-                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
-                     "Lane reorder must preserve loopTickRange.");
-
-                 auto deleted = reordered;
-                 expect(RuntimeLaneLifecycle::deleteLane(deleted, kickLaneId), "Kick lane delete must succeed for region consistency test.");
-                 grid.setLaneDisplayOrder(deleted.runtimeLaneOrder);
-                 grid.setProject(deleted);
-                 state = grid.getEditorRegionState();
-                 expectEditorRegionStateValid(deleted, state, "grid_region_deleted");
-                 expect(state.primaryLaneId != kickLaneId, "Deleted lane must not survive as primaryLaneId.");
-                 expect(std::none_of(state.activeLaneIds.begin(), state.activeLaneIds.end(), [&kickLaneId](const RuntimeLaneId& laneId)
-                 {
-                  return laneId == kickLaneId;
-                 }), "Deleted lane must not survive inside activeLaneIds.");
-                 expect(!state.selectedTickRange.has_value(), "selectedTickRange must clear when its selected lane is deleted.");
-                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
-                     "Loop region must remain valid after lane deletion.");
-
-                 auto restored = deleted;
-                 expect(RuntimeLaneLifecycle::addRegistryLane(restored, TrackType::Kick, 1), "Kick lane restore must succeed for region consistency test.");
-                 if (auto* restoredKick = ProjectLaneAccess::findTrackState(restored, kickLaneId))
-                  restoredKick->notes = savedKickNotes;
-
-                 grid.setLaneDisplayOrder(restored.runtimeLaneOrder);
-                 grid.setProject(restored);
-                 grid.setSelectedTrack(kickLaneId);
-                 expect(grid.selectAllNotesInLane(kickLaneId), "Restored Kick lane must become selectable again.");
-                 state = grid.getEditorRegionState();
-                 expectEditorRegionStateValid(restored, state, "grid_region_restored");
-                 expect(state.primaryLaneId == kickLaneId, "Restored Kick lane must become a valid primaryLaneId again.");
-                 expect(state.selectedTickRange.has_value(), "selectedTickRange must recover when the lane is restored with notes.");
-                 expect(state.loopTickRange.has_value() && *state.loopTickRange == expectedLoop,
-                     "Loop region must remain valid after lane restore.");
-             }
-
-void testRuntimeLaneLifecycle()
+void testCombinedLiveControlsGenreRegressionSmoke()
 {
-    auto project = createDefaultProject();
-    expectRuntimeLaneIntegrity(project, "lifecycle_initial");
-
-    expect(RuntimeLaneLifecycle::renameLane(project, TrackRegistry::defaultRuntimeLaneId(TrackType::Kick), "Main Kick"),
-           "renameLane should succeed for Kick.");
-    expectRuntimeLaneIntegrity(project, "lifecycle_after_rename");
-
-    auto customLane = RuntimeLaneLifecycle::createCustomLaneDefinition(project, "Texture Vox");
-    const auto customLaneId = customLane.laneId;
-    expect(RuntimeLaneLifecycle::addLane(project, std::move(customLane), 2), "addLane should succeed for custom lane.");
-    expectRuntimeLaneIntegrity(project, "lifecycle_after_custom_add");
-    expect(findTrackByLaneId(project, customLaneId) == nullptr, "Custom lane must remain unbacked.");
-
-    const auto ghostKickLaneId = TrackRegistry::defaultRuntimeLaneId(TrackType::GhostKick);
-    expect(RuntimeLaneLifecycle::deleteLane(project, ghostKickLaneId), "deleteLane should remove GhostKick.");
-    expectRuntimeLaneIntegrity(project, "lifecycle_after_delete_backed_lane");
-    expect(findTrackByLaneId(project, ghostKickLaneId) == nullptr, "Deleted backed lane must remove its track.");
-
-    expect(RuntimeLaneLifecycle::addRegistryLane(project, TrackType::GhostKick, 1),
-           "addRegistryLane should restore GhostKick.");
-    expectRuntimeLaneIntegrity(project, "lifecycle_after_add_registry_lane");
-    expect(findTrackByLaneId(project, ghostKickLaneId) != nullptr, "Restored registry lane must recreate its backing track.");
-
-    expect(RuntimeLaneLifecycle::deleteAllLanes(project), "deleteAllLanes should report changes.");
-    expect(project.runtimeLaneProfile.lanes.empty(), "deleteAllLanes should clear runtime lane profile.");
-    expect(project.runtimeLaneOrder.empty(), "deleteAllLanes should clear runtime lane order.");
-    expect(project.tracks.empty(), "deleteAllLanes should clear tracks.");
-    expect(project.selectedTrackIndex == -1, "deleteAllLanes should reset selectedTrackIndex.");
-    expect(project.soundModuleTrackIndex == -1, "deleteAllLanes should reset soundModuleTrackIndex.");
-}
-
-void testValidateInvariants()
-{
-    auto project = createDefaultProject();
-    project.params.bars = 4;
-
-    expect(project.runtimeLaneProfile.lanes.size() >= 2, "Default runtime lane profile must contain at least two lanes.");
-    project.runtimeLaneProfile.lanes[1].laneId = project.runtimeLaneProfile.lanes[0].laneId;
-    project.runtimeLaneOrder = {
-        project.runtimeLaneProfile.lanes[0].laneId,
-        "missing:lane",
-        project.runtimeLaneProfile.lanes[0].laneId
+    struct GenreInteractionSnapshot
+    {
+        int hatSupportOffset = 0;
+        int kickAnchorOffset = 0;
+        int snareAnchorOffset = 0;
+        size_t baseHatCount = 0;
+        size_t visibleHatCount = 0;
+        bool kickAnchorPresent = false;
+        bool snareAnchorPresent = false;
+        bool notesRemainBaseDerived = false;
     };
 
-    project.selectedTrackIndex = 999;
-    project.soundModuleTrackIndex = 999;
-    project.previewStartStep = -12;
-    project.previewLoopTicks = juce::Range<int>(project.params.bars * 16 * ticksPerStep() + 120,
-                                                project.params.bars * 16 * ticksPerStep() + 960);
+    auto renderGenre = [](GenreType genre,
+                          const juce::String& hatLaneRole,
+                          const juce::String& kickLaneRole,
+                          const juce::String& snareLaneRole)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = genre;
+        project.params.bars = 1;
+        project.params.swingPercent = 52.0f;
+        project.params.velocityAmount = 0.34f;
+        project.params.timingAmount = 0.18f;
+        project.params.humanizeAmount = 0.10f;
+        project.params.densityAmount = 0.78f;
 
-    project.globalSound.pan = 3.0f;
-    project.globalSound.width = -1.0f;
-    project.globalSound.eqTone = 4.0f;
-    project.globalSound.compression = 2.0f;
-    project.globalSound.reverb = -0.5f;
-    project.globalSound.gate = 5.0f;
-    project.globalSound.transient = 9.0f;
-    project.globalSound.drive = -3.0f;
+        auto* hat = findTrackByType(project, TrackType::HiHat);
+        auto* kick = findTrackByType(project, TrackType::Kick);
+        auto* snare = findTrackByType(project, TrackType::Snare);
+        if (hat == nullptr || kick == nullptr || snare == nullptr)
+            fail("Combined-controls smoke requires HiHat, Kick, and Snare tracks.");
+
+        hat->laneRole = hatLaneRole;
+        kick->laneRole = kickLaneRole;
+        snare->laneRole = snareLaneRole;
+
+        hat->notes = {
+            { 42, 0, 1, 92, 0, false, "hat_backbone", false, false, false },
+            { 42, 1, 1, 78, 0, false, "hat_support", false, false, false },
+            { 42, 3, 1, 72, 0, false, "hat_support", false, false, false },
+            { 42, 7, 1, 66, 0, false, "hat_texture", false, false, false }
+        };
+        kick->notes = {
+            { 36, 0, 1, 118, 0, false, "kick_anchor", false, false, false },
+            { 36, 6, 1, 92, 0, false, "kick_support", false, false, false }
+        };
+        snare->notes = {
+            { 38, 4, 1, 108, 0, false, "snare_backbone", false, false, false },
+            { 38, 12, 1, 104, 0, false, "snare_backbone", false, false, false }
+        };
+
+        PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Kick, TrackType::Snare });
+
+        const auto baseHat = hat->baseNotes;
+        const auto baseKick = kick->baseNotes;
+        const auto baseSnare = snare->baseNotes;
+
+        project.params.swingPercent = 66.0f;
+        project.params.velocityAmount = 0.82f;
+        project.params.timingAmount = 0.68f;
+        project.params.humanizeAmount = 0.56f;
+        project.params.densityAmount = 0.18f;
+
+        PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+        GenreInteractionSnapshot snapshot;
+        snapshot.baseHatCount = baseHat.size();
+        snapshot.visibleHatCount = hat->notes.size();
+        snapshot.notesRemainBaseDerived = allVisibleNotesDerivedFromBase(*hat, baseHat)
+            && allVisibleNotesDerivedFromBase(*kick, baseKick)
+            && allVisibleNotesDerivedFromBase(*snare, baseSnare);
+
+        for (const auto& note : hat->notes)
+        {
+            if (note.step == 1 && note.semanticRole == "hat_support")
+                snapshot.hatSupportOffset = note.microOffset;
+        }
+
+        for (const auto& note : kick->notes)
+        {
+            if (note.step == 0 && note.semanticRole == "kick_anchor")
+            {
+                snapshot.kickAnchorPresent = true;
+                snapshot.kickAnchorOffset = note.microOffset;
+            }
+        }
+
+        for (const auto& note : snare->notes)
+        {
+            if (note.step == 4 && note.semanticRole == "snare_backbone")
+            {
+                snapshot.snareAnchorPresent = true;
+                snapshot.snareAnchorOffset = note.microOffset;
+            }
+        }
+
+        return snapshot;
+    };
+
+    const auto boomBap = renderGenre(GenreType::BoomBap, "carrier", "foundation", "backbeat");
+    const auto rap = renderGenre(GenreType::Rap, "carrier", "foundation", "backbeat");
+    const auto trap = renderGenre(GenreType::Trap, "trap_hat", "trap_kick", "backbeat");
+    const auto drill = renderGenre(GenreType::Drill, "drill_hat", "drill_kick", "drill_backbeat");
+
+    expect(std::abs(boomBap.hatSupportOffset) > std::abs(trap.hatSupportOffset) + 24,
+        "Combined-controls smoke should keep BoomBap swing clearly more audible than Trap under the same live control delta.");
+    expect(std::abs(rap.hatSupportOffset) > std::abs(trap.hatSupportOffset) + 8,
+        "Combined-controls smoke should keep Rap hats looser than Trap instead of collapsing into the same tight feel.");
+
+    expect(trap.kickAnchorPresent && trap.snareAnchorPresent && drill.kickAnchorPresent && drill.snareAnchorPresent,
+        "Combined-controls smoke should keep Trap and Drill kick/snare anchors present after density reduction.");
+    expect(std::abs(trap.kickAnchorOffset) <= 8 && std::abs(trap.snareAnchorOffset) <= 8,
+        "Combined-controls smoke should keep Trap core anchors tight under combined live controls.");
+    expect(std::abs(drill.kickAnchorOffset) <= 8 && std::abs(drill.snareAnchorOffset) <= 8,
+        "Combined-controls smoke should keep Drill main kick/snare anchors stable under combined live controls.");
+
+    expect(boomBap.visibleHatCount <= boomBap.baseHatCount
+            && rap.visibleHatCount <= rap.baseHatCount
+            && trap.visibleHatCount <= trap.baseHatCount
+            && drill.visibleHatCount <= drill.baseHatCount,
+        "Combined-controls smoke should let density only prune from the base pattern instead of inventing new visible hat notes.");
+    expect(boomBap.notesRemainBaseDerived && rap.notesRemainBaseDerived && trap.notesRemainBaseDerived && drill.notesRemainBaseDerived,
+        "Combined-controls smoke should keep all visible drum notes derived from captured base notes across genres.");
+}
+
+void testManualEditLiveControlSafetySmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Rap;
+    project.params.bars = 2;
+    project.params.swingPercent = 54.0f;
+    project.params.velocityAmount = 0.40f;
+    project.params.timingAmount = 0.24f;
+    project.params.humanizeAmount = 0.18f;
+    project.params.densityAmount = 0.76f;
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(hat != nullptr && sub != nullptr,
+        "Manual-edit smoke requires HiHat and Sub808 tracks.");
+
+    hat->laneRole = "carrier";
+    sub->laneRole = "foundation";
+    hat->notes = {
+        { 42, 0, 1, 92, 0, false, "hat_backbone", false, false, false },
+        { 42, 2, 1, 78, 0, false, "hat_support", false, false, false },
+        { 42, 6, 1, 70, 0, false, "hat_fill", false, false, false }
+    };
+    sub->sub808Notes = {
+        { 36, 0, 4, 100, 0, "sub_anchor", false, false, false },
+        { 38, 8, 4, 94, 0, "sub_support", false, false, false }
+    };
+    sub->notes = toLegacyNoteEvents(sub->sub808Notes);
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Sub808 });
+
+    project.params.swingPercent = 60.0f;
+    project.params.velocityAmount = 0.74f;
+    project.params.timingAmount = 0.54f;
+    project.params.humanizeAmount = 0.42f;
+    project.params.densityAmount = 0.34f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    hat->notes.push_back({ 42, 10, 1, 86, 0, false, "edited_hat_fill", false, false, false });
+    std::sort(hat->notes.begin(), hat->notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
+    {
+        if (lhs.step != rhs.step)
+            return lhs.step < rhs.step;
+        return lhs.pitch < rhs.pitch;
+    });
+
+    sub->sub808Notes = {
+        { 36, 0, 6, 100, 0, "edited_sub_anchor", false, false, false },
+        { 43, 8, 4, 95, 0, "edited_sub_support", false, false, false }
+    };
+    sub->notes = toLegacyNoteEvents(sub->sub808Notes);
+
+    PatternPerformanceTransformEngine::captureBasePattern(*hat, project.params);
+    PatternPerformanceTransformEngine::captureBasePattern(*sub, project.params);
+
+    const auto editedHatBase = hat->baseNotes;
+    const auto editedSubBase = sub->baseSub808Notes;
+
+    project.params.swingPercent = 64.0f;
+    project.params.velocityAmount = 0.82f;
+    project.params.timingAmount = 0.66f;
+    project.params.humanizeAmount = 0.54f;
+    project.params.densityAmount = 0.12f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    expect(noteSequencesEqual(hat->baseNotes, editedHatBase),
+        "Manual-edit smoke should keep the edited HiHat base pattern intact after later live control changes.");
+    expect(sub808NoteSequencesEqual(sub->baseSub808Notes, editedSubBase),
+        "Manual-edit smoke should keep the edited Sub808 base pattern intact after later live control changes.");
+    expect(!noteSequencesEqual(hat->notes, editedHatBase) || !sub808NoteSequencesEqual(sub->sub808Notes, editedSubBase),
+        "Manual-edit smoke should still let live controls affect manually edited tracks after the edit baseline is recaptured.");
+    expect(sub808SequenceIsValidMonophonic(sub->sub808Notes),
+        "Manual-edit smoke should keep manually edited Sub808 lanes monophonic after later density changes.");
+
+    project.params = hat->performanceBaseParams;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    expect(noteSequencesEqual(hat->notes, editedHatBase),
+        "Manual-edit smoke should restore the edited HiHat pattern exactly when controls return to the edited baseline.");
+    expect(sub808NoteSequencesEqual(sub->sub808Notes, editedSubBase),
+        "Manual-edit smoke should restore the edited Sub808 pattern exactly when controls return to the edited baseline.");
+    expect(hasNoteAt(*hat, 10, 0, "edited_hat_fill"),
+        "Manual-edit smoke should not lose manually added visible notes after later live control changes.");
+}
+
+void testVisibleTransformExportConsistencySmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 1;
+    project.params.swingPercent = 52.0f;
+    project.params.velocityAmount = 0.34f;
+    project.params.timingAmount = 0.20f;
+    project.params.humanizeAmount = 0.12f;
+    project.params.densityAmount = 0.80f;
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    auto* kick = findTrackByType(project, TrackType::Kick);
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(hat != nullptr && kick != nullptr && sub != nullptr,
+        "Export consistency smoke requires HiHat, Kick, and Sub808 tracks.");
+
+    hat->laneRole = "drill_hat";
+    kick->laneRole = "drill_kick";
+    sub->laneRole = "drill_sub";
+    hat->enabled = true;
+    kick->enabled = true;
+    sub->enabled = true;
+
+    hat->notes = {
+        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
+        { 42, 1, 1, 78, 0, false, "drill_hat_support", false, false, false },
+        { 42, 7, 1, 66, 0, false, "drill_hat_transition", false, false, false }
+    };
+    kick->notes = {
+        { 36, 0, 1, 118, 0, false, "drill_kick_anchor", false, false, false },
+        { 36, 6, 1, 94, 0, false, "drill_kick_support", false, false, false }
+    };
+    sub->sub808Notes = {
+        { 36, 0, 4, 100, 0, "drill_sub_anchor", false, false, false },
+        { 38, 6, 2, 92, 0, "drill_sub_move", false, true, true },
+        { 41, 8, 4, 96, 0, "drill_sub_hold", true, false, false }
+    };
+    sub->notes = toLegacyNoteEvents(sub->sub808Notes);
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Kick, TrackType::Sub808 });
+
+    project.params.swingPercent = 64.0f;
+    project.params.velocityAmount = 0.80f;
+    project.params.timingAmount = 0.62f;
+    project.params.humanizeAmount = 0.48f;
+    project.params.densityAmount = 0.22f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    const auto fullSequence = MidiExportEngine::patternToSequence(project, std::nullopt, 960, false, false);
+    const auto fullNoteOns = collectMidiNoteOns(fullSequence);
+    const int expectedFullCount = static_cast<int>(hat->notes.size() + kick->notes.size() + sub->notes.size());
+    expect(static_cast<int>(fullNoteOns.size()) == expectedFullCount,
+        "Export consistency smoke should emit one note-on per currently visible transformed note on enabled lanes.");
+
+    for (const auto& note : hat->notes)
+        expect(hasMidiNoteOnAt(fullNoteOns, 60, note.step * 240 + note.microOffset),
+            "Export consistency smoke should export each visible transformed HiHat note at its visible tick.");
+
+    for (const auto& note : kick->notes)
+        expect(hasMidiNoteOnAt(fullNoteOns, 60, note.step * 240 + note.microOffset),
+            "Export consistency smoke should export each visible transformed Kick note at its visible tick.");
+
+    for (const auto& note : sub->sub808Notes)
+        expect(hasMidiNoteOnAt(fullNoteOns, note.pitch, note.step * 240 + note.microOffset),
+            "Export consistency smoke should export each visible transformed Sub808 note at its visible tick and pitch.");
+
+    const auto hatSequence = MidiExportEngine::patternToSequence(project, TrackType::HiHat, 960, false, false);
+    const auto hatNoteOns = collectMidiNoteOns(hatSequence);
+    expect(static_cast<int>(hatNoteOns.size()) == static_cast<int>(hat->notes.size()),
+        "Export consistency smoke should let track-only export/drag follow the visible transformed HiHat notes exactly.");
+
+    const auto subSequence = MidiExportEngine::patternToSequence(project, TrackType::Sub808, 960, false, false);
+    const auto subNoteOns = collectMidiNoteOns(subSequence);
+    expect(static_cast<int>(subNoteOns.size()) == static_cast<int>(sub->sub808Notes.size()),
+        "Export consistency smoke should let track-only export/drag follow the visible transformed Sub808 notes exactly.");
+}
+
+void testStyleDefaultsSmoke()
+{
+    expect(getBoomBapSubstyleNames().size() > 0, "BoomBap substyles must remain available.");
+    expect(getRapSubstyleNames().size() > 0, "Rap substyles must remain available.");
+    expect(getTrapSubstyleNames().size() > 0, "Trap substyles must remain available.");
+    expect(getDrillSubstyleNames().size() == 1, "Drill Phase 2 should expose exactly one Main substyle.");
+
+    const auto& boomBap = getGenreStyleDefaults(GenreType::BoomBap, 0);
+    const auto& rap = getGenreStyleDefaults(GenreType::Rap, 0);
+    const auto& trap = getGenreStyleDefaults(GenreType::Trap, 0);
+    const auto& drill = getGenreStyleDefaults(GenreType::Drill, 0);
+    expect(boomBap.genre == GenreType::BoomBap, "BoomBap defaults should resolve BoomBap genre.");
+    expect(rap.genre == GenreType::Rap, "Rap defaults should resolve Rap genre.");
+    expect(trap.genre == GenreType::Trap, "Trap defaults should resolve Trap genre.");
+    expect(drill.genre == GenreType::Drill, "Drill defaults should resolve Drill genre.");
+    expect(drill.substyleName == "Main", "Drill defaults should expose the Main substyle.");
+}
+
+void testGenerationBpmSelectionSmoke()
+{
+    GeneratorParams params;
+    params.genre = GenreType::Trap;
+    params.trapSubstyle = 3;
+    params.seed = 12345;
+    params.syncDawTempo = false;
+
+    const auto& rageTrap = getGenreStyleDefaults(GenreType::Trap, params.trapSubstyle);
+    const auto deterministicA = resolveGenerationBpm(params, 140.0f, false, std::nullopt);
+    const auto deterministicB = resolveGenerationBpm(params, 92.0f, false, std::nullopt);
+
+    expect(deterministicA.source == GenerationBpmSource::DeterministicStyleRange,
+        "Generate BPM smoke should use deterministic style range when host sync and BPM lock are off.");
+    expect(deterministicA.bpm >= static_cast<float>(rageTrap.bpmMin)
+            && deterministicA.bpm <= static_cast<float>(rageTrap.bpmMax),
+        "Generate BPM smoke should keep Trap deterministic BPM inside the selected substyle range.");
+    expect(std::abs(deterministicA.bpm - deterministicB.bpm) < 0.001f,
+        "Generate BPM smoke should stay deterministic for the same seed, genre, and substyle.");
+
+    const auto locked = resolveGenerationBpm(params, 141.0f, true, std::nullopt);
+    expect(locked.source == GenerationBpmSource::BpmLock,
+        "Generate BPM smoke should report BPM lock when no host tempo overrides it.");
+    expect(std::abs(locked.bpm - 141.0f) < 0.001f,
+        "Generate BPM smoke should preserve the current BPM when BPM lock is enabled.");
+
+    params.syncDawTempo = true;
+    const auto host = resolveGenerationBpm(params, 141.0f, true, 151.5);
+    expect(host.source == GenerationBpmSource::HostSync,
+        "Generate BPM smoke should prefer host sync over BPM lock when host tempo is available.");
+    expect(std::abs(host.bpm - 151.5f) < 0.001f,
+        "Generate BPM smoke should adopt the exact host tempo when host sync is enabled.");
+
+    params.genre = GenreType::BoomBap;
+    params.boombapSubstyle = 7;
+    params.seed = 777;
+    params.syncDawTempo = false;
+
+    const auto& lofiRap = getGenreStyleDefaults(GenreType::BoomBap, params.boombapSubstyle);
+    const float lofiBpm = chooseDeterministicStyleBpm(params);
+    expect(lofiBpm >= static_cast<float>(lofiRap.bpmMin)
+            && lofiBpm <= static_cast<float>(lofiRap.bpmMax),
+        "Generate BPM smoke should keep BoomBap deterministic BPM inside the selected substyle range.");
+}
+
+void testLaneAwareSwingProtectionSmoke()
+{
+    auto drillProject = createDefaultProject();
+    drillProject.params.genre = GenreType::Drill;
+    drillProject.params.bars = 1;
+    drillProject.params.swingPercent = 52.0f;
+
+    auto* drillHat = findTrackByType(drillProject, TrackType::HiHat);
+    auto* drillKick = findTrackByType(drillProject, TrackType::Kick);
+    expect(drillHat != nullptr && drillKick != nullptr,
+        "Lane-aware swing smoke requires Drill HiHat and Kick tracks.");
+
+    drillHat->laneRole = "drill_hat";
+    drillKick->laneRole = "drill_kick";
+    drillHat->notes = {
+        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
+        { 42, 1, 1, 76, 0, false, "drill_hat_support", false, false, false }
+    };
+    drillKick->notes = {
+        { 36, 0, 1, 118, 0, false, "drill_kick_anchor", false, false, false },
+        { 36, 6, 1, 94, 0, false, "drill_kick_support", false, false, false }
+    };
+
+    PatternPerformanceTransformEngine::captureBasePatterns(drillProject, { TrackType::HiHat, TrackType::Kick });
+
+    drillProject.params.swingPercent = 64.0f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(drillProject);
+
+    expect(hasNoteAt(*drillKick, 0, 0, "drill_kick_anchor"),
+        "Lane-aware swing smoke should keep Drill kick anchors grid-locked under swing changes.");
+    expect(std::any_of(drillHat->notes.begin(), drillHat->notes.end(), [](const NoteEvent& note)
+    {
+        return note.step == 1 && note.semanticRole == "drill_hat_support" && note.microOffset > 0;
+    }), "Lane-aware swing smoke should allow Drill support hats to take a subtle late swing feel.");
+
+    auto transformHatSupportWithSwing = [](GenreType genre, const juce::String& laneRole)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = genre;
+        project.params.bars = 1;
+        project.params.swingPercent = 52.0f;
+
+        auto* hat = findTrackByType(project, TrackType::HiHat);
+        if (hat == nullptr)
+            fail("Lane-aware swing smoke requires a HiHat track for cross-genre comparison.");
+
+        hat->laneRole = laneRole;
+        hat->notes = {
+            { 42, 0, 1, 92, 0, false, "hat_backbone", false, false, false },
+            { 42, 1, 1, 76, 0, false, "hat_support", false, false, false }
+        };
+
+        PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat });
+
+        project.params.swingPercent = 60.0f;
+        PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+        for (const auto& note : hat->notes)
+            if (note.step == 1 && note.semanticRole == "hat_support")
+                return note.microOffset;
+
+        fail("Lane-aware swing smoke could not find the transformed hat support note.");
+    };
+
+    const int boomBapHatOffset = transformHatSupportWithSwing(GenreType::BoomBap, "carrier");
+    const int trapHatOffset = transformHatSupportWithSwing(GenreType::Trap, "trap_hat");
+
+    expect(std::abs(boomBapHatOffset) > std::abs(trapHatOffset),
+        "Lane-aware swing smoke should give BoomBap hat support more swing motion than Trap hat support for the same control delta.");
+}
+
+void testSwingRoundTripGenerationSmoke()
+{
+    auto verifyRoundTrip = [](PatternProject& project,
+                              float baselineSwing,
+                              const std::vector<TrackType>& trackedLanes,
+                              const juce::String& label)
+    {
+        struct TrackSnapshot
+        {
+            TrackType type;
+            std::vector<NoteEvent> notes;
+        };
+
+        std::vector<TrackSnapshot> baselineTracks;
+        for (const auto type : trackedLanes)
+        {
+            if (auto* track = findTrackByType(project, type); track != nullptr && !track->notes.empty())
+                baselineTracks.push_back({ type, track->notes });
+        }
+
+        expect(!baselineTracks.empty(),
+            label + " swing roundtrip smoke requires generated notes on the tracked lanes.");
+
+        project.params.swingPercent = 75.0f;
+        PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+        project.params.swingPercent = baselineSwing;
+        PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+        for (const auto& snapshot : baselineTracks)
+        {
+            const auto* track = findTrackByType(project, snapshot.type);
+            expect(track != nullptr && noteSequencesEqual(track->notes, snapshot.notes),
+                label + " swing roundtrip smoke should restore tracked lanes exactly after Swing returns to baseline.");
+        }
+    };
+
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.bars = 1;
+        project.params.swingPercent = 56.0f;
+        if (auto* kick = findTrackByType(project, TrackType::Kick); kick != nullptr)
+        {
+            kick->laneRole = "boom_bap_kick";
+            kick->notes = {
+                { 36, 0, 1, 108, 0, false, "boom_bap_kick_anchor", false, false, false },
+                { 36, 8, 1, 102, 0, false, "boom_bap_kick_anchor", false, false, false }
+            };
+        }
+
+        if (auto* hat = findTrackByType(project, TrackType::HiHat); hat != nullptr)
+        {
+            hat->laneRole = "boom_bap_hat";
+            hat->notes = {
+                { 42, 0, 1, 88, 0, false, "boom_bap_hat_backbone", false, false, false },
+                { 42, 1, 1, 80, 0, false, "boom_bap_hat_support", false, false, false },
+                { 42, 3, 1, 82, 0, false, "boom_bap_hat_support", false, false, false },
+                { 42, 4, 1, 88, 0, false, "boom_bap_hat_backbone", false, false, false }
+            };
+        }
+
+        if (auto* openHat = findTrackByType(project, TrackType::OpenHat); openHat != nullptr)
+        {
+            openHat->laneRole = "boom_bap_open";
+            openHat->notes = {
+                { 46, 6, 1, 84, 0, false, "boom_bap_hat_support", false, false, false }
+            };
+        }
+
+        if (auto* perc = findTrackByType(project, TrackType::Perc); perc != nullptr)
+        {
+            perc->laneRole = "boom_bap_texture";
+            perc->notes = {
+                { 54, 7, 1, 72, 0, false, "boom_bap_perc_support", false, false, false }
+            };
+        }
+
+        PatternPerformanceTransformEngine::captureBasePatterns(project,
+            { TrackType::HiHat, TrackType::OpenHat, TrackType::Perc, TrackType::Kick });
+
+        verifyRoundTrip(project,
+                        56.0f,
+                        { TrackType::HiHat, TrackType::OpenHat, TrackType::Perc, TrackType::Kick },
+                        "BoomBap");
+    }
+
+    {
+        DrillEngine engine;
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Drill;
+        project.params.bars = 2;
+        project.params.seed = 4242;
+        project.params.swingPercent = 52.0f;
+        project.params.velocityAmount = 0.34f;
+        project.params.timingAmount = 0.22f;
+        project.params.humanizeAmount = 0.16f;
+        project.params.densityAmount = 0.64f;
+        project.params.drillSubstyle = 0;
+        if (auto* hatFx = findTrackByType(project, TrackType::HatFX); hatFx != nullptr)
+            hatFx->enabled = true;
+        if (auto* sub = findTrackByType(project, TrackType::Sub808); sub != nullptr)
+            sub->enabled = true;
+
+        engine.generate(project);
+
+        verifyRoundTrip(project,
+                        52.0f,
+                        { TrackType::HiHat, TrackType::HatFX, TrackType::Kick },
+                        "Drill");
+    }
+}
+
+void testDrillSwingHatSemanticsSmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 1;
+    project.params.swingPercent = 52.0f;
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    expect(hat != nullptr, "Drill swing semantics smoke requires a HiHat track.");
+
+    hat->laneRole = "drill_hat";
+    hat->notes = {
+        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
+        { 42, 1, 1, 84, 0, false, "drill_hat_reference_copy", false, false, false },
+        { 42, 3, 1, 76, 0, false, "drill_hat_transition", false, false, false }
+    };
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat });
+    const auto baseHat = hat->baseNotes;
+
+    project.params.swingPercent = 75.0f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    int backboneOffset = 0;
+    int referenceOffset = 0;
+    int supportOffset = 0;
+
+    for (const auto& note : hat->notes)
+    {
+        if (note.step == 0 && note.semanticRole == "drill_hat_backbone")
+            backboneOffset = note.microOffset;
+        else if (note.step == 1 && note.semanticRole == "drill_hat_reference_copy")
+            referenceOffset = note.microOffset;
+        else if (note.step == 3 && note.semanticRole == "drill_hat_transition")
+            supportOffset = note.microOffset;
+    }
+
+    expect(backboneOffset == 0,
+        "Drill swing semantics smoke should keep the main hat backbone grid-locked under Swing.");
+    expect(std::abs(referenceOffset) <= 1,
+        "Drill swing semantics smoke should keep protected copied-reference hats effectively anchored while Swing changes.");
+    expect(supportOffset >= 2 && supportOffset <= 6,
+        "Drill swing semantics smoke should allow only a subtle, visible late shift on Drill support hats.");
+
+    project.params.swingPercent = 52.0f;
+    PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
+
+    expect(noteSequencesEqual(hat->notes, baseHat),
+        "Drill swing semantics smoke should restore the exact visible HiHat pattern when Swing returns to baseline.");
+}
+
+void testDrillPhrasePlannerSmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+    project.params.drillSubstyle = 0;
+    project.styleInfluence.supportAccentWeight = 1.1f;
+    project.styleInfluence.lowEndCouplingWeight = 1.2f;
+    project.styleInfluence.drillHatDensityVariationWeight = 1.4f;
+
+    auto plan = DrillPhrasePlanner::buildPlan(project);
+    expect(plan.phraseSpanBars == 4, "Drill phrase planner should preserve project bar count.");
+    expect(plan.substyleIndex == 0, "Drill phrase planner should clamp to the Main substyle for Phase 2.");
+    expect(plan.bars.size() == 4, "Drill phrase planner should return one bar plan per project bar.");
+    expect(plan.bars.front().anchorMap.hatCarrierSteps[0] == 0, "Drill phrase planner should seed a stable hat carrier anchor.");
+    expect(plan.bars.front().anchorMap.snareAnchorSteps[0] == 8, "First Drill bar should anchor the main snare on beat three.");
+    expect(plan.bars[1].anchorMap.snareAnchorSteps[0] == 12, "Second Drill bar should expose the late answer snare anchor.");
+    for (const auto& bar : plan.bars)
+    {
+        int kickTemplateSteps = 0;
+        for (const int step : bar.anchorMap.kickAnchorSteps)
+            if (step >= 0)
+                ++kickTemplateSteps;
+
+        expect(kickTemplateSteps <= (bar.role == DrillPhraseBarRole::Lift || bar.role == DrillPhraseBarRole::Release ? 3 : 2),
+               "Drill phrase planner should choose a compact kick template per bar instead of exposing four permissive kick anchors.");
+    }
+    expect(!plan.summary.isEmpty(), "Drill phrase planner should emit a phrase summary for downstream phases.");
+}
+
+void testDrillHatGenerationSmoke()
+{
+    DrillEngine engine;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+    project.params.seed = 4242;
+    project.params.densityAmount = 0.62f;
+    project.params.timingAmount = 0.40f;
+    project.params.drillSubstyle = 0;
+    project.styleInfluence.hatMotionWeight = 1.3f;
+    project.styleInfluence.drillHatTripletWeight = 1.4f;
+    project.styleInfluence.drillHatBurstWeight = 1.1f;
+    project.styleInfluence.drillHatGapIntentWeight = 0.8f;
+    project.styleInfluence.drillHatAccentPatternWeight = 1.2f;
+    project.styleInfluence.drillHatDensityVariationWeight = 1.3f;
+
+    const auto baselineProject = project;
+
+    engine.generate(project);
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    expect(hat != nullptr, "Drill hat generation smoke requires a HiHat track.");
+    const auto expectedPlan = DrillPhrasePlanner::buildPlan(project);
+
+    expect(!hat->notes.empty(), "Drill Phase 3 should generate main hihat notes.");
+    expect(hat->laneRole == "drill_hat", "Drill hat generation should mark the HiHat lane role.");
+
+    juce::StringArray missingCarrierCoverage;
+
+    for (const auto& bar : expectedPlan.bars)
+    {
+        for (const int stepInBar : bar.anchorMap.hatCarrierSteps)
+        {
+            if (stepInBar < 0)
+                continue;
+
+            const int carrierTick = bar.barIndex * HiResTiming::kTicksPerBar4_4 + stepInBar * HiResTiming::kTicks1_16;
+            if (!hasHatCarrierCoverageNearTick(*hat,
+                                               carrierTick,
+                                               HiResTiming::kTicks1_32))
+            {
+                missingCarrierCoverage.add("bar=" + juce::String(bar.barIndex)
+                                           + ",step=" + juce::String(stepInBar));
+            }
+        }
+
+        int barNoteCount = 0;
+        int copiedReferenceCount = 0;
+        for (const auto& note : hat->notes)
+        {
+            if ((note.step / 16) == bar.barIndex)
+                ++barNoteCount;
+            if ((note.step / 16) == bar.barIndex && note.semanticRole == "drill_hat_reference_copy")
+                ++copiedReferenceCount;
+        }
+        expect(barNoteCount <= std::max(14, copiedReferenceCount + 2),
+               "Drill main hihat generation should keep per-bar density controlled unless a copied reference pattern intentionally carries more material.");
+    }
+
+    expect(missingCarrierCoverage.isEmpty(),
+           "Drill main hihat generation must keep each planned carrier musically covered by either backbone or copied reference hats. Missing: "
+               + missingCarrierCoverage.joinIntoString(" | "));
+
+    expect(std::any_of(hat->notes.begin(), hat->notes.end(), [](const NoteEvent& note)
+    {
+        return note.semanticRole == "drill_hat_transition"
+            || note.semanticRole == "drill_hat_triplet"
+            || note.semanticRole == "drill_hat_burst"
+            || note.semanticRole == "drill_hat_reference_copy";
+    }), "Drill main hihat generation should keep either controlled procedural activity or copied reference motion beyond the bare carrier skeleton.");
+
+    expect(std::any_of(hat->notes.begin(), hat->notes.end(), [](const NoteEvent& note)
+    {
+        return note.microOffset != 0;
+    }), "Drill main hihat generation should preserve off-grid subdivision motion.");
+
+    auto secondProject = baselineProject;
+    engine.generate(secondProject);
+
+    auto* secondHat = findTrackByType(secondProject, TrackType::HiHat);
+    expect(secondHat != nullptr, "Determinism check requires a second HiHat track.");
+
+    expect(noteSequencesEqual(hat->notes, secondHat->notes),
+           "Drill main hihat generation must remain deterministic under the same seed and inputs.");
+}
+
+void testDrillGenerationCapturesBasePatternsSmoke()
+{
+    DrillEngine engine;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+    project.params.seed = 5151;
+    project.params.densityAmount = 0.64f;
+    project.params.timingAmount = 0.34f;
+    project.params.drillSubstyle = 0;
+
+    engine.generate(project);
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    auto* kick = findTrackByType(project, TrackType::Kick);
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(hat != nullptr && kick != nullptr && sub != nullptr,
+        "Drill base capture smoke requires HiHat, Kick, and Sub808 tracks.");
+    expect(!hat->notes.empty() && !kick->notes.empty() && !sub->sub808Notes.empty(),
+        "Drill base capture smoke requires generated visible notes on the main Drill lanes.");
+
+    expect(noteSequencesEqual(hat->baseNotes, hat->notes),
+        "Drill generation should capture generated HiHat notes into baseNotes during Phase 1.");
+    expect(noteSequencesEqual(kick->baseNotes, kick->notes),
+        "Drill generation should capture generated Kick notes into baseNotes during Phase 1.");
+    expect(sub808NoteSequencesEqual(sub->baseSub808Notes, sub->sub808Notes),
+        "Drill generation should capture generated Sub808 notes into baseSub808Notes during Phase 1.");
+    expect(noteSequencesEqual(sub->baseNotes, sub->notes),
+        "Drill generation should keep the Sub808 baseNotes legacy mirror aligned with the visible Sub808 lane during Phase 1.");
+}
+
+void testDrillHatGeneratorUsesReferenceCorpusSmoke()
+{
+    DrillHatGenerator generator;
+    DrillPatternValidator validator;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 1;
+    project.params.seed = 7171;
+    project.params.densityAmount = 0.58f;
+    project.params.timingAmount = 0.18f;
+    project.params.drillSubstyle = 0;
+    project.styleInfluence.drillHatDensityVariationWeight = 1.2f;
+    project.styleInfluence.drillHatAccentPatternWeight = 1.15f;
+
+    ReferenceHatSkeleton skeleton;
+    skeleton.available = true;
+    skeleton.sourceBars = 1;
+    skeleton.sourceId = "drill-hat-reference";
+
+    ReferenceHatBarSkeleton barMap;
+    barMap.barIndex = 0;
+    barMap.hasBarStartAnchor = true;
+    for (int step = 0; step < 12; ++step)
+        barMap.notes.push_back({ step * 240 + 60, 92 + (step % 3) * 6 });
+    barMap.backboneSteps16 = { 0, 3, 6, 8, 11, 14 };
+    barMap.motionSteps32 = { 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23 };
+    barMap.phraseAnchorSteps32 = { 0, 16, 28 };
+    barMap.preSnareZoneSteps32 = { 12, 13, 14 };
+    skeleton.barMaps.push_back(barMap);
+
+    ReferenceHatCorpus corpus;
+    corpus.available = true;
+    corpus.sourceReferenceCount = 1;
+    corpus.variants.push_back(skeleton);
+    project.styleInfluence.referenceHatSkeleton = skeleton;
+    project.styleInfluence.referenceHatCorpus = corpus;
+
+    auto plan = DrillPhrasePlanner::buildPlan(project);
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    expect(hat != nullptr, "Drill reference hat smoke requires a HiHat track.");
+
+    std::mt19937 rng(7171);
+    generator.generate(*hat, project, plan, rng);
+    validator.validate(project, plan, { TrackType::HiHat });
+
+    hat = findTrackByType(project, TrackType::HiHat);
+    expect(hat != nullptr, "Drill reference hat smoke requires a HiHat track after validation.");
+
+    juce::StringArray missingPositions;
+    for (int step = 0; step < 12; ++step)
+    {
+        if (!hasNoteAtStepAndMicro(*hat, step, 60))
+            missingPositions.add("step=" + juce::String(step) + ",micro=60");
+    }
+
+    expect(missingPositions.isEmpty(),
+           "Drill hats should preserve exact saved reference microtiming across the full engine path. Missing: "
+               + missingPositions.joinIntoString(" | "));
+
+    int copiedNotes = 0;
+    for (const auto& note : hat->notes)
+        if (note.semanticRole == "drill_hat_reference_copy")
+            ++copiedNotes;
+    expect(copiedNotes >= 12,
+           "Drill hats should copy dense reference patterns instead of trimming them back to the old procedural ceiling.");
+}
+
+    void testDrillHatValidatorProximitySmoke()
+    {
+        DrillPatternValidator validator;
+
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Drill;
+        project.params.bars = 1;
+        project.params.drillSubstyle = 0;
+
+        auto plan = DrillPhrasePlanner::buildPlan(project);
+        auto* hat = findTrackByType(project, TrackType::HiHat);
+        expect(hat != nullptr, "Drill hat proximity smoke requires a HiHat track.");
+
+        hat->notes.clear();
+        hat->notes.push_back({ 42, 0, 1, 92, 60, false, "drill_hat_reference_copy", false, false, false });
+        hat->notes.push_back({ 42, 0, 1, 70, 90, false, "drill_hat_subdivision", false, false, false });
+        hat->notes.push_back({ 42, 6, 1, 86, 0, false, "drill_hat_backbone", false, false, false });
+        hat->notes.push_back({ 42, 6, 1, 68, 60, false, "drill_hat_burst", false, false, false });
+        hat->notes.push_back({ 42, 1, 1, 74, 90, false, "drill_hat_transition", false, false, false });
+
+        validator.validate(project, plan, { TrackType::HiHat });
+
+        hat = findTrackByType(project, TrackType::HiHat);
+        expect(hat != nullptr, "Drill hat proximity smoke requires a HiHat track after validation.");
+
+        expect(hasNoteAt(*hat, 0, 60, "drill_hat_reference_copy"),
+            "Drill hat validator must preserve copied reference hats as protected material.");
+        expect(!hasNoteAt(*hat, 0, 90, "drill_hat_subdivision"),
+            "Drill hat validator should remove procedural hats that crowd a copied reference hit inside the local window.");
+        expect(hasNoteAt(*hat, 6, 0, "drill_hat_backbone"),
+            "Drill hat validator must preserve the backbone carrier note.");
+        expect(!hasNoteAt(*hat, 6, 60, "drill_hat_burst"),
+            "Drill hat validator should remove burst notes that sit too close to a protected backbone carrier.");
+        expect(hasNoteAt(*hat, 1, 90, "drill_hat_transition"),
+            "Drill hat validator should keep procedural hats that stay outside protected proximity windows.");
+    }
+
+    void testDrillHatCopyMostlyStillVariesSmoke()
+    {
+        DrillHatGenerator generator;
+        DrillPatternValidator validator;
+
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Drill;
+        project.params.bars = 4;
+        project.params.seed = 9191;
+        project.params.densityAmount = 0.72f;
+        project.params.timingAmount = 0.42f;
+        project.params.drillSubstyle = 0;
+        project.styleInfluence.hatMotionWeight = 1.3f;
+        project.styleInfluence.drillHatTripletWeight = 1.55f;
+        project.styleInfluence.drillHatBurstWeight = 1.15f;
+        project.styleInfluence.drillHatGapIntentWeight = 0.85f;
+        project.styleInfluence.drillHatAccentPatternWeight = 1.2f;
+        project.styleInfluence.drillHatDensityVariationWeight = 1.3f;
+
+        ReferenceHatSkeleton skeleton;
+        skeleton.available = true;
+        skeleton.sourceBars = 1;
+        skeleton.sourceId = "drill-dense-reference";
+
+        ReferenceHatBarSkeleton barMap;
+        barMap.barIndex = 0;
+        barMap.hasBarStartAnchor = true;
+        for (int step = 0; step < 12; ++step)
+            barMap.notes.push_back({ step * 240 + 60, 92 + (step % 3) * 6 });
+        barMap.backboneSteps16 = { 0, 3, 6, 8, 11, 14 };
+        barMap.motionSteps32 = { 1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23 };
+        barMap.phraseAnchorSteps32 = { 0, 16, 28 };
+        barMap.preSnareZoneSteps32 = { 12, 13, 14 };
+        skeleton.barMaps.push_back(barMap);
+
+        ReferenceHatCorpus corpus;
+        corpus.available = true;
+        corpus.sourceReferenceCount = 1;
+        corpus.variants.push_back(skeleton);
+        project.styleInfluence.referenceHatSkeleton = skeleton;
+        project.styleInfluence.referenceHatCorpus = corpus;
+
+        auto plan = DrillPhrasePlanner::buildPlan(project);
+        auto* hat = findTrackByType(project, TrackType::HiHat);
+        expect(hat != nullptr, "Drill copy-mostly variation smoke requires a HiHat track.");
+
+        std::mt19937 rng(9191);
+        generator.generate(*hat, project, plan, rng);
+        validator.validate(project, plan, { TrackType::HiHat });
+
+        hat = findTrackByType(project, TrackType::HiHat);
+        expect(hat != nullptr, "Drill copy-mostly variation smoke requires a HiHat track after validation.");
+
+        int copiedNotes = 0;
+        int dynamicNotes = 0;
+        for (const auto& note : hat->notes)
+        {
+            if (note.semanticRole == "drill_hat_reference_copy")
+                ++copiedNotes;
+            if (note.semanticRole == "drill_hat_transition" || note.semanticRole == "drill_hat_triplet" || note.semanticRole == "drill_hat_burst")
+                ++dynamicNotes;
+        }
+
+        expect(copiedNotes >= 40,
+               "Drill copy-mostly hats should still keep the dense saved reference foundation across the phrase.");
+        expect(dynamicNotes >= 1,
+               "Drill copy-mostly hats should still allow controlled phrase-level variation instead of freezing into a pure reference-only clone.");
+    }
+
+    void testDrillHatReferenceVariantRotationSmoke()
+    {
+        DrillHatGenerator generator;
+        DrillPatternValidator validator;
+
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Drill;
+        project.params.bars = 3;
+        project.params.seed = 0;
+        project.params.densityAmount = 0.66f;
+        project.params.timingAmount = 0.24f;
+        project.params.drillSubstyle = 0;
+
+        ReferenceHatCorpus corpus;
+        corpus.available = true;
+        corpus.sourceReferenceCount = 3;
+
+        for (int variantIndex = 0; variantIndex < 3; ++variantIndex)
+        {
+            ReferenceHatSkeleton skeleton;
+            skeleton.available = true;
+            skeleton.sourceBars = 1;
+            skeleton.sourceId = "drill-hat-variant-" + juce::String(variantIndex);
+
+            ReferenceHatBarSkeleton barMap;
+            barMap.barIndex = 0;
+            barMap.hasBarStartAnchor = true;
+            const int micro = 20 + variantIndex * 40;
+            for (int step = 0; step < 6; ++step)
+                barMap.notes.push_back({ step * HiResTiming::kTicks1_16 + micro, 90 + variantIndex * 4 });
+            barMap.backboneSteps16 = { 0, 3, 6, 8, 11, 14 };
+            skeleton.barMaps.push_back(barMap);
+            corpus.variants.push_back(skeleton);
+        }
+
+        project.styleInfluence.referenceHatCorpus = corpus;
+        project.styleInfluence.referenceHatSkeleton = corpus.variants.front();
+
+        auto plan = DrillPhrasePlanner::buildPlan(project);
+        auto* hat = findTrackByType(project, TrackType::HiHat);
+        expect(hat != nullptr, "Drill hat reference rotation smoke requires a HiHat track.");
+
+        std::mt19937 rng(0);
+        generator.generate(*hat, project, plan, rng);
+        validator.validate(project, plan, { TrackType::HiHat });
+
+        hat = findTrackByType(project, TrackType::HiHat);
+        expect(hat != nullptr, "Drill hat reference rotation smoke requires a HiHat track after validation.");
+
+        expect(hasNoteAt(*hat, 0, 20, "drill_hat_reference_copy"),
+               "Drill hats should use the first saved reference variant on the first bar when rotating through multiple references.");
+        expect(hasNoteAt(*hat, 16, 60, "drill_hat_reference_copy"),
+               "Drill hats should rotate to the second saved reference variant on the next bar instead of reusing the first one again.");
+        expect(hasNoteAt(*hat, 32, 100, "drill_hat_reference_copy"),
+               "Drill hats should rotate to the third saved reference variant on the third bar instead of collapsing all references into one pattern.");
+    }
+
+void testDrillKickGeneratorUsesReferenceCorpusSmoke()
+{
+    DrillKickGenerator generator;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 1;
+    project.params.seed = 7272;
+    project.params.densityAmount = 0.54f;
+    project.params.drillSubstyle = 0;
+
+    ReferenceKickBarPattern barPattern;
+    barPattern.barIndex = 0;
+    barPattern.notes.push_back({ 0, 118 });
+    barPattern.notes.push_back({ 10, 108 });
+    barPattern.notes.push_back({ 14, 112 });
+
+    ReferenceKickPattern pattern;
+    pattern.available = true;
+    pattern.sourceBars = 1;
+    pattern.barPatterns.push_back(barPattern);
+
+    ReferenceKickCorpus corpus;
+    corpus.available = true;
+    corpus.sourceReferenceCount = 1;
+    corpus.variants.push_back(pattern);
+    project.styleInfluence.referenceKickCorpus = corpus;
+
+    auto plan = DrillPhrasePlanner::buildPlan(project);
+    auto* kick = findTrackByType(project, TrackType::Kick);
+    expect(kick != nullptr, "Drill reference kick smoke requires a Kick track.");
+
+    std::mt19937 rng(7272);
+    generator.generate(*kick, project, plan, nullptr, rng);
+
+    int retainedReferenceSteps = 0;
+    for (const int step : { 0, 10, 14 })
+    {
+        if (std::any_of(kick->notes.begin(), kick->notes.end(), [step](const NoteEvent& note)
+        {
+            return note.step == step;
+        }))
+        {
+            ++retainedReferenceSteps;
+        }
+    }
+
+    expect(retainedReferenceSteps >= 2,
+           "Drill kick generator should retain roughly 60-70% of the saved reference kick pattern, not just treat it as a weak hint.");
+}
+
+void testDrillKickReferenceVariantRotationSmoke()
+{
+    DrillKickGenerator generator;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 3;
+    project.params.seed = 0;
+    project.params.drillSubstyle = 0;
+
+    ReferenceKickCorpus corpus;
+    corpus.available = true;
+    corpus.sourceReferenceCount = 3;
+
+    for (int variantIndex = 0; variantIndex < 3; ++variantIndex)
+    {
+        ReferenceKickPattern pattern;
+        pattern.available = true;
+        pattern.sourceBars = 1;
+        const std::array<int, 3> supportSteps { 4, 10, 12 };
+        const int supportStep = supportSteps[static_cast<size_t>(variantIndex)];
+        pattern.barPatterns.push_back({ 0, { { 0, 116 }, { supportStep, 108 } } });
+        corpus.variants.push_back(pattern);
+    }
+
+    project.styleInfluence.referenceKickCorpus = corpus;
+
+    DrillPhrasePlan plan;
+    plan.phraseSpanBars = 3;
+    plan.substyleIndex = 0;
+    for (int barIndex = 0; barIndex < 3; ++barIndex)
+    {
+        DrillPhraseBarPlan bar;
+        bar.barIndex = barIndex;
+        bar.role = DrillPhraseBarRole::Statement;
+        bar.kickDensity = DrillKickDensityIntent::Medium;
+        bar.lowEnd = DrillLowEndIntent::Anchor;
+        bar.anchorMap.kickAnchorSteps = { { 0, -1, -1, -1 } };
+        bar.anchorMap.snareAnchorSteps = { { 8, -1 } };
+        bar.anchorMap.lowEndAnchorSteps = { { 0, 6, 10, 14 } };
+        plan.bars.push_back(bar);
+    }
+
+    auto* kick = findTrackByType(project, TrackType::Kick);
+    expect(kick != nullptr, "Drill kick reference rotation smoke requires a Kick track.");
+
+    std::mt19937 rng(0);
+    generator.generate(*kick, project, plan, nullptr, rng);
+
+    expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return note.step == 4; }),
+           "Drill kick rotation should use the first saved kick reference variant on the first bar.");
+        expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return note.step == 26; }),
+           "Drill kick rotation should use the second saved kick reference variant on the second bar instead of repeating the first one.");
+    expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return note.step == 44; }),
+           "Drill kick rotation should use the third saved kick reference variant on the third bar instead of collapsing everything into one kick pattern.");
+}
+
+void testDrill808GeneratorUsesReferenceCorpusSmoke()
+{
+    Drill808Generator generator;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 1;
+    project.params.seed = 7373;
+    project.params.keyRoot = 0;
+    project.params.scaleMode = 0;
+    project.params.drillSubstyle = 0;
+    project.styleInfluence.lowEndCouplingWeight = 2.0f;
+    laneBiasFor(project.styleInfluence, TrackType::Sub808).activityWeight = 1.6f;
+
+    ReferenceKickBarPattern barPattern;
+    barPattern.barIndex = 0;
+    barPattern.notes.push_back({ 12, 114 });
+
+    ReferenceKickPattern pattern;
+    pattern.available = true;
+    pattern.sourceBars = 1;
+    pattern.barPatterns.push_back(barPattern);
+
+    ReferenceKickCorpus corpus;
+    corpus.available = true;
+    corpus.sourceReferenceCount = 1;
+    corpus.variants.push_back(pattern);
+    project.styleInfluence.referenceKickCorpus = corpus;
+
+    auto plan = DrillPhrasePlanner::buildPlan(project);
+    expect(!plan.bars.empty() && plan.bars.front().lowEnd == DrillLowEndIntent::Move,
+           "Drill 808 reference smoke requires a Move low-end bar to test extra reference starts.");
 
     auto* kick = findTrackByType(project, TrackType::Kick);
     auto* sub = findTrackByType(project, TrackType::Sub808);
-    expect(kick != nullptr && sub != nullptr, "Default project must contain Kick and Sub808 tracks.");
+    expect(kick != nullptr && sub != nullptr,
+           "Drill 808 reference smoke requires Kick and Sub808 tracks.");
 
-    kick->notes = {
-        NoteEvent { 0, -5, 0, 200, 2000, false, " dirty ", true, true, true }
-    };
-    kick->laneVolume = 9.0f;
-    kick->sound.pan = -8.0f;
-    kick->sound.width = 4.0f;
-    kick->sound.eqTone = 8.0f;
-    kick->sound.compression = -1.0f;
-    kick->sound.reverb = 5.0f;
-    kick->sound.gate = -4.0f;
-    kick->sound.transient = 7.0f;
-    kick->sound.drive = -2.0f;
+    kick->notes.clear();
+    kick->notes.push_back({ 36, 0, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
 
-    sub->sub808Notes.clear();
-    sub->notes = {
-        NoteEvent { -7, 9999, 0, 999, -3000, false, " sub ", true, true, true }
-    };
-    sub->sub808Settings.glideTimeMs = 9000;
-    sub->sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(99);
-    sub->sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(99);
+    std::mt19937 rng(7373);
+    generator.generate(*sub, *kick, project, plan, nullptr, rng);
 
-    PatternProjectSerialization::validate(project);
-    expectRuntimeLaneIntegrity(project, "validate_invariants");
-
-    expect(project.previewStartStep == 0, "previewStartStep should clamp to zero.");
-    expect(project.previewLoopTicks.has_value(), "previewLoopTicks should remain normalized and valid.");
-    expect(project.previewLoopTicks->getStart() >= 0, "preview loop start must be non-negative.");
-    expect(project.previewLoopTicks->getEnd() <= project.params.bars * 16 * ticksPerStep(),
-           "preview loop end must clamp to project length.");
-
-    expect(project.selectedTrackIndex >= 0 && project.selectedTrackIndex < static_cast<int>(project.tracks.size()),
-           "selectedTrackIndex must clamp into valid range.");
-    expect(project.soundModuleTrackIndex >= -1 && project.soundModuleTrackIndex < static_cast<int>(project.tracks.size()),
-           "soundModuleTrackIndex must clamp into valid range.");
-
-    expect(nearlyEqual(project.globalSound.pan, 1.0f), "globalSound.pan should clamp.");
-    expect(nearlyEqual(project.globalSound.width, 0.0f), "globalSound.width should clamp.");
-    expect(nearlyEqual(project.globalSound.eqTone, 1.0f), "globalSound.eqTone should clamp.");
-    expect(nearlyEqual(project.globalSound.compression, 1.0f), "globalSound.compression should clamp.");
-    expect(nearlyEqual(project.globalSound.reverb, 0.0f), "globalSound.reverb should clamp.");
-    expect(nearlyEqual(project.globalSound.gate, 1.0f), "globalSound.gate should clamp.");
-    expect(nearlyEqual(project.globalSound.transient, 1.0f), "globalSound.transient should clamp.");
-    expect(nearlyEqual(project.globalSound.drive, 0.0f), "globalSound.drive should clamp.");
-
-    kick = findTrackByType(project, TrackType::Kick);
-    sub = findTrackByType(project, TrackType::Sub808);
-    expect(kick != nullptr && sub != nullptr, "Tracks must survive validation.");
-    expect(static_cast<int>(kick->notes.size()) == 1, "Kick note should survive validation.");
-    expect(kick->notes.front().pitch == TrackRegistry::find(TrackType::Kick)->defaultMidiNote,
-           "Kick note pitch should normalize to default MIDI note when zero.");
-    expect(kick->notes.front().step == 0, "Kick step should clamp to zero.");
-    expect(kick->notes.front().length == 1, "Kick length should clamp to one.");
-    expect(kick->notes.front().velocity == 127, "Kick velocity should clamp to 127.");
-    expect(kick->notes.front().microOffset == 960, "Kick microOffset should clamp to 960.");
-    expect(kick->notes.front().semanticRole == "dirty", "Kick semanticRole should trim.");
-    expect(!kick->notes.front().isSlide && !kick->notes.front().isLegato && !kick->notes.front().glideToNext,
-           "Non-Sub808 note articulation flags must reset.");
-    expect(nearlyEqual(kick->laneVolume, 1.5f), "laneVolume should clamp to 1.5.");
-    expect(nearlyEqual(kick->sound.pan, -1.0f), "Track sound pan should clamp.");
-    expect(nearlyEqual(kick->sound.width, 2.0f), "Track sound width should clamp.");
-    expect(nearlyEqual(kick->sound.eqTone, 1.0f), "Track sound eqTone should clamp.");
-    expect(nearlyEqual(kick->sound.compression, 0.0f), "Track sound compression should clamp.");
-    expect(nearlyEqual(kick->sound.reverb, 1.0f), "Track sound reverb should clamp.");
-    expect(nearlyEqual(kick->sound.gate, 0.0f), "Track sound gate should clamp.");
-    expect(nearlyEqual(kick->sound.transient, 1.0f), "Track sound transient should clamp.");
-    expect(nearlyEqual(kick->sound.drive, 0.0f), "Track sound drive should clamp.");
-
-    expect(!sub->sub808Notes.empty(), "Sub808 notes should be restored from legacy notes during validation.");
-        expect(sub->sub808Notes.front().pitch == TrackRegistry::find(TrackType::Sub808)->defaultMidiNote,
-            "Sub808 pitch should normalize to the track default MIDI note when zero-clamped.");
-    expect(sub->sub808Notes.front().step == 255, "Sub808 step should clamp to maxStep.");
-    expect(sub->sub808Notes.front().length == 1, "Sub808 length should clamp to one.");
-    expect(sub->sub808Notes.front().velocity == 127, "Sub808 velocity should clamp to 127.");
-    expect(sub->sub808Notes.front().microOffset == -960, "Sub808 microOffset should clamp to -960.");
-    expect(sub->sub808Notes.front().semanticRole == "sub", "Sub808 semanticRole should trim.");
-    expect(sub->sub808Settings.glideTimeMs == 4000, "Sub808 glideTimeMs should clamp to 4000.");
-    expect(static_cast<int>(sub->sub808Settings.overlapMode) == 2, "Sub808 overlapMode should clamp.");
-    expect(static_cast<int>(sub->sub808Settings.scaleSnapPolicy) == 2, "Sub808 scaleSnapPolicy should clamp.");
-    expect(static_cast<int>(sub->notes.size()) == static_cast<int>(sub->sub808Notes.size()),
-           "Sub808 legacy note mirror should stay aligned with sub808Notes.");
+    expect(hasSubStartAt(*sub, 12, "drill_sub_move"),
+           "Drill 808 generator should add reference-driven low-end starts even when the kick track stays sparse.");
 }
 
-void testDefaultTrackRegistryConsistency()
+void testDrill808GenerationCompactSmoke()
 {
-    const auto& tracks = TrackRegistry::all();
-    expect(tracks.size() == 11, "TrackRegistry::all() must expose 11 registry tracks.");
+    Drill808Generator generator;
 
-    std::set<juce::String> defaultIds;
-    for (const auto& info : tracks)
-    {
-        const auto defaultId = TrackRegistry::defaultRuntimeLaneId(info.type);
-        expect(defaultId.startsWith("registry:"), "Default runtime lane ids must use registry: prefix.");
-        expect(defaultIds.insert(defaultId).second, "Default runtime lane ids must be unique.");
-    }
-
-    const auto profile = TrackRegistry::createDefaultRuntimeLaneProfile();
-    const auto directStates = TrackRegistry::createDefaultTrackStates();
-    const auto profileStates = TrackRegistry::createDefaultTrackStates(profile);
-
-    expect(profile.lanes.size() == tracks.size(), "Default runtime lane profile size must match registry size.");
-    expect(directStates.size() == tracks.size(), "Direct default track states size must match registry size.");
-    expect(profileStates.size() == tracks.size(), "Profile-based default track states size must match registry size.");
-    expect(directStates.size() == profileStates.size(), "Default track state factories must stay aligned.");
-
-    for (const auto& info : tracks)
-    {
-        const auto expectedLaneId = TrackRegistry::defaultRuntimeLaneId(info.type);
-        const auto* lane = findRuntimeLaneForTrack(profile, info.type);
-        expect(lane != nullptr, "Default runtime lane profile is missing a registry lane.");
-        expect(lane->laneId == expectedLaneId, "Runtime lane id must match TrackRegistry defaultRuntimeLaneId.");
-        expect(lane->laneName == info.displayName, "Runtime lane display name mismatch.");
-        expect(lane->runtimeTrackType.has_value() && *lane->runtimeTrackType == info.type,
-               "Runtime lane type binding mismatch.");
-
-        const auto* state = [&profileStates, &expectedLaneId, info]() -> const TrackState*
-        {
-            for (const auto& track : profileStates)
-            {
-                if (track.type == info.type)
-                    return &track;
-            }
-            return nullptr;
-        }();
-        expect(state != nullptr, "Default track state missing for registry track.");
-        expect(state->laneId == expectedLaneId, "Default track state's laneId must match runtime lane id.");
-        expect(state->runtimeTrackType.has_value() && *state->runtimeTrackType == info.type,
-               "Default track state's runtimeTrackType mismatch.");
-        expect(state->enabled == info.enabledByDefault, "Default track enabled state mismatch.");
-    }
-}
-
-void testStyleLabMetadataExportConsistency()
-{
     auto project = createDefaultProject();
-    auto customLane = RuntimeLaneLifecycle::createCustomLaneDefinition(project, "Reference Vox");
-    const auto customLaneId = customLane.laneId;
-    expect(RuntimeLaneLifecycle::addLane(project, std::move(customLane), 1), "Failed to add custom lane for metadata test.");
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+    project.params.seed = 8484;
+    project.params.keyRoot = 0;
+    project.params.scaleMode = 0;
+    project.params.drillSubstyle = 0;
+    project.styleInfluence.lowEndCouplingWeight = 1.7f;
+
+    ReferenceKickPattern pattern;
+    pattern.available = true;
+    pattern.sourceBars = 4;
+    pattern.barPatterns.push_back({ 0, { { 0, 116 }, { 10, 104 } } });
+    pattern.barPatterns.push_back({ 1, { { 0, 112 }, { 9, 108 }, { 12, 110 } } });
+    pattern.barPatterns.push_back({ 2, { { 0, 114 }, { 8, 106 }, { 13, 108 } } });
+    pattern.barPatterns.push_back({ 3, { { 0, 112 }, { 14, 110 } } });
+
+    ReferenceKickCorpus corpus;
+    corpus.available = true;
+    corpus.sourceReferenceCount = 1;
+    corpus.variants.push_back(pattern);
+    project.styleInfluence.referenceKickCorpus = corpus;
 
     auto* kick = findTrackByType(project, TrackType::Kick);
-    expect(kick != nullptr, "Kick track missing for metadata test.");
-    kick->laneVolume = 1.17f;
-    kick->selectedSampleName = "MetadataKick";
-    kick->notes = {
-        NoteEvent { 36, 0, 1, 110, 0, false, "anchor", false, false, false }
-    };
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(kick != nullptr && sub != nullptr,
+           "Drill 808 compactness smoke requires Kick and Sub808 tracks.");
 
-    PatternProjectSerialization::validate(project);
-    const auto state = StyleLabReferenceService::createDefaultState(project, "Drill", "BrooklynDrill", 4, 140);
-    juce::String conflictMessage;
-    const auto metadataJson = StyleLabReferenceService::buildReferenceMetadataJson(project, state, &conflictMessage);
+    kick->notes.clear();
+    kick->notes.push_back({ 36, 0, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
+    kick->notes.push_back({ 36, 10, 1, 104, 0, false, "drill_kick_support", false, false, false });
+    kick->notes.push_back({ 36, 16, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
+    kick->notes.push_back({ 36, 23, 1, 106, 0, false, "drill_kick_support", false, false, false });
+    kick->notes.push_back({ 36, 28, 1, 108, 0, false, "drill_kick_support", false, false, false });
+    kick->notes.push_back({ 36, 32, 1, 114, 0, false, "drill_kick_anchor", false, false, false });
+    kick->notes.push_back({ 36, 39, 1, 106, 0, false, "drill_kick_support", false, false, false });
+    kick->notes.push_back({ 36, 46, 1, 108, 0, false, "drill_kick_support", false, false, false });
+    kick->notes.push_back({ 36, 48, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
+    kick->notes.push_back({ 36, 62, 1, 110, 0, false, "drill_kick_support", false, false, false });
 
-    expect(metadataJson.isNotEmpty(), "Metadata JSON must not be empty.");
-    const auto metadataRoot = parseJson(metadataJson);
-    const auto& laneLayout = requireArray(propertyOf(metadataRoot, "laneLayout", "metadataRoot"), "metadataRoot.laneLayout");
+    DrillPhrasePlan plan;
+    plan.phraseSpanBars = 4;
+    plan.substyleIndex = 0;
 
-    expect(!laneLayout.isEmpty(), "Metadata laneLayout must not be empty.");
-    expect(propertyOf(metadataRoot, "conflictMessage", "metadataRoot").isString(), "conflictMessage must be a string.");
-    expect(conflictMessage.isNotEmpty(), "Custom lane export should emit a non-empty conflict message.");
+    DrillPhraseBarPlan statement;
+    statement.barIndex = 0;
+    statement.role = DrillPhraseBarRole::Statement;
+    statement.anchorMap.snareAnchorSteps = { { 8, -1 } };
+    statement.anchorMap.lowEndAnchorSteps = { { 0, 6, 10, 14 } };
+    statement.lowEnd = DrillLowEndIntent::Anchor;
+    plan.bars.push_back(statement);
 
-    const auto* kickLaneEntry = findObjectByStringProperty(laneLayout,
-                                                           "laneId",
-                                                           TrackRegistry::defaultRuntimeLaneId(TrackType::Kick));
-    expect(kickLaneEntry != nullptr, "Metadata laneLayout must contain Kick lane.");
-    expect(propertyOf(*kickLaneEntry, "bindingKind", "kickLane").toString() == "backed",
-           "Kick lane must remain backed in metadata export.");
-    expect(static_cast<bool>(propertyOf(*kickLaneEntry, "hasBackingTrack", "kickLane")),
-           "Kick lane must report hasBackingTrack=true.");
-    expect(static_cast<bool>(propertyOf(*kickLaneEntry, "laneParamsAvailable", "kickLane")),
-           "Kick lane must report laneParamsAvailable=true.");
+    DrillPhraseBarPlan response;
+    response.barIndex = 1;
+    response.role = DrillPhraseBarRole::Response;
+    response.anchorMap.snareAnchorSteps = { { 12, -1 } };
+    response.anchorMap.lowEndAnchorSteps = { { 0, 7, 10, 12 } };
+    response.lowEnd = DrillLowEndIntent::Move;
+    plan.bars.push_back(response);
 
-    const auto* customLaneEntry = findObjectByStringProperty(laneLayout, "laneId", customLaneId);
-    expect(customLaneEntry != nullptr, "Metadata laneLayout must contain custom lane.");
-    expect(propertyOf(*customLaneEntry, "bindingKind", "customLane").toString() == "unbacked",
-           "Custom lane must export as unbacked.");
-    expect(!static_cast<bool>(propertyOf(*customLaneEntry, "hasBackingTrack", "customLane")),
-           "Custom lane must report hasBackingTrack=false.");
-    expect(!static_cast<bool>(propertyOf(*customLaneEntry, "laneParamsAvailable", "customLane")),
-           "Custom lane must report laneParamsAvailable=false.");
+    DrillPhraseBarPlan lift;
+    lift.barIndex = 2;
+    lift.role = DrillPhraseBarRole::Lift;
+    lift.anchorMap.snareAnchorSteps = { { 12, -1 } };
+    lift.anchorMap.lowEndAnchorSteps = { { 0, 5, 9, 12 } };
+    lift.lowEnd = DrillLowEndIntent::Move;
+    plan.bars.push_back(lift);
+
+    DrillPhraseBarPlan release;
+    release.barIndex = 3;
+    release.role = DrillPhraseBarRole::Release;
+    release.anchorMap.snareAnchorSteps = { { 8, 12 } };
+    release.anchorMap.lowEndAnchorSteps = { { 0, 8, 12, 14 } };
+    release.lowEnd = DrillLowEndIntent::Release;
+    plan.bars.push_back(release);
+
+    std::mt19937 rng(8484);
+    generator.generate(*sub, *kick, project, plan, nullptr, rng);
+
+    for (const auto& bar : plan.bars)
+    {
+        int startsInBar = 0;
+        for (const auto& note : sub->sub808Notes)
+            if ((note.step / 16) == bar.barIndex)
+                ++startsInBar;
+
+        const int maxStarts = (bar.lowEnd == DrillLowEndIntent::Move || bar.lowEnd == DrillLowEndIntent::Release) ? 2 : 1;
+        expect(startsInBar <= maxStarts,
+               "Drill 808 generation should stay compact per bar instead of inheriting every kick/reference support start.");
+    }
+
+    int slideCount = 0;
+    for (size_t index = 0; index < sub->sub808Notes.size(); ++index)
+    {
+        const auto& note = sub->sub808Notes[index];
+        if (!note.glideToNext)
+            continue;
+
+        ++slideCount;
+        expect(index + 1 < sub->sub808Notes.size(),
+               "Drill 808 glide markers must always point to a following note.");
+        expect((note.step / 16) == (sub->sub808Notes[index + 1].step / 16),
+               "Drill 808 slides should stay inside the same bar after the compact low-end pass.");
+    }
+
+    expect(slideCount <= 1,
+           "Drill 808 generation should keep slide count low after simplifying low-end expansion.");
 }
 
-    void testRegistryVsStyleLabConsistency()
+    void testDrillValidatorCompactnessSmoke()
     {
-        const auto profile = TrackRegistry::createDefaultRuntimeLaneProfile();
+        DrillPatternValidator validator;
 
-        PatternProject emptyProject;
-        emptyProject.runtimeLaneProfile.lanes.clear();
-        emptyProject.runtimeLaneOrder.clear();
-        emptyProject.tracks.clear();
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Drill;
+        project.params.bars = 4;
+        project.params.keyRoot = 0;
+        project.params.scaleMode = 0;
 
-        const auto fallbackState = StyleLabReferenceService::createDefaultState(emptyProject, "Boom Bap", "Classic", 4, 92);
-        expect(static_cast<int>(fallbackState.laneDefinitions.size()) == static_cast<int>(profile.lanes.size()),
-            "StyleLab fallback lane count must match TrackRegistry default profile.");
+        auto* kick = findTrackByType(project, TrackType::Kick);
+        auto* sub = findTrackByType(project, TrackType::Sub808);
+        expect(kick != nullptr && sub != nullptr,
+            "Drill validator compactness smoke requires Kick and Sub808 tracks.");
 
-        for (const auto& info : TrackRegistry::all())
+        kick->enabled = true;
+        sub->enabled = true;
+
+        DrillPhrasePlan plan;
+        plan.phraseSpanBars = 4;
+        plan.substyleIndex = 0;
+
+        DrillPhraseBarPlan statement;
+        statement.barIndex = 0;
+        statement.role = DrillPhraseBarRole::Statement;
+        statement.anchorMap.kickAnchorSteps = { { 0, 10, -1, -1 } };
+        statement.anchorMap.snareAnchorSteps = { { 8, -1 } };
+        statement.anchorMap.lowEndAnchorSteps = { { 0, 6, 10, 14 } };
+        statement.lowEnd = DrillLowEndIntent::Anchor;
+        plan.bars.push_back(statement);
+
+        DrillPhraseBarPlan response;
+        response.barIndex = 1;
+        response.role = DrillPhraseBarRole::Response;
+        response.anchorMap.kickAnchorSteps = { { 0, 7, -1, -1 } };
+        response.anchorMap.snareAnchorSteps = { { 12, -1 } };
+        response.anchorMap.lowEndAnchorSteps = { { 0, 7, 10, 12 } };
+        response.lowEnd = DrillLowEndIntent::Move;
+        plan.bars.push_back(response);
+
+        DrillPhraseBarPlan lift;
+        lift.barIndex = 2;
+        lift.role = DrillPhraseBarRole::Lift;
+        lift.anchorMap.kickAnchorSteps = { { 0, 9, 13, -1 } };
+        lift.anchorMap.snareAnchorSteps = { { 12, -1 } };
+        lift.anchorMap.lowEndAnchorSteps = { { 0, 5, 9, 12 } };
+        lift.lowEnd = DrillLowEndIntent::Move;
+        plan.bars.push_back(lift);
+
+        DrillPhraseBarPlan release;
+        release.barIndex = 3;
+        release.role = DrillPhraseBarRole::Release;
+        release.anchorMap.kickAnchorSteps = { { 0, 11, 15, -1 } };
+        release.anchorMap.snareAnchorSteps = { { 8, 12 } };
+        release.anchorMap.lowEndAnchorSteps = { { 0, 8, 12, 14 } };
+        release.lowEnd = DrillLowEndIntent::Release;
+        plan.bars.push_back(release);
+
+        kick->notes.clear();
+        kick->notes.push_back({ 36, 0, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
+        kick->notes.push_back({ 36, 4, 1, 96, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 10, 1, 104, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 16, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
+        kick->notes.push_back({ 36, 20, 1, 96, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 23, 1, 102, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 28, 1, 106, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 32, 1, 114, 0, false, "drill_kick_anchor", false, false, false });
+        kick->notes.push_back({ 36, 35, 1, 98, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 39, 1, 104, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 46, 1, 108, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 48, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
+        kick->notes.push_back({ 36, 52, 1, 96, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 57, 1, 102, 0, false, "drill_kick_support", false, false, false });
+        kick->notes.push_back({ 36, 62, 1, 110, 0, false, "drill_kick_support", false, false, false });
+
+        sub->sub808Notes.clear();
+        sub->sub808Notes.push_back({ 24, 0, 4, 100, 0, "drill_sub_anchor", false, false, false });
+        sub->sub808Notes.push_back({ 27, 6, 2, 94, 0, "drill_sub_anchor", false, false, false });
+        sub->sub808Notes.push_back({ 24, 16, 3, 102, 0, "drill_sub_move", false, false, false });
+        sub->sub808Notes.push_back({ 31, 20, 2, 92, 0, "drill_sub_move", false, false, false });
+        sub->sub808Notes.push_back({ 27, 28, 2, 96, 0, "drill_sub_move", true, true, false });
+        sub->sub808Notes.push_back({ 24, 32, 3, 104, 0, "drill_sub_move", false, false, false });
+        sub->sub808Notes.push_back({ 29, 36, 2, 90, 0, "drill_sub_move", false, false, false });
+        sub->sub808Notes.push_back({ 31, 40, 2, 92, 0, "drill_sub_move", false, false, true });
+        sub->sub808Notes.push_back({ 24, 48, 5, 106, 0, "drill_sub_release", false, false, false });
+        sub->sub808Notes.push_back({ 27, 56, 3, 94, 0, "drill_sub_release", false, false, false });
+        sub->sub808Notes.push_back({ 31, 62, 2, 96, 0, "drill_sub_release", false, false, false });
+
+        validator.validate(project, plan, { TrackType::Kick, TrackType::Sub808 });
+
+        kick = findTrackByType(project, TrackType::Kick);
+        sub = findTrackByType(project, TrackType::Sub808);
+        expect(kick != nullptr && sub != nullptr,
+            "Drill validator compactness smoke requires Kick and Sub808 tracks after validation.");
+
+        for (const auto& bar : plan.bars)
         {
-         const auto* runtimeLane = findRuntimeLaneForTrack(profile, info.type);
-         expect(runtimeLane != nullptr, "TrackRegistry default profile is missing registry lane.");
+         int kickCount = 0;
+         int subCount = 0;
+         for (const auto& note : kick->notes)
+             if ((note.step / 16) == bar.barIndex)
+              ++kickCount;
+         for (const auto& note : sub->sub808Notes)
+             if ((note.step / 16) == bar.barIndex)
+              ++subCount;
 
-         const auto fallbackIt = std::find_if(fallbackState.laneDefinitions.begin(),
-                               fallbackState.laneDefinitions.end(),
-                               [type = info.type](const StyleLabLaneDefinition& lane)
-                               {
-                                return lane.runtimeTrackType.has_value() && *lane.runtimeTrackType == type;
-                               });
-         expect(fallbackIt != fallbackState.laneDefinitions.end(), "StyleLab fallback is missing registry lane definition.");
-
-         expect(runtimeLane->groupName == LaneDefaults::defaultGroupForTrack(info.type),
-             "Runtime lane group must come from LaneDefaults.");
-         expect(fallbackIt->groupName == LaneDefaults::defaultGroupForTrack(info.type),
-             "StyleLab fallback group must come from LaneDefaults.");
-         expect(runtimeLane->dependencyName == LaneDefaults::defaultDependencyForTrack(info.type),
-             "Runtime lane dependency must come from LaneDefaults.");
-         expect(fallbackIt->dependencyName == LaneDefaults::defaultDependencyForTrack(info.type),
-             "StyleLab fallback dependency must come from LaneDefaults.");
-         expect(runtimeLane->generationPriority == LaneDefaults::defaultPriorityForTrack(info.type),
-             "Runtime lane priority must come from LaneDefaults.");
-         expect(fallbackIt->generationPriority == LaneDefaults::defaultPriorityForTrack(info.type),
-             "StyleLab fallback priority must come from LaneDefaults.");
-         expect(runtimeLane->isCore == LaneDefaults::defaultCoreForTrack(info.type),
-             "Runtime lane isCore must come from LaneDefaults.");
-         expect(fallbackIt->isCore == LaneDefaults::defaultCoreForTrack(info.type),
-             "StyleLab fallback isCore must come from LaneDefaults.");
-
-         expect(runtimeLane->groupName == fallbackIt->groupName,
-             "Runtime lane and StyleLab fallback group mismatch.");
-         expect(runtimeLane->dependencyName == fallbackIt->dependencyName,
-             "Runtime lane and StyleLab fallback dependency mismatch.");
-         expect(runtimeLane->generationPriority == fallbackIt->generationPriority,
-             "Runtime lane and StyleLab fallback priority mismatch.");
-         expect(runtimeLane->isCore == fallbackIt->isCore,
-             "Runtime lane and StyleLab fallback isCore mismatch.");
+         expect(kickCount <= (bar.role == DrillPhraseBarRole::Lift || bar.role == DrillPhraseBarRole::Release ? 3 : 2),
+             "Drill validator should clamp kick bars back to the compact Drill template limits.");
+         expect(subCount <= ((bar.lowEnd == DrillLowEndIntent::Move || bar.lowEnd == DrillLowEndIntent::Release) ? 2 : 1),
+             "Drill validator should clamp low-end starts back to the compact Drill limits.");
         }
+
+        int glideCount = 0;
+        for (size_t index = 0; index < sub->sub808Notes.size(); ++index)
+        {
+         const auto& note = sub->sub808Notes[index];
+         if (!note.glideToNext)
+             continue;
+
+         ++glideCount;
+         expect(index + 1 < sub->sub808Notes.size(),
+             "Drill validator glide cleanup must leave each glide attached to a following note.");
+         expect((note.step / 16) == (sub->sub808Notes[index + 1].step / 16),
+             "Drill validator should remove cross-bar low-end slides.");
+        }
+
+        expect(glideCount <= 1,
+            "Drill validator should keep the surviving low-end slides restrained.");
     }
 
-    void testLaneDefaultsNoBehaviorRegressionSmoke()
+void testDrillSnareGenerationSmoke()
+{
+    DrillSnareGenerator generator;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+
+    auto* snare = findTrackByType(project, TrackType::Snare);
+    auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+    expect(snare != nullptr && clapGhost != nullptr,
+           "Drill snare generation smoke requires both snare and clap/ghost lanes.");
+
+    DrillPhrasePlan plan;
+    plan.phraseSpanBars = 4;
+    plan.substyleIndex = 0;
+
+    DrillPhraseBarPlan statement;
+    statement.barIndex = 0;
+    statement.role = DrillPhraseBarRole::Statement;
+    statement.anchorMap.snareAnchorSteps = { { 8, -1 } };
+    statement.anchorMap.supportAccentSteps = { { 6, 7, 9, 10 } };
+    statement.supportAccent = DrillSupportAccentIntent::Light;
+    plan.bars.push_back(statement);
+
+    DrillPhraseBarPlan response;
+    response.barIndex = 1;
+    response.role = DrillPhraseBarRole::Response;
+    response.anchorMap.snareAnchorSteps = { { 12, -1 } };
+    response.anchorMap.supportAccentSteps = { { 10, 11, 13, 14 } };
+    response.supportAccent = DrillSupportAccentIntent::Drag;
+    plan.bars.push_back(response);
+
+    DrillPhraseBarPlan lift;
+    lift.barIndex = 2;
+    lift.role = DrillPhraseBarRole::Lift;
+    lift.anchorMap.snareAnchorSteps = { { 12, -1 } };
+    lift.anchorMap.supportAccentSteps = { { 10, 11, 13, 14 } };
+    lift.supportAccent = DrillSupportAccentIntent::Push;
+    plan.bars.push_back(lift);
+
+    DrillPhraseBarPlan release;
+    release.barIndex = 3;
+    release.role = DrillPhraseBarRole::Release;
+    release.anchorMap.snareAnchorSteps = { { 8, 12 } };
+    release.anchorMap.supportAccentSteps = { { 6, 7, 9, 10 } };
+    release.supportAccent = DrillSupportAccentIntent::Drag;
+    plan.bars.push_back(release);
+
+    std::mt19937 rng(8181);
+    generator.generate(*snare, clapGhost, project, plan, rng);
+
+    for (const auto& bar : plan.bars)
     {
-        const auto profile = TrackRegistry::createDefaultRuntimeLaneProfile();
-        const auto defaultStates = TrackRegistry::createDefaultTrackStates(profile);
+        int clapLayersInBar = 0;
+        int ghostsInBar = 0;
+        const int primarySnare = bar.anchorMap.snareAnchorSteps[0];
 
-        struct ExpectedLaneDefaults
+        for (const auto& note : clapGhost->notes)
         {
-         TrackType type;
-         const char* laneName;
-         const char* laneId;
-         int priority;
-         bool enabledByDefault;
-        };
+            if ((note.step / 16) != bar.barIndex)
+                continue;
 
-        static const std::array<ExpectedLaneDefaults, 11> expectedLanes {{
-         { TrackType::HiHat, "HiHat", "registry:HiHat", 86, true },
-         { TrackType::HatFX, "Hat Accent", "registry:HatFX", 56, false },
-         { TrackType::OpenHat, "OpenHat", "registry:OpenHat", 74, true },
-         { TrackType::Snare, "Snare", "registry:Snare", 92, true },
-         { TrackType::ClapGhostSnare, "Clap Ghost", "registry:Clap/GhostSnare", 60, true },
-         { TrackType::Kick, "Kick", "registry:Kick", 96, true },
-         { TrackType::GhostKick, "Kick Ghost", "registry:GhostKick", 58, true },
-         { TrackType::Ride, "Ride", "registry:Ride", 42, false },
-         { TrackType::Cymbal, "Cymbal", "registry:Cymbal", 38, false },
-         { TrackType::Perc, "Perc", "registry:Perc", 68, true },
-         { TrackType::Sub808, "Sub808", "registry:Sub808", 82, false }
-        }};
-
-        expect(profile.lanes.size() == expectedLanes.size(), "Default runtime profile lane count changed.");
-        expect(defaultStates.size() == expectedLanes.size(), "Default track state count changed.");
-
-        for (const auto& expected : expectedLanes)
-        {
-         const auto* lane = findRuntimeLaneForTrack(profile, expected.type);
-         expect(lane != nullptr, "Expected default runtime lane is missing.");
-         expect(lane->laneName == expected.laneName, "Default lane name changed.");
-         expect(lane->laneId == expected.laneId, "Default lane id changed.");
-         expect(lane->generationPriority == expected.priority, "Default lane priority changed.");
-
-         const auto* state = [&defaultStates, expected]() -> const TrackState*
-         {
-             for (const auto& track : defaultStates)
-             {
-              if (track.type == expected.type)
-                  return &track;
-             }
-             return nullptr;
-         }();
-         expect(state != nullptr, "Expected default track state is missing.");
-         expect(state->laneId == expected.laneId, "Default track state laneId changed.");
-         expect(state->runtimeTrackType.has_value() && *state->runtimeTrackType == expected.type,
-             "Default track state runtimeTrackType changed.");
-         expect(state->enabled == expected.enabledByDefault, "Default track enabled state changed.");
+            const int stepInBar = note.step % 16;
+            if (note.semanticRole == "drill_clap_layer")
+            {
+                ++clapLayersInBar;
+                expect(matchesSnareAnchorStep(bar.anchorMap.snareAnchorSteps, stepInBar),
+                       "Drill snare generator must place clap layers exactly on snare backbone anchors.");
+            }
+            else if (note.semanticRole == "drill_snare_ghost")
+            {
+                ++ghostsInBar;
+                expect(primarySnare >= 0, "Drill snare generator ghost validation requires a primary snare anchor.");
+                expect(std::abs(stepInBar - primarySnare) >= 1 && std::abs(stepInBar - primarySnare) <= 2,
+                       "Drill snare generator ghosts must stay within a tight one- or two-step support window around the primary snare.");
+                if (bar.supportAccent == DrillSupportAccentIntent::Push)
+                    expect(stepInBar < primarySnare,
+                           "Drill snare generator push ghosts must land before the primary snare.");
+                if (bar.supportAccent == DrillSupportAccentIntent::Drag)
+                    expect(stepInBar > primarySnare,
+                           "Drill snare generator drag ghosts must land after the primary snare.");
+            }
         }
+
+        expect(!(clapLayersInBar > 0 && ghostsInBar > 0),
+               "Drill snare generator should choose one decoration mode per bar instead of stacking clap layers and ghosts together.");
+        expect(ghostsInBar <= 1,
+               "Drill snare generator should emit at most one support ghost per bar.");
+        expect(clapLayersInBar <= activeSnareAnchorCount(bar.anchorMap.snareAnchorSteps),
+               "Drill snare generator should keep clap layers bounded by the bar backbone anchors.");
+    }
+}
+
+void testDrillFullEngineSmoke()
+{
+    DrillEngine engine;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+    project.params.seed = 5151;
+    project.params.densityAmount = 0.68f;
+    project.params.timingAmount = 0.42f;
+    project.params.keyRoot = 2;
+    project.params.scaleMode = 0;
+    project.params.drillSubstyle = 0;
+    project.styleInfluence.hatMotionWeight = 1.25f;
+    project.styleInfluence.lowEndCouplingWeight = 1.35f;
+    project.styleInfluence.supportAccentWeight = 1.2f;
+    project.styleInfluence.drillHatTripletWeight = 1.35f;
+    project.styleInfluence.drillHatBurstWeight = 1.1f;
+    project.styleInfluence.drillHatGapIntentWeight = 0.7f;
+    project.styleInfluence.drillHatAccentPatternWeight = 1.15f;
+    project.styleInfluence.drillHatDensityVariationWeight = 1.25f;
+
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    auto* hatFx = findTrackByType(project, TrackType::HatFX);
+    auto* snare = findTrackByType(project, TrackType::Snare);
+    auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+    auto* kick = findTrackByType(project, TrackType::Kick);
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(hat != nullptr && hatFx != nullptr && snare != nullptr && clapGhost != nullptr && kick != nullptr && sub != nullptr,
+           "Drill full engine smoke requires all core Drill lanes.");
+
+        hatFx->enabled = true;
+        sub->enabled = true;
+
+    engine.generate(project);
+
+    hat = findTrackByType(project, TrackType::HiHat);
+    hatFx = findTrackByType(project, TrackType::HatFX);
+    snare = findTrackByType(project, TrackType::Snare);
+    clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+    kick = findTrackByType(project, TrackType::Kick);
+    sub = findTrackByType(project, TrackType::Sub808);
+    expect(hat != nullptr && hatFx != nullptr && snare != nullptr && clapGhost != nullptr && kick != nullptr && sub != nullptr,
+        "Drill full engine smoke requires all core Drill lanes after generation.");
+
+    const auto plan = DrillPhrasePlanner::buildPlan(project);
+
+    expect(!hat->notes.empty(), "Drill full engine should keep main hats active.");
+    expect(!hatFx->notes.empty(), "Drill full engine should generate HatFX support material.");
+    expect(!snare->notes.empty(), "Drill full engine should generate the main snare lane.");
+    expect(!kick->notes.empty(), "Drill full engine should generate kick anchors.");
+    expect(!sub->sub808Notes.empty(), "Drill full engine should generate sub808 notes.");
+    expect(hatFx->notes.size() < hat->notes.size(), "HatFX must remain sparser than the main hihat lane.");
+    expect(snare->laneRole == "drill_snare", "Drill full engine should set the snare lane role.");
+    expect(clapGhost->laneRole == "drill_clap_ghost", "Drill full engine should set the clap/ghost lane role.");
+    expect(kick->laneRole == "drill_kick", "Drill full engine should set the kick lane role.");
+    expect(sub->laneRole == "drill_sub", "Drill full engine should set the sub lane role.");
+
+    for (const auto& bar : plan.bars)
+    {
+        for (const int snareStep : bar.anchorMap.snareAnchorSteps)
+        {
+            if (snareStep < 0)
+                continue;
+
+            expect(hasNoteAt(*snare,
+                             bar.barIndex * 16 + snareStep,
+                             0,
+                             "drill_snare_backbone"),
+                   "Drill full engine must preserve planned snare anchors.");
+        }
+
+        int hatFxBarCount = 0;
+        int clapGhostBarCount = 0;
+        int clapLayersInBar = 0;
+        int snareGhostsInBar = 0;
+        int kickBarCount = 0;
+        int subBarCount = 0;
+        for (const auto& note : hatFx->notes)
+            if ((note.step / 16) == bar.barIndex)
+                ++hatFxBarCount;
+        for (const auto& note : clapGhost->notes)
+        {
+            if ((note.step / 16) != bar.barIndex)
+                continue;
+
+                ++clapGhostBarCount;
+            const int stepInBar = note.step % 16;
+            if (note.semanticRole == "drill_clap_layer")
+            {
+                ++clapLayersInBar;
+                expect(matchesSnareAnchorStep(bar.anchorMap.snareAnchorSteps, stepInBar),
+                       "Drill clap layers must stay exactly on planned snare anchors after validation.");
+            }
+            else if (note.semanticRole == "drill_snare_ghost")
+            {
+                ++snareGhostsInBar;
+                const int primarySnare = bar.anchorMap.snareAnchorSteps[0];
+                expect(primarySnare >= 0, "Drill ghost validation requires a primary snare anchor.");
+                expect(std::abs(stepInBar - primarySnare) >= 1 && std::abs(stepInBar - primarySnare) <= 2,
+                       "Drill ghosts must stay inside the tight support window around the primary snare after validation.");
+                if (bar.supportAccent == DrillSupportAccentIntent::Push)
+                    expect(stepInBar < primarySnare,
+                           "Drill push ghosts must remain before the primary snare after validation.");
+                if (bar.supportAccent == DrillSupportAccentIntent::Drag)
+                    expect(stepInBar > primarySnare,
+                           "Drill drag ghosts must remain after the primary snare after validation.");
+            }
+            else
+            {
+                expect(false, "Drill clap/ghost lane should only contain clap layers or snare ghosts.");
+            }
+        }
+        for (const auto& note : kick->notes)
+            if ((note.step / 16) == bar.barIndex)
+                ++kickBarCount;
+         for (const auto& note : sub->sub808Notes)
+             if ((note.step / 16) == bar.barIndex)
+              ++subBarCount;
+
+        expect(hatFxBarCount <= 3, "Drill HatFX should stay sparse per bar.");
+        expect(!(clapLayersInBar > 0 && snareGhostsInBar > 0),
+               "Drill clap/ghost support should resolve to either layered backbone reinforcement or a single ghost, not both.");
+        expect(snareGhostsInBar <= 1, "Drill clap/ghost support should keep at most one ghost per bar.");
+        expect(clapGhostBarCount <= activeSnareAnchorCount(bar.anchorMap.snareAnchorSteps),
+               "Drill clap/ghost support should stay bounded by the number of planned snare anchors in the bar.");
+        expect(kickBarCount >= 1, "Drill kick lane should keep at least one hit per bar after validation.");
+         expect(kickBarCount <= (bar.role == DrillPhraseBarRole::Lift || bar.role == DrillPhraseBarRole::Release ? 3 : 2),
+             "Drill kick lane should stay on compact role-based templates instead of drifting into dense permissive bar fills.");
+         expect(subBarCount <= ((bar.lowEnd == DrillLowEndIntent::Move || bar.lowEnd == DrillLowEndIntent::Release) ? 2 : 1),
+             "Drill sub808 should stay compact per bar instead of echoing every support hit.");
     }
 
-        void testProjectLaneAccessLookupConsistency()
-        {
-            auto project = createDefaultProject();
-            expectRuntimeLaneIntegrity(project, "project_lane_access_consistency");
-
-            for (const auto& lane : project.runtimeLaneProfile.lanes)
-            {
-             const auto* resolvedLane = ProjectLaneAccess::findLaneDefinition(project, lane.laneId);
-             expect(resolvedLane != nullptr, "ProjectLaneAccess must find every lane by laneId.");
-             expect(resolvedLane->laneId == lane.laneId, "Lane lookup returned mismatched laneId.");
-             expect(ProjectLaneAccess::isBackedLane(project, lane.laneId) == lane.runtimeTrackType.has_value(),
-                 "Backed lane classification mismatch.");
-             expect(ProjectLaneAccess::isUnbackedLane(project, lane.laneId) == !lane.runtimeTrackType.has_value(),
-                 "Unbacked lane classification mismatch.");
-
-             const auto resolvedType = ProjectLaneAccess::backingTrackTypeForLaneId(project, lane.laneId);
-             expect(resolvedType == lane.runtimeTrackType, "Backing track type lookup mismatch.");
-
-             const auto* trackByLane = ProjectLaneAccess::findTrackState(project, lane.laneId);
-             if (lane.runtimeTrackType.has_value())
-             {
-                 const auto* trackByType = ProjectLaneAccess::findTrackState(project, *lane.runtimeTrackType);
-                 expect(trackByLane != nullptr, "Backed lane must resolve to a track.");
-                 expect(trackByType != nullptr, "Backed track type must resolve to a track.");
-                 expect(trackByLane == trackByType, "LaneId and TrackType lookups must resolve the same backing track.");
-                 expect(trackByLane->laneId == lane.laneId, "Resolved track must retain the laneId binding.");
-                 expect(ProjectLaneAccess::canonicalLaneIdForTrack(project, *lane.runtimeTrackType) == lane.laneId,
-                     "Canonical laneId must match runtime lane binding.");
-             }
-             else
-             {
-                 expect(trackByLane == nullptr, "Unbacked lane must not resolve to a track.");
-             }
-            }
-        }
-
-        void testProjectLaneAccessCustomLaneSafety()
-        {
-            auto project = createDefaultProject();
-            auto customLane = RuntimeLaneLifecycle::createCustomLaneDefinition(project, "Texture Vox");
-            const auto customLaneId = customLane.laneId;
-            expect(RuntimeLaneLifecycle::addLane(project, std::move(customLane), 3),
-                "Failed to add custom lane for ProjectLaneAccess safety test.");
-
-            expect(ProjectLaneAccess::findLaneDefinition(project, customLaneId) != nullptr,
-                "Custom lane must be discoverable by laneId.");
-            expect(ProjectLaneAccess::findTrackState(project, customLaneId) == nullptr,
-                "Custom unbacked lane must not resolve to a backing track.");
-            expect(!ProjectLaneAccess::hasBackingTrackType(project, customLaneId),
-                "Custom lane must not expose a backing track type.");
-            expect(ProjectLaneAccess::backingTrackTypeForLaneId(project, customLaneId) == std::nullopt,
-                "Custom lane backing track type lookup must return nullopt.");
-            expect(ProjectLaneAccess::isUnbackedLane(project, customLaneId),
-                "Custom lane must classify as unbacked.");
-            expect(!ProjectLaneAccess::isBackedLane(project, customLaneId),
-                "Custom lane must not classify as backed.");
-
-            const RuntimeLaneId missingLaneId = "missing:lane";
-            expect(ProjectLaneAccess::findLaneDefinition(project, missingLaneId) == nullptr,
-                "Missing lane lookup must return nullptr.");
-            expect(ProjectLaneAccess::findTrackState(project, missingLaneId) == nullptr,
-                "Missing lane track lookup must return nullptr.");
-            expect(ProjectLaneAccess::backingTrackTypeForLaneId(project, missingLaneId) == std::nullopt,
-                "Missing lane backing type lookup must return nullopt.");
-            expect(!ProjectLaneAccess::isBackedLane(project, missingLaneId),
-                "Missing lane must not classify as backed.");
-            expect(!ProjectLaneAccess::isUnbackedLane(project, missingLaneId),
-                "Missing lane must not classify as unbacked.");
-
-            for (const auto& info : TrackRegistry::all())
-            {
-             expect(ProjectLaneAccess::canonicalLaneIdForTrack(project, info.type) == TrackRegistry::defaultRuntimeLaneId(info.type),
-                 "Canonical laneId lookup must preserve registry lane ids in the default profile.");
-            }
-        }
-
-        void testProjectLaneAccessOrderStability()
-        {
-            auto project = createDefaultProject();
-            auto customLane = RuntimeLaneLifecycle::createCustomLaneDefinition(project, "Order Test");
-            const auto customLaneId = customLane.laneId;
-            expect(RuntimeLaneLifecycle::addLane(project, std::move(customLane), 1),
-                "Failed to add custom lane for order stability test.");
-
-            std::map<TrackType, RuntimeLaneId> canonicalLaneIds;
-            for (const auto& info : TrackRegistry::all())
-             canonicalLaneIds.emplace(info.type, ProjectLaneAccess::canonicalLaneIdForTrack(project, info.type));
-
-            std::reverse(project.runtimeLaneProfile.lanes.begin(), project.runtimeLaneProfile.lanes.end());
-            std::rotate(project.runtimeLaneOrder.begin(), project.runtimeLaneOrder.begin() + 2, project.runtimeLaneOrder.end());
-            std::reverse(project.tracks.begin(), project.tracks.end());
-
-            for (const auto& [type, laneId] : canonicalLaneIds)
-            {
-             const auto* lane = ProjectLaneAccess::findLaneDefinition(project, laneId);
-             const auto* track = ProjectLaneAccess::findTrackState(project, laneId);
-             expect(lane != nullptr, "Lane lookup must remain stable after order changes.");
-             expect(track != nullptr, "Track lookup by laneId must remain stable after order changes.");
-             expect(track->type == type, "Track lookup returned wrong TrackType after order changes.");
-             expect(ProjectLaneAccess::backingTrackTypeForLaneId(project, laneId) == type,
-                 "Backing type lookup must remain stable after order changes.");
-             expect(ProjectLaneAccess::canonicalLaneIdForTrack(project, type) == laneId,
-                 "Canonical laneId lookup must remain stable after order changes.");
-            }
-
-            expect(ProjectLaneAccess::findLaneDefinition(project, customLaneId) != nullptr,
-                "Custom lane must survive order changes.");
-            expect(ProjectLaneAccess::findTrackState(project, customLaneId) == nullptr,
-                "Custom unbacked lane must stay unbacked after order changes.");
-            expect(ProjectLaneAccess::isUnbackedLane(project, customLaneId),
-                "Custom lane classification must remain stable after order changes.");
-        }
-
-            void testProjectStateMutationParity()
-            {
-                auto project = createDefaultProject();
-                const auto originalTrackCount = project.tracks.size();
-                const auto kickLaneId = TrackRegistry::defaultRuntimeLaneId(TrackType::Kick);
-                const auto snareLaneId = TrackRegistry::defaultRuntimeLaneId(TrackType::Snare);
-
-                ProjectStateController::setTrackMuted(project, kickLaneId, true);
-                ProjectStateController::setTrackSolo(project, kickLaneId, true);
-                ProjectStateController::setTrackLocked(project, kickLaneId, true);
-                ProjectStateController::setTrackEnabled(project, snareLaneId, false);
-                ProjectStateController::setTrackLaneVolume(project, kickLaneId, 9.0f);
-
-                auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
-                auto* snare = ProjectLaneAccess::findTrackState(project, TrackType::Snare);
-                expect(kick != nullptr && snare != nullptr, "Required backed tracks missing in mutation parity test.");
-                expect(kick->muted, "Kick muted flag should update.");
-                expect(kick->solo, "Kick solo flag should update.");
-                expect(kick->locked, "Kick lock flag should update.");
-                expect(!snare->enabled, "Snare enabled flag should update.");
-                expect(nearlyEqual(kick->laneVolume, 1.5f), "Lane volume should clamp to 1.5.");
-                expect(project.tracks.size() == originalTrackCount, "Mutation calls must not change track count.");
-
-                ProjectStateController::setTrackLocked(project, kickLaneId, false);
-                ProjectStateController::setTrackEnabled(project, snareLaneId, true);
-
-                ProjectStateController::setTrackNotes(project,
-                                    kickLaneId,
-                                    {
-                                        NoteEvent { 36, 6, 2, 120, 18, false, "anchor", false, false, false },
-                                        NoteEvent { 36, 0, 1, 100, 0, false, "support", false, false, false }
-                                    });
-                ProjectStateController::setTrackNotes(project,
-                                    snareLaneId,
-                                    {
-                                        NoteEvent { 38, 4, 1, 110, 0, false, "backbeat", false, false, false }
-                                    });
-
-                kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
-                snare = ProjectLaneAccess::findTrackState(project, TrackType::Snare);
-                expect(static_cast<int>(kick->notes.size()) == 2, "Kick note edit should apply to the target lane.");
-                expect(static_cast<int>(snare->notes.size()) == 1, "Snare note edit should apply to the target lane.");
-                expect(kick->notes.front().step == 0, "Kick notes should remain sorted after mutation.");
-
-                ProjectStateController::clearTrack(project, snareLaneId);
-                expect(snare->notes.empty(), "clearTrack should clear only the targeted lane notes.");
-                expect(static_cast<int>(kick->notes.size()) == 2, "clearTrack on snare must not touch kick notes.");
-
-                ProjectStateController::setSelectedTrack(project, kickLaneId);
-                expect(project.selectedTrackIndex >= 0, "Selected track index must be set.");
-                expect(project.tracks[static_cast<size_t>(project.selectedTrackIndex)].type == TrackType::Kick,
-                    "Selected track should resolve to Kick.");
-
-                ProjectStateController::setSoundModuleTrack(project, TrackType::Kick);
-                expect(project.soundModuleTrackIndex >= 0, "Sound module track index must be set.");
-                expect(project.tracks[static_cast<size_t>(project.soundModuleTrackIndex)].type == TrackType::Kick,
-                    "Sound module track should resolve to Kick.");
-
-                SoundLayerState laneSound;
-                laneSound.pan = 0.33f;
-                laneSound.drive = 0.72f;
-                ProjectStateController::setTrackSoundLayer(project, kickLaneId, laneSound);
-                expect(nearlyEqual(kick->sound.pan, laneSound.pan), "Track sound layer pan should update.");
-                expect(nearlyEqual(kick->sound.drive, laneSound.drive), "Track sound layer drive should update.");
-
-                SoundLayerState globalSound;
-                globalSound.width = 1.4f;
-                globalSound.reverb = 0.25f;
-                ProjectStateController::setGlobalSoundLayer(project, globalSound);
-                expect(nearlyEqual(project.globalSound.width, globalSound.width), "Global sound width should update.");
-                expect(nearlyEqual(project.globalSound.reverb, globalSound.reverb), "Global sound reverb should update.");
-
-                ProjectStateController::setPreviewStartStep(project, 999);
-                expect(project.previewStartStep == project.params.bars * 16 - 1, "Preview start step should clamp.");
-                ProjectStateController::setPreviewPlaybackMode(project, PreviewPlaybackMode::LoopRange);
-                expect(project.previewPlaybackMode == PreviewPlaybackMode::LoopRange, "Preview playback mode should update.");
-                ProjectStateController::setPreviewLoopRegion(project, juce::Range<int>(-100, project.params.bars * 16 * ticksPerStep() + 500));
-                expect(project.previewLoopTicks.has_value(), "Preview loop region should be stored.");
-                expect(project.previewLoopTicks->getStart() == 0, "Preview loop start should clamp to zero.");
-                expect(project.previewLoopTicks->getEnd() == project.params.bars * 16 * ticksPerStep(), "Preview loop end should clamp to total length.");
-            }
-
-            void testProjectStateSnapshotRestoreStability()
-            {
-                auto project = createDefaultProject();
-                auto snapshot = createDefaultProject();
-
-                std::rotate(snapshot.runtimeLaneOrder.begin(), snapshot.runtimeLaneOrder.begin() + 2, snapshot.runtimeLaneOrder.end());
-
-                auto* kick = ProjectLaneAccess::findTrackState(snapshot, TrackType::Kick);
-                auto* sub = ProjectLaneAccess::findTrackState(snapshot, TrackType::Sub808);
-                expect(kick != nullptr && sub != nullptr, "Snapshot restore test requires Kick and Sub808 tracks.");
-
-                kick->notes = {
-                 NoteEvent { 36, 0, 1, 112, 0, false, "anchor", false, false, false },
-                 NoteEvent { 36, 8, 2, 98, 24, false, "support", false, false, false }
-                };
-                sub->sub808Notes = {
-                 Sub808NoteEvent { 34, 0, 8, 108, 0, "root", false, false, false },
-                 Sub808NoteEvent { 37, 8, 4, 100, 30, "lift", true, false, true }
-                };
-                sub->notes = toLegacyNoteEvents(sub->sub808Notes);
-                snapshot.selectedTrackIndex = 999;
-                snapshot.soundModuleTrackIndex = 999;
-
-                const auto expectedLaneOrder = snapshot.runtimeLaneOrder;
-                const auto expectedKickNotes = kick->notes;
-                const auto expectedSubNotes = sub->sub808Notes;
-                const auto liveParams = project.params;
-
-                ProjectStateController::restoreEditorProjectSnapshot(project, snapshot, liveParams);
-                expectRuntimeLaneIntegrity(project, "project_state_snapshot_restore");
-
-                expect(project.runtimeLaneOrder == expectedLaneOrder, "runtimeLaneOrder must survive snapshot restore.");
-                const auto* restoredKick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
-                const auto* restoredSub = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
-                expect(restoredKick != nullptr && restoredSub != nullptr, "Restored project is missing required tracks.");
-                    expect(vectorEquals(restoredKick->notes, expectedKickNotes, noteEventEquals),
-                        "Kick notes must survive snapshot restore.");
-                    expect(vectorEquals(restoredSub->sub808Notes, expectedSubNotes, sub808NoteEventEquals),
-                        "Sub808 notes must survive snapshot restore.");
-                expect(project.selectedTrackIndex >= 0 && project.selectedTrackIndex < static_cast<int>(project.tracks.size()),
-                    "Selected track index must be valid after restore validation.");
-                expect(project.soundModuleTrackIndex >= -1 && project.soundModuleTrackIndex < static_cast<int>(project.tracks.size()),
-                    "Sound module track index must be valid after restore validation.");
-                expect(project.params.genre == liveParams.genre && project.params.bars == liveParams.bars,
-                    "Live params must win during snapshot restore.");
-            }
-
-            void testProjectStateLaneSafety()
-            {
-                auto project = createDefaultProject();
-                auto customLane = RuntimeLaneLifecycle::createCustomLaneDefinition(project, "Unsafe Target");
-                const auto customLaneId = customLane.laneId;
-                expect(RuntimeLaneLifecycle::addLane(project, std::move(customLane), 2),
-                    "Failed to add custom lane for lane safety test.");
-
-                const RuntimeLaneId kickLaneId = TrackRegistry::defaultRuntimeLaneId(TrackType::Kick);
-                const RuntimeLaneId snareLaneId = TrackRegistry::defaultRuntimeLaneId(TrackType::Snare);
-                const RuntimeLaneId missingLaneId = "missing:lane";
-
-                const auto before = project;
-                ProjectStateController::setTrackMuted(project, kickLaneId, true);
-                const auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
-                const auto* snare = ProjectLaneAccess::findTrackState(project, TrackType::Snare);
-                expect(kick != nullptr && snare != nullptr, "Lane safety test requires Kick and Snare tracks.");
-                expect(kick->muted, "Targeted lane mute should apply.");
-                expect(snare->muted == ProjectLaneAccess::findTrackState(before, TrackType::Snare)->muted,
-                    "Muting one lane must not change other lanes.");
-
-                ProjectStateController::setTrackMuted(project, customLaneId, true);
-                ProjectStateController::setTrackLocked(project, customLaneId, true);
-                ProjectStateController::setTrackEnabled(project, customLaneId, false);
-                ProjectStateController::setTrackNotes(project, customLaneId, { NoteEvent { 36, 0, 1, 100, 0, false, "x", false, false, false } });
-                ProjectStateController::clearTrack(project, customLaneId);
-                expect(ProjectLaneAccess::findTrackState(project, customLaneId) == nullptr,
-                    "Unbacked lane operations must not synthesize a backing track.");
-
-                const auto snapshotBeforeInvalid = project;
-                ProjectStateController::setTrackSolo(project, missingLaneId, true);
-                ProjectStateController::setTrackMuted(project, missingLaneId, true);
-                ProjectStateController::setTrackLocked(project, missingLaneId, true);
-                ProjectStateController::setTrackEnabled(project, missingLaneId, false);
-                ProjectStateController::setTrackLaneVolume(project, missingLaneId, 0.1f);
-                ProjectStateController::setTrackNotes(project, missingLaneId, { NoteEvent { 40, 2, 1, 90, 0, false, "missing", false, false, false } });
-                ProjectStateController::clearTrack(project, missingLaneId);
-                expect(project.runtimeLaneOrder == snapshotBeforeInvalid.runtimeLaneOrder,
-                    "Invalid laneId operations must not corrupt runtimeLaneOrder.");
-                expect(project.tracks.size() == snapshotBeforeInvalid.tracks.size(),
-                    "Invalid laneId operations must not change track count.");
-                expect(project.selectedTrackIndex == snapshotBeforeInvalid.selectedTrackIndex,
-                    "Invalid laneId operations must not change selected track.");
-            }
-
-                void testDrillReferenceRollClusterPreservation()
-                {
-                    const auto drillSubstyleName = StyleDefinitionLoader::substyleNameFor(GenreType::Drill, 0);
-
-                    auto referenceProject = createDefaultProject();
-                    referenceProject.params.genre = GenreType::Drill;
-                    referenceProject.params.drillSubstyle = 0;
-
-                    auto* referenceHat = findTrackByType(referenceProject, TrackType::HiHat);
-                    auto* referenceKick = findTrackByType(referenceProject, TrackType::Kick);
-                    auto* referenceSnare = findTrackByType(referenceProject, TrackType::Snare);
-                    expect(referenceHat != nullptr && referenceKick != nullptr && referenceSnare != nullptr,
-                        "Drill roll cluster preservation test requires HiHat, Kick and Snare tracks.");
-
-                    referenceHat->laneRole = "ref_hat_rolls";
-                    referenceHat->laneVolume = 0.66f;
-                    referenceHat->selectedSampleName = "ReferenceHatOnly";
-                    referenceHat->enabled = false;
-                    referenceHat->notes = {
-                     { 42, 0, 1, 94, 0, false },
-                     { 42, 2, 1, 66, 0, false },
-                     { 42, 4, 1, 98, 0, false },
-                     { 42, 7, 1, 72, 0, false },
-                     { 42, 7, 1, 78, 120, false },
-                     { 42, 8, 1, 92, 0, false },
-                     { 42, 10, 1, 62, 0, false },
-                     { 42, 12, 1, 96, 0, false },
-                     { 42, 15, 1, 70, 0, false }
-                    };
-                    referenceKick->notes = { { 36, 0, 1, 112, 0, false, "keep_project_only" } };
-                    referenceSnare->notes = { { 38, 4, 1, 108, 0, false, "keep_project_only" } };
-
-                    PatternProjectSerialization::validate(referenceProject);
-                    const auto state = StyleLabReferenceService::createDefaultState(referenceProject, "Drill", drillSubstyleName, 4, 142);
-                    const auto metadataJson = StyleLabReferenceService::buildReferenceMetadataJson(referenceProject, state);
-                    auto metadataRoot = parseJson(metadataJson);
-
-                    auto& rootRuntimeLaneOrder = const_cast<juce::Array<juce::var>&>(requireArray(propertyOf(metadataRoot, "runtimeLaneOrder", "metadataRoot"), "metadataRoot.runtimeLaneOrder"));
-                    auto& rootLaneLayout = const_cast<juce::Array<juce::var>&>(requireArray(propertyOf(metadataRoot, "laneLayout", "metadataRoot"), "metadataRoot.laneLayout"));
-                    auto referenceProjectVar = propertyOf(metadataRoot, "referenceProject", "metadataRoot");
-                    auto* referenceProjectObject = requireObject(referenceProjectVar, "referenceProject");
-
-                    const auto* hatLane = findRuntimeLaneForTrack(referenceProject.runtimeLaneProfile, TrackType::HiHat);
-                    expect(hatLane != nullptr, "HiHat lane missing from reference runtime profile.");
-
-                    const auto* hatLayout = findObjectByStringProperty(rootLaneLayout, "laneId", hatLane->laneId);
-                    expect(hatLayout != nullptr, "HiHat lane missing from metadata laneLayout.");
-
-                    juce::Array<juce::var> filteredOrder;
-                    filteredOrder.add(hatLane->laneId);
-                    rootRuntimeLaneOrder = filteredOrder;
-
-                    juce::Array<juce::var> filteredLayout;
-                    filteredLayout.add(*hatLayout);
-                    rootLaneLayout = filteredLayout;
-
-                    auto* hatLayoutObject = filteredLayout.getReference(0).getDynamicObject();
-                    expect(hatLayoutObject != nullptr, "Filtered HiHat layout must remain an object.");
-                    auto* laneParamsObject = requireObject(hatLayoutObject->getProperty("laneParams"), "filteredHatLayout.laneParams");
-                    laneParamsObject->setProperty("enabled", false);
-                    laneParamsObject->setProperty("laneRole", "ref_hat_rolls");
-                    laneParamsObject->setProperty("laneVolume", 0.66f);
-                    laneParamsObject->setProperty("selectedSampleName", "ReferenceHatOnly");
-
-                    referenceProjectObject->setProperty("totalRuntimeLaneCount", 1);
-                    referenceProjectObject->setProperty("backedLaneCount", 1);
-                    referenceProjectObject->setProperty("unbackedLaneCount", 0);
-
-                    auto tempRoot = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                     .getChildFile("DRUMENGINE_CoreTests")
-                     .getChildFile("DrillRollClusterPreservation");
-                    tempRoot.deleteRecursively();
-                    const auto referenceDirectory = tempRoot
-                     .getChildFile(StyleDefinitionLoader::genreDisplayName(GenreType::Drill))
-                     .getChildFile(drillSubstyleName)
-                     .getChildFile("2099-01-01_00-00-00_roll_cluster");
-                    expect(referenceDirectory.createDirectory(), "Failed to create drill roll cluster temp directory.");
-                    const auto metadataFile = referenceDirectory.getChildFile("metadata.json");
-                    expect(metadataFile.replaceWithText(juce::JSON::toString(metadataRoot)),
-                        "Failed to write drill roll cluster metadata.json.");
-
-                    juce::String loadError;
-                    const auto loaded = StyleDefinitionLoader::loadLatestForStyle(StyleDefinitionLoader::genreDisplayName(GenreType::Drill),
-                                                       drillSubstyleName,
-                                                       tempRoot,
-                                                       &loadError);
-                    expect(loaded.has_value(), "Failed to load drill roll cluster reference: " + loadError);
-                    expect(loaded->referenceHatSkeleton.has_value() && loaded->referenceHatSkeleton->available,
-                        "Drill roll cluster reference must expose ReferenceHatSkeleton.");
-                    expect(!loaded->referenceHatSkeleton->rollClusters.empty(),
-                        "Drill roll cluster reference must preserve extracted roll clusters during load.");
-
-                    auto influenceTarget = createDefaultProject();
-                    influenceTarget.params.genre = GenreType::Drill;
-                    influenceTarget.params.drillSubstyle = 0;
-                    expect(DrillStyleInfluence::applyResolvedStyle(*loaded, influenceTarget, &loadError),
-                        "DrillStyleInfluence failed for roll cluster preservation test: " + loadError);
-                    expect(influenceTarget.styleInfluence.referenceHatSkeleton.available,
-                        "Drill style influence must propagate ReferenceHatSkeleton.");
-                    expect(!influenceTarget.styleInfluence.referenceHatSkeleton.rollClusters.empty(),
-                        "Drill style influence must preserve roll clusters from the loaded reference.");
-
-                    tempRoot.deleteRecursively();
-                }
-
-                void testDrillHatMotionMicroTimingResponse()
-                {
-                    GeneratorParams params;
-                    params.bars = 4;
-                    params.bpm = 142.0f;
-                    params.densityAmount = 0.64f;
-
-                    StyleInfluenceState lowInfluence;
-                    StyleInfluenceState highInfluence;
-                    lowInfluence.hatMotionWeight = 0.54f;
-                    highInfluence.hatMotionWeight = 1.52f;
-                    laneBiasFor(lowInfluence, TrackType::HiHat).activityWeight = 0.38f;
-                    laneBiasFor(highInfluence, TrackType::HiHat).activityWeight = 1.48f;
-
-                    const auto& style = getDrillProfile(0);
-                    std::vector<DrillPhraseRole> phrase {
-                        DrillPhraseRole::Statement,
-                        DrillPhraseRole::Response,
-                        DrillPhraseRole::Tension,
-                        DrillPhraseRole::Ending
-                    };
-
-                    TrackState snare = makeTrack(TrackType::Snare);
-                    snare.notes = {
-                        { 38, 4, 1, 110, 0, false },
-                        { 38, 12, 1, 112, 0, false },
-                        { 38, 20, 1, 110, 0, false },
-                        { 38, 28, 1, 112, 0, false }
-                    };
-                    TrackState clap = makeTrack(TrackType::ClapGhostSnare);
-                    TrackState kick = makeTrack(TrackType::Kick);
-                    kick.notes = {
-                        { 36, 0, 1, 110, 0, false },
-                        { 36, 6, 1, 102, 0, false },
-                        { 36, 10, 1, 104, 0, false },
-                        { 36, 16, 1, 110, 0, false },
-                        { 36, 22, 1, 100, 0, false },
-                        { 36, 26, 1, 104, 0, false }
-                    };
-
-                    TrackState lowHat = makeTrack(TrackType::HiHat);
-                    TrackState highHat = makeTrack(TrackType::HiHat);
-                    DrillHatGenerator generator;
-                    std::mt19937 lowRng(402);
-                    std::mt19937 highRng(402);
-
-                    generator.generate(lowHat, params, style, lowInfluence, phrase, nullptr, &snare, &clap, &kick, lowRng);
-                    generator.generate(highHat, params, style, highInfluence, phrase, nullptr, &snare, &clap, &kick, highRng);
-
-                    expect(!lowHat.notes.empty() && !highHat.notes.empty(),
-                        "Drill hat motion test requires generated hats.");
-                    expect(highHat.notes.size() >= lowHat.notes.size(),
-                        "Higher Drill hat activity should not reduce generated hat count.");
-                    expect(countAbsoluteMicroOffset(highHat) > countAbsoluteMicroOffset(lowHat),
-                        "Higher Drill hat motion must increase total hat microtiming displacement.");
-                }
-
-                      void testEditorHistoryControllerUndoRedo()
-                      {
-                          EditorHistoryController controller;
-                          auto before = createDefaultProject();
-                          auto after = before;
-
-                          auto* kick = findTrackByType(after, TrackType::Kick);
-                          expect(kick != nullptr, "History controller test requires Kick track.");
-                        NoteEvent note;
-                        note.pitch = 36;
-                        note.step = 0;
-                        note.length = 4;
-                        note.velocity = 100;
-                        note.semanticRole = "anchor";
-                        kick->notes.push_back(note);
-
-                          bool scheduled = false;
-                          controller.pushProjectHistoryState(before, after, [&scheduled]()
-                          {
-                           scheduled = true;
-                          });
-
-                          expect(scheduled, "History controller must schedule pending commit.");
-                          controller.commitPendingProjectHistoryState();
-                          expect(controller.getUndoHistory().size() == 1, "History controller must record undo snapshot.");
-
-                          PatternProject undoSnapshot;
-                          expect(controller.performUndo(after, undoSnapshot), "Undo should succeed after recording history.");
-                          expect(controller.projectsEquivalent(undoSnapshot, before), "Undo snapshot must match pre-change project.");
-                          controller.endSuppressedHistoryAction();
-
-                          PatternProject redoSnapshot;
-                          expect(controller.performRedo(before, redoSnapshot), "Redo should succeed after undo.");
-                          expect(controller.projectsEquivalent(redoSnapshot, after), "Redo snapshot must match post-change project.");
-                          controller.endSuppressedHistoryAction();
-
-                          auto generationOnly = after;
-                          generationOnly.generationCounter += 99;
-                          scheduled = false;
-                          controller.pushProjectHistoryState(after, generationOnly, [&scheduled]()
-                          {
-                           scheduled = true;
-                          });
-                          expect(!scheduled, "Generation counter changes alone must not create history entries.");
-                      }
-
-                      void testHotkeyControllerMapsAndPersistence()
-                      {
-                          HotkeyController controller;
-                          controller.setupDefaults();
-
-                          expect(controller.matchesKeyAction(HotkeyController::kActionUndo,
-                                             juce::KeyPress('Z', juce::ModifierKeys::ctrlModifier, 0)),
-                              "Undo hotkey default must remain Ctrl+Z.");
-
-                          const auto bindings = controller.makeGridInputBindings();
-                          expect(bindings.drawModeModifier == juce::ModifierKeys::shiftModifier,
-                              "Draw mode modifier must default to Shift.");
-                          expect(bindings.velocityEditKeyCode == 'V',
-                              "Velocity edit key must default to V.");
-
-                          expect(controller.tryRebindKeyAction(HotkeyController::kActionZoomToPattern,
-                                             juce::KeyPress('Q'),
-                                             [](const juce::String&, const juce::String&, const juce::String&)
-                                             {
-                                                 return true;
-                                             }),
-                              "Hotkey controller must allow rebinding non-conflicting actions.");
-
-                          juce::ValueTree state("STATE");
-                          controller.save(state);
-
-                          HotkeyController restored;
-                          restored.setupDefaults();
-                          restored.load(state);
-                          expect(restored.matchesKeyAction(HotkeyController::kActionZoomToPattern, juce::KeyPress('Q')),
-                              "Saved hotkey bindings must load back into controller state.");
-
-                          restored.restoreDefaults();
-                          expect(restored.matchesKeyAction(HotkeyController::kActionZoomToPattern,
-                                           juce::KeyPress('P', juce::ModifierKeys::ctrlModifier | juce::ModifierKeys::shiftModifier, 0)),
-                              "Restoring defaults must recover original hotkey mapping.");
-                      }
-
-                      void testEditorLayoutControllerPersistenceSmoke()
-                      {
-                          EditorLayoutController controller;
-                          controller.getState().leftPanelWidth = 512;
-                          controller.getState().headerControlsMode = MainHeaderComponent::HeaderControlsMode::Hidden;
-
-                          juce::ValueTree state("STATE");
-                          controller.save(state);
-
-                          EditorLayoutController restored;
-                          restored.load(state);
-                          expect(restored.getState().leftPanelWidth == 512,
-                              "Layout controller must persist left panel width.");
-                          expect(restored.getState().headerControlsMode == MainHeaderComponent::HeaderControlsMode::Hidden,
-                              "Layout controller must persist header controls mode.");
-
-                          restored.getState().leftPanelWidth = 120;
-                          expect(restored.clampLeftPanelWidth(480) == EditorLayoutController::rackMinWidth,
-                              "Layout controller must clamp left panel width to minimum rack width.");
-                          restored.getState().leftPanelWidth = 720;
-                          expect(restored.clampLeftPanelWidth(480) == 480,
-                              "Layout controller must clamp left panel width to available rack maximum.");
-                      }
-
-                      void testRoleBasedLaneBiasAccessorParity()
-                      {
-                          StyleInfluenceState state;
-
-                          const auto expectAliasParity = [&state](TrackRole role, TrackType type)
-                          {
-                              auto& roleBias = laneBiasFor(state, role);
-                              auto& typeBias = laneBiasFor(state, type);
-
-                              roleBias.activityWeight = 1.37f;
-                              roleBias.balanceWeight = 0.83f;
-                              expect(&roleBias == &typeBias,
-                                  "Role-based lane bias accessor must resolve to the existing TrackType slot.");
-                              expect(nearlyEqual(typeBias.activityWeight, 1.37f),
-                                  "Role-based activity write must update the TrackType lane bias slot.");
-                              expect(nearlyEqual(typeBias.balanceWeight, 0.83f),
-                                  "Role-based balance write must update the TrackType lane bias slot.");
-
-                              typeBias.activityWeight = 0.61f;
-                              typeBias.balanceWeight = 1.29f;
-                              expect(nearlyEqual(roleBias.activityWeight, 0.61f),
-                                  "TrackType activity write must remain visible through the role-based accessor.");
-                              expect(nearlyEqual(roleBias.balanceWeight, 1.29f),
-                                  "TrackType balance write must remain visible through the role-based accessor.");
-                          };
-
-                          expectAliasParity(TrackRole::Kick, TrackType::Kick);
-                          expectAliasParity(TrackRole::HiHat, TrackType::HiHat);
-                          expectAliasParity(TrackRole::ClapGhostSnare, TrackType::ClapGhostSnare);
-                          expectAliasParity(TrackRole::Perc, TrackType::Perc);
-                          expectAliasParity(TrackRole::OpenHat, TrackType::OpenHat);
-                          expectAliasParity(TrackRole::Ride, TrackType::Ride);
-                          expectAliasParity(TrackRole::HatFX, TrackType::HatFX);
-                          expectAliasParity(TrackRole::Bass, TrackType::Sub808);
-                      }
+    for (const auto& kickNote : kick->notes)
+    {
+        const int barIndex = kickNote.step / 16;
+        const int stepInBar = kickNote.step % 16;
+        expect(barIndex >= 0 && barIndex < static_cast<int>(plan.bars.size()), "Kick note bar index must remain valid.");
+        for (const int snareStep : plan.bars[static_cast<size_t>(barIndex)].anchorMap.snareAnchorSteps)
+            expect(snareStep < 0 || stepInBar != snareStep, "Kick must not collide with a main Drill snare anchor.");
+    }
+
+    expect(sub->sub808Settings.mono, "Drill sub808 should stay mono.");
+    expect(sub->sub808Settings.overlapMode == Sub808OverlapMode::Glide, "Drill sub808 should use Glide overlap mode.");
+    expect(sub->notes.size() == sub->sub808Notes.size(), "Drill sub808 legacy mirror should stay synchronized.");
+
+    int glideCount = 0;
+    for (size_t index = 0; index < sub->sub808Notes.size(); ++index)
+    {
+        const auto& note = sub->sub808Notes[index];
+        if (!note.glideToNext)
+            continue;
+
+        ++glideCount;
+        expect(index + 1 < sub->sub808Notes.size(),
+               "Drill sub808 glide markers must point to a following note.");
+        expect((note.step / 16) == (sub->sub808Notes[index + 1].step / 16),
+               "Drill sub808 glides should stay inside a single bar after low-end simplification.");
+    }
+
+    expect(glideCount <= 1, "Drill sub808 should keep slide usage restrained after low-end simplification.");
+
+    for (size_t index = 0; index < sub->sub808Notes.size(); ++index)
+    {
+        const auto& note = sub->sub808Notes[index];
+        expect(isPitchInScale(note.pitch, project.params.keyRoot, project.params.scaleMode),
+               "Drill sub808 pitches must stay inside the selected scale.");
+        expect(note.length >= 1, "Drill sub808 note length must remain positive.");
+        expect(sub->notes[index].pitch == note.pitch && sub->notes[index].step == note.step,
+               "Drill sub808 legacy mirror must match the Sub808 note timeline.");
+    }
+}
+
+void testProjectStateBarsClamp()
+{
+    auto project = createDefaultProject();
+    project.params.bars = 8;
+    project.phraseLengthBars = 8;
+
+    auto* kick = findTrackByType(project, TrackType::Kick);
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(kick != nullptr && sub != nullptr, "Bars clamp test requires Kick and Sub808 tracks.");
+
+    kick->notes.push_back({ 36, 63, 1, 110, 0, false, "tail", false, false, false });
+    sub->sub808Notes.push_back({ 36, 62, 2, 100, 0, "tail808", false, false, false });
+    sub->notes = toLegacyNoteEvents(sub->sub808Notes);
+
+    ProjectStateController::setBars(project, 2);
+
+    expect(project.params.bars == 2, "Project bars should update to requested size.");
+    expect(project.phraseLengthBars == 2, "Phrase length should follow resized project bars.");
+    expect(kick->notes.empty(), "Kick notes past the new bar limit should be trimmed.");
+    expect(sub->sub808Notes.empty(), "Sub808 notes past the new bar limit should be trimmed.");
+}
+
+void testStyleDefinitionFallbackSmoke()
+{
+    const auto definition = StyleDefinitionLoader::buildFallback(GenreType::Rap, 0);
+    expect(definition.genre == GenreType::Rap, "Fallback style definition should preserve requested genre.");
+    expect(definition.genreName == "Rap", "Fallback style definition should expose Rap display name.");
+    expect(!definition.lanes.empty(), "Fallback style definition should include runtime lanes.");
+
+    const auto drillDefinition = StyleDefinitionLoader::buildFallback(GenreType::Drill, 0);
+    expect(drillDefinition.genre == GenreType::Drill, "Fallback style definition should preserve Drill genre.");
+    expect(drillDefinition.genreName == "Drill", "Fallback style definition should expose Drill display name.");
+    expect(drillDefinition.substyleName == "Main", "Fallback style definition should expose the Drill Main substyle.");
+}
+
+void testDrillStyleInfluenceReferenceSmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.drillSubstyle = 0;
+
+    auto definition = StyleDefinitionLoader::buildFallback(GenreType::Drill, 0);
+    definition.loadedFromReference = true;
+    definition.styleHints.set("drill.hat_motion", 0.95f);
+    definition.styleHints.set("drill.gap_intent", 0.78f);
+    definition.styleHints.set("drill.support_accent", 0.72f);
+    definition.styleHints.set("drill.low_end_coupling", 0.88f);
+    definition.styleHints.set("drill.ref_hat_roll_length", 0.84f);
+    definition.styleHints.set("drill.ref_hat_density_variation", 0.86f);
+    definition.styleHints.set("drill.ref_hat_accent_alternation", 0.74f);
+    definition.styleHints.set("drill.ref_hat_burst", 0.82f);
+    definition.styleHints.set("drill.ref_hat_triplet", 0.90f);
+
+    ReferenceHatSkeleton skeleton;
+    skeleton.available = true;
+    skeleton.sourceBars = 2;
+    skeleton.sourceId = "drill-test-reference";
+    skeleton.barMaps.push_back({ 0, true, { { 0, 96 }, { 240, 88 } }, { 0, 6 }, { 0, 4, 8 }, { 0, 8 }, { 6, 7 } });
+
+    ReferenceHatCorpus hatCorpus;
+    hatCorpus.available = true;
+    hatCorpus.sourceReferenceCount = 1;
+    hatCorpus.variants.push_back(skeleton);
+
+    ReferenceKickPattern kickPattern;
+    kickPattern.available = true;
+    kickPattern.sourceBars = 2;
+    kickPattern.barPatterns.push_back({ 0, { { 0, 116 }, { 10, 104 } } });
+
+    ReferenceKickCorpus kickCorpus;
+    kickCorpus.available = true;
+    kickCorpus.sourceReferenceCount = 1;
+    kickCorpus.variants.push_back(kickPattern);
+
+    definition.referenceHatSkeleton = skeleton;
+    definition.referenceHatCorpus = hatCorpus;
+    definition.referenceKickCorpus = kickCorpus;
+
+    juce::String error;
+    expect(DrillStyleInfluence::applyResolvedStyle(definition, project, &error),
+        "DrillStyleInfluence reference smoke failed: " + error);
+
+    expect(project.styleInfluence.referenceHatSkeleton.available,
+        "DrillStyleInfluence should preserve the resolved reference hat skeleton.");
+    expect(project.styleInfluence.referenceHatCorpus.available && project.styleInfluence.referenceHatCorpus.sourceReferenceCount == 1,
+        "DrillStyleInfluence should attach the resolved reference hat corpus.");
+    expect(project.styleInfluence.referenceKickCorpus.available && project.styleInfluence.referenceKickCorpus.sourceReferenceCount == 1,
+        "DrillStyleInfluence should attach the resolved reference kick corpus.");
+    expect(project.styleInfluence.hatMotionWeight > 1.2f,
+        "DrillStyleInfluence should raise hat motion weight from resolved Drill hints.");
+    expect(project.styleInfluence.lowEndCouplingWeight > 1.2f,
+        "DrillStyleInfluence should raise low-end coupling from resolved Drill hints.");
+    expect(project.styleInfluence.drillHatTripletWeight > 1.2f,
+        "DrillStyleInfluence should map Drill reference triplet hints into style weights.");
+    expect(project.styleInfluence.drillHatBurstWeight > 1.1f,
+        "DrillStyleInfluence should map Drill reference burst hints into style weights.");
+}
+
+void testDrillEngineAppliesStyleInfluenceSmoke()
+{
+    DrillEngine engine;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Drill;
+    project.params.bars = 4;
+    project.params.seed = 6060;
+    project.params.drillSubstyle = 0;
+
+    auto* hatFx = findTrackByType(project, TrackType::HatFX);
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(hatFx != nullptr && sub != nullptr,
+        "Drill style influence integration smoke requires HatFX and Sub808 tracks.");
+    expect(!hatFx->enabled && !sub->enabled,
+        "Default project should start with HatFX/Sub808 disabled before Drill style influence runs.");
+
+    engine.generate(project);
+
+        hatFx = findTrackByType(project, TrackType::HatFX);
+        sub = findTrackByType(project, TrackType::Sub808);
+        expect(hatFx != nullptr && sub != nullptr,
+            "Drill style influence integration smoke requires HatFX and Sub808 tracks after generation.");
+
+    expect(hatFx->enabled,
+        "Drill engine should apply Drill style influence and enable the HatFX lane from style defaults.");
+    expect(sub->enabled,
+        "Drill engine should apply Drill style influence and enable the Sub808 lane from style defaults.");
+    expect(project.styleInfluence.hatMotionWeight != 1.0f || project.styleInfluence.lowEndCouplingWeight != 1.0f,
+        "Drill engine should populate Drill style influence weights before planning.");
+}
+
+void testTrapStyleInfluenceSmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Trap;
+    project.params.trapSubstyle = 0;
+    juce::String error;
+    expect(TrapStyleInfluence::apply(project, &error), "TrapStyleInfluence smoke application failed: " + error);
+}
 
 int runTest(const char* name, const std::function<void()>& test)
 {
@@ -2180,9 +2420,9 @@ int runTest(const char* name, const std::function<void()>& test)
         std::cout << "[PASS] " << name << std::endl;
         return 0;
     }
-    catch (const std::exception& error)
+    catch (const std::exception& ex)
     {
-        std::cerr << "[FAIL] " << name << ": " << error.what() << std::endl;
+        std::cerr << "[FAIL] " << name << ": " << ex.what() << std::endl;
         return 1;
     }
 }
@@ -2195,38 +2435,38 @@ int main()
 
     int failures = 0;
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);
-    failures += runTest("Runtime lane lifecycle", testRuntimeLaneLifecycle);
-    failures += runTest("Validate invariants", testValidateInvariants);
-    failures += runTest("Default track registry consistency", testDefaultTrackRegistryConsistency);
-    failures += runTest("StyleLab metadata export consistency", testStyleLabMetadataExportConsistency);
-    failures += runTest("Registry vs StyleLab consistency", testRegistryVsStyleLabConsistency);
-    failures += runTest("Lane defaults no behavior regression", testLaneDefaultsNoBehaviorRegressionSmoke);
-    failures += runTest("Project lane access lookup consistency", testProjectLaneAccessLookupConsistency);
-    failures += runTest("Project lane access custom lane safety", testProjectLaneAccessCustomLaneSafety);
-    failures += runTest("Project lane access order stability", testProjectLaneAccessOrderStability);
-    failures += runTest("Project state mutation parity", testProjectStateMutationParity);
-    failures += runTest("Project state snapshot restore stability", testProjectStateSnapshotRestoreStability);
-    failures += runTest("Project state lane safety", testProjectStateLaneSafety);
-    failures += runTest("Drill reference roll cluster preservation", testDrillReferenceRollClusterPreservation);
-    failures += runTest("Drill hat motion microtiming response", testDrillHatMotionMicroTimingResponse);
-    failures += runTest("Legacy serialization roundtrip regression", testLegacySerializationRoundTripRegression);
-    failures += runTest("Corrupted serialization state recovery", testCorruptedSerializationStateRecovery);
-    failures += runTest("Serialization lane reconciliation", testSerializationLaneReconciliation);
-    failures += runTest("Sound target resolution", testSoundTargetResolution);
-    failures += runTest("Sound state persistence", testSoundStatePersistence);
-    failures += runTest("Grid model integrity", testGridModelIntegrity);
-    failures += runTest("Grid region state consistency", testGridRegionStateConsistency);
-    failures += runTest("Editor history controller undo redo", testEditorHistoryControllerUndoRedo);
-    failures += runTest("Hotkey controller maps and persistence", testHotkeyControllerMapsAndPersistence);
-    failures += runTest("Editor layout controller persistence smoke", testEditorLayoutControllerPersistenceSmoke);
-    failures += runTest("Role-based lane bias accessor parity", testRoleBasedLaneBiasAccessorParity);
-
-    if (failures == 0)
-    {
-        std::cout << "All core tests passed." << std::endl;
-        return 0;
-    }
-
-    std::cerr << failures << " core test(s) failed." << std::endl;
-    return 1;
+    failures += runTest("EQ state serialization and legacy migration smoke", testEqStateSerializationAndLegacyMigrationSmoke);
+    failures += runTest("Compressor state serialization and legacy migration smoke", testCompressorStateSerializationAndLegacyMigrationSmoke);
+    failures += runTest("Base pattern capture smoke", testBasePatternCaptureSmoke);
+    failures += runTest("Performance transform from base smoke", testPerformanceTransformFromBaseSmoke);
+    failures += runTest("Density authoring priority smoke", testDensityAuthoringPrioritySmoke);
+    failures += runTest("Sub808 density safety smoke", testSub808DensitySafetySmoke);
+    failures += runTest("Combined live controls genre regression smoke", testCombinedLiveControlsGenreRegressionSmoke);
+    failures += runTest("Manual edit live control safety smoke", testManualEditLiveControlSafetySmoke);
+    failures += runTest("Visible transform export consistency smoke", testVisibleTransformExportConsistencySmoke);
+    failures += runTest("Style defaults smoke", testStyleDefaultsSmoke);
+    failures += runTest("Generation BPM selection smoke", testGenerationBpmSelectionSmoke);
+    failures += runTest("Lane-aware swing protection smoke", testLaneAwareSwingProtectionSmoke);
+    failures += runTest("Swing roundtrip generation smoke", testSwingRoundTripGenerationSmoke);
+    failures += runTest("Drill swing hat semantics smoke", testDrillSwingHatSemanticsSmoke);
+    failures += runTest("ProjectStateController bars clamp", testProjectStateBarsClamp);
+    failures += runTest("Style definition fallback smoke", testStyleDefinitionFallbackSmoke);
+    failures += runTest("Drill style influence reference smoke", testDrillStyleInfluenceReferenceSmoke);
+    failures += runTest("Drill engine applies style influence smoke", testDrillEngineAppliesStyleInfluenceSmoke);
+    failures += runTest("Drill phrase planner smoke", testDrillPhrasePlannerSmoke);
+    failures += runTest("Drill hat generation smoke", testDrillHatGenerationSmoke);
+    failures += runTest("Drill generation captures base patterns smoke", testDrillGenerationCapturesBasePatternsSmoke);
+    failures += runTest("Drill hat generator uses reference corpus smoke", testDrillHatGeneratorUsesReferenceCorpusSmoke);
+    failures += runTest("Drill hat reference variant rotation smoke", testDrillHatReferenceVariantRotationSmoke);
+    failures += runTest("Drill kick generator uses reference corpus smoke", testDrillKickGeneratorUsesReferenceCorpusSmoke);
+    failures += runTest("Drill kick reference variant rotation smoke", testDrillKickReferenceVariantRotationSmoke);
+    failures += runTest("Drill 808 generator uses reference corpus smoke", testDrill808GeneratorUsesReferenceCorpusSmoke);
+    failures += runTest("Drill 808 generation compact smoke", testDrill808GenerationCompactSmoke);
+    failures += runTest("Drill validator compactness smoke", testDrillValidatorCompactnessSmoke);
+    failures += runTest("Drill snare generation smoke", testDrillSnareGenerationSmoke);
+    failures += runTest("Drill hat validator proximity smoke", testDrillHatValidatorProximitySmoke);
+    failures += runTest("Drill hat copy mostly still varies smoke", testDrillHatCopyMostlyStillVariesSmoke);
+    failures += runTest("Drill full engine smoke", testDrillFullEngineSmoke);
+    failures += runTest("Trap style influence smoke", testTrapStyleInfluenceSmoke);
+    return failures == 0 ? 0 : 1;
 }

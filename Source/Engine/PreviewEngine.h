@@ -30,6 +30,7 @@ public:
     void noteOn(TrackType trackType, float gain, const LaneSampleBank& sampleBank, const TriggerOptions& options);
     void noteOnAtSample(TrackType trackType, float gain, int sampleOffset, const LaneSampleBank& sampleBank, const TriggerOptions& options);
     void render(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
+    void renderSeparated(std::array<juce::AudioBuffer<float>, kTrackTypeCount>& buffers, int startSample, int numSamples);
     bool hasActiveVoices() const;
 
 private:

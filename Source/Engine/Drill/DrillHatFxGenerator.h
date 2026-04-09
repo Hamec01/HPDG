@@ -1,28 +1,18 @@
 #pragma once
 
 #include <random>
-#include <vector>
 
-#include "DrillGrooveBlueprint.h"
 #include "DrillPhrasePlanner.h"
-#include "DrillStyleProfile.h"
-#include "../../Core/TrackState.h"
 
 namespace bbg
 {
 class DrillHatFxGenerator
 {
 public:
-    void generate(TrackState& hatFxTrack,
-                  const TrackState& hatTrack,
-                  const TrackState* kickTrack,
-                  const TrackState* snareTrack,
-                  const TrackState* openHatTrack,
-                  const TrackState* subTrack,
-                  const DrillStyleProfile& style,
-                  float fxIntensity,
-                  const std::vector<DrillPhraseRole>& phrase,
-                  const DrillGrooveBlueprint* blueprint,
+    void generate(TrackState& track,
+                  const TrackState& hiHatTrack,
+                  const PatternProject& project,
+                  const DrillPhrasePlan& phrasePlan,
                   std::mt19937& rng) const;
 };
 } // namespace bbg

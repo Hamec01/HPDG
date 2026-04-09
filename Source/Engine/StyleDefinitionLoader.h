@@ -46,6 +46,8 @@ struct ResolvedStyleDefinition
     std::optional<ReferenceHatSkeleton> referenceHatSkeleton;
     std::optional<ReferenceHatCorpus> referenceHatCorpus;
     std::optional<ReferenceKickCorpus> referenceKickCorpus;
+    std::optional<BrooklynReferenceProfile> brooklynReferenceProfile;
+    StyleLabReferenceDebugDiagnostics referenceDebugDiagnostics;
 };
 
 using StyleDefinitionLane = ResolvedStyleDefinitionLane;
@@ -57,7 +59,8 @@ public:
     static std::optional<ResolvedStyleDefinition> loadLatestForStyle(const juce::String& genreName,
                                                                      const juce::String& substyleName,
                                                                      const juce::File& rootDirectory,
-                                                                     juce::String* errorMessage = nullptr);
+                                                                     juce::String* errorMessage = nullptr,
+                                                                     StyleLabReferenceDebugDiagnostics* referenceDiagnostics = nullptr);
 
     static ResolvedStyleDefinition buildFallback(GenreType genre, int substyleIndex);
     static ResolvedStyleDefinition fromReferenceRecord(GenreType genre, const StyleLabReferenceRecord& record);

@@ -168,6 +168,38 @@ TrackState* findTrackByRuntimeType(PatternProject& project, TrackType type)
     return nullptr;
 }
 
+EqState parseEqState(const juce::var& eqVar, float legacyEqTone)
+{
+    EqState eq = createDefaultEqState();
+    if (auto* eqObject = eqVar.getDynamicObject())
+    {
+        eq.selectedBand = clampEqBandIndex(intProperty(*eqObject, "selectedBand", eq.selectedBand));
+        if (const auto* bandArray = eqObject->getProperty("bands").getArray())
+        {
+            const int bandCount = juce::jmin(static_cast<int>(bandArray->size()), kEqBandCount);
+            for (int bandIndex = 0; bandIndex < bandCount; ++bandIndex)
+            {
+                auto& band = eq.bands[static_cast<size_t>(bandIndex)];
+                if (auto* bandObject = (*bandArray)[bandIndex].getDynamicObject())
+                {
+                    band.enabled = boolProperty(*bandObject, "enabled", band.enabled);
+                    band.freqHz = floatProperty(*bandObject, "freqHz", band.freqHz);
+                    band.gainDb = floatProperty(*bandObject, "gainDb", band.gainDb);
+                    band.q = floatProperty(*bandObject, "q", band.q);
+                    band.shape = static_cast<EqBandShape>(juce::jlimit(0,
+                                                                       2,
+                                                                       intProperty(*bandObject, "shape", static_cast<int>(band.shape))));
+                }
+            }
+
+            return eq;
+        }
+    }
+
+    applyLegacyEqToneToEqState(eq, legacyEqTone);
+    return eq;
+}
+
 SoundLayerState parseSoundLayer(const juce::var& soundVar)
 {
     SoundLayerState sound;
@@ -176,11 +208,19 @@ SoundLayerState parseSoundLayer(const juce::var& soundVar)
         sound.pan = floatProperty(*soundObject, "pan", sound.pan);
         sound.width = floatProperty(*soundObject, "width", sound.width);
         sound.eqTone = floatProperty(*soundObject, "eqTone", sound.eqTone);
+        sound.eq = parseEqState(soundObject->getProperty("eq"), sound.eqTone);
+        sound.eqTone = legacyEqToneFromEqState(sound.eq);
         sound.compression = floatProperty(*soundObject, "compression", sound.compression);
         sound.reverb = floatProperty(*soundObject, "reverb", sound.reverb);
         sound.gate = floatProperty(*soundObject, "gate", sound.gate);
         sound.transient = floatProperty(*soundObject, "transient", sound.transient);
         sound.drive = floatProperty(*soundObject, "drive", sound.drive);
+        sound.drumTransient.attack = floatProperty(*soundObject, "drumTransientAttack", sound.drumTransient.attack);
+        sound.drumTransient.sustain = floatProperty(*soundObject, "drumTransientSustain", sound.drumTransient.sustain);
+        sound.drumTransient.gainDb = floatProperty(*soundObject, "drumTransientGainDb", sound.drumTransient.gainDb);
+        sound.drumTransient.smooth = boolProperty(*soundObject, "drumTransientSmooth", sound.drumTransient.smooth);
+        sound.drumTransient.limit = boolProperty(*soundObject, "drumTransientLimit", sound.drumTransient.limit);
+        reconcileLegacySoundLayerState(sound);
     }
 
     return sound;

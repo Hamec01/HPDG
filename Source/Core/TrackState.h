@@ -5,6 +5,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include "GeneratorParams.h"
 #include "NoteEvent.h"
 #include "SoundLayerState.h"
 #include "Sub808Types.h"
@@ -33,7 +34,11 @@ struct TrackState
     SoundLayerState sound;
 
     std::vector<NoteEvent> notes;
+    std::vector<NoteEvent> baseNotes;
     std::vector<Sub808NoteEvent> sub808Notes;
+    std::vector<Sub808NoteEvent> baseSub808Notes;
+    GeneratorParams performanceBaseParams;
+    bool hasPerformanceBaseParams = false;
     Sub808LaneSettings sub808Settings;
 };
 } // namespace bbg
