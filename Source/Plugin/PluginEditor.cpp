@@ -2428,8 +2428,15 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
 
     analysisPanel.onRunAnalysis = [this]
     {
+        const auto before = audioProcessor.getProjectSnapshot();
         juce::String error;
         const bool ok = audioProcessor.analyzeCurrentSampleSource(&error);
+        if (ok && audioProcessor.getAnalysisMode() == AnalysisMode::ExtractFromSample)
+        {
+            const auto after = audioProcessor.getProjectSnapshot();
+            if (after.generationCounter != before.generationCounter)
+                pushProjectHistoryState(before, after);
+        }
         if (!ok && error.isNotEmpty())
             logDrag("analysis error: " + error);
         refreshFromProcessor(false);

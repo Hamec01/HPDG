@@ -165,7 +165,8 @@ void SampleAnalysisPanelComponent::setPanelState(SampleAnalysisRequest::SourceTy
     sourceCombo.setSelectedId(sourceId, juce::dontSendNotification);
 
     const int modeId = mode == AnalysisMode::AnalyzeOnly ? 2
-        : (mode == AnalysisMode::GenerateFromSample ? 3 : 1);
+        : (mode == AnalysisMode::GenerateFromSample ? 3
+            : (mode == AnalysisMode::ExtractFromSample ? 4 : 1));
     modeCombo.setSelectedId(modeId, juce::dontSendNotification);
 
     const int barsId = barsToCapture <= 2 ? 1
@@ -250,6 +251,7 @@ void SampleAnalysisPanelComponent::setupUi()
     modeCombo.addItem("Off", 1);
     modeCombo.addItem("Analyze Only", 2);
     modeCombo.addItem("Generate From Sample", 3);
+    modeCombo.addItem("Extract / Copy", 4);
     modeCombo.setSelectedId(1);
 
     barsCombo.addItem("2 bars", 1);
@@ -319,7 +321,8 @@ void SampleAnalysisPanelComponent::setupUi()
 
         const auto id = modeCombo.getSelectedId();
         const auto mode = id == 2 ? AnalysisMode::AnalyzeOnly
-            : (id == 3 ? AnalysisMode::GenerateFromSample : AnalysisMode::Off);
+            : (id == 3 ? AnalysisMode::GenerateFromSample
+                : (id == 4 ? AnalysisMode::ExtractFromSample : AnalysisMode::Off));
         onAnalysisModeChanged(mode);
     };
 

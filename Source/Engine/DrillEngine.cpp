@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../Analysis/StepHintWeighter.h"
 #include "PatternPerformanceTransformEngine.h"
 #include "StyleInfluence.h"
 
@@ -138,6 +139,7 @@ void DrillEngine::runGenerationPass(PatternProject& project,
         subGenerator.generate(*sub, *kick, project, plan, snare, rng);
     }
 
+    StepHintWeighter::applyToProject(project, mutableTracks);
     validator.validate(project, plan, mutableTracks);
     PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }

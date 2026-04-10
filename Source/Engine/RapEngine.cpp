@@ -12,6 +12,7 @@
 #include "Rap/RapStyleSpec.h"
 #include "StyleInfluence.h"
 #include "StyleDefaults.h"
+#include "../Analysis/StepHintWeighter.h"
 
 namespace bbg
 {
@@ -254,6 +255,8 @@ void applySampleAwareRapFlavor(PatternProject& project, const std::unordered_set
             }), track.notes.end());
         }
     }
+
+    StepHintWeighter::applyToProject(project, mutableTracks);
 }
 
 bool isAnchorStep(TrackType type, int stepInBar)

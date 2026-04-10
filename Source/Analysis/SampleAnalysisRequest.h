@@ -8,7 +8,8 @@ enum class AnalysisMode
 {
     Off,
     AnalyzeOnly,
-    GenerateFromSample
+    GenerateFromSample,
+    ExtractFromSample
 };
 
 struct SampleAnalysisRequest
@@ -36,6 +37,12 @@ struct SampleAnalysisRequest
     TempoHandling tempoHandling = TempoHandling::Auto;
     bool detectPhraseHints = true;
     bool downmixToMono = true;
+    bool buildLaneEvidence = true;
+    bool buildTranscription = true;
+    bool buildGenerationHints = true;
+    bool detectBassline = true;
+    bool detectDrumEvents = true;
+    bool usePercussiveHarmonicSeparation = true;
 
     juce::File audioFile;
 };

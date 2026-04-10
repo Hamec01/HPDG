@@ -9,6 +9,7 @@
 #include "PatternPerformanceTransformEngine.h"
 #include "StyleInfluence.h"
 #include "StyleDefaults.h"
+#include "../Analysis/StepHintWeighter.h"
 
 namespace bbg
 {
@@ -115,6 +116,8 @@ void applySampleAwareTrapFlavor(PatternProject& project, const std::unordered_se
             }), track.notes.end());
         }
     }
+
+    StepHintWeighter::applyToProject(project, mutableTracks);
 }
 
 juce::String roleForTrack(TrackType type)

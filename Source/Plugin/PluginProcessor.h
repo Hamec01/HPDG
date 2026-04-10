@@ -24,6 +24,7 @@
 #include "../Engine/PreviewEngine.h"
 #include "../Engine/SampleLibraryManager.h"
 #include "../Analysis/AudioFeatureMap.h"
+#include "../Analysis/SampleAnalysisBundle.h"
 #include "../Analysis/SampleAnalysisRequest.h"
 #include "../Analysis/SampleAnalysisResult.h"
 #include "../Analysis/SampleAnalyzer.h"
@@ -183,6 +184,7 @@ public:
 
     bool analyzeCurrentSampleSource(juce::String* errorMessage = nullptr);
     bool analyzeAudioFile(const juce::File& file, juce::String* errorMessage = nullptr);
+    bool extractPatternFromAnalyzedSample();
     void clearSampleAnalysis();
 
     void setAnalysisMode(AnalysisMode mode);
@@ -308,6 +310,7 @@ private:
     void rescanLaneSamplesLocked();
     void updateSampleAwareContextLocked();
     void applySampleAwarePostProcessLocked();
+    bool extractPatternFromAnalyzedSampleLocked();
     void resetEqDisplayAnalyzer();
     void captureEqDisplayAnalyzer(const juce::AudioBuffer<float>& buffer);
     void runEqDisplayAnalyzerFrame();
@@ -379,6 +382,7 @@ private:
 
     SampleAnalyzer sampleAnalyzer;
     SampleAnalysisRequest currentAnalysisRequest;
+    SampleAnalysisBundle currentAnalysisBundle;
     SampleAnalysisResult currentAnalysisResult;
     AudioFeatureMap currentFeatureMap;
     SampleAwareGenerationContext currentSampleContext;

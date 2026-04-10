@@ -11,6 +11,7 @@
 #include "StyleInfluence.h"
 #include "StyleDefaults.h"
 #include "VelocityEngine.h"
+#include "../Analysis/StepHintWeighter.h"
 
 namespace bbg
 {
@@ -242,6 +243,8 @@ void applySampleAwareBoomBapFlavor(PatternProject& project, const std::unordered
             }), track.notes.end());
         }
     }
+
+    StepHintWeighter::applyToProject(project, mutableTracks);
 }
 
 float carrierDensityForMode(CarrierMode mode)

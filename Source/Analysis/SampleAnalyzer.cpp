@@ -45,37 +45,80 @@ SampleAnalysisResult SampleAnalyzer::analyzeBuffer(const juce::AudioBuffer<float
                                                    const SampleAnalysisRequest& request,
                                                    double hostBpm) const
 {
-    SampleAnalysisResult result;
-
-    std::vector<float> mono;
-    featureExtractor.downmixToMono(input, mono, request.downmixToMono);
-    featureExtractor.normalizeWorkingLevel(mono);
-
-    const bool hostTempoUsable = request.useHostTempoIfAvailable && hostBpm > 20.0;
-    const double bpmForGrid = hostTempoUsable ? hostBpm : 120.0;
-
-    result.bpmFromHost = hostTempoUsable;
-    result.bpmReliable = hostTempoUsable;
-
-    featureExtractor.computeStepFeatures(mono, sampleRate, bpmForGrid, request, result);
-
-    if (!result.valid)
-        return result;
-
-    if (!hostTempoUsable && request.detectTempoFromFile)
-    {
-        const double estimated = estimateBpmFromEnergy(result.energyPerStep, result.stepsPerBar, bpmForGrid);
-        result.detectedBpm = applyTempoHandling(estimated, request.tempoHandling);
-        result.bpmReliable = estimated > 0.0;
-    }
-
-    return result;
+    return analyzeBufferExtended(input, sampleRate, request, hostBpm).summary;
 }
 
 SampleAnalysisResult SampleAnalyzer::analyzeAudioFile(const juce::File& file,
                                                       const SampleAnalysisRequest& request,
                                                       double hostBpm,
                                                       juce::String* errorMessage) const
+{
+    return analyzeAudioFileExtended(file, request, hostBpm, errorMessage).summary;
+}
+
+SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuffer<float>& input,
+                                                           double sampleRate,
+                                                           const SampleAnalysisRequest& request,
+                                                           double hostBpm) const
+{
+    SampleAnalysisBundle bundle;
+
+    std::vector<float> mono;
+    featureExtractor.downmixToMono(input, mono, request.downmixToMono);
+    featureExtractor.normalizeWorkingLevel(mono);
+
+    bundle.summary = analyzePreparedMono(mono, sampleRate, request, hostBpm);
+    if (!bundle.summary.valid)
+        return bundle;
+
+    if (bundle.summary.analyzedBars < kMinBarsForHinting)
+        bundle.summary.phraseBoundaryBars.clear();
+
+    bundle.featureMap = buildFeatureMap(bundle.summary);
+
+    const bool needsLaneEvidence = request.buildLaneEvidence
+        || request.buildTranscription
+        || request.buildGenerationHints
+        || request.detectBassline
+        || request.detectDrumEvents;
+
+    if (!needsLaneEvidence)
+        return bundle;
+
+    const auto spectral = stftAnalyzer.analyze(mono, sampleRate);
+    const auto onsets = onsetDetector.detect(spectral);
+    const auto separation = request.usePercussiveHarmonicSeparation
+        ? percussiveHarmonicSeparator.separate(spectral, onsets)
+        : PercussiveHarmonicSeparation { std::vector<SeparationFrame>(spectral.frames.size()) };
+
+    bundle.laneEvidence = laneEventInferer.infer(bundle.featureMap,
+                                                 bundle.summary,
+                                                 spectral,
+                                                 onsets,
+                                                 separation);
+
+    BasslineInferenceResult bassline;
+    if (request.detectBassline)
+    {
+        bassline = basslineInferer.infer(mono,
+                                         sampleRate,
+                                         bundle.summary,
+                                         bundle.laneEvidence);
+    }
+
+    if (request.buildTranscription || request.detectBassline || request.detectDrumEvents)
+        bundle.transcription = sampleTranscriber.transcribe(bundle.laneEvidence, bassline, request);
+
+    if (request.buildGenerationHints)
+        bundle.hints = hintsBuilder.build(bundle.laneEvidence, bundle.transcription, bundle.summary);
+
+    return bundle;
+}
+
+SampleAnalysisBundle SampleAnalyzer::analyzeAudioFileExtended(const juce::File& file,
+                                                              const SampleAnalysisRequest& request,
+                                                              double hostBpm,
+                                                              juce::String* errorMessage) const
 {
     if (!file.existsAsFile())
     {
@@ -115,14 +158,12 @@ SampleAnalysisResult SampleAnalyzer::analyzeAudioFile(const juce::File& file,
         return {};
     }
 
-    auto result = analyzeBuffer(buffer, reader->sampleRate, request, hostBpm);
-    if (result.valid && result.analyzedBars < kMinBarsForHinting)
-        result.phraseBoundaryBars.clear();
+    auto bundle = analyzeBufferExtended(buffer, reader->sampleRate, request, hostBpm);
 
-    if (errorMessage != nullptr && !result.valid)
+    if (errorMessage != nullptr && !bundle.summary.valid)
         *errorMessage = "Analysis completed with invalid result.";
 
-    return result;
+    return bundle;
 }
 
 AudioFeatureMap SampleAnalyzer::buildFeatureMap(const SampleAnalysisResult& result) const
@@ -160,6 +201,42 @@ AudioFeatureMap SampleAnalyzer::buildFeatureMap(const SampleAnalysisResult& resu
     }
 
     return map;
+}
+
+SampleAnalysisResult SampleAnalyzer::analyzePreparedMono(const std::vector<float>& mono,
+                                                         double sampleRate,
+                                                         const SampleAnalysisRequest& request,
+                                                         double hostBpm) const
+{
+    SampleAnalysisResult result;
+
+    const bool hostTempoUsable = request.useHostTempoIfAvailable && hostBpm > 20.0;
+    const double initialBpm = hostTempoUsable ? hostBpm : 120.0;
+
+    result.bpmFromHost = hostTempoUsable;
+    result.bpmReliable = hostTempoUsable;
+
+    featureExtractor.computeStepFeatures(mono, sampleRate, initialBpm, request, result);
+    if (!result.valid)
+        return result;
+
+    if (!hostTempoUsable && request.detectTempoFromFile)
+    {
+        const double estimated = estimateBpmFromEnergy(result.energyPerStep, result.stepsPerBar, initialBpm);
+        const double adjustedBpm = applyTempoHandling(estimated, request.tempoHandling);
+        SampleAnalysisResult refined;
+        refined.bpmFromHost = false;
+        refined.bpmReliable = estimated > 0.0;
+
+        featureExtractor.computeStepFeatures(mono, sampleRate, adjustedBpm, request, refined);
+        if (refined.valid)
+            result = refined;
+
+        result.detectedBpm = adjustedBpm;
+        result.bpmReliable = estimated > 0.0;
+    }
+
+    return result;
 }
 
 double SampleAnalyzer::estimateBpmFromEnergy(const std::vector<float>& energyPerStep,

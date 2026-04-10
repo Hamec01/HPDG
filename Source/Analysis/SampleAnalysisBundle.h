@@ -3,20 +3,17 @@
 #include "AudioFeatureMap.h"
 #include "GenerationHints.h"
 #include "LaneEvidenceMap.h"
+#include "SampleAnalysisResult.h"
 #include "SampleTranscription.h"
 
 namespace bbg
 {
-struct SampleAwareGenerationContext
+struct SampleAnalysisBundle
 {
-    bool enabled = false;
+    SampleAnalysisResult summary;
     AudioFeatureMap featureMap;
     LaneEvidenceMap laneEvidence;
     SampleTranscription transcription;
     GenerationHints hints;
-    float supportVsContrast = 0.5f;
-    float reactivity = 0.7f;
-    bool preferCopyDrums = false;
-    bool preferCopyBass = false;
 };
 } // namespace bbg
