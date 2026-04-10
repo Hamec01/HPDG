@@ -42,6 +42,7 @@ target_sources(HPDG
         Source/Audio/MonstaFxBlock.cpp
     Source/Analysis/SampleAnalyzer.cpp
     Source/Analysis/FeatureExtractor.cpp
+    Source/Analysis/SampleApplyWeights.cpp
     Source/Core/TrackRegistry.cpp
     Source/Core/RuntimeLaneLifecycle.cpp
         Source/Core/PatternProjectSerialization.cpp
@@ -67,6 +68,9 @@ target_sources(HPDG
     Source/Engine/PreviewEngine.cpp
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
+    Source/Engine/ExtractPatternBuilder.cpp
+    Source/Engine/PatternBlendEngine.cpp
+    Source/Engine/SubstyleRuleEnforcer.cpp
     Source/Engine/BoomBap/BoomBapPatternLibrary.cpp
     Source/Engine/BoomBap/BoomBapPhrasePlanner.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
@@ -127,6 +131,7 @@ add_executable(HPDG_CoreTests
     Source/Core/TrackRegistry.cpp
     Source/Core/RuntimeLaneLifecycle.cpp
     Source/Core/PatternProjectSerialization.cpp
+    Source/Analysis/SampleApplyWeights.cpp
     Source/Engine/GrooveEngine.cpp
     Source/Engine/DrillEngine.cpp
     Source/Engine/Drill/Drill808Generator.cpp
@@ -138,6 +143,9 @@ add_executable(HPDG_CoreTests
     Source/Engine/Drill/DrillSnareGenerator.cpp
     Source/Engine/HumanizeEngine.cpp
     Source/Engine/MidiExportEngine.cpp
+    Source/Engine/ExtractPatternBuilder.cpp
+    Source/Engine/PatternBlendEngine.cpp
+    Source/Engine/SubstyleRuleEnforcer.cpp
     Source/Engine/StyleDefaults.cpp
     Source/Engine/StyleDefinitionLoader.cpp
     Source/Engine/StyleDefinitionResolver.cpp

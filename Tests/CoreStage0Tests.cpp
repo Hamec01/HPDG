@@ -10,16 +10,20 @@
 #include "../Source/Core/PatternProject.h"
 #include "../Source/Core/PatternProjectSerialization.h"
 #include "../Source/Core/ProjectStateController.h"
+#include "../Source/Analysis/SampleApplyWeights.h"
 #include "../Source/Engine/DrillEngine.h"
 #include "../Source/Engine/Drill/DrillPatternValidator.h"
 #include "../Source/Engine/Drill/DrillPhrasePlanner.h"
 #include "../Source/Engine/Drill/DrillSnareGenerator.h"
+#include "../Source/Engine/ExtractPatternBuilder.h"
 #include "../Source/Engine/HiResTiming.h"
 #include "../Source/Engine/MidiExportEngine.h"
 #include "../Source/Engine/PatternPerformanceTransformEngine.h"
+#include "../Source/Engine/PatternBlendEngine.h"
 #include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Engine/StyleDefinitionLoader.h"
 #include "../Source/Engine/StyleInfluence.h"
+#include "../Source/Engine/SubstyleRuleEnforcer.h"
 
 namespace bbg
 {
@@ -2412,6 +2416,146 @@ void testTrapStyleInfluenceSmoke()
     expect(TrapStyleInfluence::apply(project, &error), "TrapStyleInfluence smoke application failed: " + error);
 }
 
+void testSampleApplyWeightsSmoke()
+{
+    const auto genreFirst = makeSampleApplyWeights(SampleApplyMode::GenreFirst, AnalysisMode::GenerateFromSample);
+    const auto sampleFirst = makeSampleApplyWeights(SampleApplyMode::SampleFirst, AnalysisMode::GenerateFromSample);
+    const auto exactCopy = makeSampleApplyWeights(SampleApplyMode::ExactCopy, AnalysisMode::ExtractFromSample);
+
+    expect(genreFirst.generatedDrumsWeight > genreFirst.extractedDrumsWeight,
+        "Genre-first apply weights must favor generated drums over extracted drums.");
+    expect(sampleFirst.extractedBassWeight > sampleFirst.generatedBassWeight,
+        "Sample-first apply weights must favor extracted bass over generated bass.");
+    expect(exactCopy.exactCopy,
+        "Exact-copy apply weights must mark the mode as exact copy.");
+    expect(exactCopy.generatedDrumsWeight == 0.0f && exactCopy.generatedBassWeight == 0.0f,
+        "Exact-copy apply weights must disable genre contribution.");
+}
+
+void testExtractPatternBlendAndCopySmoke()
+{
+    SampleAnalysisBundle bundle;
+    bundle.summary.analyzedBars = 2;
+    bundle.transcription.hasDetectedDrums = true;
+    bundle.transcription.hasDetectedBass = true;
+    bundle.transcription.drumEvents.push_back({ TrackType::Kick, 3, 1, 121, 36, 0.94f, false });
+    bundle.transcription.drumEvents.push_back({ TrackType::Kick, 3, 1, 111, 36, 0.82f, false });
+    bundle.transcription.drumEvents.push_back({ TrackType::Snare, 12, 1, 116, 38, 0.90f, false });
+    bundle.transcription.bassEvents.push_back({ TrackType::Sub808, 5, 3, 104, 43, 0.88f, false });
+
+    const auto extracted = ExtractPatternBuilder::build(bundle);
+    expect(extracted.bars == 2, "ExtractPatternBuilder should preserve the analyzed bar count.");
+    expect(extracted.laneNotes[static_cast<size_t>(trackTypeIndex(TrackType::Kick))].size() == 1,
+        "ExtractPatternBuilder should dedupe duplicate kick events on the same step.");
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::BoomBap;
+    project.params.bars = 2;
+
+    auto* kick = findTrackByType(project, TrackType::Kick);
+    auto* snare = findTrackByType(project, TrackType::Snare);
+    auto* hat = findTrackByType(project, TrackType::HiHat);
+    auto* sub = findTrackByType(project, TrackType::Sub808);
+    expect(kick != nullptr && snare != nullptr && hat != nullptr && sub != nullptr,
+        "Pattern blend smoke requires Kick, Snare, HiHat and Sub808 tracks.");
+
+    sub->enabled = true;
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::Kick,
+                        { { 36, 0, 1, 112, 0, false, "genre_kick", false, false, false },
+                          { 36, 8, 1, 108, 0, false, "genre_kick", false, false, false } });
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::Snare,
+                        { { 38, 4, 1, 118, 0, false, "genre_snare", false, false, false },
+                          { 38, 12, 1, 118, 0, false, "genre_snare", false, false, false } });
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::HiHat,
+                        { { 42, 0, 1, 92, 0, false, "genre_hat", false, false, false },
+                          { 42, 2, 1, 88, 0, false, "genre_hat", false, false, false } });
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::Sub808,
+                        { { 36, 0, 4, 100, 0, false, "genre_sub", false, false, false } });
+
+    const auto blendReport = PatternBlendEngine::apply(project,
+                                  extracted,
+                                  makeSampleApplyWeights(SampleApplyMode::SampleFirst,
+                                             AnalysisMode::GenerateFromSample));
+    expect(blendReport.changedTracks.count(TrackType::Kick) > 0,
+        "Pattern blend smoke should update the kick lane when extracted kicks are present.");
+    kick = findTrackByType(project, TrackType::Kick);
+    sub = findTrackByType(project, TrackType::Sub808);
+    expect(kick != nullptr && sub != nullptr, "Pattern blend smoke lost Kick or Sub808 after apply.");
+    expect(hasNoteAt(*kick, 3, 0, "sample_copy"),
+        "Pattern blend smoke should inject extracted kick hits into the visible lane.");
+    expect(hasSubStartAt(*sub, 5),
+        "Pattern blend smoke should inject extracted Sub808 starts into the visible lane.");
+
+    const auto exactReport = PatternBlendEngine::apply(project,
+                                  extracted,
+                                  makeSampleApplyWeights(SampleApplyMode::ExactCopy,
+                                             AnalysisMode::ExtractFromSample));
+    expect(exactReport.exactCopy,
+        "Pattern blend smoke should report exact-copy mode when exact copy is requested.");
+    hat = findTrackByType(project, TrackType::HiHat);
+    expect(hat != nullptr && hat->notes.empty(),
+        "Exact copy should clear lanes that have no extracted note content.");
+}
+
+void testClassicRuleEnforcerSmoke()
+{
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::BoomBap;
+    project.params.boombapSubstyle = 0;
+    project.params.bars = 1;
+
+    auto* snare = findTrackByType(project, TrackType::Snare);
+    auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+    auto* perc = findTrackByType(project, TrackType::Perc);
+    auto* openHat = findTrackByType(project, TrackType::OpenHat);
+    expect(snare != nullptr && clapGhost != nullptr && perc != nullptr && openHat != nullptr,
+        "Classic rule smoke requires Snare, Clap/Ghost, Perc and OpenHat tracks.");
+
+    openHat->enabled = true;
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::Snare,
+                        { { 38, 4, 1, 118, 0, false, "snare_backbone", false, false, false },
+                          { 38, 12, 1, 116, 0, false, "snare_backbone", false, false, false } });
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::ClapGhostSnare,
+                        { { 39, 4, 1, 90, 0, false, "clap_layer", false, false, false },
+                          { 39, 10, 1, 88, 0, false, "clap_support", false, false, false },
+                          { 39, 12, 1, 89, 0, false, "clap_layer", false, false, false } });
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::Perc,
+                        { { 50, 2, 1, 84, 0, false, "perc_texture", false, false, false },
+                          { 50, 10, 1, 90, 0, false, "perc_texture", false, false, false },
+                          { 50, 14, 1, 92, 0, false, "perc_texture", false, false, false } });
+    ProjectStateController::setTrackNotes(project,
+                        TrackType::OpenHat,
+                        { { 46, 7, 1, 86, 0, false, "open_hat", false, false, false },
+                          { 46, 14, 1, 96, 0, false, "open_hat", false, false, false } });
+
+    const auto report = SubstyleRuleEnforcer::enforce(project);
+    expect(report.applied, "Classic rule enforcer should activate for BoomBap Classic.");
+
+    clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+    perc = findTrackByType(project, TrackType::Perc);
+    openHat = findTrackByType(project, TrackType::OpenHat);
+    expect(clapGhost != nullptr && perc != nullptr && openHat != nullptr,
+        "Classic rule smoke lost one of the decorated lanes after enforcement.");
+    expect(std::none_of(clapGhost->notes.begin(), clapGhost->notes.end(), [](const NoteEvent& note)
+    {
+     return note.step == 4 || note.step == 12;
+    }),
+        "Classic rule enforcer should remove clap-layer collisions on the main snare backbeat.");
+    expect(static_cast<int>(clapGhost->notes.size()) <= 1,
+        "Classic rule enforcer should keep the clap/ghost support lane sparse per bar.");
+    expect(static_cast<int>(perc->notes.size()) <= 1,
+        "Classic rule enforcer should clamp decorative perc density in Classic mode.");
+    expect(static_cast<int>(openHat->notes.size()) <= 1,
+        "Classic rule enforcer should keep open hats sparse in Classic mode.");
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -2468,5 +2612,8 @@ int main()
     failures += runTest("Drill hat copy mostly still varies smoke", testDrillHatCopyMostlyStillVariesSmoke);
     failures += runTest("Drill full engine smoke", testDrillFullEngineSmoke);
     failures += runTest("Trap style influence smoke", testTrapStyleInfluenceSmoke);
+    failures += runTest("Sample apply weights smoke", testSampleApplyWeightsSmoke);
+    failures += runTest("Extract pattern blend and copy smoke", testExtractPatternBlendAndCopySmoke);
+    failures += runTest("Classic rule enforcer smoke", testClassicRuleEnforcerSmoke);
     return failures == 0 ? 0 : 1;
 }

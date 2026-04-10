@@ -10,9 +10,12 @@
 #include "../Core/PatternProjectSerialization.h"
 #include "../Core/ProjectStateController.h"
 #include "../Core/TrackRegistry.h"
+#include "../Engine/ExtractPatternBuilder.h"
 #include "../Engine/MidiExportEngine.h"
 #include "../Engine/PatternPerformanceTransformEngine.h"
+#include "../Engine/PatternBlendEngine.h"
 #include "../Engine/StyleDefaults.h"
+#include "../Engine/SubstyleRuleEnforcer.h"
 #include "../Services/TemporaryMidiExportService.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -65,6 +68,13 @@ int choiceIndexFromBars(int bars)
                 return 3;
             return 4;
     }
+}
+
+SampleApplyMode sampleApplyModeFromState(const juce::AudioProcessorValueTreeState& apvts)
+{
+    const auto* value = apvts.getRawParameterValue(ParamIds::sampleApplyMode);
+    const int choice = value != nullptr ? static_cast<int>(value->load()) : choiceIndexFromSampleApplyMode(SampleApplyMode::Blend);
+    return sampleApplyModeFromChoiceIndex(choice);
 }
 
 GenreType genreFromChoice(int choice)
@@ -234,6 +244,12 @@ juce::String analysisModeDisplayName(AnalysisMode mode)
         case AnalysisMode::Off:
         default: return "Off";
     }
+}
+
+juce::String sampleApplySummaryLine(const SampleAwareGenerationContext& context)
+{
+    return "Sample apply: " + sampleApplyModeDisplayName(context.applyMode)
+        + " | " + describeSampleApplyWeights(context.applyWeights);
 }
 
 bool matchesExtractLane(TrackType targetLane, TrackType eventLane)
@@ -974,6 +990,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
                                                                    "Genre",
                                                                    juce::StringArray { "Boom Bap", "Rap", "Trap", "Drill" },
                                                                    0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::sampleApplyMode,
+                                                                   "Sample Apply Mode",
+                                                                   getSampleApplyModeNames(),
+                                                                   1));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::keyRoot,
                                                                    "Key Root",
                                                                    juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" },
@@ -1549,12 +1569,15 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
         case GenreType::BoomBap:
         default: boomBapEngine.generate(project); break;
     }
+    applySampleAwarePostProcessLocked();
     project.generationDebugReport = buildGenerationDebugReport("Generate Pattern",
                                                                beforeProject,
                                                                project,
                                                                std::nullopt,
                                                                sampleAwareModeEnabled,
                                                                analysisReady);
+    if (lastSampleApplyDebug.isNotEmpty())
+        project.generationDebugReport += "\n" + lastSampleApplyDebug;
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -1574,12 +1597,15 @@ void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
         case GenreType::BoomBap:
         default: boomBapEngine.generateTrackNew(project, track); break;
     }
+    applySampleAwarePostProcessLocked();
     project.generationDebugReport = buildGenerationDebugReport("Generate Track",
                                                                beforeProject,
                                                                project,
                                                                track,
                                                                sampleAwareModeEnabled,
                                                                analysisReady);
+    if (lastSampleApplyDebug.isNotEmpty())
+        project.generationDebugReport += "\n" + lastSampleApplyDebug;
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -1599,12 +1625,15 @@ void BoomBapGeneratorAudioProcessor::regenerateTrack(TrackType track)
         case GenreType::BoomBap:
         default: boomBapEngine.regenerateTrackVariation(project, track); break;
     }
+    applySampleAwarePostProcessLocked();
     project.generationDebugReport = buildGenerationDebugReport("Regenerate Variation",
                                                                beforeProject,
                                                                project,
                                                                track,
                                                                sampleAwareModeEnabled,
                                                                analysisReady);
+    if (lastSampleApplyDebug.isNotEmpty())
+        project.generationDebugReport += "\n" + lastSampleApplyDebug;
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -1633,12 +1662,15 @@ void BoomBapGeneratorAudioProcessor::mutatePattern()
         case GenreType::BoomBap:
         default: boomBapEngine.mutatePattern(project); break;
     }
+    applySampleAwarePostProcessLocked();
     project.generationDebugReport = buildGenerationDebugReport("Mutate Pattern",
                                                                beforeProject,
                                                                project,
                                                                std::nullopt,
                                                                sampleAwareModeEnabled,
                                                                analysisReady);
+    if (lastSampleApplyDebug.isNotEmpty())
+        project.generationDebugReport += "\n" + lastSampleApplyDebug;
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -1658,12 +1690,15 @@ void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
         case GenreType::BoomBap:
         default: boomBapEngine.mutateTrack(project, track); break;
     }
+    applySampleAwarePostProcessLocked();
     project.generationDebugReport = buildGenerationDebugReport("Mutate Track",
                                                                beforeProject,
                                                                project,
                                                                track,
                                                                sampleAwareModeEnabled,
                                                                analysisReady);
+    if (lastSampleApplyDebug.isNotEmpty())
+        project.generationDebugReport += "\n" + lastSampleApplyDebug;
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -2484,6 +2519,7 @@ void BoomBapGeneratorAudioProcessor::clearSampleAnalysis()
     currentAnalysisBundle = {};
     currentAnalysisResult = {};
     currentFeatureMap = {};
+    lastSampleApplyDebug.clear();
     analysisReady = false;
     updateSampleAwareContextLocked();
 }
@@ -2532,6 +2568,20 @@ bool BoomBapGeneratorAudioProcessor::isSampleAnalysisReady() const
     return analysisReady;
 }
 
+void BoomBapGeneratorAudioProcessor::setSampleApplyMode(SampleApplyMode mode)
+{
+    setFloatParameterValue(ParamIds::sampleApplyMode,
+                           static_cast<float>(choiceIndexFromSampleApplyMode(mode)));
+
+    std::scoped_lock lock(projectMutex);
+    updateSampleAwareContextLocked();
+}
+
+SampleApplyMode BoomBapGeneratorAudioProcessor::getSampleApplyMode() const
+{
+    return sampleApplyModeFromState(apvts);
+}
+
 void BoomBapGeneratorAudioProcessor::setSampleReactivity(float value)
 {
     std::scoped_lock lock(projectMutex);
@@ -2573,6 +2623,8 @@ juce::String BoomBapGeneratorAudioProcessor::getGenerationDebugSummary() const
     lines.add("Bars: " + juce::String(currentAnalysisResult.analyzedBars));
     lines.add("Support vs Contrast: " + juce::String(currentSampleContext.supportVsContrast, 2));
     lines.add("Reactivity: " + juce::String(currentSampleContext.reactivity, 2));
+    lines.add("Apply mode: " + sampleApplyModeDisplayName(currentSampleContext.applyMode));
+    lines.add("Apply weights: " + describeSampleApplyWeights(currentSampleContext.applyWeights));
     lines.add("Lane evidence: " + juce::String(static_cast<int>(currentAnalysisBundle.laneEvidence.steps.size())) + " steps");
     lines.add("Transcription: drums " + juce::String(static_cast<int>(currentAnalysisBundle.transcription.drumEvents.size()))
               + " | bass " + juce::String(static_cast<int>(currentAnalysisBundle.transcription.bassEvents.size())));
@@ -2581,6 +2633,8 @@ juce::String BoomBapGeneratorAudioProcessor::getGenerationDebugSummary() const
               + " | bass " + juce::String(static_cast<int>(currentAnalysisBundle.hints.bassStepWeights.size())));
     lines.add("Copy bias: drums " + juce::String(currentSampleContext.preferCopyDrums ? "yes" : "no")
               + " | bass " + juce::String(currentSampleContext.preferCopyBass ? "yes" : "no"));
+    if (lastSampleApplyDebug.isNotEmpty())
+        lines.add(lastSampleApplyDebug);
 
     const auto analysisSummary = lines.joinIntoString("\n");
     if (project.generationDebugReport.trim().isEmpty())
@@ -2597,14 +2651,62 @@ void BoomBapGeneratorAudioProcessor::updateSampleAwareContextLocked()
     currentSampleContext.laneEvidence = currentAnalysisBundle.laneEvidence;
     currentSampleContext.transcription = currentAnalysisBundle.transcription;
     currentSampleContext.hints = currentAnalysisBundle.hints;
+    currentSampleContext.applyMode = sampleApplyModeFromState(apvts);
+    currentSampleContext.applyWeights = makeSampleApplyWeights(currentSampleContext.applyMode, analysisMode);
 
     const bool modeUsesGuidance = analysisMode == AnalysisMode::GenerateFromSample
         || analysisMode == AnalysisMode::ExtractFromSample;
-    currentSampleContext.preferCopyDrums = analysisMode == AnalysisMode::ExtractFromSample
-        && currentAnalysisBundle.transcription.hasDetectedDrums;
-    currentSampleContext.preferCopyBass = analysisMode == AnalysisMode::ExtractFromSample
-        && currentAnalysisBundle.transcription.hasDetectedBass;
+    const bool sampleLedDrums = currentSampleContext.applyWeights.exactCopy
+        || currentSampleContext.applyWeights.extractedDrumsWeight >= currentSampleContext.applyWeights.generatedDrumsWeight;
+    const bool sampleLedBass = currentSampleContext.applyWeights.exactCopy
+        || currentSampleContext.applyWeights.extractedBassWeight >= currentSampleContext.applyWeights.generatedBassWeight;
+    currentSampleContext.preferCopyDrums = modeUsesGuidance
+        && currentAnalysisBundle.transcription.hasDetectedDrums
+        && sampleLedDrums;
+    currentSampleContext.preferCopyBass = modeUsesGuidance
+        && currentAnalysisBundle.transcription.hasDetectedBass
+        && sampleLedBass;
     currentSampleContext.enabled = sampleAwareModeEnabled && analysisReady && modeUsesGuidance;
+}
+
+bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
+{
+    lastSampleApplyDebug.clear();
+
+    const bool modeUsesGuidance = analysisMode == AnalysisMode::GenerateFromSample
+        || analysisMode == AnalysisMode::ExtractFromSample;
+    if (!analysisReady || !modeUsesGuidance)
+        return false;
+
+    const auto extracted = ExtractPatternBuilder::build(currentAnalysisBundle);
+    if (!extracted.hasAnyContent())
+    {
+        lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext) + "\nSample apply result: no extracted drum or bass pattern was available.";
+        return false;
+    }
+
+    auto blendReport = PatternBlendEngine::apply(project, extracted, currentSampleContext.applyWeights);
+    if (blendReport.changedTracks.empty())
+    {
+        lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext) + "\nSample apply result: current lanes already matched the extracted pattern.";
+        return false;
+    }
+
+    SubstyleRuleReport ruleReport;
+    if (!currentSampleContext.applyWeights.exactCopy)
+    {
+        ruleReport = SubstyleRuleEnforcer::enforce(project);
+        blendReport.changedTracks.insert(ruleReport.changedTracks.begin(), ruleReport.changedTracks.end());
+    }
+
+    PatternPerformanceTransformEngine::captureBasePatterns(project, blendReport.changedTracks);
+
+    lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext)
+        + "\n" + describePatternBlendReport(blendReport);
+    if (ruleReport.applied)
+        lastSampleApplyDebug += "\n" + describeSubstyleRuleReport(ruleReport);
+
+    return true;
 }
 
 bool BoomBapGeneratorAudioProcessor::extractPatternFromAnalyzedSampleLocked()
@@ -2612,92 +2714,46 @@ bool BoomBapGeneratorAudioProcessor::extractPatternFromAnalyzedSampleLocked()
     if (!analysisReady)
         return false;
 
-    const bool hasDrums = !currentAnalysisBundle.transcription.drumEvents.empty();
-    const bool hasBass = !currentAnalysisBundle.transcription.bassEvents.empty();
-    if (!hasDrums && !hasBass)
+    const auto extracted = ExtractPatternBuilder::build(currentAnalysisBundle);
+    if (!extracted.hasAnyContent())
         return false;
 
     const auto beforeProject = project;
     project.params = buildParamsFromState(lastTransport);
-    if (currentAnalysisBundle.summary.analyzedBars > 0)
-        ProjectStateController::setBars(project, juce::jlimit(1, 16, currentAnalysisBundle.summary.analyzedBars));
+    if (extracted.bars > 0)
+        ProjectStateController::setBars(project, extracted.bars);
 
-    const std::array<TrackType, 11> extractedLanes {
-        TrackType::Kick,
-        TrackType::GhostKick,
-        TrackType::Snare,
-        TrackType::ClapGhostSnare,
-        TrackType::HiHat,
-        TrackType::OpenHat,
-        TrackType::Perc,
-        TrackType::Ride,
-        TrackType::Cymbal,
-        TrackType::HatFX,
-        TrackType::Sub808
-    };
+    project.sampleContext = currentSampleContext;
 
-    for (const auto lane : extractedLanes)
+    if (!currentSampleContext.applyWeights.exactCopy)
     {
-        if (auto* state = findTrackState(lane); state != nullptr && !state->locked)
+        switch (project.params.genre)
         {
-            state->notes.clear();
-            state->baseNotes.clear();
-            if (lane == TrackType::Sub808)
-            {
-                state->sub808Notes.clear();
-                state->baseSub808Notes.clear();
-            }
+            case GenreType::Drill: drillEngine.generate(project); break;
+            case GenreType::Rap: rapEngine.generate(project); break;
+            case GenreType::Trap: trapEngine.generate(project); break;
+            case GenreType::BoomBap:
+            default: boomBapEngine.generate(project); break;
         }
     }
 
-    std::unordered_set<TrackType> changedTracks;
-    for (const auto lane : extractedLanes)
-    {
-        if (lane == TrackType::Ride || lane == TrackType::Cymbal || lane == TrackType::HatFX)
-            continue;
-
-        if (lane == TrackType::Sub808)
-        {
-            const auto subNotes = subNotesForEvents(currentAnalysisBundle.transcription.bassEvents);
-            if (!subNotes.empty())
-            {
-                if (auto* state = findTrackState(lane); state != nullptr && !state->locked)
-                {
-                    state->enabled = true;
-                    ProjectStateController::setSub808TrackNotes(project, lane, subNotes);
-                    changedTracks.insert(lane);
-                }
-            }
-            continue;
-        }
-
-        const auto notes = noteEventsForLane(currentAnalysisBundle.transcription.drumEvents, lane);
-        if (!notes.empty())
-        {
-            if (auto* state = findTrackState(lane); state != nullptr && !state->locked)
-            {
-                state->enabled = true;
-                ProjectStateController::setTrackNotes(project, lane, notes);
-                changedTracks.insert(lane);
-            }
-        }
-    }
-
-    if (changedTracks.empty())
+    if (!applySampleAwarePostProcessLocked())
         return false;
 
     project.sampleContext = currentSampleContext;
-    project.phraseLengthBars = juce::jmax(1, currentAnalysisBundle.summary.analyzedBars);
+    project.phraseLengthBars = juce::jmax(1, extracted.bars);
+    const juce::String extractLabel = currentSampleContext.applyWeights.exactCopy ? "sample_exact_copy" : "sample_blend";
     project.phraseRoleSummary = currentAnalysisBundle.summary.phraseBoundaryBars.empty()
-        ? "sample_extract"
-        : ("sample_extract | boundaries " + juce::String(static_cast<int>(currentAnalysisBundle.summary.phraseBoundaryBars.size())));
-    PatternPerformanceTransformEngine::captureBasePatterns(project, changedTracks);
+        ? extractLabel
+        : (extractLabel + " | boundaries " + juce::String(static_cast<int>(currentAnalysisBundle.summary.phraseBoundaryBars.size())));
     project.generationDebugReport = buildGenerationDebugReport("Extract From Sample",
                                                                beforeProject,
                                                                project,
                                                                std::nullopt,
                                                                sampleAwareModeEnabled,
                                                                analysisReady);
+    if (lastSampleApplyDebug.isNotEmpty())
+        project.generationDebugReport += "\n" + lastSampleApplyDebug;
     ++project.generationCounter;
     rebuildMidiCache();
     return true;

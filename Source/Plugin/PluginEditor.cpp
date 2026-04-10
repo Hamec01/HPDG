@@ -1995,6 +1995,7 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
 
     analysisPanel.setPanelState(analysisRequest.source,
                                 analysisMode,
+                                sampleContext.applyMode,
                                 analysisRequest.barsToCapture,
                                 analysisRequest.tempoHandling,
                                 sampleContext.reactivity,
@@ -2345,6 +2346,14 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         applyProcessorProjectMutation([this, mode]
         {
             audioProcessor.setAnalysisMode(mode);
+        }, false);
+    };
+
+    analysisPanel.onSampleApplyModeChanged = [this](SampleApplyMode mode)
+    {
+        applyProcessorProjectMutation([this, mode]
+        {
+            audioProcessor.setSampleApplyMode(mode);
         }, false);
     };
 

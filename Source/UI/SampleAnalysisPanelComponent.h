@@ -4,6 +4,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "../Analysis/SampleApplyMode.h"
 #include "../Analysis/SampleAnalysisRequest.h"
 
 namespace bbg
@@ -25,6 +26,7 @@ public:
 
     void setPanelState(SampleAnalysisRequest::SourceType source,
                        AnalysisMode mode,
+                       SampleApplyMode applyMode,
                        int barsToCapture,
                        SampleAnalysisRequest::TempoHandling tempoHandling,
                        float reactivity,
@@ -37,6 +39,7 @@ public:
 
     std::function<void(SampleAnalysisRequest::SourceType)> onAnalysisSourceChanged;
     std::function<void(AnalysisMode)> onAnalysisModeChanged;
+    std::function<void(SampleApplyMode)> onSampleApplyModeChanged;
     std::function<void(int)> onAnalysisBarsChanged;
     std::function<void(SampleAnalysisRequest::TempoHandling)> onAnalysisTempoHandlingChanged;
     std::function<void(float)> onAnalysisReactivityChanged;
@@ -53,6 +56,7 @@ private:
     juce::Label analysisTitleLabel;
     juce::Label sourceLabel;
     juce::Label modeLabel;
+    juce::Label applyModeLabel;
     juce::Label barsLabel;
     juce::Label tempoLabel;
     juce::Label reactivityLabel;
@@ -64,6 +68,7 @@ private:
 
     juce::ComboBox sourceCombo;
     juce::ComboBox modeCombo;
+    juce::ComboBox applyModeCombo;
     juce::ComboBox barsCombo;
     juce::ComboBox tempoCombo;
     juce::Slider reactivitySlider;

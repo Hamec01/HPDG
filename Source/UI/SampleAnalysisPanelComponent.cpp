@@ -45,19 +45,22 @@ void SampleAnalysisPanelComponent::resized()
     panel.removeFromTop(2);
 
     auto line1 = panel.removeFromTop(26);
-    sourceLabel.setBounds(line1.removeFromLeft(68));
-    sourceCombo.setBounds(line1.removeFromLeft(130));
-    line1.removeFromLeft(8);
-    modeLabel.setBounds(line1.removeFromLeft(52));
-    modeCombo.setBounds(line1);
+    sourceLabel.setBounds(line1.removeFromLeft(52));
+    sourceCombo.setBounds(line1.removeFromLeft(118));
+    line1.removeFromLeft(6);
+    modeLabel.setBounds(line1.removeFromLeft(42));
+    modeCombo.setBounds(line1.removeFromLeft(144));
+    line1.removeFromLeft(6);
+    applyModeLabel.setBounds(line1.removeFromLeft(42));
+    applyModeCombo.setBounds(line1);
 
     panel.removeFromTop(6);
     auto line2 = panel.removeFromTop(26);
-    barsLabel.setBounds(line2.removeFromLeft(68));
-    barsCombo.setBounds(line2.removeFromLeft(74));
+    barsLabel.setBounds(line2.removeFromLeft(52));
+    barsCombo.setBounds(line2.removeFromLeft(72));
     line2.removeFromLeft(6);
-    tempoLabel.setBounds(line2.removeFromLeft(52));
-    tempoCombo.setBounds(line2.removeFromLeft(130));
+    tempoLabel.setBounds(line2.removeFromLeft(40));
+    tempoCombo.setBounds(line2.removeFromLeft(100));
     line2.removeFromLeft(8);
     chooseFileButton.setBounds(line2.removeFromLeft(90));
     line2.removeFromLeft(6);
@@ -150,6 +153,7 @@ void SampleAnalysisPanelComponent::filesDropped(const juce::StringArray& files, 
 
 void SampleAnalysisPanelComponent::setPanelState(SampleAnalysisRequest::SourceType source,
                                                  AnalysisMode mode,
+                                                 SampleApplyMode applyMode,
                                                  int barsToCapture,
                                                  SampleAnalysisRequest::TempoHandling tempoHandling,
                                                  float reactivity,
@@ -168,6 +172,11 @@ void SampleAnalysisPanelComponent::setPanelState(SampleAnalysisRequest::SourceTy
         : (mode == AnalysisMode::GenerateFromSample ? 3
             : (mode == AnalysisMode::ExtractFromSample ? 4 : 1));
     modeCombo.setSelectedId(modeId, juce::dontSendNotification);
+
+    const int applyModeId = applyMode == SampleApplyMode::GenreFirst ? 1
+        : (applyMode == SampleApplyMode::SampleFirst ? 3
+            : (applyMode == SampleApplyMode::ExactCopy ? 4 : 2));
+    applyModeCombo.setSelectedId(applyModeId, juce::dontSendNotification);
 
     const int barsId = barsToCapture <= 2 ? 1
         : (barsToCapture <= 4 ? 2 : (barsToCapture <= 8 ? 3 : 4));
@@ -202,6 +211,7 @@ void SampleAnalysisPanelComponent::setupUi()
 
     sourceLabel.setText("Source", juce::dontSendNotification);
     modeLabel.setText("Mode", juce::dontSendNotification);
+    applyModeLabel.setText("Apply", juce::dontSendNotification);
     barsLabel.setText("Scan", juce::dontSendNotification);
     tempoLabel.setText("BPM", juce::dontSendNotification);
     reactivityLabel.setText("React", juce::dontSendNotification);
@@ -220,6 +230,7 @@ void SampleAnalysisPanelComponent::setupUi()
 
     styleLabel(sourceLabel);
     styleLabel(modeLabel);
+    styleLabel(applyModeLabel);
     styleLabel(barsLabel);
     styleLabel(tempoLabel);
     styleLabel(reactivityLabel);
@@ -254,6 +265,12 @@ void SampleAnalysisPanelComponent::setupUi()
     modeCombo.addItem("Extract / Copy", 4);
     modeCombo.setSelectedId(1);
 
+    applyModeCombo.addItem("Genre First", 1);
+    applyModeCombo.addItem("Blend", 2);
+    applyModeCombo.addItem("Sample First", 3);
+    applyModeCombo.addItem("Exact Copy", 4);
+    applyModeCombo.setSelectedId(2);
+
     barsCombo.addItem("2 bars", 1);
     barsCombo.addItem("4 bars", 2);
     barsCombo.addItem("8 bars", 3);
@@ -285,6 +302,7 @@ void SampleAnalysisPanelComponent::setupUi()
 
     addAndMakeVisible(sourceLabel);
     addAndMakeVisible(modeLabel);
+    addAndMakeVisible(applyModeLabel);
     addAndMakeVisible(barsLabel);
     addAndMakeVisible(tempoLabel);
     addAndMakeVisible(reactivityLabel);
@@ -295,6 +313,7 @@ void SampleAnalysisPanelComponent::setupUi()
     addAndMakeVisible(debugLabel);
     addAndMakeVisible(sourceCombo);
     addAndMakeVisible(modeCombo);
+    addAndMakeVisible(applyModeCombo);
     addAndMakeVisible(barsCombo);
     addAndMakeVisible(tempoCombo);
     addAndMakeVisible(reactivitySlider);
@@ -324,6 +343,18 @@ void SampleAnalysisPanelComponent::setupUi()
             : (id == 3 ? AnalysisMode::GenerateFromSample
                 : (id == 4 ? AnalysisMode::ExtractFromSample : AnalysisMode::Off));
         onAnalysisModeChanged(mode);
+    };
+
+    applyModeCombo.onChange = [this]
+    {
+        if (!onSampleApplyModeChanged)
+            return;
+
+        const auto id = applyModeCombo.getSelectedId();
+        const auto mode = id == 1 ? SampleApplyMode::GenreFirst
+            : (id == 3 ? SampleApplyMode::SampleFirst
+                : (id == 4 ? SampleApplyMode::ExactCopy : SampleApplyMode::Blend));
+        onSampleApplyModeChanged(mode);
     };
 
     barsCombo.onChange = [this]

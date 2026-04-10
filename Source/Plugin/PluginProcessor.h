@@ -45,6 +45,7 @@ static constexpr auto densityAmount = "density_amount";
 static constexpr auto tempoInterpretation = "tempo_interpretation";
 static constexpr auto bars = "bars";
 static constexpr auto genre = "genre";
+static constexpr auto sampleApplyMode = "sample_apply_mode";
 static constexpr auto keyRoot = "key_root";
 static constexpr auto scaleMode = "scale_mode";
 static constexpr auto boombapSubstyle = "boombap_substyle";
@@ -193,6 +194,8 @@ public:
     void setSampleAwareModeEnabled(bool enabled);
     bool isSampleAwareModeEnabled() const;
     bool isSampleAnalysisReady() const;
+    void setSampleApplyMode(SampleApplyMode mode);
+    SampleApplyMode getSampleApplyMode() const;
     void setSampleReactivity(float value);
     void setSupportVsContrast(float value);
 
@@ -309,7 +312,7 @@ private:
     void startPreviewFromCurrentStartStepLocked();
     void rescanLaneSamplesLocked();
     void updateSampleAwareContextLocked();
-    void applySampleAwarePostProcessLocked();
+    bool applySampleAwarePostProcessLocked();
     bool extractPatternFromAnalyzedSampleLocked();
     void resetEqDisplayAnalyzer();
     void captureEqDisplayAnalyzer(const juce::AudioBuffer<float>& buffer);
@@ -387,6 +390,7 @@ private:
     AudioFeatureMap currentFeatureMap;
     SampleAwareGenerationContext currentSampleContext;
     AnalysisMode analysisMode = AnalysisMode::Off;
+    juce::String lastSampleApplyDebug;
 
     bool sampleAwareModeEnabled = false;
     bool analysisReady = false;
