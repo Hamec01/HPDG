@@ -197,6 +197,7 @@ private:
     std::optional<StyleLabDraftState> styleLabDraftState;
     std::vector<RuntimeLaneId> laneDisplayOrder;
     GridEditorComponent::EditorRegionState editorRegionState;
+    bool isClosingEditor = false;
     bool soundModuleGestureActive = false;
     std::optional<PatternProject> soundModuleGestureBefore;
 

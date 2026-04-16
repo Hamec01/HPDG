@@ -1126,6 +1126,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
 BoomBGeneratorAudioProcessorEditor::~BoomBGeneratorAudioProcessorEditor()
 {
+    isClosingEditor = true;
     stopTimer();
     if (auto* modalManager = juce::ModalComponentManager::getInstance())
         modalManager->cancelAllModalComponents();
@@ -1776,6 +1777,9 @@ void BoomBGeneratorAudioProcessorEditor::resized()
 
 void BoomBGeneratorAudioProcessorEditor::timerCallback()
 {
+    if (isClosingEditor)
+        return;
+
     const auto before = historyController.getLastObservedProjectState().has_value()
         ? *historyController.getLastObservedProjectState()
         : audioProcessor.getProjectSnapshot();
