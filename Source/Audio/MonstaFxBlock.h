@@ -39,6 +39,7 @@ private:
 
     struct Profile
     {
+        MonstaFxFlavor flavor = MonstaFxFlavor::SyncGlitch;
         int divisionIndex = 2;
         float activityChance = 0.56f;
         float repeatWeight = 0.38f;
@@ -52,6 +53,16 @@ private:
         int crushHoldBase = 3;
         int crushBitDepth = 7;
         float outputTrim = 0.90f;
+        float dropoutChance = 0.0f;
+        float dropoutDepth = 0.0f;
+        float trashDrive = 1.0f;
+        float wowDepthSamples = 0.0f;
+        float wowRateHz = 0.0f;
+        float flutterDepthSamples = 0.0f;
+        float flutterRateHz = 0.0f;
+        float smearMix = 0.0f;
+        float jitterChance = 0.0f;
+        int jitterRangeSamples = 0;
     };
 
     struct SliceDecision
@@ -68,6 +79,15 @@ private:
         int gateSteps = 4;
         std::uint32_t gateMask = 0;
         float outputTrim = 1.0f;
+        bool dropout = false;
+        float dropoutDepth = 0.0f;
+        float trashDrive = 1.0f;
+        float wowDepthSamples = 0.0f;
+        float wowRateHz = 0.0f;
+        float flutterDepthSamples = 0.0f;
+        float flutterRateHz = 0.0f;
+        float smearMix = 0.0f;
+        int jitterRangeSamples = 0;
     };
 
     void ensureScratchCapacity(int numChannels, int numSamples);
@@ -92,6 +112,7 @@ private:
     static int randomInt(std::uint32_t& state, int minValue, int maxValue) noexcept;
     static int chooseWeightedIndex(std::uint32_t& state, const std::array<float, 4>& weights) noexcept;
     static float quantizeToBitDepth(float sample, int bitDepth) noexcept;
+    static float softClip(float sample, float drive) noexcept;
 
     double sampleRate = 44100.0;
     juce::AudioBuffer<float> dryBuffer;

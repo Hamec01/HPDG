@@ -7,6 +7,22 @@ namespace bbg
 {
 namespace
 {
+void drawRowTexture(juce::Graphics& g, juce::Rectangle<float> area, float alphaScale, int seed)
+{
+    juce::Random rng(seed);
+
+    for (int i = 0; i < 6; ++i)
+    {
+        const float x = area.getX() + rng.nextFloat() * area.getWidth();
+        const float y = area.getY() + rng.nextFloat() * area.getHeight();
+        const float w = 20.0f + rng.nextFloat() * 72.0f;
+        const float h = 4.0f + rng.nextFloat() * 14.0f;
+        g.setColour(juce::Colour::fromRGBA(255, 176, 84,
+                                           static_cast<juce::uint8>((0.012f + rng.nextFloat() * 0.020f) * alphaScale * 255.0f)));
+        g.fillEllipse(x, y, w, h);
+    }
+}
+
 double panUiFromState(float pan)
 {
     return juce::jlimit(-100.0, 100.0, static_cast<double>(pan) * 100.0);
@@ -253,6 +269,7 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     addAndMakeVisible(overflowMenuButton);
 
     rgButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(96, 120, 154));
+    rgButton.setTooltip("Left click: regenerate lane. Right click: mutate lane.");
     clearButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(74, 82, 98));
     dragButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(84, 112, 168));
     dragDensityLabel.setText("HFX", juce::dontSendNotification);
@@ -383,6 +400,12 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
             onRegenerate(laneId);
     };
 
+    rgButton.onContextMouseDown = [this](const juce::MouseEvent&)
+    {
+        if (onMutate)
+            onMutate(laneId);
+    };
+
     soloButton.onClick = [this]
     {
         if (onSoloChanged)
@@ -495,13 +518,89 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     applyDisplayModeVisibility();
 }
 
+void TrackRowComponent::setVisualStyle(RackVisualStyle style)
+{
+    if (visualStyle == style)
+        return;
+
+    visualStyle = style;
+
+    if (visualStyle == RackVisualStyle::HpdgSoundVst3)
+    {
+        rgButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(104, 123, 168));
+        rgButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(244, 236, 226));
+        clearButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(79, 67, 62));
+        clearButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(236, 226, 214));
+        dragButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(85, 111, 162));
+        dragButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(244, 236, 226));
+        exportButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(98, 76, 54));
+        exportButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(236, 226, 214));
+        prevSampleButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(70, 57, 44));
+        nextSampleButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(70, 57, 44));
+        overflowMenuButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(62, 53, 47));
+        overflowMenuButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(236, 226, 214));
+        sampleNameLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGBA(255, 188, 112, 10));
+        sampleNameLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(242, 228, 206));
+        volumeValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(246, 208, 152));
+        panValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(246, 208, 152));
+        dragDensityValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(246, 208, 152));
+        volumeSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(220, 150, 76));
+        volumeSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(220, 150, 76));
+        volumeSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(248, 196, 126));
+        panSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(208, 144, 74));
+        panSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(214, 154, 84));
+        panSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(246, 202, 138));
+        widthSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(208, 144, 74));
+        widthSlider.setColour(juce::Slider::backgroundColourId, juce::Colour::fromRGBA(255, 210, 160, 14));
+        widthSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(246, 202, 138));
+        dragDensitySlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(214, 154, 84));
+        dragDensitySlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(246, 202, 138));
+        dragDensitySlider.setColour(juce::Slider::textBoxTextColourId, juce::Colour::fromRGB(236, 226, 214));
+        soloButton.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(232, 220, 204));
+        soloButton.setColour(juce::ToggleButton::tickColourId, juce::Colour::fromRGB(230, 178, 96));
+        muteButton.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(232, 220, 204));
+        muteButton.setColour(juce::ToggleButton::tickColourId, juce::Colour::fromRGB(230, 178, 96));
+        lockButton.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(232, 220, 204));
+        lockButton.setColour(juce::ToggleButton::tickColourId, juce::Colour::fromRGB(230, 178, 96));
+        enableButton.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(232, 220, 204));
+        enableButton.setColour(juce::ToggleButton::tickColourId, juce::Colour::fromRGB(230, 178, 96));
+        dragDensityLockButton.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(232, 220, 204));
+        dragDensityLockButton.setColour(juce::ToggleButton::tickColourId, juce::Colour::fromRGB(230, 178, 96));
+        prevSampleButton.setVisible(false);
+        nextSampleButton.setVisible(false);
+    }
+    else
+    {
+        prevSampleButton.setVisible(true);
+        nextSampleButton.setVisible(true);
+    }
+
+    repaint();
+}
+
 void TrackRowComponent::paint(juce::Graphics& g)
 {
     const auto rowBounds = getLocalBounds().toFloat().reduced(1.0f, 1.0f);
-    const auto rowBackground = helperLaneUi ? juce::Colour::fromRGB(27, 31, 37)
-                                            : juce::Colour::fromRGB(29, 33, 39);
+    const auto rowBackground = visualStyle == RackVisualStyle::HpdgSoundVst3
+        ? (helperLaneUi ? juce::Colour::fromRGB(24, 23, 24)
+                        : juce::Colour::fromRGB(26, 24, 23))
+        : (helperLaneUi ? juce::Colour::fromRGB(27, 31, 37)
+                        : juce::Colour::fromRGB(29, 33, 39));
     g.setColour(rowBackground);
     g.fillRoundedRectangle(rowBounds, 6.0f);
+
+    if (visualStyle == RackVisualStyle::HpdgSoundVst3)
+    {
+        juce::ColourGradient fill(helperLaneUi ? juce::Colour::fromRGBA(60, 44, 30, 52)
+                                               : juce::Colour::fromRGBA(82, 54, 28, 56),
+                                  rowBounds.getTopLeft(),
+                                  juce::Colour::fromRGBA(18, 18, 20, 0),
+                                  rowBounds.getBottomLeft(),
+                                  false);
+        g.setGradientFill(fill);
+        g.fillRoundedRectangle(rowBounds, 6.0f);
+        drawRowTexture(g, rowBounds.reduced(4.0f, 2.0f), 0.9f, laneId.hashCode());
+    }
 
     const auto accent = helperLaneUi
         ? (explicitDependencyUi ? juce::Colour::fromRGB(98, 132, 166) : juce::Colour::fromRGB(84, 104, 128))
@@ -527,7 +626,8 @@ void TrackRowComponent::paint(juce::Graphics& g)
         }
     }
 
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, helperLaneUi ? 12 : 18));
+    g.setColour(juce::Colour::fromRGBA(255, 255, 255, visualStyle == RackVisualStyle::HpdgSoundVst3 ? (helperLaneUi ? 10 : 14)
+                                                                                                      : (helperLaneUi ? 12 : 18)));
     g.drawRoundedRectangle(rowBounds, 6.0f, 1.0f);
 
     if (displayMode != LaneRackDisplayMode::Minimal && helperBadgeText.isNotEmpty())
@@ -573,10 +673,18 @@ void TrackRowComponent::resized()
         overflowMenuButton.setBounds(actions.removeFromLeft(32).reduced(1));
 
         auto sampleArea = area.removeFromRight(154);
-        prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
-        sampleArea.removeFromLeft(2);
-        nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
-        sampleArea.removeFromRight(2);
+        if (visualStyle == RackVisualStyle::HpdgSoundVst3)
+        {
+            prevSampleButton.setBounds({});
+            nextSampleButton.setBounds({});
+        }
+        else
+        {
+            prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
+            sampleArea.removeFromLeft(2);
+            nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
+            sampleArea.removeFromRight(2);
+        }
         sampleNameLabel.setBounds(sampleArea.reduced(1));
 
         muteButton.setBounds(area.removeFromRight(28).reduced(1));
@@ -603,10 +711,18 @@ void TrackRowComponent::resized()
 
         area.removeFromRight(4);
         auto sampleArea = area.removeFromRight(154);
-        prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
-        sampleArea.removeFromLeft(2);
-        nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
-        sampleArea.removeFromRight(2);
+        if (visualStyle == RackVisualStyle::HpdgSoundVst3)
+        {
+            prevSampleButton.setBounds({});
+            nextSampleButton.setBounds({});
+        }
+        else
+        {
+            prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
+            sampleArea.removeFromLeft(2);
+            nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
+            sampleArea.removeFromRight(2);
+        }
         sampleNameLabel.setBounds(sampleArea.reduced(1));
         area.removeFromRight(8);
 
@@ -651,10 +767,18 @@ void TrackRowComponent::resized()
 
     area.removeFromLeft(6);
     auto sampleArea = area.removeFromLeft(188);
-    prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
-    sampleArea.removeFromLeft(2);
-    nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
-    sampleArea.removeFromRight(2);
+    if (visualStyle == RackVisualStyle::HpdgSoundVst3)
+    {
+        prevSampleButton.setBounds({});
+        nextSampleButton.setBounds({});
+    }
+    else
+    {
+        prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
+        sampleArea.removeFromLeft(2);
+        nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
+        sampleArea.removeFromRight(2);
+    }
     sampleNameLabel.setBounds(sampleArea.reduced(1));
 
     area.removeFromLeft(6);
@@ -892,6 +1016,8 @@ void TrackRowComponent::showOverflowMenu()
     constexpr int kActionMoveLaneDown = 10;
     constexpr int kActionRenameLane = 11;
     constexpr int kActionDeleteLane = 12;
+    constexpr int kActionRegenerateLane = 13;
+    constexpr int kActionMutateLane = 14;
     constexpr int kActionSub808Mono = 20;
     constexpr int kActionSub808CutItself = 21;
     constexpr int kActionSub808OverlapRetrigger = 22;
@@ -908,6 +1034,8 @@ void TrackRowComponent::showOverflowMenu()
     menu.addItem(kActionImportMidiToLane, "Import MIDI to this lane", hasRuntimeTrack() && onImportMidiToLane != nullptr);
     menu.addItem(kActionExport, "Export Lane", hasRuntimeTrack() && supportsDragExport && onExport != nullptr);
     menu.addSeparator();
+    menu.addItem(kActionRegenerateLane, "Regenerate Lane", hasRuntimeTrack() && onRegenerate != nullptr);
+    menu.addItem(kActionMutateLane, "Mutate Lane", hasRuntimeTrack() && onMutate != nullptr);
     menu.addItem(kActionClearLane, "Clear Lane", hasRuntimeTrack() && onClear != nullptr);
     menu.addItem(kActionToggleLock, lockButton.getToggleState() ? "Unlock Lane" : "Lock Lane", hasRuntimeTrack() && onLockChanged != nullptr);
     menu.addItem(kActionToggleEnable, enableButton.getToggleState() ? "Disable Lane" : "Enable Lane", hasRuntimeTrack() && onEnableChanged != nullptr);
@@ -992,6 +1120,20 @@ void TrackRowComponent::showOverflowMenu()
                            {
                                if (safe->onClear)
                                    safe->onClear(safe->laneId);
+                               return;
+                           }
+
+                           if (choice == 13)
+                           {
+                               if (safe->onRegenerate)
+                                   safe->onRegenerate(safe->laneId);
+                               return;
+                           }
+
+                           if (choice == 14)
+                           {
+                               if (safe->onMutate)
+                                   safe->onMutate(safe->laneId);
                                return;
                            }
 

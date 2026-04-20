@@ -27,142 +27,18 @@ enum class ToolCursorIcon
     Eraser
 };
 
-juce::AffineTransform toolCursorTransform(float hotspotX, float hotspotY)
-{
-    return juce::AffineTransform::rotation(-0.72f, 14.0f, 18.0f)
-        .followedBy(juce::AffineTransform::scale(0.88f, 0.88f, hotspotX, hotspotY));
-}
-
-juce::MouseCursor makeToolCursor(ToolCursorIcon icon)
-{
-    juce::Image image(juce::Image::ARGB, 32, 32, true);
-    juce::Graphics g(image);
-
-    if (icon == ToolCursorIcon::Pencil)
-    {
-        const auto transform = toolCursorTransform(20.0f, 28.0f);
-        juce::Path body;
-        body.addRoundedRectangle(10.0f, 10.0f, 6.0f, 16.0f, 1.4f);
-        body.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(238, 192, 74));
-        g.fillPath(body);
-        g.setColour(juce::Colour::fromRGB(92, 64, 24));
-        g.strokePath(body, juce::PathStrokeType(1.0f));
-
-        juce::Path ferrule;
-        ferrule.addRectangle(10.0f, 8.0f, 6.0f, 3.2f);
-        ferrule.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(208, 214, 222));
-        g.fillPath(ferrule);
-
-        juce::Path eraser;
-        eraser.addRoundedRectangle(10.0f, 5.2f, 6.0f, 3.4f, 1.0f);
-        eraser.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(236, 136, 156));
-        g.fillPath(eraser);
-
-        juce::Path tip;
-        tip.addTriangle(10.0f, 26.0f, 13.0f, 31.0f, 16.0f, 26.0f);
-        tip.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(232, 214, 184));
-        g.fillPath(tip);
-
-        juce::Path lead;
-        lead.addTriangle(12.25f, 29.7f, 13.0f, 31.0f, 13.75f, 29.7f);
-        lead.applyTransform(transform);
-        g.setColour(juce::Colours::black.withAlpha(0.9f));
-        g.fillPath(lead);
-
-        return juce::MouseCursor(image, 20, 28);
-    }
-
-    if (icon == ToolCursorIcon::Brush)
-    {
-        const auto transform = toolCursorTransform(5.0f, 5.0f);
-        juce::Path handle;
-        handle.addRoundedRectangle(11.0f, 11.0f, 5.0f, 14.0f, 1.5f);
-        handle.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(154, 98, 44));
-        g.fillPath(handle);
-
-        juce::Path ferrule;
-        ferrule.addRectangle(11.0f, 8.0f, 5.0f, 4.0f);
-        ferrule.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(196, 204, 214));
-        g.fillPath(ferrule);
-
-        juce::Path bristles;
-        bristles.startNewSubPath(9.5f, 7.7f);
-        bristles.lineTo(12.0f, 3.5f);
-        bristles.lineTo(15.0f, 2.8f);
-        bristles.lineTo(17.5f, 7.7f);
-        bristles.closeSubPath();
-        bristles.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(58, 78, 102));
-        g.fillPath(bristles);
-
-        return juce::MouseCursor(image, 5, 5);
-    }
-
-    if (icon == ToolCursorIcon::Blade)
-    {
-        const auto transform = toolCursorTransform(5.0f, 5.0f);
-        juce::Path blade;
-        blade.addRoundedRectangle(8.0f, 12.0f, 14.0f, 8.0f, 2.0f);
-        blade.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(214, 220, 228));
-        g.fillPath(blade);
-        g.setColour(juce::Colour::fromRGB(92, 102, 116));
-        g.strokePath(blade, juce::PathStrokeType(1.0f));
-
-        juce::Path edge;
-        edge.startNewSubPath(10.0f, 19.0f);
-        edge.lineTo(20.0f, 19.0f);
-        edge.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(250, 250, 252));
-        g.strokePath(edge, juce::PathStrokeType(1.2f));
-
-        juce::Path accent;
-        accent.addRoundedRectangle(8.5f, 13.0f, 4.0f, 6.0f, 1.0f);
-        accent.applyTransform(transform);
-        g.setColour(juce::Colour::fromRGB(216, 84, 84));
-        g.fillPath(accent);
-
-        return juce::MouseCursor(image, 5, 5);
-    }
-
-    const auto transform = toolCursorTransform(5.0f, 5.0f);
-    juce::Path eraser;
-    eraser.addRoundedRectangle(8.0f, 10.0f, 13.0f, 10.0f, 2.0f);
-    eraser.applyTransform(transform);
-    g.setColour(juce::Colour::fromRGB(232, 126, 150));
-    g.fillPath(eraser);
-    g.setColour(juce::Colour::fromRGB(176, 84, 108));
-    g.strokePath(eraser, juce::PathStrokeType(1.0f));
-
-    juce::Path sleeve;
-    sleeve.addRoundedRectangle(15.0f, 10.0f, 6.0f, 10.0f, 1.5f);
-    sleeve.applyTransform(transform);
-    g.setColour(juce::Colour::fromRGB(242, 228, 208));
-    g.fillPath(sleeve);
-
-    return juce::MouseCursor(image, 5, 5);
-}
-
 const juce::MouseCursor& toolCursorFor(GridEditorComponent::EditorTool tool)
 {
-    static const auto pencil = makeToolCursor(ToolCursorIcon::Pencil);
-    static const auto brush = makeToolCursor(ToolCursorIcon::Brush);
-    static const auto blade = makeToolCursor(ToolCursorIcon::Blade);
-    static const auto eraser = makeToolCursor(ToolCursorIcon::Eraser);
     static const juce::MouseCursor crosshair(juce::MouseCursor::CrosshairCursor);
+    static const juce::MouseCursor normal(juce::MouseCursor::NormalCursor);
+    static const juce::MouseCursor dragging(juce::MouseCursor::DraggingHandCursor);
 
     switch (tool)
     {
-        case GridEditorComponent::EditorTool::Pencil: return pencil;
-        case GridEditorComponent::EditorTool::Brush: return brush;
-        case GridEditorComponent::EditorTool::Cut: return blade;
-        case GridEditorComponent::EditorTool::Erase: return eraser;
+        case GridEditorComponent::EditorTool::Pencil: return crosshair;
+        case GridEditorComponent::EditorTool::Brush: return crosshair;
+        case GridEditorComponent::EditorTool::Cut: return normal;
+        case GridEditorComponent::EditorTool::Erase: return dragging;
         case GridEditorComponent::EditorTool::Select:
         default: return crosshair;
     }
@@ -439,8 +315,58 @@ std::optional<juce::Range<int>> GridEditorComponent::getLoopRegion() const
 
 void GridEditorComponent::refreshTransientInputState()
 {
-    applyCursorForHover();
-    refreshEditorRegionState();
+    // Disabled for FL Studio VST3 stability. Modifier/hover-driven transient
+    // refresh is not essential for core editing and was implicated by the
+    // passive-grid isolation builds.
+}
+
+void GridEditorComponent::suspendInteractionsForShutdown() noexcept
+{
+    interactionsSuspended = true;
+    editMode = EditMode::None;
+    strokeMode = StrokeMode::None;
+    strokeEditedLanes.clear();
+    drawVisitedTicks.clear();
+    eraseVisitedKeys.clear();
+    dragSnapshots.clear();
+    marqueeRect = {};
+    hoverNote.reset();
+    hoverDrawTrack.reset();
+    hoverDrawTick = -1;
+    hoverZone = HoverZone::None;
+    rulerDraggingLoop = false;
+    rulerLoopDragMoved = false;
+    movedDuringDrag = false;
+    velocityWaveModeActive = false;
+    setInterceptsMouseClicks(false, false);
+    setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
+void GridEditorComponent::setPassiveDisplayOnly(bool shouldBePassive) noexcept
+{
+    passiveDisplayOnly = shouldBePassive;
+
+    if (passiveDisplayOnly)
+    {
+        editMode = EditMode::None;
+        strokeMode = StrokeMode::None;
+        strokeEditedLanes.clear();
+        drawVisitedTicks.clear();
+        eraseVisitedKeys.clear();
+        dragSnapshots.clear();
+        marqueeRect = {};
+        hoverNote.reset();
+        hoverDrawTrack.reset();
+        hoverDrawTick = -1;
+        hoverZone = HoverZone::None;
+        setInterceptsMouseClicks(false, false);
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+    else if (!interactionsSuspended)
+    {
+        setInterceptsMouseClicks(true, false);
+    }
+
     repaint();
 }
 
@@ -776,9 +702,33 @@ int GridEditorComponent::getGridHeight() const
 
 void GridEditorComponent::paint(juce::Graphics& g)
 {
-    ensureStaticCache();
+    if (passiveDisplayOnly)
+    {
+        g.fillAll(juce::Colour::fromRGB(24, 27, 33));
+
+        auto area = getLocalBounds().reduced(18);
+        g.setColour(juce::Colour::fromRGB(188, 197, 212));
+        g.setFont(juce::Font(juce::FontOptions(16.0f, juce::Font::bold)));
+        g.drawText("Grid editor is temporarily disabled in VST3 stability mode.",
+                   area.removeFromTop(28),
+                   juce::Justification::centredLeft,
+                   true);
+
+        area.removeFromTop(8);
+        g.setColour(juce::Colour::fromRGB(134, 145, 162));
+        g.setFont(juce::Font(juce::FontOptions(13.0f)));
+        g.drawFittedText("Generation, transport, rack controls, and track actions remain available while FL Studio stability is prioritized.",
+                         area.removeFromTop(40),
+                         juce::Justification::topLeft,
+                         3);
+        return;
+    }
+
+    // FL Studio VST3 compatibility test: bypass the image-backed static cache
+    // layer and render the live grid directly. The passive-grid isolation builds
+    // stayed stable, while empty/interactive grid builds still reproduced the
+    // hang, so the cached image path is the next narrow suspect.
     g.fillAll(juce::Colour::fromRGB(18, 20, 24));
-    g.drawImageAt(staticGridCache, 0, 0);
 
     auto area = getLocalBounds();
     const int bars = std::max(1, project.params.bars);
@@ -1043,6 +993,9 @@ void GridEditorComponent::paint(juce::Graphics& g)
 
 void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
 {
+    if (interactionsSuspended || passiveDisplayOnly)
+        return;
+
     const bool microtimingModifierDown = isModifierDown(event.mods, inputBindings.microtimingEditModifier);
     const bool horizontalZoomModifierDown = isModifierDown(event.mods, inputBindings.horizontalZoomModifier);
     const bool laneHeightZoomModifierDown = isModifierDown(event.mods, inputBindings.laneHeightZoomModifier);
@@ -1155,6 +1108,9 @@ void GridEditorComponent::mouseWheelMove(const juce::MouseEvent& event, const ju
 
 void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
 {
+    if (interactionsSuspended || passiveDisplayOnly)
+        return;
+
     editMode = EditMode::None;
     strokeMode = StrokeMode::None;
     strokeEditedLanes.clear();
@@ -1169,7 +1125,7 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
         return;
 
     const auto p = event.getPosition();
-    updateHoverState(p);
+    updateHoverState(p, false);
 
     const bool velocityEditActive = isVelocityEditKeyDown() && p.y >= rulerHeight;
     const int velocityLaneIndex = velocityEditActive ? visibleLaneIndexAtY(p.y).value_or(-1) : -1;
@@ -1481,6 +1437,9 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
 
 void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
 {
+    if (interactionsSuspended || passiveDisplayOnly)
+        return;
+
     const auto p = event.getPosition();
 
     if (rulerDraggingLoop)
@@ -1622,6 +1581,9 @@ void GridEditorComponent::mouseDrag(const juce::MouseEvent& event)
 
 void GridEditorComponent::mouseUp(const juce::MouseEvent& event)
 {
+    if (interactionsSuspended || passiveDisplayOnly)
+        return;
+
     if (rulerDraggingLoop)
     {
         const int tick = quantizedTickAtX(event.getPosition().x, true);
@@ -1693,22 +1655,29 @@ void GridEditorComponent::mouseUp(const juce::MouseEvent& event)
 
 void GridEditorComponent::mouseMove(const juce::MouseEvent& event)
 {
-    updateHoverState(event.getPosition());
+    if (interactionsSuspended || passiveDisplayOnly)
+        return;
+
+    juce::ignoreUnused(event);
 }
 
 void GridEditorComponent::mouseExit(const juce::MouseEvent& event)
 {
+    if (interactionsSuspended || passiveDisplayOnly)
+        return;
+
     juce::ignoreUnused(event);
     hoverNote.reset();
     hoverDrawTrack.reset();
     hoverDrawTick = -1;
     hoverZone = HoverZone::None;
-    applyCursorForHover();
-    repaint();
 }
 
 void GridEditorComponent::mouseDoubleClick(const juce::MouseEvent& event)
 {
+    if (interactionsSuspended || passiveDisplayOnly)
+        return;
+
     if (!event.mods.isMiddleButtonDown())
     {
         juce::Component::mouseDoubleClick(event);
@@ -1977,8 +1946,11 @@ int GridEditorComponent::resizeHandleWidthPx(const NoteEvent& note, int row) con
     return juce::jlimit(9, 18, b.getWidth() / 4);
 }
 
-void GridEditorComponent::updateHoverState(juce::Point<int> position)
+void GridEditorComponent::updateHoverState(juce::Point<int> position, bool applyVisualFeedback)
 {
+    if (interactionsSuspended)
+        return;
+
     hoverNote.reset();
     hoverDrawTrack.reset();
     hoverDrawTick = -1;
@@ -1987,7 +1959,8 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
     const auto lane = trackForYPosition(position.y);
     if (!lane.has_value())
     {
-        applyCursorForHover();
+        if (applyVisualFeedback)
+            applyCursorForHover();
         return;
     }
 
@@ -2000,8 +1973,11 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
             hoverDrawTick = quantizedTickAtX(position.x, true);
         }
 
-        applyCursorForHover();
-        repaint();
+        if (applyVisualFeedback)
+        {
+            applyCursorForHover();
+            repaint();
+        }
         return;
     }
 
@@ -2027,16 +2003,16 @@ void GridEditorComponent::updateHoverState(juce::Point<int> position)
         }
     }
 
-    applyCursorForHover();
-    repaint();
+    if (applyVisualFeedback)
+    {
+        applyCursorForHover();
+        repaint();
+    }
 }
 
 void GridEditorComponent::applyCursorForHover()
 {
-    if (isStretchEditKeyDown() && (hoverZone == HoverZone::ResizeLeft || hoverZone == HoverZone::ResizeRight))
-        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-    else
-        setMouseCursor(toolCursorFor(editorTool));
+    // Dynamic hover cursor switching is disabled for FL Studio VST3 stability.
 }
 
 bool GridEditorComponent::isSelected(const SelectedNoteRef& ref) const

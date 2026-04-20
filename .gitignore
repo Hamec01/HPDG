@@ -1,6 +1,7 @@
 # Build outputs
 build/
 **/build/
+build-*/
 Binaries/
 
 # IDE
@@ -24,6 +25,7 @@ Logs/*.log
 drag.log
 contract-out.txt
 contract-err.txt
+Releases/
 
 # OS
 Thumbs.db

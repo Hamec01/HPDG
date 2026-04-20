@@ -29,9 +29,13 @@ public:
                    int bassScaleModeChoice);
     void setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order);
     void setShowAnalysisPanel(bool shouldShow);
+    void setShowSoundPanel(bool shouldShow);
+    void setCompactAuxPanelLayout(bool shouldUseCompactLayout);
+    void setAuxPanelHeights(int analysisHeightPixels, int soundHeightPixels);
     void setHatFxDragUiState(float density, bool locked);
     void setRowHeight(int newHeight);
     void setDisplayMode(LaneRackDisplayMode mode);
+    void setVisualStyle(RackVisualStyle style);
     int getRowHeight() const { return rowHeight; }
     int getVisibleRowCount() const { return static_cast<int>(rows.size()); }
     int getLaneSectionHeight() const;
@@ -60,6 +64,7 @@ public:
                             const SoundLayerState& soundState);
 
     std::function<void(const RuntimeLaneId&)> onRegenerateTrack;
+    std::function<void(const RuntimeLaneId&)> onMutateTrack;
     std::function<void(const RuntimeLaneId&)> onImportMidiLaneTrack;
     std::function<void(const RuntimeLaneId&, bool)> onSoloTrack;
     std::function<void(const RuntimeLaneId&, bool)> onMuteTrack;
@@ -106,11 +111,14 @@ private:
     std::vector<RuntimeLaneId> laneDisplayOrder;
     juce::TextButton addLaneButton { "+ Lane" };
     bool showAnalysisPanel = true;
+    bool showSoundPanel = false;
+    bool compactAuxPanelLayout = false;
     int rowHeight = 30;
     int rulerHeight = 24;
     int analysisPanelHeight = 340;
     int soundPanelHeight = 232;
     LaneRackDisplayMode displayMode = LaneRackDisplayMode::Full;
+    RackVisualStyle visualStyle = RackVisualStyle::Default;
     float hatFxDragDensity = 1.0f;
     bool hatFxDragLocked = false;
     bool analysisFileDropHighlight = false;

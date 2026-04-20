@@ -693,15 +693,15 @@ juce::String buildReverbCollapsedSummary(double size, double mix, double predela
 juce::String buildMonstaCollapsedCharacter(const MonstaFxState& monstaFx)
 {
     if (monstaFx.wet <= 0.001f)
-        return "Tempo glitch and broken repeat";
-    if (monstaFx.chaosSeed != 0)
-        return "Stable chaos / sync-sliced damage";
-    return "Sync-sliced repeat / crush gate";
+        return "Reverse / glitch / VHS chaos ready";
+
+    return monstaFxFlavorCharacter(resolveMonstaFxFlavor(monstaFx));
 }
 
 juce::String buildMonstaCollapsedSummary(const MonstaFxState& monstaFx)
 {
-    return "Dry " + formatPercentValue(static_cast<double>(monstaFx.dry) * 100.0)
+    return juce::String(monstaFxFlavorTitle(resolveMonstaFxFlavor(monstaFx))) + "  |  Dry "
+        + formatPercentValue(static_cast<double>(monstaFx.dry) * 100.0)
         + "  |  Wet " + formatPercentValue(static_cast<double>(monstaFx.wet) * 100.0);
 }
 
@@ -1512,7 +1512,7 @@ SoundModuleComponent::SoundModuleComponent()
 
     styleHeaderLabel(monstaSectionLabel, "MONSTAFX", 13.0f);
     addAndMakeVisible(monstaSectionLabel);
-    styleMicroLabel(monstaDescriptorLabel, "Tempo glitch and broken repeat", 10.0f);
+    styleMicroLabel(monstaDescriptorLabel, "Reverse burn / glitch chaos / VHS melt", 10.0f);
     addAndMakeVisible(monstaDescriptorLabel);
     styleMicroLabel(monstaDryLabel, "DRY");
     addAndMakeVisible(monstaDryLabel);
@@ -1544,6 +1544,7 @@ SoundModuleComponent::SoundModuleComponent()
     addAndMakeVisible(monstaWetSlider);
 
     setupActionButton(monstaChaosButton, true);
+    monstaChaosButton.setButtonText("REROLL");
     monstaChaosButton.onClick = [this]
     {
         if (isSyncingUi)
@@ -2945,7 +2946,8 @@ void SoundModuleComponent::updateChainSummary()
     chain << "  |  STEREO " << juce::String(juce::roundToInt(widthSlider.getValue() * 100.0)) << "%"
           << " / FOC " << juce::String(juce::roundToInt(stereoFocusSlider.getValue())) << "%";
     chain << "  |  " << (compPowerButton.getToggleState() ? compOrderCombo.getText() + " COMP" : juce::String("COMP OFF"));
-    chain << "  |  MONSTA " << juce::String(juce::roundToInt(monstaWetSlider.getValue())) << "%";
+    chain << "  |  MONSTA " << juce::String(monstaFxFlavorTitle(resolveMonstaFxFlavor(currentSoundState.monstaFx)))
+          << " " << juce::String(juce::roundToInt(monstaWetSlider.getValue())) << "%";
     chain << "  |  REV " << juce::String(juce::roundToInt(reverbMixSlider.getValue())) << "%";
     chain << "  |  TRANS " << juce::String(juce::roundToInt(transientAttackSlider.getValue())) << "%";
     chainSummaryLabel.setText(chain, juce::dontSendNotification);

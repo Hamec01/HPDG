@@ -26,11 +26,40 @@ public:
     }
 };
 
+class ContextActionButton : public juce::TextButton
+{
+public:
+    explicit ContextActionButton(const juce::String& text = {})
+        : juce::TextButton(text)
+    {
+    }
+
+    std::function<void(const juce::MouseEvent&)> onContextMouseDown;
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        if (event.mods.isRightButtonDown())
+        {
+            if (onContextMouseDown)
+                onContextMouseDown(event);
+            return;
+        }
+
+        juce::TextButton::mouseDown(event);
+    }
+};
+
 enum class LaneRackDisplayMode
 {
     Full,
     Compact,
     Minimal
+};
+
+enum class RackVisualStyle
+{
+    Default,
+    HpdgSoundVst3
 };
 
 struct RuntimeLaneRowState
@@ -68,8 +97,10 @@ public:
 
     void syncFromState(const RuntimeLaneRowState& state);
     void setDisplayMode(LaneRackDisplayMode mode);
+    void setVisualStyle(RackVisualStyle style);
 
     std::function<void(const RuntimeLaneId&)> onRegenerate;
+    std::function<void(const RuntimeLaneId&)> onMutate;
     std::function<void(const RuntimeLaneId&)> onImportMidiToLane;
     std::function<void(const RuntimeLaneId&, bool)> onSoloChanged;
     std::function<void(const RuntimeLaneId&, bool)> onMuteChanged;
@@ -126,10 +157,11 @@ private:
     bool explicitDependencyUi = false;
     juce::String helperBadgeText;
     LaneRackDisplayMode displayMode = LaneRackDisplayMode::Full;
+    RackVisualStyle visualStyle = RackVisualStyle::Default;
 
     ClickableLabel nameLabel;
     juce::Label roleLabel;
-    juce::TextButton rgButton { "RG" };
+    ContextActionButton rgButton { "RG" };
     juce::ToggleButton soloButton { "S" };
     juce::ToggleButton muteButton { "M" };
     juce::TextButton clearButton { "C" };

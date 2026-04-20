@@ -94,6 +94,8 @@ void MonstaFxBlock::generateProfile(std::uint32_t chaosSeed)
     static constexpr std::array<int, 5> gateChoices { 2, 4, 4, 8, 8 };
     static constexpr std::array<int, 5> crushHoldChoices { 2, 3, 4, 6, 8 };
 
+    activeProfile = {};
+    activeProfile.flavor = resolveMonstaFxFlavor(chaosSeed);
     activeProfile.divisionIndex = divisionChoices[static_cast<size_t>(randomInt(randomState, 0, static_cast<int>(divisionChoices.size()) - 1))];
     activeProfile.activityChance = 0.42f + random01(randomState) * 0.34f;
     activeProfile.repeatWeight = 0.32f + random01(randomState) * 0.26f;
@@ -109,6 +111,86 @@ void MonstaFxBlock::generateProfile(std::uint32_t chaosSeed)
                                                                                   static_cast<int>(crushHoldChoices.size()) - 1))];
     activeProfile.crushBitDepth = randomInt(randomState, 5, 9);
     activeProfile.outputTrim = 0.84f + random01(randomState) * 0.12f;
+
+    switch (activeProfile.flavor)
+    {
+        case MonstaFxFlavor::ReverseBurn:
+            activeProfile.divisionIndex = random01(randomState) > 0.5f ? 1 : 2;
+            activeProfile.activityChance = 0.54f + random01(randomState) * 0.20f;
+            activeProfile.repeatWeight = 0.18f + random01(randomState) * 0.12f;
+            activeProfile.microLoopWeight = 0.18f + random01(randomState) * 0.14f;
+            activeProfile.reverseWeight = 0.42f + random01(randomState) * 0.24f;
+            activeProfile.skipWeight = 0.10f + random01(randomState) * 0.12f;
+            activeProfile.crushChance = 0.08f + random01(randomState) * 0.10f;
+            activeProfile.gateChance = 0.12f + random01(randomState) * 0.18f;
+            activeProfile.outputTrim = 0.78f + random01(randomState) * 0.08f;
+            activeProfile.dropoutChance = 0.10f + random01(randomState) * 0.08f;
+            activeProfile.dropoutDepth = 0.16f + random01(randomState) * 0.22f;
+            activeProfile.trashDrive = 1.18f + random01(randomState) * 0.34f;
+            activeProfile.wowDepthSamples = 0.6f + random01(randomState) * 1.4f;
+            activeProfile.wowRateHz = 0.18f + random01(randomState) * 0.15f;
+            activeProfile.flutterDepthSamples = 0.3f + random01(randomState) * 0.9f;
+            activeProfile.flutterRateHz = 3.8f + random01(randomState) * 2.4f;
+            activeProfile.smearMix = 0.10f + random01(randomState) * 0.14f;
+            activeProfile.jitterChance = 0.16f + random01(randomState) * 0.18f;
+            activeProfile.jitterRangeSamples = randomInt(randomState, 6, 18);
+            break;
+
+        case MonstaFxFlavor::TrashMachine:
+            activeProfile.divisionIndex = random01(randomState) > 0.7f ? 3 : 2;
+            activeProfile.activityChance = 0.62f + random01(randomState) * 0.22f;
+            activeProfile.repeatWeight = 0.30f + random01(randomState) * 0.20f;
+            activeProfile.microLoopWeight = 0.16f + random01(randomState) * 0.12f;
+            activeProfile.reverseWeight = 0.08f + random01(randomState) * 0.10f;
+            activeProfile.skipWeight = 0.18f + random01(randomState) * 0.16f;
+            activeProfile.crushChance = 0.32f + random01(randomState) * 0.30f;
+            activeProfile.gateChance = 0.36f + random01(randomState) * 0.28f;
+            activeProfile.maxRepeatSubdivision = 8;
+            activeProfile.outputTrim = 0.72f + random01(randomState) * 0.10f;
+            activeProfile.dropoutChance = 0.16f + random01(randomState) * 0.16f;
+            activeProfile.dropoutDepth = 0.24f + random01(randomState) * 0.26f;
+            activeProfile.trashDrive = 1.55f + random01(randomState) * 0.55f;
+            activeProfile.wowDepthSamples = 0.0f;
+            activeProfile.flutterDepthSamples = 0.0f;
+            activeProfile.smearMix = 0.02f + random01(randomState) * 0.04f;
+            activeProfile.jitterChance = 0.22f + random01(randomState) * 0.16f;
+            activeProfile.jitterRangeSamples = randomInt(randomState, 3, 10);
+            break;
+
+        case MonstaFxFlavor::VhsMelt:
+            activeProfile.divisionIndex = random01(randomState) > 0.55f ? 0 : 1;
+            activeProfile.activityChance = 0.38f + random01(randomState) * 0.16f;
+            activeProfile.repeatWeight = 0.20f + random01(randomState) * 0.14f;
+            activeProfile.microLoopWeight = 0.24f + random01(randomState) * 0.18f;
+            activeProfile.reverseWeight = 0.10f + random01(randomState) * 0.10f;
+            activeProfile.skipWeight = 0.04f + random01(randomState) * 0.06f;
+            activeProfile.crushChance = 0.02f + random01(randomState) * 0.08f;
+            activeProfile.gateChance = 0.06f + random01(randomState) * 0.10f;
+            activeProfile.outputTrim = 0.80f + random01(randomState) * 0.08f;
+            activeProfile.dropoutChance = 0.18f + random01(randomState) * 0.20f;
+            activeProfile.dropoutDepth = 0.08f + random01(randomState) * 0.14f;
+            activeProfile.trashDrive = 1.04f + random01(randomState) * 0.10f;
+            activeProfile.wowDepthSamples = 2.8f + random01(randomState) * 5.2f;
+            activeProfile.wowRateHz = 0.09f + random01(randomState) * 0.12f;
+            activeProfile.flutterDepthSamples = 0.8f + random01(randomState) * 1.8f;
+            activeProfile.flutterRateHz = 4.4f + random01(randomState) * 3.1f;
+            activeProfile.smearMix = 0.18f + random01(randomState) * 0.22f;
+            activeProfile.jitterChance = 0.10f + random01(randomState) * 0.10f;
+            activeProfile.jitterRangeSamples = randomInt(randomState, 2, 7);
+            break;
+
+        case MonstaFxFlavor::SyncGlitch:
+        default:
+            activeProfile.dropoutChance = 0.10f + random01(randomState) * 0.12f;
+            activeProfile.dropoutDepth = 0.12f + random01(randomState) * 0.16f;
+            activeProfile.trashDrive = 1.20f + random01(randomState) * 0.20f;
+            activeProfile.wowDepthSamples = 0.0f;
+            activeProfile.flutterDepthSamples = 0.0f;
+            activeProfile.smearMix = 0.04f + random01(randomState) * 0.08f;
+            activeProfile.jitterChance = 0.12f + random01(randomState) * 0.10f;
+            activeProfile.jitterRangeSamples = randomInt(randomState, 2, 6);
+            break;
+    }
 }
 
 MonstaFxBlock::SliceDecision MonstaFxBlock::makeSliceDecision(std::int64_t sliceIndex, int sliceSamples) const
@@ -151,6 +233,17 @@ MonstaFxBlock::SliceDecision MonstaFxBlock::makeSliceDecision(std::int64_t slice
     decision.crush = random01(randomState) < activeProfile.crushChance;
     decision.gate = random01(randomState) < activeProfile.gateChance;
     decision.outputTrim = juce::jlimit(0.70f, 1.0f, activeProfile.outputTrim - random01(randomState) * 0.05f);
+    decision.dropout = random01(randomState) < activeProfile.dropoutChance;
+    decision.dropoutDepth = activeProfile.dropoutDepth * (0.55f + random01(randomState) * 0.45f);
+    decision.trashDrive = activeProfile.trashDrive * (0.90f + random01(randomState) * 0.22f);
+    decision.wowDepthSamples = activeProfile.wowDepthSamples * (0.8f + random01(randomState) * 0.45f);
+    decision.wowRateHz = activeProfile.wowRateHz * (0.9f + random01(randomState) * 0.2f);
+    decision.flutterDepthSamples = activeProfile.flutterDepthSamples * (0.8f + random01(randomState) * 0.45f);
+    decision.flutterRateHz = activeProfile.flutterRateHz * (0.9f + random01(randomState) * 0.2f);
+    decision.smearMix = juce::jlimit(0.0f, 0.45f, activeProfile.smearMix * (0.85f + random01(randomState) * 0.35f));
+    decision.jitterRangeSamples = random01(randomState) < activeProfile.jitterChance
+        ? randomInt(randomState, 1, juce::jmax(1, activeProfile.jitterRangeSamples))
+        : 0;
 
     static constexpr std::array<int, 3> repeatChoices { 2, 4, 8 };
     decision.repeatSubdivision = repeatChoices[static_cast<size_t>(randomInt(randomState, 0, static_cast<int>(repeatChoices.size()) - 1))];
@@ -181,6 +274,19 @@ MonstaFxBlock::SliceDecision MonstaFxBlock::makeSliceDecision(std::int64_t slice
 
         if (decision.gateMask == 0)
             decision.gateMask = 1u << randomInt(randomState, 0, juce::jmax(0, decision.gateSteps - 1));
+    }
+
+    if (activeProfile.flavor == MonstaFxFlavor::ReverseBurn && random01(randomState) > 0.72f)
+        decision.baseMode = BaseMode::Reverse;
+
+    if (activeProfile.flavor == MonstaFxFlavor::TrashMachine && decision.baseMode == BaseMode::Pass && random01(randomState) > 0.64f)
+        decision.baseMode = random01(randomState) > 0.45f ? BaseMode::Repeat : BaseMode::Skip;
+
+    if (activeProfile.flavor == MonstaFxFlavor::VhsMelt)
+    {
+        decision.crush = decision.crush && random01(randomState) > 0.8f;
+        decision.gate = decision.gate && random01(randomState) > 0.7f;
+        decision.outputTrim *= 0.96f;
     }
 
     return decision;
@@ -223,6 +329,22 @@ float MonstaFxBlock::readOperationSample(int channel,
         case BaseMode::Pass:
         default:
             return liveSample;
+    }
+
+    if (decision.wowDepthSamples > 0.0f || decision.flutterDepthSamples > 0.0f)
+    {
+        const double t = static_cast<double>(currentSample) / sampleRate;
+        const auto wow = std::sin(juce::MathConstants<double>::twoPi * decision.wowRateHz * t) * decision.wowDepthSamples;
+        const auto flutter = std::sin(juce::MathConstants<double>::twoPi * decision.flutterRateHz * t) * decision.flutterDepthSamples;
+        sourceRelativeSample += static_cast<int>(std::lround(wow + flutter));
+    }
+
+    if (decision.jitterRangeSamples > 0)
+    {
+        auto jitterState = mixSeed(activeChaosSeed,
+                                   hash32(static_cast<std::uint32_t>(currentSample)
+                                          ^ hash32(static_cast<std::uint32_t>(relativeSample))));
+        sourceRelativeSample += randomInt(jitterState, -decision.jitterRangeSamples, decision.jitterRangeSamples);
     }
 
     sourceRelativeSample = juce::jlimit(0, sliceSamples - 1, sourceRelativeSample);
@@ -358,6 +480,12 @@ float MonstaFxBlock::quantizeToBitDepth(float sample, int bitDepth) noexcept
     return std::round(normalized * steps) / steps;
 }
 
+float MonstaFxBlock::softClip(float sample, float drive) noexcept
+{
+    const float safeDrive = juce::jmax(1.0f, drive);
+    return std::tanh(sample * safeDrive) / std::tanh(safeDrive);
+}
+
 void MonstaFxBlock::process(juce::AudioBuffer<float>& buffer,
                             const MonstaFxState& rawState,
                             const MonstaFxTimelineContext& rawTimeline)
@@ -413,6 +541,7 @@ void MonstaFxBlock::process(juce::AudioBuffer<float>& buffer,
     SliceDecision activeDecision;
     int activeCrushGroup = -1;
     std::vector<float> heldCrushSamples(static_cast<size_t>(buffer.getNumChannels()), 0.0f);
+    std::vector<float> smearSamples(static_cast<size_t>(buffer.getNumChannels()), 0.0f);
 
     for (int sampleIndex = 0; sampleIndex < buffer.getNumSamples(); ++sampleIndex)
     {
@@ -476,8 +605,26 @@ void MonstaFxBlock::process(juce::AudioBuffer<float>& buffer,
 
             wetSample *= gateEnvelope;
 
+            if (activeDecision.dropout)
+            {
+                auto dropoutState = mixSeed(activeChaosSeed,
+                                            hash32(static_cast<std::uint32_t>(currentSample)
+                                                   ^ hash32(static_cast<std::uint32_t>(channel << 8))));
+                const float contour = random01(dropoutState) > 0.52f ? 1.0f : 0.45f;
+                wetSample *= juce::jmax(0.0f, 1.0f - activeDecision.dropoutDepth * contour);
+            }
+
             if (transformsSlice || activeDecision.gate)
                 wetSample = liveSample + (wetSample - liveSample) * sliceWindow;
+
+            if (activeDecision.smearMix > 0.001f)
+            {
+                const float smeared = smearSamples[static_cast<size_t>(channel)] * 0.72f + wetSample * 0.28f;
+                wetSample = juce::jmap(activeDecision.smearMix, wetSample, smeared);
+                smearSamples[static_cast<size_t>(channel)] = wetSample;
+            }
+
+            wetSample = softClip(wetSample, activeDecision.trashDrive);
 
             wetSample *= activeDecision.outputTrim;
             buffer.setSample(channel, sampleIndex, liveSample * dryGain + wetSample * wetGain);

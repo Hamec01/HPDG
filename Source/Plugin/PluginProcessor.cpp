@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
+#include <thread>
 
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/Sub808TrackAccess.h"
@@ -17,6 +19,13 @@
 #include "../Engine/StyleDefaults.h"
 #include "../Engine/SubstyleRuleEnforcer.h"
 #include "../Services/TemporaryMidiExportService.h"
+#include "../UI/GridEditorComponent.h"
+#include "../UI/MainHeaderComponent.h"
+#include "../UI/EditorCommandController.h"
+#include "../UI/SampleAnalysisPanelComponent.h"
+#include "../UI/SoundModuleController.h"
+#include "../UI/TrackListComponent.h"
+#include "../UI/Vst3GridLiteComponent.h"
 #include "../Utils/TimingHelpers.h"
 
 namespace bbg
@@ -27,6 +36,1078 @@ constexpr auto kStateType = "BoomBapState";
 constexpr auto kRootSchemaVersion = 4;
 constexpr double kEqAnalyzerMinFrequencyHz = 20.0;
 constexpr double kEqAnalyzerMaxFrequencyHz = 20000.0;
+
+class ProcessBlockActivityGuard
+{
+public:
+    explicit ProcessBlockActivityGuard(std::atomic<int>& activeProcessBlockCountIn) noexcept
+        : activeProcessBlockCount(activeProcessBlockCountIn)
+    {
+        activeProcessBlockCount.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    ~ProcessBlockActivityGuard()
+    {
+        activeProcessBlockCount.fetch_sub(1, std::memory_order_acq_rel);
+    }
+
+private:
+    std::atomic<int>& activeProcessBlockCount;
+};
+
+class HeaderOnlyTestEditor final : public juce::AudioProcessorEditor
+{
+public:
+    explicit HeaderOnlyTestEditor(BoomBapGeneratorAudioProcessor& processor)
+        : juce::AudioProcessorEditor(&processor)
+    {
+        addAndMakeVisible(header);
+        setSize(1280, 220);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour::fromRGB(15, 17, 21));
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced(12);
+        header.setBounds(area.removeFromTop(170));
+    }
+
+private:
+    MainHeaderComponent header;
+};
+
+class SplitterHandleComponent final : public juce::Component
+{
+public:
+    std::function<void(const juce::MouseEvent&)> onPress;
+    std::function<void(const juce::MouseEvent&)> onDragMove;
+    std::function<void(const juce::MouseEvent&)> onRelease;
+
+    explicit SplitterHandleComponent(juce::MouseCursor::StandardCursorType cursorType)
+    {
+        setMouseCursor(juce::MouseCursor(cursorType));
+        setInterceptsMouseClicks(true, false);
+    }
+
+    void paint(juce::Graphics&) override {}
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        if (onPress)
+            onPress(event);
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (onDragMove)
+            onDragMove(event);
+    }
+
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        if (onRelease)
+            onRelease(event);
+    }
+};
+
+// Standalone keeps the full authoring editor. VST3 intentionally uses a
+// different grid surface so DAW workflow stays stable while both formats share
+// the same core pattern/generation architecture.
+class Vst3SafeHeaderEditor final : public juce::AudioProcessorEditor,
+                                   private juce::Timer
+{
+public:
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+
+    explicit Vst3SafeHeaderEditor(BoomBapGeneratorAudioProcessor& processor)
+        : juce::AudioProcessorEditor(&processor)
+        , audioProcessor(processor)
+        , commandController(processor)
+        , soundModuleController(processor, soundModule)
+    {
+        addAndMakeVisible(header);
+        addAndMakeVisible(trackListViewport);
+        addAndMakeVisible(analysisPanel);
+        addAndMakeVisible(soundModule);
+
+        laneGridWorkspace.addAndMakeVisible(trackList);
+        laneGridWorkspace.addAndMakeVisible(gridLite);
+        trackListViewport.setViewedComponent(&laneGridWorkspace, false);
+        trackListViewport.setScrollBarsShown(true, false);
+
+        auto* verticalSplitter = new SplitterHandleComponent(juce::MouseCursor::LeftRightResizeCursor);
+        verticalSplitter->onDragMove = [this](const juce::MouseEvent& event)
+        {
+            if (!event.mouseWasDraggedSinceMouseDown())
+                return;
+
+            const auto x = static_cast<int>(event.getEventRelativeTo(this).position.x);
+            updateColumnWidthFromScreenX(x);
+        };
+        verticalSplitterHandle.reset(verticalSplitter);
+        addAndMakeVisible(*verticalSplitterHandle);
+
+        auto* horizontalSplitter = new SplitterHandleComponent(juce::MouseCursor::UpDownResizeCursor);
+        horizontalSplitter->onDragMove = [this](const juce::MouseEvent& event)
+        {
+            if (!event.mouseWasDraggedSinceMouseDown())
+                return;
+
+            const auto y = static_cast<int>(event.getEventRelativeTo(this).position.y);
+            updateTopSectionHeightFromScreenY(y);
+        };
+        horizontalSplitterHandle.reset(horizontalSplitter);
+        addAndMakeVisible(*horizontalSplitterHandle);
+
+        setSize(1460, 860);
+        setResizable(true, true);
+        setResizeLimits(1180, 720, 2200, 1500);
+
+        header.setStandaloneWindowButtonVisible(false);
+        header.setVst3GeneratorChromeEnabled(true);
+        header.setHeaderControlsMode(MainHeaderComponent::HeaderControlsMode::Compact);
+        header.setGridModeIndicatorText("VST3 generator mode");
+        header.zoomSlider.setEnabled(false);
+        header.laneHeightSlider.setEnabled(false);
+        header.gridResolutionCombo.setEnabled(false);
+
+        trackList.setShowAnalysisPanel(false);
+        trackList.setShowSoundPanel(false);
+        trackList.setDisplayMode(LaneRackDisplayMode::Full);
+        trackList.setVisualStyle(RackVisualStyle::HpdgSoundVst3);
+        trackList.setRowHeight(32);
+        gridLite.setRowHeight(trackList.getRowHeight());
+
+        soundModuleController.setHostCallbacks([this](const std::function<void()>& mutation, bool refreshTrackRows)
+                                               {
+                                                   juce::ignoreUnused(refreshTrackRows);
+                                                   mutation();
+                                                   refreshFromProcessor();
+                                               },
+                                               [this](bool refreshTrackRows)
+                                               {
+                                                   juce::ignoreUnused(refreshTrackRows);
+                                                   refreshFromProcessor();
+                                               });
+
+        setupAttachments();
+        wireCallbacks();
+        refreshFromProcessor();
+        startTimerHz(10);
+    }
+
+    ~Vst3SafeHeaderEditor() override
+    {
+        stopTimer();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        juce::ColourGradient bg(juce::Colour::fromRGB(18, 17, 17), 0.0f, 0.0f,
+                                juce::Colour::fromRGB(9, 10, 12), 0.0f, static_cast<float>(getHeight()), false);
+        bg.addColour(0.18, juce::Colour::fromRGB(34, 24, 19));
+        bg.addColour(0.44, juce::Colour::fromRGB(20, 19, 21));
+        bg.addColour(0.82, juce::Colour::fromRGB(13, 14, 17));
+        g.setGradientFill(bg);
+        g.fillAll();
+        drawEmberTexture(g, getLocalBounds().toFloat().reduced(10.0f), 0.72f);
+
+        drawPanelShell(g, trackListViewport.getBounds(), "PATTERN RACK", true);
+        drawPanelShell(g, analysisPanel.getBounds(), "ANALYSIS", false);
+        drawPanelShell(g, soundModule.getBounds(), juce::String(), false);
+
+        g.setColour(juce::Colour::fromRGBA(214, 171, 98, 58));
+        g.fillRect(verticalSplitterVisualBounds);
+        g.fillRect(horizontalSplitterVisualBounds);
+    }
+
+    void resized() override
+    {
+        auto area = getWorkspaceBounds();
+        header.setBounds(area.removeFromTop(header.getPreferredHeight()));
+        area.removeFromTop(10);
+
+        const int splitterHitWidth = 10;
+        const int splitterVisualWidth = 2;
+        const int splitterHitHeight = 10;
+        const int splitterVisualHeight = 2;
+        const int paneGap = 8;
+        const int minLeftWidth = 520;
+        const int minRightWidth = 360;
+        const int minTopHeight = 250;
+        const int minBottomHeight = 230;
+
+        const int maxLeftWidth = juce::jmax(minLeftWidth, area.getWidth() - splitterHitWidth - paneGap - minRightWidth);
+        leftColumnWidth = juce::jlimit(minLeftWidth,
+                                       maxLeftWidth,
+                                       leftColumnWidth > 0
+                                           ? leftColumnWidth
+                                           : static_cast<int>(std::round(static_cast<double>(area.getWidth()) * 0.52)));
+
+        const int maxTopHeight = juce::jmax(minTopHeight, area.getHeight() - splitterHitHeight - paneGap - minBottomHeight);
+        topSectionHeight = juce::jlimit(minTopHeight,
+                                        maxTopHeight,
+                                        topSectionHeight > 0
+                                            ? topSectionHeight
+                                            : static_cast<int>(std::round(static_cast<double>(area.getHeight()) * 0.46)));
+
+        auto topArea = area.removeFromTop(topSectionHeight);
+        auto horizontalHit = area.removeFromTop(splitterHitHeight);
+        area.removeFromTop(paneGap);
+        auto bottomArea = area;
+
+        auto topLeft = topArea.removeFromLeft(leftColumnWidth);
+        auto verticalHitTop = topArea.removeFromLeft(splitterHitWidth);
+        topArea.removeFromLeft(paneGap);
+        auto topRight = topArea;
+
+        auto bottomLeft = bottomArea.removeFromLeft(leftColumnWidth);
+        auto verticalHitBottom = bottomArea.removeFromLeft(splitterHitWidth);
+        bottomArea.removeFromLeft(paneGap);
+        auto bottomRight = bottomArea;
+
+        const int verticalHitX = verticalHitTop.getX();
+        verticalSplitterHandle->setBounds(verticalHitX,
+                                          topLeft.getY(),
+                                          splitterHitWidth,
+                                          bottomRight.getBottom() - topLeft.getY());
+        verticalSplitterVisualBounds = juce::Rectangle<int>(verticalHitX + (splitterHitWidth - splitterVisualWidth) / 2,
+                                                            topLeft.getY(),
+                                                            splitterVisualWidth,
+                                                            bottomRight.getBottom() - topLeft.getY());
+
+        horizontalSplitterHandle->setBounds(topLeft.getX(),
+                                            horizontalHit.getY(),
+                                            topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
+                                            splitterHitHeight);
+        horizontalSplitterVisualBounds = juce::Rectangle<int>(topLeft.getX(),
+                                                              horizontalHit.getY() + (splitterHitHeight - splitterVisualHeight) / 2,
+                                                              topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
+                                                              splitterVisualHeight);
+
+        trackListViewport.setBounds(juce::Rectangle<int>(topLeft.getX(),
+                                                         topLeft.getY(),
+                                                         topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
+                                                         topLeft.getHeight()));
+        syncRackViewportContentSize();
+        analysisPanel.setBounds(bottomLeft);
+        soundModule.setBounds(bottomRight);
+    }
+
+private:
+    static float averageOrZero(const std::vector<float>& values)
+    {
+        if (values.empty())
+            return 0.0f;
+
+        const float sum = std::accumulate(values.begin(), values.end(), 0.0f);
+        return sum / static_cast<float>(values.size());
+    }
+
+    static PreviewPlaybackMode previewModeFromChoiceId(int id)
+    {
+        switch (id)
+        {
+            case 2: return PreviewPlaybackMode::LoopRange;
+            case 1:
+            default: return PreviewPlaybackMode::FromFlag;
+        }
+    }
+
+    static int previewModeToChoiceId(PreviewPlaybackMode mode)
+    {
+        switch (mode)
+        {
+            case PreviewPlaybackMode::LoopRange: return 2;
+            case PreviewPlaybackMode::FromFlag:
+            default: return 1;
+        }
+    }
+
+    void timerCallback() override
+    {
+        refreshSubstyleBindingForGenre();
+        // Keep VST3 behaviour in lockstep with the full Standalone editor:
+        // genre/substyle changes must reapply the shared style preset before
+        // generation, sample-bank refresh and UI sync.
+        audioProcessor.applySelectedStylePreset(false);
+        refreshFromProcessor();
+    }
+
+    void setupAttachments()
+    {
+        auto& apvts = audioProcessor.getApvts();
+
+        bpmAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::bpm, header.bpmSlider);
+        bpmLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::bpmLock, header.bpmLockToggle);
+        syncAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::syncDawTempo, header.syncTempoToggle);
+        swingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::swingPercent, header.swingSlider);
+        velocityAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::velocityAmount, header.velocitySlider);
+        timingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::timingAmount, header.timingSlider);
+        humanizeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::humanizeAmount, header.humanizeSlider);
+        densityAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::densityAmount, header.densitySlider);
+        tempoInterpretationAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::tempoInterpretation, header.tempoInterpretationCombo);
+        barsAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::bars, header.barsCombo);
+        genreAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::genre, header.genreCombo);
+        seedAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::seed, header.seedSlider);
+        seedLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::seedLock, header.seedLockToggle);
+        masterVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, header.masterVolumeSlider);
+
+        refreshSubstyleBindingForGenre();
+    }
+
+    void refreshSubstyleBindingForGenre()
+    {
+        auto& apvts = audioProcessor.getApvts();
+        const auto* genreValue = apvts.getRawParameterValue(ParamIds::genre);
+        const int genreChoice = genreValue != nullptr ? static_cast<int>(genreValue->load()) : 0;
+        if (genreChoice == lastGenreChoice && substyleAttachment != nullptr)
+            return;
+
+        lastGenreChoice = genreChoice;
+
+        juce::StringArray choices;
+        const char* substyleParamId = ParamIds::boombapSubstyle;
+        switch (genreChoice)
+        {
+            case 1:
+                choices = getRapSubstyleNames();
+                substyleParamId = ParamIds::rapSubstyle;
+                break;
+            case 2:
+                choices = getTrapSubstyleNames();
+                substyleParamId = ParamIds::trapSubstyle;
+                break;
+            case 3:
+                choices = getDrillSubstyleNames();
+                substyleParamId = ParamIds::drillSubstyle;
+                break;
+            case 0:
+            default:
+                choices = getBoomBapSubstyleNames();
+                substyleParamId = ParamIds::boombapSubstyle;
+                break;
+        }
+
+        substyleAttachment.reset();
+        header.substyleCombo.clear(juce::dontSendNotification);
+        for (int i = 0; i < choices.size(); ++i)
+            header.substyleCombo.addItem(choices[i], i + 1);
+
+        substyleAttachment = std::make_unique<ComboAttachment>(apvts, substyleParamId, header.substyleCombo);
+    }
+
+    void wireCallbacks()
+    {
+        header.onGeneratePressed = [this]
+        {
+            audioProcessor.applySelectedStylePreset(false);
+            audioProcessor.generatePattern();
+            refreshFromProcessor();
+        };
+
+        header.onMutatePressed = [this]
+        {
+            audioProcessor.applySelectedStylePreset(false);
+            audioProcessor.mutatePattern();
+            refreshFromProcessor();
+        };
+
+        header.onPlayToggled = [this](bool shouldStart)
+        {
+            if (shouldStart)
+                audioProcessor.startPreview();
+            else
+                audioProcessor.stopPreview();
+
+            refreshFromProcessor();
+        };
+
+        header.barsCombo.onChange = [this]
+        {
+            const int selectedBars = juce::jmax(1, header.barsCombo.getText().getIntValue());
+            if (audioProcessor.getProjectSnapshot().params.bars == selectedBars)
+                return;
+
+            audioProcessor.syncBarsFromState();
+            refreshFromProcessor();
+        };
+
+        header.onStartPlayWithDawToggled = [this](bool enabled)
+        {
+            audioProcessor.setStartPlayWithDawEnabled(enabled);
+            refreshFromProcessor();
+        };
+
+        header.onTransportToStart = [this]
+        {
+            audioProcessor.setPreviewStartStep(0);
+            refreshFromProcessor();
+        };
+
+        header.onTransportStepBack = [this]
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            audioProcessor.setPreviewStartStep(juce::jmax(0, project.previewStartStep - 1));
+            refreshFromProcessor();
+        };
+
+        header.onTransportStepForward = [this]
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            const int maxStep = juce::jmax(0, project.params.bars * 16 - 1);
+            audioProcessor.setPreviewStartStep(juce::jmin(maxStep, project.previewStartStep + 1));
+            refreshFromProcessor();
+        };
+
+        header.onTransportToEnd = [this]
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            audioProcessor.setPreviewStartStep(juce::jmax(0, project.params.bars * 16 - 1));
+            refreshFromProcessor();
+        };
+
+        header.onClearAllPressed = [this]
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            for (const auto& lane : project.runtimeLaneProfile.lanes)
+                audioProcessor.clearTrack(lane.laneId);
+
+            refreshFromProcessor();
+        };
+
+        header.onExportFullPressed = [this]
+        {
+            commandController.exportFullPattern(this);
+        };
+
+        header.onExportLoopWavPressed = [this]
+        {
+            commandController.exportLoopWav(this, logUiAction);
+        };
+
+        header.onDragFullPressed = [this]
+        {
+            commandController.dragFullPatternTempMidi(logUiAction);
+        };
+
+        header.onDragFullGesture = [this]
+        {
+            commandController.dragFullPatternExternal(this, logUiAction);
+        };
+
+        header.onToggleStandaloneWindow = [] {};
+        header.onZoomChanged = [](float, float) {};
+        header.onGridResolutionChanged = [](int) {};
+        header.onHeaderControlsModeChanged = [](MainHeaderComponent::HeaderControlsMode) {};
+
+        header.onPreviewPlaybackModeChanged = [this](int selectedId)
+        {
+            audioProcessor.setPreviewPlaybackMode(previewModeFromChoiceId(selectedId));
+            refreshFromProcessor();
+        };
+
+        header.hatFxDensitySlider.onValueChange = [this]
+        {
+            const float density = static_cast<float>(header.hatFxDensitySlider.getValue());
+            const bool locked = header.hatFxDensityLockToggle.getToggleState();
+            audioProcessor.setHatFxDragDensity(density, locked);
+            refreshFromProcessor();
+        };
+
+        header.hatFxDensityLockToggle.onClick = [this]
+        {
+            const float density = static_cast<float>(header.hatFxDensitySlider.getValue());
+            const bool locked = header.hatFxDensityLockToggle.getToggleState();
+            audioProcessor.setHatFxDragDensity(density, locked);
+            refreshFromProcessor();
+        };
+
+        gridLite.onLaneClicked = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.setSelectedTrack(laneId);
+            refreshFromProcessor();
+        };
+
+        gridLite.onStepClicked = [this](int step)
+        {
+            audioProcessor.setPreviewStartStep(step);
+            refreshFromProcessor();
+        };
+
+        trackList.onRegenerateTrack = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.applySelectedStylePreset(false);
+            audioProcessor.regenerateTrack(laneId);
+            refreshFromProcessor();
+        };
+
+        trackList.onMutateTrack = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.applySelectedStylePreset(false);
+            audioProcessor.mutateTrack(laneId);
+            refreshFromProcessor();
+        };
+
+        trackList.onSoloTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            audioProcessor.setTrackSolo(laneId, value);
+            refreshFromProcessor();
+        };
+
+        trackList.onMuteTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            audioProcessor.setTrackMuted(laneId, value);
+            refreshFromProcessor();
+        };
+
+        trackList.onClearTrack = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.clearTrack(laneId);
+            refreshFromProcessor();
+        };
+
+        trackList.onLockTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            audioProcessor.setTrackLocked(laneId, value);
+            refreshFromProcessor();
+        };
+
+        trackList.onEnableTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            audioProcessor.setTrackEnabled(laneId, value);
+            refreshFromProcessor();
+        };
+
+        trackList.onPrevSampleTrack = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.selectPreviousLaneSample(laneId);
+            refreshFromProcessor();
+        };
+
+        trackList.onNextSampleTrack = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.selectNextLaneSample(laneId);
+            refreshFromProcessor();
+        };
+
+        trackList.onSampleMenuTrack = [this](const RuntimeLaneId& laneId)
+        {
+            commandController.showSampleMenu(laneId,
+                                             this,
+                                             [](const PatternProject&, const PatternProject&)
+                                             {
+                                             },
+                                             [this]()
+                                             {
+                                                 refreshFromProcessor();
+                                             },
+                                             logUiAction);
+        };
+
+        trackList.onImportMidiLaneTrack = [this](const RuntimeLaneId& laneId)
+        {
+            commandController.showImportMidiToLaneDialog(laneId,
+                                                         this,
+                                                         [this](const PatternProject& before, const PatternProject& after, bool)
+                                                         {
+                                                             juce::ignoreUnused(before);
+                                                             audioProcessor.restoreEditorProjectSnapshot(after);
+                                                             refreshFromProcessor();
+                                                         });
+        };
+
+        trackList.onTrackNameClicked = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.setSelectedTrack(laneId);
+            refreshFromProcessor();
+        };
+
+        trackList.onDragTrack = [this](const RuntimeLaneId& laneId)
+        {
+            commandController.dragTrackTempMidi(laneId, logUiAction);
+        };
+
+        trackList.onDragTrackGesture = [this](const RuntimeLaneId& laneId)
+        {
+            commandController.dragTrackExternal(laneId, this, logUiAction);
+        };
+
+        trackList.onExportTrack = [this](const RuntimeLaneId& laneId)
+        {
+            commandController.exportTrack(laneId, this);
+        };
+
+        trackList.onLaneVolumeTrack = [this](const RuntimeLaneId& laneId, float volume)
+        {
+            audioProcessor.setTrackLaneVolume(laneId, volume);
+            refreshFromProcessor();
+        };
+
+        trackList.onLaneSoundTrack = [this](const RuntimeLaneId& laneId, const SoundLayerState& state)
+        {
+            SoundLayerState nextState = state;
+            const auto project = audioProcessor.getProjectSnapshot();
+            for (const auto& track : project.tracks)
+            {
+                if (track.laneId != laneId)
+                    continue;
+
+                nextState.eq = track.sound.eq;
+                nextState.compression = track.sound.compression;
+                nextState.reverb = track.sound.reverb;
+                nextState.monstaFx = track.sound.monstaFx;
+                nextState.drumTransient = track.sound.drumTransient;
+                nextState.gate = track.sound.gate;
+                nextState.transient = track.sound.transient;
+                nextState.drive = track.sound.drive;
+                break;
+            }
+
+            audioProcessor.setTrackSoundLayer(laneId, nextState);
+            refreshFromProcessor();
+        };
+
+        trackList.onBassKeyChanged = [this](int choice)
+        {
+            audioProcessor.setBassKeyRootChoice(choice);
+            refreshFromProcessor();
+        };
+
+        trackList.onBassScaleChanged = [this](int choice)
+        {
+            audioProcessor.setBassScaleModeChoice(choice);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onAnalysisSourceChanged = [this](SampleAnalysisRequest::SourceType source)
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.source = source;
+            audioProcessor.setSampleAnalysisRequest(request);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onAnalysisModeChanged = [this](AnalysisMode mode)
+        {
+            audioProcessor.setAnalysisMode(mode);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onSampleApplyModeChanged = [this](SampleApplyMode mode)
+        {
+            audioProcessor.setSampleApplyMode(mode);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onAnalysisBarsChanged = [this](int bars)
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.barsToCapture = juce::jlimit(2, 16, bars);
+            audioProcessor.setSampleAnalysisRequest(request);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onAnalysisTempoHandlingChanged = [this](SampleAnalysisRequest::TempoHandling tempoHandling)
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.tempoHandling = tempoHandling;
+            audioProcessor.setSampleAnalysisRequest(request);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onAnalysisReactivityChanged = [this](float value)
+        {
+            audioProcessor.setSampleReactivity(value);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onSupportVsContrastChanged = [this](float value)
+        {
+            audioProcessor.setSupportVsContrast(value);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onChooseAnalysisFile = [this]
+        {
+            auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+            auto chooser = std::make_shared<juce::FileChooser>("Select audio file for analysis",
+                                                               juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+                                                               "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+
+            chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                 [safeEditor, chooser](const juce::FileChooser& fc)
+                                 {
+                                     const auto selected = fc.getResult();
+                                     if (safeEditor == nullptr || selected == juce::File())
+                                         return;
+
+                                     auto request = safeEditor->audioProcessor.getSampleAnalysisRequest();
+                                     request.source = SampleAnalysisRequest::SourceType::AudioFile;
+                                     request.audioFile = selected;
+                                     safeEditor->audioProcessor.setSampleAnalysisRequest(request);
+                                     safeEditor->refreshFromProcessor();
+                                 });
+        };
+
+        analysisPanel.onAnalysisFileDropped = [this](const juce::File& file)
+        {
+            if (!file.existsAsFile())
+                return;
+
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.source = SampleAnalysisRequest::SourceType::AudioFile;
+            request.audioFile = file;
+            audioProcessor.setSampleAnalysisRequest(request);
+            refreshFromProcessor();
+        };
+
+        analysisPanel.onRunAnalysis = [this]
+        {
+            juce::String error;
+            const bool ok = audioProcessor.analyzeCurrentSampleSource(&error);
+            if (!ok && error.isNotEmpty())
+                juce::Logger::writeToLog("[HPDG_VST3_UI] analysis error: " + error);
+            refreshFromProcessor();
+        };
+    }
+
+    void refreshFromProcessor()
+    {
+        const auto project = audioProcessor.getProjectSnapshot();
+        const auto analysisRequest = audioProcessor.getSampleAnalysisRequest();
+        const auto analysisResult = audioProcessor.getSampleAnalysisResult();
+        const auto sampleContext = audioProcessor.getSampleAwareGenerationContext();
+        const bool analysisReady = audioProcessor.isSampleAnalysisReady();
+        const auto analysisMode = audioProcessor.getAnalysisMode();
+        const auto selectedTrack = project.tracks.empty()
+            ? RuntimeLaneId{}
+            : project.tracks[static_cast<size_t>(juce::jlimit(0,
+                                                              static_cast<int>(project.tracks.size()) - 1,
+                                                              project.selectedTrackIndex))].laneId;
+
+        header.setPreviewPlaying(audioProcessor.isPreviewPlaying());
+        header.setStartPlayWithDawEnabled(audioProcessor.isStartPlayWithDawEnabled());
+        header.setPreviewPlaybackModeId(previewModeToChoiceId(audioProcessor.getPreviewPlaybackMode()));
+        header.setHatFxDensityState(audioProcessor.getHatFxDragDensity(), audioProcessor.isHatFxDragDensityLocked());
+
+        gridLite.setProject(project);
+        gridLite.setLaneDisplayOrder(project.runtimeLaneOrder);
+        gridLite.setSelectedTrack(selectedTrack);
+        gridLite.setPlayheadStep(audioProcessor.getPreviewPlayheadStep());
+        gridLite.setPreviewStartStep(project.previewStartStep);
+        gridLite.setLoopRegion(audioProcessor.getPreviewLoopRegion());
+        gridLite.setRowHeight(trackList.getRowHeight());
+
+        trackList.setTracks(project.runtimeLaneProfile,
+                            project.tracks,
+                            audioProcessor.getBassKeyRootChoice(),
+                            audioProcessor.getBassScaleModeChoice());
+        trackList.setLaneDisplayOrder(project.runtimeLaneOrder);
+        trackList.setHatFxDragUiState(audioProcessor.getHatFxDragDensity(),
+                                      audioProcessor.isHatFxDragDensityLocked());
+
+        juce::String status;
+        juce::String details;
+        if (analysisReady)
+        {
+            status = "BPM " + juce::String(analysisResult.detectedBpm, 1)
+                + (analysisResult.bpmReliable ? " (reliable)" : " (estimate)")
+                + " | bars " + juce::String(analysisResult.analyzedBars)
+                + " | boundaries " + juce::String(static_cast<int>(analysisResult.phraseBoundaryBars.size()));
+
+            details = "Energy " + juce::String(averageOrZero(analysisResult.energyPerStep), 2)
+                + " | onset " + juce::String(averageOrZero(analysisResult.onsetStrengthPerStep), 2)
+                + " | density bars " + juce::String(static_cast<int>(analysisResult.densityPerBar.size()))
+                + "\nFlags: sparse=" + juce::String(analysisResult.sparse ? "yes" : "no")
+                + " dense=" + juce::String(analysisResult.dense ? "yes" : "no")
+                + " transientRich=" + juce::String(analysisResult.transientRich ? "yes" : "no")
+                + " loopLike=" + juce::String(analysisResult.loopLike ? "yes" : "no");
+        }
+
+        juce::String generationDebug = audioProcessor.getGenerationDebugSummary();
+        const auto featureMap = audioProcessor.getAudioFeatureMap();
+        if (analysisReady && !featureMap.steps.empty())
+        {
+            int strongestStep = 0;
+            float strongestOnset = featureMap.steps.front().onset;
+            for (int i = 1; i < static_cast<int>(featureMap.steps.size()); ++i)
+            {
+                if (featureMap.steps[static_cast<size_t>(i)].onset > strongestOnset)
+                {
+                    strongestOnset = featureMap.steps[static_cast<size_t>(i)].onset;
+                    strongestStep = i;
+                }
+            }
+
+            generationDebug += "\nPeak onset step: " + juce::String(strongestStep + 1)
+                + " / " + juce::String(static_cast<int>(featureMap.steps.size()))
+                + " (" + juce::String(strongestOnset, 2) + ")";
+        }
+
+        analysisPanel.setPanelState(analysisRequest.source,
+                                    analysisMode,
+                                    sampleContext.applyMode,
+                                    analysisRequest.barsToCapture,
+                                    analysisRequest.tempoHandling,
+                                    sampleContext.reactivity,
+                                    sampleContext.supportVsContrast,
+                                    analysisRequest.audioFile.existsAsFile()
+                                        ? ("File: " + analysisRequest.audioFile.getFileName())
+                                        : "File: (none)",
+                                    status,
+                                    details,
+                                    generationDebug,
+                                    analysisReady);
+
+        soundModuleController.sync(project);
+        soundModule.setEqDisplayAnalyzerState(audioProcessor.getEqDisplayAnalyzerState());
+        syncRackViewportContentSize();
+    }
+
+    void syncRackViewportContentSize()
+    {
+        if (trackListViewport.getWidth() <= 0 || trackListViewport.getHeight() <= 0)
+            return;
+
+        const int contentWidth = juce::jmax(1, trackListViewport.getMaximumVisibleWidth());
+        const int contentHeight = juce::jmax(trackList.getLaneSectionHeight(),
+                                             gridLite.getPreferredContentHeight());
+        const int gridGap = 8;
+        const int gridWidth = juce::jmax(300, contentWidth - leftColumnWidth - gridGap);
+
+        trackList.setBounds(0, 0, leftColumnWidth, contentHeight);
+        gridLite.setBounds(leftColumnWidth + gridGap, 0, gridWidth, contentHeight);
+        laneGridWorkspace.setSize(contentWidth, contentHeight);
+    }
+
+    void drawPanelShell(juce::Graphics& g, juce::Rectangle<int> childBounds, const juce::String& title, bool emphasise) const
+    {
+        if (childBounds.isEmpty())
+            return;
+
+        auto shell = childBounds.expanded(6);
+        const auto shellF = shell.toFloat();
+        juce::ColourGradient fill(juce::Colour::fromRGB(34, 25, 19), shellF.getTopLeft(),
+                                  juce::Colour::fromRGB(14, 15, 17), shellF.getBottomLeft(), false);
+        fill.addColour(0.18, juce::Colour::fromRGB(52, 34, 22));
+        fill.addColour(0.52, juce::Colour::fromRGB(24, 22, 22));
+        fill.addColour(1.0, juce::Colour::fromRGB(13, 13, 15));
+        g.setGradientFill(fill);
+        g.fillRoundedRectangle(shellF, 12.0f);
+        drawEmberTexture(g, shellF.reduced(5.0f), emphasise ? 0.62f : 0.38f);
+
+        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 10));
+        g.drawRoundedRectangle(shellF, 12.0f, 1.0f);
+
+        g.setColour(juce::Colour::fromRGBA(214, 171, 98, emphasise ? 150 : 86));
+        g.drawRoundedRectangle(shellF.reduced(0.5f), 12.0f, 1.0f);
+
+        if (title.isEmpty())
+            return;
+
+        auto titleBounds = shell.removeFromTop(22).reduced(12, 2);
+        g.setColour(juce::Colour::fromRGB(239, 202, 132));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText(title, titleBounds, juce::Justification::centredLeft, true);
+
+        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 12));
+        g.drawHorizontalLine(titleBounds.getBottom() + 2,
+                             static_cast<float>(titleBounds.getX()),
+                             static_cast<float>(shell.getRight() - 12));
+    }
+
+    void drawEmberTexture(juce::Graphics& g, juce::Rectangle<float> area, float alphaScale) const
+    {
+        static const juce::File kTextureFile("C:/Users/ham/Documents/DRUMENGINE/Assets/hpdg_ember_texture.png");
+        if (kTextureFile.existsAsFile())
+        {
+            if (auto texture = juce::ImageCache::getFromFile(kTextureFile); texture.isValid())
+            {
+                g.saveState();
+                g.reduceClipRegion(area.getSmallestIntegerContainer());
+                g.setOpacity(0.20f * alphaScale);
+                g.drawImage(texture,
+                            area.getX(),
+                            area.getY(),
+                            area.getWidth(),
+                            area.getHeight(),
+                            0.0f,
+                            0.0f,
+                            static_cast<float>(texture.getWidth()),
+                            static_cast<float>(texture.getHeight()));
+                g.restoreState();
+            }
+        }
+
+        juce::Random rng(0x48504447);
+
+        for (int i = 0; i < 40; ++i)
+        {
+            const float x = area.getX() + rng.nextFloat() * area.getWidth();
+            const float y = area.getY() + rng.nextFloat() * area.getHeight();
+            const float w = 58.0f + rng.nextFloat() * 240.0f;
+            const float h = 10.0f + rng.nextFloat() * 46.0f;
+            const auto alpha = static_cast<juce::uint8>((0.014f + rng.nextFloat() * 0.032f) * alphaScale * 255.0f);
+            g.setColour(juce::Colour::fromRGBA(255, 167, 72, alpha));
+            g.fillEllipse(x, y, w, h);
+        }
+
+        for (int i = 0; i < 24; ++i)
+        {
+            juce::Path smoke;
+            smoke.startNewSubPath(area.getX() + rng.nextFloat() * area.getWidth(),
+                                  area.getY() + rng.nextFloat() * area.getHeight());
+            for (int segment = 0; segment < 4; ++segment)
+            {
+                smoke.quadraticTo(area.getX() + rng.nextFloat() * area.getWidth(),
+                                  area.getY() + rng.nextFloat() * area.getHeight(),
+                                  area.getX() + rng.nextFloat() * area.getWidth(),
+                                  area.getY() + rng.nextFloat() * area.getHeight());
+            }
+
+            const auto alpha = static_cast<juce::uint8>((0.010f + rng.nextFloat() * 0.016f) * alphaScale * 255.0f);
+            g.setColour(juce::Colour::fromRGBA(255, 223, 176, alpha));
+            g.strokePath(smoke, juce::PathStrokeType(1.6f + rng.nextFloat() * 2.4f,
+                                                     juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+        }
+    }
+
+    juce::Rectangle<int> getWorkspaceBounds() const
+    {
+        return getLocalBounds().reduced(12);
+    }
+
+    void updateColumnWidthFromScreenX(int x)
+    {
+        auto body = getWorkspaceBounds();
+        body.removeFromTop(header.getPreferredHeight() + 10);
+        const int maxLeftWidth = juce::jmax(520, body.getWidth() - 10 - 8 - 360);
+        leftColumnWidth = juce::jlimit(520, maxLeftWidth, x - body.getX());
+        resized();
+        repaint();
+    }
+
+    void updateTopSectionHeightFromScreenY(int y)
+    {
+        auto body = getWorkspaceBounds();
+        body.removeFromTop(header.getPreferredHeight() + 10);
+        const int maxTopHeight = juce::jmax(250, body.getHeight() - 10 - 8 - 230);
+        topSectionHeight = juce::jlimit(250, maxTopHeight, y - body.getY());
+        resized();
+        repaint();
+    }
+
+    BoomBapGeneratorAudioProcessor& audioProcessor;
+    EditorCommandController commandController;
+    std::function<void(const juce::String&)> logUiAction = [](const juce::String& message)
+    {
+        juce::Logger::writeToLog("[HPDG_VST3_UI] " + message);
+    };
+
+    MainHeaderComponent header;
+    juce::Viewport trackListViewport;
+    juce::Component laneGridWorkspace;
+    TrackListComponent trackList;
+    Vst3GridLiteComponent gridLite;
+    SampleAnalysisPanelComponent analysisPanel;
+    SoundModuleComponent soundModule;
+    SoundModuleController soundModuleController;
+    std::unique_ptr<SplitterHandleComponent> verticalSplitterHandle;
+    std::unique_ptr<SplitterHandleComponent> horizontalSplitterHandle;
+    juce::Rectangle<int> verticalSplitterVisualBounds;
+    juce::Rectangle<int> horizontalSplitterVisualBounds;
+    int leftColumnWidth = 760;
+    int topSectionHeight = 320;
+
+    std::unique_ptr<SliderAttachment> bpmAttachment;
+    std::unique_ptr<ButtonAttachment> bpmLockAttachment;
+    std::unique_ptr<ButtonAttachment> syncAttachment;
+    std::unique_ptr<SliderAttachment> swingAttachment;
+    std::unique_ptr<SliderAttachment> velocityAttachment;
+    std::unique_ptr<SliderAttachment> timingAttachment;
+    std::unique_ptr<SliderAttachment> humanizeAttachment;
+    std::unique_ptr<SliderAttachment> densityAttachment;
+    std::unique_ptr<ComboAttachment> tempoInterpretationAttachment;
+    std::unique_ptr<ComboAttachment> barsAttachment;
+    std::unique_ptr<ComboAttachment> genreAttachment;
+    std::unique_ptr<ComboAttachment> substyleAttachment;
+    std::unique_ptr<SliderAttachment> seedAttachment;
+    std::unique_ptr<ButtonAttachment> seedLockAttachment;
+    std::unique_ptr<SliderAttachment> masterVolumeAttachment;
+    int lastGenreChoice = -1;
+};
+
+class GridOnlyTestEditor final : public juce::AudioProcessorEditor
+{
+public:
+    explicit GridOnlyTestEditor(BoomBapGeneratorAudioProcessor& processor)
+        : juce::AudioProcessorEditor(&processor)
+    {
+        addAndMakeVisible(grid);
+        grid.setLaneHeight(30);
+        grid.setStepWidth(20.0f);
+
+        setSize(860, 760);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour::fromRGB(15, 17, 21));
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced(12);
+        grid.setBounds(area);
+    }
+
+private:
+    GridEditorComponent grid;
+};
+
+class PassiveGridTestComponent final : public GridEditorComponent
+{
+public:
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour::fromRGB(24, 27, 33));
+    }
+
+    void mouseMove(const juce::MouseEvent&) override {}
+    void mouseExit(const juce::MouseEvent&) override {}
+};
+
+class PassiveGridOnlyTestEditor final : public juce::AudioProcessorEditor
+{
+public:
+    explicit PassiveGridOnlyTestEditor(BoomBapGeneratorAudioProcessor& processor)
+        : juce::AudioProcessorEditor(&processor)
+    {
+        addAndMakeVisible(grid);
+        setSize(860, 760);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(juce::Colour::fromRGB(15, 17, 21));
+    }
+
+    void resized() override
+    {
+        grid.setBounds(getLocalBounds().reduced(12));
+    }
+
+private:
+    PassiveGridTestComponent grid;
+};
 
 inline int floorDiv(int a, int b)
 {
@@ -75,6 +1156,30 @@ SampleApplyMode sampleApplyModeFromState(const juce::AudioProcessorValueTreeStat
     const auto* value = apvts.getRawParameterValue(ParamIds::sampleApplyMode);
     const int choice = value != nullptr ? static_cast<int>(value->load()) : choiceIndexFromSampleApplyMode(SampleApplyMode::Blend);
     return sampleApplyModeFromChoiceIndex(choice);
+}
+
+juce::StringArray makeValidChoiceParameterOptions(juce::StringArray options)
+{
+    if (options.isEmpty())
+        options.add("Main");
+
+    // JUCE AudioParameterChoice requires more than one item even when the
+    // product currently exposes only a single real style.
+    if (options.size() == 1)
+        options.add(options[0]);
+
+    return options;
+}
+
+int clampDrillSubstyleChoice(int choice)
+{
+    const int lastValidIndex = juce::jmax(0, getDrillSubstyleNames().size() - 1);
+    return juce::jlimit(0, lastValidIndex, choice);
+}
+
+bool normalizedValuesEqual(float lhs, float rhs) noexcept
+{
+    return std::abs(lhs - rhs) <= 1.0e-6f;
 }
 
 GenreType genreFromChoice(int choice)
@@ -1013,7 +2118,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
                                                                    0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::drillSubstyle,
                                                                    "Drill Substyle",
-                                                                   getDrillSubstyleNames(),
+                                                                   makeValidChoiceParameterOptions(getDrillSubstyleNames()),
                                                                    0));
     params.push_back(std::make_unique<juce::AudioParameterInt>(ParamIds::seed, "Seed", 1, 999999, 1));
     params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::seedLock, "Seed Lock", false));
@@ -1048,10 +2153,15 @@ BoomBapGeneratorAudioProcessor::BoomBapGeneratorAudioProcessor()
     generatePattern();
 }
 
-BoomBapGeneratorAudioProcessor::~BoomBapGeneratorAudioProcessor() = default;
+BoomBapGeneratorAudioProcessor::~BoomBapGeneratorAudioProcessor()
+{
+    beginShutdown();
+    waitForActiveProcessBlocks();
+}
 
 void BoomBapGeneratorAudioProcessor::prepareToPlay(double sampleRate, int)
 {
+    audioRenderSuspended.store(false, std::memory_order_release);
     currentSampleRate = sampleRate;
     transportSamplePosition = 0;
     previewSamplePosition = 0;
@@ -1083,15 +2193,27 @@ void BoomBapGeneratorAudioProcessor::prepareToPlay(double sampleRate, int)
 
 void BoomBapGeneratorAudioProcessor::releaseResources()
 {
-    std::scoped_lock lock(projectMutex);
-    previewPlaying = false;
-    previewSamplePosition = 0;
-    pendingPreviewNotes.clear();
+    suspendAudioRenderAndWait();
+
+    {
+        std::scoped_lock lock(projectMutex);
+        previewPlaying = false;
+        previewSamplePosition = 0;
+        transportSamplePosition = 0;
+        pendingPreviewNotes.clear();
+        lastObservedHostPlaying = false;
+    }
+
     previewEngine.reset();
     for (auto& runtime : laneFxRuntimeStates)
         resetSoundFxRuntimeState(runtime);
     resetSoundFxRuntimeState(globalFxRuntimeState);
     resetEqDisplayAnalyzer();
+}
+
+void BoomBapGeneratorAudioProcessor::reset()
+{
+    runtimeResetPending.store(true, std::memory_order_release);
 }
 
 void BoomBapGeneratorAudioProcessor::resetEqDisplayAnalyzer()
@@ -1197,21 +2319,46 @@ bool BoomBapGeneratorAudioProcessor::isBusesLayoutSupported(const BusesLayout& l
 
 void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    ProcessBlockActivityGuard processBlockActivity(activeProcessBlockCount);
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     midiMessages.clear();
 
+    if (audioRenderSuspended.load(std::memory_order_acquire))
+        return;
+
+    const bool runtimeResetRequested = runtimeResetPending.exchange(false, std::memory_order_acq_rel);
     const auto snapshot = TransportSnapshot::fromPlayHead(getPlayHead());
     const auto currentParams = buildParamsFromState(snapshot);
+    LiveRenderUpdate liveRenderUpdate;
     bool shouldAutoStartPreview = false;
     bool shouldAutoStopPreview = false;
+    PatternProject projectSnapshot;
+    juce::MidiMessageSequence midiCacheSnapshot;
+    std::vector<PreviewEvent> previewEventsSnapshot;
+    std::vector<PendingPreviewNote> pendingPreviewNotesSnapshot;
+    bool previewPlayingSnapshot = false;
+    bool previewPlayingAtSnapshot = false;
+    int previewSamplePositionSnapshot = 0;
+    int transportSamplePositionSnapshot = 0;
+    std::uint64_t midiCacheRevisionSnapshot = 0;
+
     {
         std::scoped_lock lock(projectMutex);
-        shouldAutoStartPreview = startPlayWithDawEnabled && snapshot.isPlaying && !lastObservedHostPlaying;
-        shouldAutoStopPreview = startPlayWithDawEnabled && !snapshot.isPlaying && lastObservedHostPlaying;
+        if (runtimeResetRequested)
+        {
+            previewPlaying = false;
+            previewSamplePosition = 0;
+            transportSamplePosition = 0;
+            pendingPreviewNotes.clear();
+        }
+
+        shouldAutoStartPreview = !runtimeResetRequested && startPlayWithDawEnabled && snapshot.isPlaying && !lastObservedHostPlaying;
+        shouldAutoStopPreview = !runtimeResetRequested && startPlayWithDawEnabled && !snapshot.isPlaying && lastObservedHostPlaying;
         lastObservedHostPlaying = snapshot.isPlaying;
         lastTransport = snapshot;
-        syncLivePerformanceStateLocked(currentParams);
+        if (!runtimeResetRequested)
+            liveRenderUpdate = syncLivePerformanceStateLocked(currentParams);
 
         if (shouldAutoStartPreview)
         {
@@ -1220,7 +2367,6 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                 && !laneSampleBank.hasSamples(TrackType::HiHat))
                 rescanLaneSamplesLocked();
 
-            rebuildMidiCache();
             previewPlaying = true;
             if (snapshot.hasPpq && currentParams.bpm > 0.0f)
             {
@@ -1231,16 +2377,52 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
             {
                 startPreviewFromCurrentStartStepLocked();
             }
-            previewEngine.reset();
         }
         else if (shouldAutoStopPreview)
         {
             previewPlaying = false;
-            previewEngine.reset();
         }
+
+        projectSnapshot = project;
+        midiCacheRevisionSnapshot = midiCacheRevision;
+        if (!liveRenderUpdate.requiresCacheRebuild())
+        {
+            midiCacheSnapshot = midiCache;
+            previewEventsSnapshot = previewEvents;
+        }
+        pendingPreviewNotesSnapshot = pendingPreviewNotes;
+        pendingPreviewNotes.clear();
+
+        previewPlayingSnapshot = previewPlaying;
+        previewPlayingAtSnapshot = previewPlaying;
+        previewSamplePositionSnapshot = previewSamplePosition;
+        transportSamplePositionSnapshot = transportSamplePosition;
     }
 
-    int startSample = transportSamplePosition;
+    if (runtimeResetRequested)
+    {
+        // `reset()` may come from an unsynchronised host lifecycle callback, so
+        // the actual runtime reset is deferred to the audio thread here.
+        previewEngine.reset();
+        for (auto& runtime : laneFxRuntimeStates)
+            resetSoundFxRuntimeState(runtime);
+        resetSoundFxRuntimeState(globalFxRuntimeState);
+        resetEqDisplayAnalyzer();
+    }
+
+    if (shouldAutoStartPreview || shouldAutoStopPreview)
+        previewEngine.reset();
+
+    if (liveRenderUpdate.performanceChanged)
+        PatternPerformanceTransformEngine::applyPerformanceFromBase(projectSnapshot, currentParams);
+
+    if (liveRenderUpdate.requiresCacheRebuild())
+    {
+        midiCacheSnapshot = buildMidiCacheForProject(projectSnapshot, currentSampleRate);
+        previewEventsSnapshot = buildPreviewEventsForProject(projectSnapshot, currentSampleRate);
+    }
+
+    int startSample = transportSamplePositionSnapshot;
     if (snapshot.hasPpq)
         startSample = stepToSamples(static_cast<int>(snapshot.ppqPosition * 4.0), currentSampleRate, currentParams.bpm);
 
@@ -1254,17 +2436,16 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         : (samplesPerQuarter > 0.0 ? static_cast<double>(startSample) / samplesPerQuarter : 0.0);
 
     const int numSamples = buffer.getNumSamples();
-    const int patternLength = getPatternLengthSamples();
+    const int patternLength = getPatternLengthSamples(projectSnapshot, currentSampleRate);
     if (patternLength <= 0)
         return;
 
-    std::scoped_lock lock(projectMutex);
-    bool requiresSeparatedSoundLayerPath = soundLayerNeedsSeparatedRender(project.globalSound);
+    bool requiresSeparatedSoundLayerPath = soundLayerNeedsSeparatedRender(projectSnapshot.globalSound);
     if (!requiresSeparatedSoundLayerPath)
     {
-        for (const auto& track : project.tracks)
+        for (const auto& track : projectSnapshot.tracks)
         {
-            if (!shouldIncludeTrackForPlayback(project, track))
+            if (!shouldIncludeTrackForPlayback(projectSnapshot, track))
                 continue;
 
             if (soundLayerNeedsSeparatedRender(track.sound))
@@ -1275,13 +2456,13 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         }
     }
 
-    for (const auto& audition : pendingPreviewNotes)
+    for (const auto& audition : pendingPreviewNotesSnapshot)
     {
         PreviewEngine::TriggerOptions options;
         options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch);
         if (audition.track == TrackType::Sub808)
         {
-            if (const auto* subTrack = findTrackState(TrackType::Sub808); subTrack != nullptr)
+            if (const auto* subTrack = ProjectLaneAccess::findTrackState(projectSnapshot, TrackType::Sub808); subTrack != nullptr)
             {
                 options.mono = subTrack->sub808Settings.mono;
                 options.cutItself = subTrack->sub808Settings.cutItself;
@@ -1291,20 +2472,19 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
             }
         }
         if (audition.lengthTicks > 0)
-            options.maxDurationSamples = juce::jmax(1, ticksToSamples(audition.lengthTicks, currentSampleRate, project.params.bpm));
+            options.maxDurationSamples = juce::jmax(1, ticksToSamples(audition.lengthTicks, currentSampleRate, projectSnapshot.params.bpm));
 
         previewEngine.noteOn(audition.track,
                              juce::jlimit(0.0f, 1.0f, static_cast<float>(audition.velocity) / 127.0f),
                              laneSampleBank,
                              options);
     }
-    pendingPreviewNotes.clear();
 
     bool shouldRenderPreviewVoices = false;
 
-    for (int i = 0; i < midiCache.getNumEvents(); ++i)
+    for (int i = 0; i < midiCacheSnapshot.getNumEvents(); ++i)
     {
-        const auto* holder = midiCache.getEventPointer(i);
+        const auto* holder = midiCacheSnapshot.getEventPointer(i);
         if (holder == nullptr)
             continue;
 
@@ -1318,14 +2498,14 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
             midiMessages.addEvent(holder->message, rel);
     }
 
-    if (previewPlaying)
+    if (previewPlayingSnapshot)
     {
-        const auto schedulePreviewSegment = [this](int segmentStart,
-                                                   int segmentLength,
-                                                   int bufferOffset,
-                                                   const std::optional<juce::Range<int>>& allowedSampleRange)
+        const auto schedulePreviewSegment = [this, &previewEventsSnapshot](int segmentStart,
+                                                                            int segmentLength,
+                                                                            int bufferOffset,
+                                                                            const std::optional<juce::Range<int>>& allowedSampleRange)
         {
-            for (const auto& event : previewEvents)
+            for (const auto& event : previewEventsSnapshot)
             {
                 const int eventSample = event.sample;
                 if (allowedSampleRange.has_value() && !allowedSampleRange->contains(eventSample))
@@ -1351,14 +2531,14 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
             }
         };
 
-        if (const auto loopTicks = activePreviewLoopTicks(project); loopTicks.has_value())
+        if (const auto loopTicks = activePreviewLoopTicks(projectSnapshot); loopTicks.has_value())
         {
-            const int loopStartSample = ticksToSamples(loopTicks->getStart(), currentSampleRate, project.params.bpm);
-            const int loopEndSample = ticksToSamples(loopTicks->getEnd(), currentSampleRate, project.params.bpm);
+            const int loopStartSample = ticksToSamples(loopTicks->getStart(), currentSampleRate, projectSnapshot.params.bpm);
+            const int loopEndSample = ticksToSamples(loopTicks->getEnd(), currentSampleRate, projectSnapshot.params.bpm);
 
             if (loopEndSample > loopStartSample)
             {
-                int localPreviewPosition = previewSamplePosition;
+                int localPreviewPosition = previewSamplePositionSnapshot;
                 if (localPreviewPosition < loopStartSample || localPreviewPosition >= loopEndSample)
                     localPreviewPosition = loopStartSample;
 
@@ -1379,15 +2559,15 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                         localPreviewPosition = loopStartSample;
                 }
 
-                previewSamplePosition = localPreviewPosition;
+                previewSamplePositionSnapshot = localPreviewPosition;
             }
         }
         else
         {
-            const int previewStart = previewSamplePosition;
+            const int previewStart = previewSamplePositionSnapshot;
             const int previewBlockStartInPattern = ((previewStart % patternLength) + patternLength) % patternLength;
 
-            for (const auto& event : previewEvents)
+            for (const auto& event : previewEventsSnapshot)
             {
                 const int eventSample = event.sample;
                 int rel = eventSample - previewBlockStartInPattern;
@@ -1412,7 +2592,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                 }
             }
 
-            previewSamplePosition = previewStart + numSamples;
+            previewSamplePositionSnapshot = previewStart + numSamples;
         }
 
         shouldRenderPreviewVoices = true;
@@ -1441,7 +2621,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
             {
                 auto& laneBuffer = previewLaneBuffers[static_cast<size_t>(trackIndex)];
                 const auto trackType = static_cast<TrackType>(trackIndex);
-                if (const auto* trackState = findTrackState(trackType); trackState != nullptr)
+                if (const auto* trackState = ProjectLaneAccess::findTrackState(projectSnapshot, trackType); trackState != nullptr)
                     applySoundLayerFx(laneBuffer,
                                       trackState->sound,
                                       laneFxRuntimeStates[static_cast<size_t>(trackIndex)],
@@ -1451,7 +2631,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     buffer.addFrom(channel, 0, laneBuffer, channel, 0, numSamples);
             }
 
-            applySoundLayerFx(buffer, project.globalSound, globalFxRuntimeState, monstaTimeline);
+            applySoundLayerFx(buffer, projectSnapshot.globalSound, globalFxRuntimeState, monstaTimeline);
 
             for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
             {
@@ -1464,12 +2644,33 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         }
     }
 
-    transportSamplePosition = startSample + numSamples;
+    {
+        std::scoped_lock lock(projectMutex);
+        if (liveRenderUpdate.requiresCacheRebuild() && midiCacheRevision == midiCacheRevisionSnapshot)
+        {
+            midiCache = std::move(midiCacheSnapshot);
+            previewEvents = std::move(previewEventsSnapshot);
+            ++midiCacheRevision;
+        }
+
+        transportSamplePosition = startSample + numSamples;
+        if (previewPlaying == previewPlayingAtSnapshot)
+        {
+            previewPlaying = previewPlayingSnapshot;
+            previewSamplePosition = previewSamplePositionSnapshot;
+        }
+    }
+
     captureEqDisplayAnalyzer(buffer);
 }
 
 juce::AudioProcessorEditor* BoomBapGeneratorAudioProcessor::createEditor()
 {
+    if (wrapperType == juce::AudioProcessor::wrapperType_VST3)
+        // VST3 intentionally uses a DAW-safe editor surface. Standalone keeps
+        // the full authoring editor and remains the canonical grid/style lab.
+        return new Vst3SafeHeaderEditor(*this);
+
     return new BoomBGeneratorAudioProcessorEditor(*this);
 }
 
@@ -1495,18 +2696,28 @@ void BoomBapGeneratorAudioProcessor::changeProgramName(int, const juce::String&)
 
 void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    suspendAudioRenderAndWait();
+
     juce::ValueTree state(kStateType);
     state.copyPropertiesAndChildrenFrom(apvts.copyState(), nullptr);
     state.setProperty("root_schema_version", kRootSchemaVersion, nullptr);
 
+    PatternProject projectSnapshot;
+    TransportSnapshot transportSnapshot;
     {
         std::scoped_lock lock(projectMutex);
-        PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, buildParamsFromState(lastTransport));
-        serializePatternProjectToState(state);
+        projectSnapshot = project;
+        transportSnapshot = lastTransport;
     }
+
+    PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(projectSnapshot, buildParamsFromState(transportSnapshot));
+    state.removeChild(state.getChildWithName("PATTERN_PROJECT"), nullptr);
+    state.addChild(PatternProjectSerialization::serialize(projectSnapshot), -1, nullptr);
 
     if (auto xml = state.createXml())
         copyXmlToBinary(*xml, destData);
+
+    resumeAudioRender();
 }
 
 void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
@@ -1519,6 +2730,8 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
     if (!loaded.isValid())
         return;
 
+    suspendAudioRenderAndWait();
+
     apvts.replaceState(loaded);
 
     const auto* genreValue = apvts.getRawParameterValue(ParamIds::genre);
@@ -1530,7 +2743,7 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
     lastAppliedBoomBapSubstyleChoice = boombapSubstyleValue != nullptr ? static_cast<int>(boombapSubstyleValue->load()) : 0;
     lastAppliedRapSubstyleChoice = rapSubstyleValue != nullptr ? static_cast<int>(rapSubstyleValue->load()) : 0;
     lastAppliedTrapSubstyleChoice = trapSubstyleValue != nullptr ? static_cast<int>(trapSubstyleValue->load()) : 0;
-    lastAppliedDrillSubstyleChoice = drillSubstyleValue != nullptr ? static_cast<int>(drillSubstyleValue->load()) : 0;
+    lastAppliedDrillSubstyleChoice = drillSubstyleValue != nullptr ? clampDrillSubstyleChoice(static_cast<int>(drillSubstyleValue->load())) : 0;
 
     {
         std::scoped_lock lock(projectMutex);
@@ -1541,6 +2754,8 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
         project.params = buildParamsFromState(lastTransport);
         rebuildMidiCache();
     }
+
+    resumeAudioRender();
 }
 
 void BoomBapGeneratorAudioProcessor::generatePattern()
@@ -1701,6 +2916,15 @@ void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
         project.generationDebugReport += "\n" + lastSampleApplyDebug;
     ++project.generationCounter;
     rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::mutateTrack(const RuntimeLaneId& laneId)
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    if (!type.has_value())
+        return;
+
+    mutateTrack(*type);
 }
 
 void BoomBapGeneratorAudioProcessor::startPreview()
@@ -1912,24 +3136,12 @@ int BoomBapGeneratorAudioProcessor::getBassScaleModeChoice() const
 
 void BoomBapGeneratorAudioProcessor::setBassKeyRootChoice(int choice)
 {
-    if (auto* parameter = apvts.getParameter(ParamIds::keyRoot))
-    {
-        const int clamped = juce::jlimit(0, 11, choice);
-        parameter->beginChangeGesture();
-        parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(clamped)));
-        parameter->endChangeGesture();
-    }
+    setFloatParameterValue(ParamIds::keyRoot, static_cast<float>(juce::jlimit(0, 11, choice)));
 }
 
 void BoomBapGeneratorAudioProcessor::setBassScaleModeChoice(int choice)
 {
-    if (auto* parameter = apvts.getParameter(ParamIds::scaleMode))
-    {
-        const int clamped = juce::jlimit(0, 2, choice);
-        parameter->beginChangeGesture();
-        parameter->setValueNotifyingHost(parameter->convertTo0to1(static_cast<float>(clamped)));
-        parameter->endChangeGesture();
-    }
+    setFloatParameterValue(ParamIds::scaleMode, static_cast<float>(juce::jlimit(0, 2, choice)));
 }
 
 void BoomBapGeneratorAudioProcessor::auditionSub808Note(int pitch, int velocity, int lengthTicks)
@@ -2761,6 +3973,9 @@ bool BoomBapGeneratorAudioProcessor::extractPatternFromAnalyzedSampleLocked()
 
 void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
 {
+    if (isShuttingDown())
+        return;
+
     const auto* genreValue = apvts.getRawParameterValue(ParamIds::genre);
     const auto* boombapSubstyleValue = apvts.getRawParameterValue(ParamIds::boombapSubstyle);
     const auto* rapSubstyleValue = apvts.getRawParameterValue(ParamIds::rapSubstyle);
@@ -2771,7 +3986,7 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
     const int boombapChoice = boombapSubstyleValue != nullptr ? static_cast<int>(boombapSubstyleValue->load()) : 0;
     const int rapChoice = rapSubstyleValue != nullptr ? static_cast<int>(rapSubstyleValue->load()) : 0;
     const int trapChoice = trapSubstyleValue != nullptr ? static_cast<int>(trapSubstyleValue->load()) : 0;
-    const int drillChoice = drillSubstyleValue != nullptr ? static_cast<int>(drillSubstyleValue->load()) : 0;
+    const int drillChoice = drillSubstyleValue != nullptr ? clampDrillSubstyleChoice(static_cast<int>(drillSubstyleValue->load())) : 0;
 
     const bool changed = force
         || genreChoice != lastAppliedGenreChoice
@@ -2863,7 +4078,7 @@ GeneratorParams BoomBapGeneratorAudioProcessor::buildParamsFromState(const Trans
     p.boombapSubstyle = substyleValue != nullptr ? static_cast<int>(substyleValue->load()) : 0;
     p.rapSubstyle = rapSubstyleValue != nullptr ? static_cast<int>(rapSubstyleValue->load()) : 0;
     p.trapSubstyle = trapSubstyleValue != nullptr ? static_cast<int>(trapSubstyleValue->load()) : 0;
-    p.drillSubstyle = drillSubstyleValue != nullptr ? static_cast<int>(drillSubstyleValue->load()) : 0;
+    p.drillSubstyle = drillSubstyleValue != nullptr ? clampDrillSubstyleChoice(static_cast<int>(drillSubstyleValue->load())) : 0;
     p.seed = seedValue != nullptr ? static_cast<int>(seedValue->load()) : 1;
     p.seedLock = seedLockValue != nullptr && seedLockValue->load() > 0.5f;
 
@@ -2895,9 +4110,7 @@ void BoomBapGeneratorAudioProcessor::setSeedParameterValue(int newSeed)
         return;
 
     const float normalized = parameter->convertTo0to1(static_cast<float>(juce::jlimit(1, 999999, newSeed)));
-    parameter->beginChangeGesture();
-    parameter->setValueNotifyingHost(normalized);
-    parameter->endChangeGesture();
+    setParameterValueNotifyingHostIfNeeded(*parameter, normalized);
 }
 
 void BoomBapGeneratorAudioProcessor::setFloatParameterValue(const juce::String& paramId, float value)
@@ -2906,13 +4119,65 @@ void BoomBapGeneratorAudioProcessor::setFloatParameterValue(const juce::String& 
     if (parameter == nullptr)
         return;
 
-    const float normalized = parameter->convertTo0to1(value);
-    parameter->beginChangeGesture();
-    parameter->setValueNotifyingHost(normalized);
-    parameter->endChangeGesture();
+    float normalized = value;
+
+    if (auto* choiceParameter = dynamic_cast<juce::AudioParameterChoice*>(parameter))
+    {
+        const auto& range = choiceParameter->getNormalisableRange();
+        int choice = juce::roundToInt(value);
+        choice = juce::jlimit(juce::roundToInt(range.start), juce::roundToInt(range.end), choice);
+
+        if (paramId == ParamIds::drillSubstyle)
+            choice = clampDrillSubstyleChoice(choice);
+
+        normalized = choiceParameter->convertTo0to1(static_cast<float>(choice));
+    }
+    else if (auto* intParameter = dynamic_cast<juce::AudioParameterInt*>(parameter))
+    {
+        const auto range = intParameter->getRange();
+        const int intValue = juce::jlimit(range.getStart(), range.getEnd(), juce::roundToInt(value));
+        normalized = intParameter->convertTo0to1(static_cast<float>(intValue));
+    }
+    else if (auto* floatParameter = dynamic_cast<juce::AudioParameterFloat*>(parameter))
+    {
+        const auto& range = floatParameter->getNormalisableRange();
+        const float legalValue = range.snapToLegalValue(juce::jlimit(range.start, range.end, value));
+        normalized = floatParameter->convertTo0to1(legalValue);
+    }
+    else if (auto* boolParameter = dynamic_cast<juce::AudioParameterBool*>(parameter))
+    {
+        normalized = boolParameter->convertTo0to1(value >= 0.5f ? 1.0f : 0.0f);
+    }
+    else
+    {
+        normalized = parameter->convertTo0to1(value);
+    }
+
+    setParameterValueNotifyingHostIfNeeded(*parameter, normalized);
 }
 
-void BoomBapGeneratorAudioProcessor::syncLivePerformanceStateLocked(const GeneratorParams& liveParams)
+bool BoomBapGeneratorAudioProcessor::shouldSuppressHostParameterWrites() const noexcept
+{
+    return isShuttingDown()
+        || audioRenderSuspended.load(std::memory_order_acquire);
+}
+
+void BoomBapGeneratorAudioProcessor::setParameterValueNotifyingHostIfNeeded(juce::AudioProcessorParameter& parameter,
+                                                                            float normalizedValue) const
+{
+    if (shouldSuppressHostParameterWrites())
+        return;
+
+    const float clampedNormalizedValue = juce::jlimit(0.0f, 1.0f, normalizedValue);
+    if (normalizedValuesEqual(parameter.getValue(), clampedNormalizedValue))
+        return;
+
+    parameter.beginChangeGesture();
+    parameter.setValueNotifyingHost(clampedNormalizedValue);
+    parameter.endChangeGesture();
+}
+
+BoomBapGeneratorAudioProcessor::LiveRenderUpdate BoomBapGeneratorAudioProcessor::syncLivePerformanceStateLocked(const GeneratorParams& liveParams)
 {
     PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, liveParams);
 
@@ -2922,11 +4187,7 @@ void BoomBapGeneratorAudioProcessor::syncLivePerformanceStateLocked(const Genera
 
     project.params = liveParams;
 
-    if (performanceChanged)
-        PatternPerformanceTransformEngine::applyPerformanceFromBase(project, liveParams);
-
-    if (performanceChanged || playbackTimingChanged)
-        rebuildMidiCache();
+    return { performanceChanged, playbackTimingChanged };
 }
 
 void BoomBapGeneratorAudioProcessor::captureEditedTrackPerformanceBaseLocked(TrackType trackType)
@@ -2937,36 +4198,49 @@ void BoomBapGeneratorAudioProcessor::captureEditedTrackPerformanceBaseLocked(Tra
 
 void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
 {
-    for (auto& track : project.tracks)
+    midiCache = buildMidiCacheForProject(project, currentSampleRate);
+    previewEvents = buildPreviewEventsForProject(project, currentSampleRate);
+    ++midiCacheRevision;
+}
+
+juce::MidiMessageSequence BoomBapGeneratorAudioProcessor::buildMidiCacheForProject(const PatternProject& sourceProject, double sampleRate) const
+{
+    auto normalizedProject = sourceProject;
+    for (auto& track : normalizedProject.tracks)
     {
         if (track.type == TrackType::Sub808 && !track.notes.empty())
             track.sub808Notes = toSub808NoteEvents(track.notes);
     }
 
-    midiCache = MidiExportEngine::patternToSequence(project, std::nullopt);
-    previewEvents.clear();
-
+    auto tickSequence = MidiExportEngine::patternToSequence(normalizedProject, std::nullopt);
     juce::MidiMessageSequence normalized;
-    for (int i = 0; i < midiCache.getNumEvents(); ++i)
+
+    for (int i = 0; i < tickSequence.getNumEvents(); ++i)
     {
-        const auto* e = midiCache.getEventPointer(i);
-        if (e == nullptr)
+        const auto* event = tickSequence.getEventPointer(i);
+        if (event == nullptr)
             continue;
 
-        auto message = e->message;
+        auto message = event->message;
         const int eventTick = static_cast<int>(message.getTimeStamp());
-        const int eventSample = ticksToSamples(eventTick, currentSampleRate, project.params.bpm);
+        const int eventSample = ticksToSamples(eventTick, sampleRate, normalizedProject.params.bpm);
         message.setTimeStamp(static_cast<double>(eventSample));
         normalized.addEvent(message);
     }
 
     normalized.sort();
     normalized.updateMatchedPairs();
-    midiCache = normalized;
+    return normalized;
+}
 
-    for (const auto& track : project.tracks)
+std::vector<BoomBapGeneratorAudioProcessor::PreviewEvent> BoomBapGeneratorAudioProcessor::buildPreviewEventsForProject(const PatternProject& sourceProject,
+                                                                                                                        double sampleRate) const
+{
+    std::vector<PreviewEvent> events;
+
+    for (const auto& track : sourceProject.tracks)
     {
-        if (!shouldIncludeTrackForPlayback(project, track))
+        if (!shouldIncludeTrackForPlayback(sourceProject, track))
             continue;
 
         const auto sub808Notes = track.type == TrackType::Sub808 ? sub808NotesForRead(track) : std::vector<Sub808NoteEvent> {};
@@ -2976,58 +4250,83 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
             const NoteEvent note = track.type == TrackType::Sub808
                 ? toLegacyNoteEvent(sub808Notes[static_cast<size_t>(noteIndex)])
                 : track.notes[static_cast<size_t>(noteIndex)];
+
             PreviewEvent event;
             const int noteTicks = note.step * ticksPerStep() + note.microOffset;
-            event.sample = ticksToSamples(noteTicks, currentSampleRate, project.params.bpm);
+            event.sample = ticksToSamples(noteTicks, sampleRate, sourceProject.params.bpm);
             event.track = track.type;
             event.pitch = juce::jlimit(0, 127, note.pitch);
             event.mono = track.sub808Settings.mono;
             event.cutItself = track.sub808Settings.cutItself;
-            event.glideDurationSamples = static_cast<int>((static_cast<double>(track.sub808Settings.glideTimeMs) / 1000.0) * currentSampleRate);
+            event.glideDurationSamples = static_cast<int>((static_cast<double>(track.sub808Settings.glideTimeMs) / 1000.0) * sampleRate);
+
             if (track.type == TrackType::Sub808)
             {
                 event.legato = track.sub808Settings.overlapMode == Sub808OverlapMode::Legato || note.isLegato;
                 event.glide = track.sub808Settings.overlapMode == Sub808OverlapMode::Glide || note.isSlide || note.glideToNext;
+
+                const int endTick = noteTicks + juce::jmax(1, note.length) * ticksPerStep();
+                event.endSample = ticksToSamples(endTick, sampleRate, sourceProject.params.bpm);
             }
             else
             {
                 event.legato = note.isLegato;
                 event.glide = note.isSlide || note.glideToNext;
             }
-            if (track.type == TrackType::Sub808)
-            {
-                const int endTick = noteTicks + juce::jmax(1, note.length) * ticksPerStep();
-                event.endSample = ticksToSamples(endTick, currentSampleRate, project.params.bpm);
-            }
 
-            const float velNorm = juce::jlimit(0.0f, 1.0f, static_cast<float>(note.velocity) / 127.0f);
-            const bool snareFamily = track.type == TrackType::Snare || track.type == TrackType::ClapGhostSnare;
-            const bool hatFxLane = track.type == TrackType::HatFX;
-            const float velGain = std::pow(velNorm, note.isGhost ? 1.0f : 0.95f);
-            const float ghostFactor = note.isGhost ? (snareFamily ? 0.62f : (hatFxLane ? 0.85f : 0.45f)) : 1.0f;
-            const float laneGain = juce::jlimit(0.0f, 1.5f, track.laneVolume);
-
-            float gain = laneGain * velGain * ghostFactor * 0.95f;
-            if (snareFamily)
-            {
-                const float floor = laneGain * (note.isGhost ? 0.08f : 0.16f);
-                gain = std::max(gain, floor);
-            }
-            else if (hatFxLane)
-            {
-                const float floor = laneGain * (note.isGhost ? 0.12f : 0.18f);
-                gain = std::max(gain, floor);
-            }
-
-            event.gain = juce::jlimit(0.0f, 1.0f, gain);
-            previewEvents.push_back(event);
+            event.gain = computePreviewEventGain(track, note);
+            events.push_back(event);
         }
     }
 
-    std::sort(previewEvents.begin(), previewEvents.end(), [](const PreviewEvent& a, const PreviewEvent& b)
+    std::sort(events.begin(), events.end(), [](const PreviewEvent& a, const PreviewEvent& b)
     {
         return a.sample < b.sample;
     });
+
+    return events;
+}
+
+float BoomBapGeneratorAudioProcessor::computePreviewEventGain(const TrackState& track, const NoteEvent& note) const
+{
+    const float velNorm = juce::jlimit(0.0f, 1.0f, static_cast<float>(note.velocity) / 127.0f);
+    const bool snareFamily = track.type == TrackType::Snare || track.type == TrackType::ClapGhostSnare;
+    const bool hatFxLane = track.type == TrackType::HatFX;
+    const float velGain = std::pow(velNorm, note.isGhost ? 1.0f : 0.95f);
+    const float ghostFactor = note.isGhost ? (snareFamily ? 0.62f : (hatFxLane ? 0.85f : 0.45f)) : 1.0f;
+    const float laneGain = juce::jlimit(0.0f, 1.5f, track.laneVolume);
+
+    float gain = laneGain * velGain * ghostFactor * 0.95f;
+    if (snareFamily)
+    {
+        const float floor = laneGain * (note.isGhost ? 0.08f : 0.16f);
+        gain = std::max(gain, floor);
+    }
+    else if (hatFxLane)
+    {
+        const float floor = laneGain * (note.isGhost ? 0.12f : 0.18f);
+        gain = std::max(gain, floor);
+    }
+
+    return juce::jlimit(0.0f, 1.0f, gain);
+}
+
+void BoomBapGeneratorAudioProcessor::suspendAudioRenderAndWait() noexcept
+{
+    audioRenderSuspended.store(true, std::memory_order_release);
+    waitForActiveProcessBlocks();
+}
+
+void BoomBapGeneratorAudioProcessor::resumeAudioRender() noexcept
+{
+    if (!isShuttingDown())
+        audioRenderSuspended.store(false, std::memory_order_release);
+}
+
+void BoomBapGeneratorAudioProcessor::waitForActiveProcessBlocks() noexcept
+{
+    while (activeProcessBlockCount.load(std::memory_order_acquire) > 0)
+        std::this_thread::yield();
 }
 
 void BoomBapGeneratorAudioProcessor::DrumReverbBlock::prepare(const juce::dsp::ProcessSpec& spec)
@@ -3569,6 +4868,12 @@ int BoomBapGeneratorAudioProcessor::getPatternLengthSamples() const
 {
     const int totalSteps = juce::jmax(1, project.params.bars * 16);
     return stepToSamples(totalSteps, currentSampleRate, project.params.bpm);
+}
+
+int BoomBapGeneratorAudioProcessor::getPatternLengthSamples(const PatternProject& sourceProject, double sampleRate) const
+{
+    const int totalSteps = juce::jmax(1, sourceProject.params.bars * 16);
+    return stepToSamples(totalSteps, sampleRate, sourceProject.params.bpm);
 }
 
 TrackState* BoomBapGeneratorAudioProcessor::findTrackState(TrackType track)

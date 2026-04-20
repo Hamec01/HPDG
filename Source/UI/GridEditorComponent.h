@@ -84,6 +84,8 @@ public:
     void setLoopRegion(const std::optional<juce::Range<int>>& tickRange);
     std::optional<juce::Range<int>> getLoopRegion() const;
     void refreshTransientInputState();
+    void suspendInteractionsForShutdown() noexcept;
+    void setPassiveDisplayOnly(bool shouldBePassive) noexcept;
     EditorTool getEditorTool() const { return editorTool; }
     bool deleteSelectedNote();
     bool deleteSelectedNotes();
@@ -160,7 +162,7 @@ private:
     bool applyStrokeAlongSegment(juce::Point<int> from, juce::Point<int> to, bool erase, std::optional<RuntimeLaneId> fixedLane = std::nullopt);
     void sortTrackNotes(TrackState& track);
     int resizeHandleWidthPx(const NoteEvent& note, int row) const;
-    void updateHoverState(juce::Point<int> position);
+    void updateHoverState(juce::Point<int> position, bool applyVisualFeedback = true);
     void applyCursorForHover();
     bool isSelected(const SelectedNoteRef& ref) const;
     void clearSelectionInternal();
@@ -364,5 +366,7 @@ private:
     std::optional<RuntimeLaneId> hoverDrawTrack;
     int hoverDrawTick = -1;
     HoverZone hoverZone = HoverZone::None;
+    bool interactionsSuspended = false;
+    bool passiveDisplayOnly = false;
 };
 } // namespace bbg

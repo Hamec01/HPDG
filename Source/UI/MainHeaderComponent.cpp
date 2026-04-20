@@ -10,6 +10,42 @@ double parseKnobText(const juce::String& text)
 {
     return text.retainCharacters("0123456789.-").getDoubleValue();
 }
+
+void drawHeaderTexture(juce::Graphics& g, juce::Rectangle<float> area, float alphaScale, int seed)
+{
+    juce::Random rng(seed);
+
+    for (int i = 0; i < 18; ++i)
+    {
+        const float x = area.getX() + rng.nextFloat() * area.getWidth();
+        const float y = area.getY() + rng.nextFloat() * area.getHeight();
+        const float w = 34.0f + rng.nextFloat() * 120.0f;
+        const float h = 7.0f + rng.nextFloat() * 26.0f;
+        g.setColour(juce::Colour::fromRGBA(255, 170, 78,
+                                           static_cast<juce::uint8>((0.016f + rng.nextFloat() * 0.020f) * alphaScale * 255.0f)));
+        g.fillEllipse(x, y, w, h);
+    }
+
+    for (int i = 0; i < 12; ++i)
+    {
+        juce::Path line;
+        line.startNewSubPath(area.getX() + rng.nextFloat() * area.getWidth(),
+                             area.getY() + rng.nextFloat() * area.getHeight());
+        for (int seg = 0; seg < 3; ++seg)
+        {
+            line.quadraticTo(area.getX() + rng.nextFloat() * area.getWidth(),
+                             area.getY() + rng.nextFloat() * area.getHeight(),
+                             area.getX() + rng.nextFloat() * area.getWidth(),
+                             area.getY() + rng.nextFloat() * area.getHeight());
+        }
+
+        g.setColour(juce::Colour::fromRGBA(255, 220, 180,
+                                           static_cast<juce::uint8>((0.008f + rng.nextFloat() * 0.010f) * alphaScale * 255.0f)));
+        g.strokePath(line, juce::PathStrokeType(1.2f + rng.nextFloat() * 1.8f,
+                                                juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+    }
+}
 }
 
 MainHeaderComponent::MainHeaderComponent()
@@ -369,14 +405,29 @@ MainHeaderComponent::MainHeaderComponent()
 void MainHeaderComponent::paint(juce::Graphics& g)
 {
     auto area = getLocalBounds().toFloat();
-    g.setGradientFill(juce::ColourGradient(juce::Colour::fromRGB(30, 33, 38), area.getTopLeft(),
-                                           juce::Colour::fromRGB(20, 22, 26), area.getBottomLeft(), false));
+    if (vst3GeneratorChromeEnabled)
+    {
+        juce::ColourGradient fill(juce::Colour::fromRGB(26, 21, 18), area.getTopLeft(),
+                                  juce::Colour::fromRGB(14, 15, 17), area.getBottomLeft(), false);
+        fill.addColour(0.28, juce::Colour::fromRGB(42, 31, 23));
+        fill.addColour(0.70, juce::Colour::fromRGB(18, 18, 20));
+        g.setGradientFill(fill);
+    }
+    else
+    {
+        g.setGradientFill(juce::ColourGradient(juce::Colour::fromRGB(30, 33, 38), area.getTopLeft(),
+                                               juce::Colour::fromRGB(20, 22, 26), area.getBottomLeft(), false));
+    }
     g.fillRoundedRectangle(area.reduced(0.5f), 10.0f);
+
+    if (vst3GeneratorChromeEnabled)
+        drawHeaderTexture(g, area.reduced(6.0f), 0.82f, 0x48454144);
 
     g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
     g.drawRoundedRectangle(area.reduced(0.5f), 10.0f, 1.0f);
 
-    g.setColour(juce::Colour::fromRGBA(232, 153, 66, 40));
+    g.setColour(vst3GeneratorChromeEnabled ? juce::Colour::fromRGBA(246, 191, 112, 70)
+                                           : juce::Colour::fromRGBA(232, 153, 66, 40));
     g.fillRect(0, 0, getWidth(), 2);
 }
 
@@ -409,42 +460,82 @@ void MainHeaderComponent::resized()
         area.removeFromTop(4);
     auto advancedRow = area.removeFromTop(advancedRowHeight);
 
-    auto masterArea = fixedRow.removeFromRight(320);
+    auto masterArea = fixedRow.removeFromRight(vst3GeneratorChromeEnabled ? 236 : 320);
     fixedRow.removeFromRight(6);
 
-    auto titleArea = fixedRow.removeFromLeft(380).reduced(2);
+    auto titleArea = fixedRow.removeFromLeft(vst3GeneratorChromeEnabled ? 262 : 380).reduced(2);
     titleLabel.setBounds(titleArea.removeFromTop(22));
     subtitleLabel.setBounds(titleArea.removeFromTop(16));
     diagnosticsLabel.setBounds(titleArea.removeFromTop(14));
 
-    auto bpmArea = fixedRow.removeFromLeft(196);
+    auto bpmArea = fixedRow.removeFromLeft(vst3GeneratorChromeEnabled ? 224 : 196);
     bpmLabel.setBounds(bpmArea.removeFromTop(14));
     auto bpmControlRow = bpmArea.removeFromTop(24);
-    bpmLockToggle.setBounds(bpmControlRow.removeFromLeft(50).reduced(2));
-    bpmSlider.setBounds(bpmControlRow.removeFromLeft(102));
-    syncTempoToggle.setBounds(bpmControlRow.reduced(2));
+
+    if (vst3GeneratorChromeEnabled)
+    {
+        bpmLockToggle.setBounds(bpmControlRow.removeFromLeft(44).reduced(2));
+        bpmControlRow.removeFromLeft(4);
+        bpmSlider.setBounds(bpmControlRow.removeFromLeft(106));
+        bpmControlRow.removeFromLeft(6);
+        syncTempoToggle.setBounds(bpmControlRow.removeFromLeft(64).reduced(1));
+    }
+    else
+    {
+        bpmLockToggle.setBounds(bpmControlRow.removeFromLeft(50).reduced(2));
+        bpmSlider.setBounds(bpmControlRow.removeFromLeft(102));
+        syncTempoToggle.setBounds(bpmControlRow.reduced(2));
+    }
 
     fixedRow.removeFromLeft(4);
     generateButton.setBounds(fixedRow.removeFromLeft(124).reduced(2));
-    mutateButton.setBounds(fixedRow.removeFromLeft(84).reduced(2));
-    clearAllButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));
-    playButton.setBounds(fixedRow.removeFromLeft(88).reduced(2));
-    exportFullButton.setBounds(fixedRow.removeFromLeft(92).reduced(2));
-    exportLoopWavButton.setBounds(fixedRow.removeFromLeft(118).reduced(2));
-    dragFullButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));
-    transportToStartButton.setBounds(fixedRow.removeFromLeft(40).reduced(2));
-    transportStepBackButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));
-    transportStepForwardButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));
-    transportToEndButton.setBounds(fixedRow.removeFromLeft(40).reduced(2));
+    mutateButton.setBounds(fixedRow.removeFromLeft(vst3GeneratorChromeEnabled ? 76 : 84).reduced(2));
+    clearAllButton.setBounds(fixedRow.removeFromLeft(vst3GeneratorChromeEnabled ? 78 : 82).reduced(2));
+    playButton.setBounds(fixedRow.removeFromLeft(vst3GeneratorChromeEnabled ? 72 : 88).reduced(2));
+    exportFullButton.setBounds(fixedRow.removeFromLeft(vst3GeneratorChromeEnabled ? 88 : 92).reduced(2));
+
+    if (vst3GeneratorChromeEnabled)
+    {
+        exportLoopWavButton.setBounds({});
+        dragFullButton.setBounds(fixedRow.removeFromLeft(76).reduced(2));
+        transportToStartButton.setBounds({});
+        transportStepBackButton.setBounds({});
+        transportStepForwardButton.setBounds({});
+        transportToEndButton.setBounds({});
+    }
+    else
+    {
+        exportLoopWavButton.setBounds(fixedRow.removeFromLeft(118).reduced(2));
+        dragFullButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));
+        transportToStartButton.setBounds(fixedRow.removeFromLeft(40).reduced(2));
+        transportStepBackButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));
+        transportStepForwardButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));
+        transportToEndButton.setBounds(fixedRow.removeFromLeft(40).reduced(2));
+    }
 
     auto masterTop = masterArea.removeFromTop(16);
-    masterSectionLabel.setBounds(masterTop.removeFromLeft(70));
-    startPlayWithDawToggle.setBounds(masterTop.removeFromRight(152).reduced(1));
-    advancedModeButton.setBounds(masterTop.removeFromRight(96).reduced(1));
-    standaloneWindowButton.setBounds(masterTop.removeFromRight(56).reduced(1));
+    juce::Rectangle<int> masterRow;
 
-    masterArea.removeFromTop(2);
-    auto masterRow = masterArea.removeFromTop(24);
+    if (vst3GeneratorChromeEnabled)
+    {
+        masterSectionLabel.setBounds({});
+        masterVolumeLabel.setBounds({});
+        masterVolumeSlider.setBounds({});
+        standaloneWindowButton.setBounds({});
+        startPlayWithDawToggle.setBounds(masterTop.removeFromRight(128).reduced(1));
+        masterTop.removeFromRight(6);
+        advancedModeButton.setBounds(masterTop.removeFromRight(98).reduced(1));
+    }
+    else
+    {
+        masterSectionLabel.setBounds(masterTop.removeFromLeft(70));
+        startPlayWithDawToggle.setBounds(masterTop.removeFromRight(152).reduced(1));
+        advancedModeButton.setBounds(masterTop.removeFromRight(96).reduced(1));
+        standaloneWindowButton.setBounds(masterTop.removeFromRight(56).reduced(1));
+
+        masterArea.removeFromTop(2);
+        masterRow = masterArea.removeFromTop(24);
+    }
 
     const auto placeMaster = [](juce::Rectangle<int>& row, int width, juce::Label& label, juce::Slider& slider)
     {
@@ -490,7 +581,8 @@ void MainHeaderComponent::resized()
         comp.setBounds(slot.getX(), top, slot.getWidth(), height);
     };
 
-    placeMaster(masterRow, 120, masterVolumeLabel, masterVolumeSlider);
+    if (!vst3GeneratorChromeEnabled)
+        placeMaster(masterRow, 120, masterVolumeLabel, masterVolumeSlider);
 
     if (controlsMode == HeaderControlsMode::Hidden)
     {
@@ -626,8 +718,127 @@ int MainHeaderComponent::getPreferredHeight() const
     if (controlsMode == HeaderControlsMode::Hidden)
         return 58;
     if (controlsMode == HeaderControlsMode::Compact)
-        return 114;
+        return vst3GeneratorChromeEnabled ? 106 : 114;
     return 128;
+}
+
+void MainHeaderComponent::setVst3GeneratorChromeEnabled(bool enabled)
+{
+    if (vst3GeneratorChromeEnabled == enabled)
+        return;
+
+    vst3GeneratorChromeEnabled = enabled;
+
+    transportToStartButton.setVisible(!enabled);
+    transportStepBackButton.setVisible(!enabled);
+    transportStepForwardButton.setVisible(!enabled);
+    transportToEndButton.setVisible(!enabled);
+    exportLoopWavButton.setVisible(!enabled);
+
+    if (enabled)
+    {
+        const auto styleHeaderButton = [](juce::TextButton& button,
+                                          juce::Colour fill,
+                                          juce::Colour down,
+                                          juce::Colour text)
+        {
+            button.setColour(juce::TextButton::buttonColourId, fill);
+            button.setColour(juce::TextButton::buttonOnColourId, down);
+            button.setColour(juce::TextButton::textColourOffId, text);
+            button.setColour(juce::TextButton::textColourOnId, text);
+        };
+
+        const auto styleToggle = [](juce::ToggleButton& button, juce::Colour text, juce::Colour tick)
+        {
+            button.setColour(juce::ToggleButton::textColourId, text);
+            button.setColour(juce::ToggleButton::tickColourId, tick);
+            button.setColour(juce::ToggleButton::tickDisabledColourId, tick.withAlpha(0.35f));
+        };
+
+        const auto styleFieldSlider = [](juce::Slider& slider, juce::Colour accent)
+        {
+            slider.setColour(juce::Slider::trackColourId, accent);
+            slider.setColour(juce::Slider::thumbColourId, accent.brighter(0.35f));
+            slider.setColour(juce::Slider::backgroundColourId, juce::Colour::fromRGBA(255, 255, 255, 18));
+            slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour::fromRGB(236, 224, 208));
+            slider.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour::fromRGB(32, 28, 26));
+            slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colour::fromRGB(104, 76, 44));
+        };
+
+        const auto styleCombo = [](juce::ComboBox& combo)
+        {
+            combo.setColour(juce::ComboBox::backgroundColourId, juce::Colour::fromRGB(33, 29, 27));
+            combo.setColour(juce::ComboBox::outlineColourId, juce::Colour::fromRGB(118, 88, 54));
+            combo.setColour(juce::ComboBox::textColourId, juce::Colour::fromRGB(238, 224, 208));
+            combo.setColour(juce::ComboBox::arrowColourId, juce::Colour::fromRGB(232, 187, 118));
+        };
+
+        syncTempoToggle.setButtonText("DAW BPM");
+        startPlayWithDawToggle.setButtonText("DAW Start");
+        masterSectionLabel.setVisible(false);
+        masterVolumeLabel.setVisible(false);
+        masterVolumeSlider.setVisible(false);
+
+        styleHeaderButton(generateButton,
+                          juce::Colour::fromRGB(232, 167, 78),
+                          juce::Colour::fromRGB(204, 138, 58),
+                          juce::Colour::fromRGB(20, 18, 16));
+        mutateButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(169, 136, 73));
+        clearAllButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(126, 74, 64));
+        playButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(83, 122, 176));
+        styleHeaderButton(mutateButton,
+                          juce::Colour::fromRGB(166, 132, 70),
+                          juce::Colour::fromRGB(138, 108, 56),
+                          juce::Colour::fromRGB(252, 245, 232));
+        styleHeaderButton(clearAllButton,
+                          juce::Colour::fromRGB(126, 74, 64),
+                          juce::Colour::fromRGB(102, 58, 50),
+                          juce::Colour::fromRGB(252, 245, 232));
+        styleHeaderButton(playButton,
+                          juce::Colour::fromRGB(83, 122, 176),
+                          juce::Colour::fromRGB(68, 103, 156),
+                          juce::Colour::fromRGB(252, 245, 232));
+        styleHeaderButton(exportFullButton,
+                          juce::Colour::fromRGB(56, 48, 41),
+                          juce::Colour::fromRGB(42, 37, 33),
+                          juce::Colour::fromRGB(234, 220, 205));
+        styleHeaderButton(dragFullButton,
+                          juce::Colour::fromRGB(66, 54, 43),
+                          juce::Colour::fromRGB(48, 40, 33),
+                          juce::Colour::fromRGB(242, 228, 208));
+        styleHeaderButton(advancedModeButton,
+                          juce::Colour::fromRGB(62, 53, 47),
+                          juce::Colour::fromRGB(48, 41, 37),
+                          juce::Colour::fromRGB(232, 216, 198));
+
+        styleToggle(bpmLockToggle, juce::Colour::fromRGB(214, 198, 180), juce::Colour::fromRGB(230, 178, 96));
+        styleToggle(syncTempoToggle, juce::Colour::fromRGB(232, 214, 194), juce::Colour::fromRGB(102, 176, 232));
+        styleToggle(seedLockToggle, juce::Colour::fromRGB(214, 198, 180), juce::Colour::fromRGB(230, 178, 96));
+        styleToggle(startPlayWithDawToggle, juce::Colour::fromRGB(232, 214, 194), juce::Colour::fromRGB(230, 178, 96));
+
+        styleFieldSlider(bpmSlider, juce::Colour::fromRGB(86, 170, 214));
+        styleFieldSlider(seedSlider, juce::Colour::fromRGB(86, 170, 214));
+        styleFieldSlider(zoomSlider, juce::Colour::fromRGB(86, 170, 214));
+        styleFieldSlider(laneHeightSlider, juce::Colour::fromRGB(86, 170, 214));
+
+        styleCombo(tempoInterpretationCombo);
+        styleCombo(barsCombo);
+        styleCombo(genreCombo);
+        styleCombo(substyleCombo);
+        styleCombo(gridResolutionCombo);
+        styleCombo(previewPlaybackModeCombo);
+    }
+    else
+    {
+        syncTempoToggle.setButtonText("Sync");
+        startPlayWithDawToggle.setButtonText("Start play with DAW");
+        masterSectionLabel.setVisible(true);
+        masterVolumeLabel.setVisible(true);
+        masterVolumeSlider.setVisible(true);
+    }
+
+    resized();
+    repaint();
 }
 
 void MainHeaderComponent::setHatFxDensityState(float density, bool locked)

@@ -452,7 +452,7 @@ public:
 
     Steinberg::int32 PLUGIN_API getProgramListCount() override
     {
-        if (audioProcessor->getNumPrograms() > 0)
+        if (audioProcessor->getNumPrograms() > 1)
             return 1;
 
         return 0;
@@ -460,7 +460,7 @@ public:
 
     tresult PLUGIN_API getProgramListInfo (Steinberg::int32 listIndex, Vst::ProgramListInfo& info) override
     {
-        if (listIndex == 0)
+        if (listIndex == 0 && audioProcessor->getNumPrograms() > 1)
         {
             info.id = static_cast<Vst::ProgramListID> (programParamID);
             info.programCount = static_cast<Steinberg::int32> (audioProcessor->getNumPrograms());
@@ -477,7 +477,8 @@ public:
 
     tresult PLUGIN_API getProgramName (Vst::ProgramListID listId, Steinberg::int32 programIndex, Vst::String128 name) override
     {
-        if (listId == static_cast<Vst::ProgramListID> (programParamID)
+        if (audioProcessor->getNumPrograms() > 1
+            && listId == static_cast<Vst::ProgramListID> (programParamID)
             && isPositiveAndBelow ((int) programIndex, audioProcessor->getNumPrograms()))
         {
             toString128 (name, audioProcessor->getProgramName ((int) programIndex));
@@ -859,7 +860,6 @@ public:
 
         blueCatPatchwork |= isBlueCatHost (host.get());
     }
-
     //==============================================================================
     inline static const FUID iid = toSteinbergUID (getVST3InterfaceId (VST3Interface::Type::controller));
 
@@ -894,9 +894,17 @@ public:
 
     tresult PLUGIN_API terminate() override
     {
+        shuttingDown.store (true, std::memory_order_release);
+        ownedParameterListeners.clear();
+
         if (auto* pluginInstance = getPluginInstance())
             pluginInstance->removeListener (this);
 
+        if (audioProcessor != nullptr)
+            if (auto* extensions = audioProcessor->get()->getVST3ClientExtensions())
+                extensions->setIComponentHandler (nullptr);
+
+        EditController::setComponentHandler (nullptr);
         audioProcessor = nullptr;
 
         return EditController::terminate();
@@ -1164,11 +1172,11 @@ public:
 
 
 
+                // Track properties are cosmetic metadata. Avoid posting an async
+                // callback that may outlive the plugin instance during host
+                // teardown.
                 if (MessageManager::getInstance()->isThisTheMessageThread())
                     instance->updateTrackProperties (trackProperties);
-                else
-                    MessageManager::callAsync ([trackProperties, instance]
-                                               { instance->updateTrackProperties (trackProperties); });
             }
         }
 
@@ -1459,19 +1467,19 @@ public:
     //==============================================================================
     void beginGesture (Vst::ParamID vstParamId)
     {
-        if (! inSetState && MessageManager::getInstance()->isThisTheMessageThread())
+        if (! isControllerShuttingDown() && ! inSetState && MessageManager::getInstance()->isThisTheMessageThread())
             beginEdit (vstParamId);
     }
 
     void endGesture (Vst::ParamID vstParamId)
     {
-        if (! inSetState && MessageManager::getInstance()->isThisTheMessageThread())
+        if (! isControllerShuttingDown() && ! inSetState && MessageManager::getInstance()->isThisTheMessageThread())
             endEdit (vstParamId);
     }
 
     void paramChanged (Steinberg::int32 parameterIndex, Vst::ParamID vstParamId, double newValue)
     {
-        if (inParameterChangedCallback || inSetState)
+        if (isControllerShuttingDown() || inParameterChangedCallback || inSetState || audioProcessor == nullptr)
             return;
 
         if (MessageManager::getInstance()->isThisTheMessageThread())
@@ -1489,16 +1497,25 @@ public:
     //==============================================================================
     void audioProcessorParameterChangeGestureBegin (AudioProcessor*, int index) override
     {
+        if (isControllerShuttingDown() || audioProcessor == nullptr)
+            return;
+
         beginGesture (audioProcessor->getVSTParamIDForIndex (index));
     }
 
     void audioProcessorParameterChangeGestureEnd (AudioProcessor*, int index) override
     {
+        if (isControllerShuttingDown() || audioProcessor == nullptr)
+            return;
+
         endGesture (audioProcessor->getVSTParamIDForIndex (index));
     }
 
     void audioProcessorParameterChanged (AudioProcessor*, int index, float newValue) override
     {
+        if (isControllerShuttingDown() || audioProcessor == nullptr)
+            return;
+
         paramChanged (index, audioProcessor->getVSTParamIDForIndex (index), newValue);
     }
 
@@ -1615,6 +1632,9 @@ private:
 
     void restartComponentOnMessageThread (int32 flags) override
     {
+        if (isControllerShuttingDown())
+            return;
+
         if ((flags & pluginShouldBeMarkedDirtyFlag) != 0)
             setDirty (true);
 
@@ -1632,6 +1652,7 @@ private:
                                 Vst::ParamID paramID,
                                 int cacheIndex)
             : owner (editController),
+              parameter (parameter),
               vstParamID (paramID),
               parameterIndex (cacheIndex)
         {
@@ -1644,13 +1665,24 @@ private:
             parameter.addListener (this);
         }
 
+        ~OwnedParameterListener() override
+        {
+            parameter.removeListener (this);
+        }
+
         void parameterValueChanged (int, float newValue) override
         {
+            if (owner.isControllerShuttingDown())
+                return;
+
             owner.paramChanged (parameterIndex, vstParamID, newValue);
         }
 
         void parameterGestureChanged (int, bool gestureIsStarting) override
         {
+            if (owner.isControllerShuttingDown())
+                return;
+
             if (gestureIsStarting)
                 owner.beginGesture (vstParamID);
             else
@@ -1658,6 +1690,7 @@ private:
         }
 
         JuceVST3EditController& owner;
+        AudioProcessorParameter& parameter;
         const Vst::ParamID vstParamID = Vst::kNoParamId;
         const int parameterIndex = -1;
     };
@@ -1666,8 +1699,14 @@ private:
 
     //==============================================================================
     bool inSetState = false;
+    bool isControllerShuttingDown() const noexcept
+    {
+        return shuttingDown.load (std::memory_order_acquire);
+    }
+
     std::atomic<bool> vst3IsPlaying     { false },
-                      inSetupProcessing { false };
+                      inSetupProcessing { false },
+                      shuttingDown      { false };
 
     int lastLatencySamples = 0;
     bool blueCatPatchwork = isBlueCatHost (hostContext.get());
@@ -1944,7 +1983,15 @@ private:
            #endif
         }
 
-        ~JuceVST3Editor() override = default; // NOLINT
+        ~JuceVST3Editor() override
+        {
+            stopTimer();
+
+           #if JUCE_WINDOWS && JUCE_WIN_PER_MONITOR_DPI_AWARE
+            if (component != nullptr)
+                component->stopTimer();
+           #endif
+        } // NOLINT
 
         tresult PLUGIN_API queryInterface (const TUID targetIID, void** obj) override
         {
@@ -2032,8 +2079,14 @@ private:
 
         tresult PLUGIN_API removed() override
         {
+            stopTimer();
+
             if (component != nullptr)
             {
+               #if JUCE_WINDOWS && JUCE_WIN_PER_MONITOR_DPI_AWARE
+                component->stopTimer();
+               #endif
+
                #if JUCE_WINDOWS
                 component->removeFromDesktop();
                #elif JUCE_MAC
@@ -2324,6 +2377,10 @@ private:
 
             ~ContentWrapperComponent() override
             {
+               #if JUCE_WINDOWS && JUCE_WIN_PER_MONITOR_DPI_AWARE
+                stopTimer();
+               #endif
+
                 if (pluginEditor != nullptr)
                 {
                     PopupMenu::dismissAllActiveMenus();
@@ -2751,7 +2808,11 @@ public:
 
     tresult PLUGIN_API terminate() override
     {
-        getPluginInstance().releaseResources();
+        const FLStudioDIYSpecificationEnforcementLock lock (flStudioDIYSpecificationEnforcementMutex);
+
+        auto& plugin = getPluginInstance();
+        plugin.suspendProcessing (true);
+        plugin.releaseResources();
         return kResultTrue;
     }
 
@@ -2817,19 +2878,23 @@ public:
 
         if (willBeActive)
         {
+            auto& plugin = getPluginInstance();
             const auto sampleRate = processSetup.sampleRate > 0.0
                                   ? processSetup.sampleRate
-                                  : getPluginInstance().getSampleRate();
+                                  : plugin.getSampleRate();
 
             const auto bufferSize = processSetup.maxSamplesPerBlock > 0
                                   ? (int) processSetup.maxSamplesPerBlock
-                                  : getPluginInstance().getBlockSize();
+                                  : plugin.getBlockSize();
 
             preparePlugin (sampleRate, bufferSize, CallPrepareToPlay::yes);
+            plugin.suspendProcessing (false);
         }
         else
         {
-            getPluginInstance().releaseResources();
+            auto& plugin = getPluginInstance();
+            plugin.suspendProcessing (true);
+            plugin.releaseResources();
         }
 
         return kResultOk;
