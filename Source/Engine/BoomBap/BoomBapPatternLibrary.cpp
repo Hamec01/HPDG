@@ -66,6 +66,11 @@ const std::vector<KickTemplateDefinition>& getBoomBapKickTemplates()
         { { 0, 3, 8, 12, 14, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kLaidBackMask, 0.2f, 0.85f, 0xA },
         { { 0, 5, 8, 11, 15, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kLaidBackMask, 0.2f, 0.8f, 0xC },
 
+        { { 0, 3, 10, 11, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kGoldMask, 0.0f, 0.75f, 0xF },
+        { { 0, 6, 8, 10, 11, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kGoldMask, 0.2f, 1.0f, 0xF },
+        { { 0, 3, 8, 10, 14, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kGoldMask, 0.25f, 1.0f, 0xE },
+        { { 0, 5, 10, 11, 14, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kGoldMask, 0.25f, 0.9f, 0xD },
+
         { { 0, 3, 5, 10, 11, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kAllMasks, 0.2f, 0.9f, 0xF },
         { { 0, 4, 7, 9, 12, 15, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kAllMasks, 0.35f, 1.0f, 0xE },
         { { 0, 2, 5, 8, 11, 14, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kClassicMask | kAggressiveMask | kJazzyMask, 0.35f, 1.0f, 0xE },
@@ -105,12 +110,15 @@ const std::vector<HatPatternProfile>& getBoomBapHatPatternProfiles()
     static const std::vector<HatPatternProfile> profiles = {
         { "1/8 Straight", hats({1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0}), hats({90,0,76,0,86,0,74,0,88,0,78,0,86,0,94,0}), noSubs, kAllMasks, 0.0f, 0.7f },
         { "1/8 Swung", hats({1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0}), hats({94,0,72,0,89,0,70,0,92,0,74,0,90,0,98,0}), noSubs, kClassicMask | kLaidBackMask | kDustyMask, 0.1f, 0.8f },
+        { "Gold Swung Eighth", hats({1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0}), hats({96,0,70,0,90,0,68,0,94,0,72,0,90,0,98,0}), noSubs, kGoldMask, 0.0f, 1.0f },
+        { "Gold Dusty Broken", hats({1,0,1,0,1,0,1,1,1,0,1,0,1,0,1,0}), hats({94,0,70,0,88,0,66,58,92,0,70,0,88,0,74,0}), hats({-1,-1,-1,-1,-1,-1,-1,6,-1,-1,-1,-1,-1,-1,-1,-1}), kGoldMask, 0.35f, 1.0f },
         { "1/16 Soft", hats({1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}), hats({84,62,78,58,82,60,76,58,84,62,78,58,82,60,76,64}), noSubs, kClassicMask | kJazzyMask | kAggressiveMask, 0.45f, 1.0f },
         { "1/16 Swung", hats({1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}), hats({88,60,80,56,86,58,78,54,88,60,80,56,86,58,78,66}), noSubs, kClassicMask | kLaidBackMask, 0.5f, 1.0f },
         { "Broken A", hats({1,0,1,1,1,0,1,0,1,1,0,1,1,0,1,0}), hats({94,0,76,68,88,0,72,0,90,66,0,70,86,0,78,0}), hats({-1,-1,-1,2,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,12,-1}), kAllMasks, 0.3f, 1.0f },
         { "Broken B", hats({1,1,0,1,1,0,1,1,0,1,1,0,1,1,0,1}), hats({92,70,0,72,88,0,74,80,0,76,84,0,74,86,0,90}), hats({-1,-1,-1,-1,-1,-1,-1,-1,-1,8,-1,-1,-1,-1,-1,14}), kDustyMask | kJazzyMask | kLaidBackMask, 0.25f, 0.95f },
         { "Sparse Dusty", hats({1,0,0,1,1,0,0,0,1,0,1,0,1,0,0,1}), hats({84,0,0,66,80,0,0,0,82,0,72,0,80,0,0,90}), noSubs, kDustyMask, 0.0f, 0.55f },
         { "Jazzy Loose", hats({1,0,1,0,1,1,0,1,1,0,1,0,1,1,0,1}), hats({86,0,78,0,84,62,0,70,88,0,74,0,82,66,0,92}), hats({-1,-1,-1,-1,-1,4,-1,-1,-1,-1,9,-1,-1,-1,-1,14}), kJazzyMask, 0.25f, 0.9f },
+        { "Jazz Foot 2 And 4", hats({0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0}), hats({0,0,0,0,88,0,0,0,0,0,0,0,92,0,0,0}), noSubs, kJazzyMask, 0.0f, 1.0f },
         { "Accented Hats", hats({1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0}), hats({98,62,82,0,94,60,80,0,96,62,82,0,94,60,80,0}), noSubs, kAggressiveMask | kClassicMask, 0.45f, 1.0f },
         { "Bar Ending Phrase", hats({1,0,1,0,1,0,1,0,1,0,1,1,1,1,1,1}), hats({90,0,76,0,86,0,74,0,88,0,76,70,82,74,86,98}), noSubs, kAllMasks, 0.25f, 1.0f },
         { "Dusty Sparse Ending", hats({1,0,1,0,0,0,1,0,1,0,0,1,0,1,0,1}), hats({84,0,72,0,0,0,70,0,82,0,0,66,0,72,0,92}), noSubs, kDustyMask | kLaidBackMask, 0.0f, 0.6f },
@@ -271,7 +279,7 @@ const SnareFeelProfile& chooseSnareFeelProfile(BoomBapSubstyle substyle, float d
             candidates = density < 0.5f ? std::vector<int> { 1, 7, 8 } : std::vector<int> { 1, 2, 5 };
             break;
         case BoomBapSubstyle::BoomBapGold:
-            candidates = density > 0.55f ? std::vector<int> { 9, 3, 10 } : std::vector<int> { 9, 0, 2 };
+            candidates = density > 0.55f ? std::vector<int> { 9, 0, 5, 3 } : std::vector<int> { 9, 0, 4 };
             break;
         case BoomBapSubstyle::RussianUnderground:
             candidates = density > 0.5f ? std::vector<int> { 6, 2, 3 } : std::vector<int> { 6, 7, 8 };
@@ -355,6 +363,118 @@ const HatPatternProfile& chooseHatPatternProfile(BoomBapSubstyle substyle, float
 
         if (density >= 0.78f && role != PhraseRole::Base)
             addNamedPattern("1/16 Soft", 1, false);
+
+        if (!candidates.empty())
+        {
+            std::uniform_int_distribution<int> pick(0, static_cast<int>(candidates.size() - 1));
+            return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
+        }
+    }
+
+    if (substyle == BoomBapSubstyle::Dusty)
+    {
+        switch (role)
+        {
+            case PhraseRole::Base:
+                addNamedPattern("1/8 Swung", 7, true);
+                addNamedPattern("Laid Late Hat", 5, true);
+                addNamedPattern("Sparse Dusty", density < 0.58f ? 4 : 2, false);
+                addNamedPattern("Broken B", density >= 0.42f ? 2 : 0, false);
+                break;
+            case PhraseRole::Variation:
+                addNamedPattern("Laid Late Hat", 6, true);
+                addNamedPattern("Broken B", 4, false);
+                addNamedPattern("1/8 Swung", 3, true);
+                addNamedPattern("Sparse Dusty", 2, false);
+                break;
+            case PhraseRole::Contrast:
+                addNamedPattern("Sparse Dusty", 6, true);
+                addNamedPattern("Dusty Sparse Ending", 3, true);
+                addNamedPattern("1/8 Swung", 2, true);
+                break;
+            case PhraseRole::Ending:
+                addNamedPattern("Dusty Sparse Ending", 6, true);
+                addNamedPattern("Laid Late Hat", 4, true);
+                addNamedPattern("Broken B", density >= 0.45f ? 2 : 0, false);
+                break;
+            default:
+                addNamedPattern("1/8 Swung", 6, true);
+                addNamedPattern("Laid Late Hat", 4, true);
+                break;
+        }
+
+        if (!candidates.empty())
+        {
+            std::uniform_int_distribution<int> pick(0, static_cast<int>(candidates.size() - 1));
+            return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
+        }
+    }
+
+    if (substyle == BoomBapSubstyle::Jazzy)
+    {
+        switch (role)
+        {
+            case PhraseRole::Base:
+                addNamedPattern("Jazz Foot 2 And 4", 8, true);
+                addNamedPattern("Jazzy Loose", 3, true);
+                addNamedPattern("1/16 Soft", density >= 0.54f ? 2 : 1, false);
+                break;
+            case PhraseRole::Variation:
+                addNamedPattern("Jazzy Loose", 6, true);
+                addNamedPattern("Jazz Foot 2 And 4", 5, true);
+                addNamedPattern("Broken B", 2, false);
+                break;
+            case PhraseRole::Contrast:
+                addNamedPattern("Jazz Foot 2 And 4", 7, true);
+                addNamedPattern("Jazzy Loose", 3, true);
+                break;
+            case PhraseRole::Ending:
+                addNamedPattern("Jazzy Loose", 5, true);
+                addNamedPattern("Jazz Foot 2 And 4", 4, true);
+                addNamedPattern("Bar Ending Phrase", 2, true);
+                break;
+            default:
+                addNamedPattern("Jazz Foot 2 And 4", 7, true);
+                addNamedPattern("Jazzy Loose", 3, true);
+                break;
+        }
+
+        if (!candidates.empty())
+        {
+            std::uniform_int_distribution<int> pick(0, static_cast<int>(candidates.size() - 1));
+            return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
+        }
+    }
+
+    if (substyle == BoomBapSubstyle::BoomBapGold)
+    {
+        switch (role)
+        {
+            case PhraseRole::Base:
+                addNamedPattern("Gold Swung Eighth", 8, true);
+                addNamedPattern("1/8 Straight", 3, true);
+                addNamedPattern("Gold Dusty Broken", density >= 0.46f ? 2 : 1, false);
+                break;
+            case PhraseRole::Variation:
+                addNamedPattern("Gold Swung Eighth", 6, true);
+                addNamedPattern("Gold Dusty Broken", 4, false);
+                addNamedPattern("Broken A", density >= 0.54f ? 2 : 1, false);
+                break;
+            case PhraseRole::Contrast:
+                addNamedPattern("Gold Swung Eighth", 7, true);
+                addNamedPattern("1/8 Swung", 3, true);
+                addNamedPattern("Gold Dusty Broken", 1, false);
+                break;
+            case PhraseRole::Ending:
+                addNamedPattern("Gold Swung Eighth", 5, true);
+                addNamedPattern("Gold Dusty Broken", 3, false);
+                addNamedPattern("Bar Ending Phrase", 2, true);
+                break;
+            default:
+                addNamedPattern("Gold Swung Eighth", 7, true);
+                addNamedPattern("1/8 Straight", 3, true);
+                break;
+        }
 
         if (!candidates.empty())
         {

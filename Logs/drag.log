@@ -106832,3 +106832,53 @@
 30 Mar 2026 10:59:54am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1774857594434_1.mid
 30 Mar 2026 10:59:54am | SERVICE | exportTemp done ok=1 fileExists=1
 30 Mar 2026 10:59:54am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1774857594434_1.mid
+20 Apr 2026 12:27:41am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+20 Apr 2026 12:27:41am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+20 Apr 2026 12:27:41am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+20 Apr 2026 12:27:41am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776634061781_0.mid
+20 Apr 2026 12:27:41am | SERVICE | exportTemp done ok=1 fileExists=1
+20 Apr 2026 12:27:41am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776634061781_0.mid
+20 Apr 2026 12:28:00am | PROCESSOR | createTemporaryTrackMidiFile begin track=10
+20 Apr 2026 12:28:00am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=10
+20 Apr 2026 12:28:00am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+20 Apr 2026 12:28:00am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776634080493_1.mid
+20 Apr 2026 12:28:00am | SERVICE | exportTemp done ok=1 fileExists=1
+20 Apr 2026 12:28:00am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=10 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776634080493_1.mid
+20 Apr 2026 9:14:14am | PROCESSOR | createTemporaryTrackMidiFile begin track=0
+20 Apr 2026 9:14:14am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=0
+20 Apr 2026 9:14:14am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+20 Apr 2026 9:14:14am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776665654369_0.mid
+20 Apr 2026 9:14:14am | SERVICE | exportTemp done ok=1 fileExists=1
+20 Apr 2026 9:14:14am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=0 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776665654369_0.mid
+21 Apr 2026 10:53:33am | PROCESSOR | exportTrackToFile begin track=4 file=C:\Users\ham\AppData\Local\Temp\HPDG_LaneBoundaryTests\kick-tracktype.mid
+21 Apr 2026 10:53:33am | PROCESSOR | exportTrackToFile done ok=1 track=4
+21 Apr 2026 10:53:33am | PROCESSOR | exportTrackToFile begin track=4 file=C:\Users\ham\AppData\Local\Temp\HPDG_LaneBoundaryTests\kick-laneid.mid
+21 Apr 2026 10:53:33am | PROCESSOR | exportTrackToFile done ok=1 track=4
+21 Apr 2026 10:53:36am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+21 Apr 2026 10:53:36am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+21 Apr 2026 10:53:36am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+21 Apr 2026 10:53:36am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758016932_0.mid
+21 Apr 2026 10:53:36am | SERVICE | exportTemp done ok=1 fileExists=1
+21 Apr 2026 10:53:36am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758016932_0.mid
+21 Apr 2026 10:53:36am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+21 Apr 2026 10:53:36am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+21 Apr 2026 10:53:36am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+21 Apr 2026 10:53:36am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758016939_1.mid
+21 Apr 2026 10:53:36am | SERVICE | exportTemp done ok=1 fileExists=1
+21 Apr 2026 10:53:36am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758016939_1.mid
+21 Apr 2026 10:55:09am | PROCESSOR | exportTrackToFile begin track=4 file=C:\Users\ham\AppData\Local\Temp\HPDG_LaneBoundaryTests\kick-tracktype.mid
+21 Apr 2026 10:55:09am | PROCESSOR | exportTrackToFile done ok=1 track=4
+21 Apr 2026 10:55:09am | PROCESSOR | exportTrackToFile begin track=4 file=C:\Users\ham\AppData\Local\Temp\HPDG_LaneBoundaryTests\kick-laneid.mid
+21 Apr 2026 10:55:09am | PROCESSOR | exportTrackToFile done ok=1 track=4
+21 Apr 2026 10:55:13am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+21 Apr 2026 10:55:13am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+21 Apr 2026 10:55:13am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+21 Apr 2026 10:55:13am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758113293_0.mid
+21 Apr 2026 10:55:13am | SERVICE | exportTemp done ok=1 fileExists=1
+21 Apr 2026 10:55:13am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758113293_0.mid
+21 Apr 2026 10:55:13am | PROCESSOR | createTemporaryTrackMidiFile begin track=4
+21 Apr 2026 10:55:13am | PROCESSOR | createTemporaryTrackMidiFile snapshot tracks=11 track=4
+21 Apr 2026 10:55:13am | SERVICE | exportTemp pre-createTempFile prefix=BoomBapTrack
+21 Apr 2026 10:55:13am | SERVICE | exportTemp post-createTempFile prefix=BoomBapTrack file=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758113307_1.mid
+21 Apr 2026 10:55:13am | SERVICE | exportTemp done ok=1 fileExists=1
+21 Apr 2026 10:55:13am | PROCESSOR | createTemporaryTrackMidiFile done exists=1 track=4 path=C:\Users\ham\Documents\DRUMENGINE\TempMidi\BoomBapTrack_1776758113307_1.mid

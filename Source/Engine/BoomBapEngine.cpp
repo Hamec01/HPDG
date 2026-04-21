@@ -1,6 +1,8 @@
 #include "BoomBapEngine.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <functional>
 #include <unordered_map>
 
@@ -366,15 +368,19 @@ int laneBarBudget(TrackType type,
         case TrackType::HiHat:
         {
             int budget = static_cast<int>(5.0f + bar.hatActivity * 9.0f + den * 2.0f);
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = std::max(budget, 8);
             if (bar.stripToCore)
                 budget = std::min(budget, 6);
             if (substyle == BoomBapSubstyle::LofiRap)
                 budget = std::min(budget, 8);
-            return std::clamp(budget, 3, 16);
+            return std::clamp(budget, substyle == BoomBapSubstyle::Classic && !bar.stripToCore ? 8 : 3, substyle == BoomBapSubstyle::Classic ? 12 : 16);
         }
         case TrackType::OpenHat:
         {
             int budget = static_cast<int>(bar.endLiftAmount > 0.6f ? 2 : 1);
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = bar.role == PhraseRole::Ending || den > 0.68f ? 1 : 0;
             if (substyle == BoomBapSubstyle::BoomBapGold && bar.role == PhraseRole::Ending)
                 budget += 1;
             if (bar.stripToCore)
@@ -384,8 +390,12 @@ int laneBarBudget(TrackType type,
         case TrackType::Perc:
         {
             int budget = static_cast<int>(bar.hatSyncopation * 4.0f + den * 2.0f);
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = (bar.role == PhraseRole::Ending || (bar.role == PhraseRole::Variation && den > 0.62f)) ? 1 : 0;
             if (bar.role == PhraseRole::Ending)
                 budget += 1;
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = std::min(budget, 1);
             if (substyle == BoomBapSubstyle::LofiRap)
                 budget = std::min(budget, 1);
             if (bar.stripToCore)
@@ -395,8 +405,12 @@ int laneBarBudget(TrackType type,
         case TrackType::Ride:
         {
             int budget = static_cast<int>(2.0f + bar.hatActivity * 5.0f);
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = 0;
             if (bar.role == PhraseRole::Ending)
                 budget += 1;
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = 0;
             if (substyle == BoomBapSubstyle::LofiRap || substyle == BoomBapSubstyle::RussianUnderground)
                 budget = 0;
             if (bar.stripToCore)
@@ -406,6 +420,8 @@ int laneBarBudget(TrackType type,
         case TrackType::GhostKick:
         {
             int budget = static_cast<int>(bar.kickSupportAmount * 4.0f + den * 2.0f);
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = bar.kickSupportAmount > 0.58f || bar.role == PhraseRole::Ending ? 1 : 0;
             if (substyle == BoomBapSubstyle::LofiRap)
                 budget = std::min(budget, 1);
             if (bar.stripToCore)
@@ -415,8 +431,12 @@ int laneBarBudget(TrackType type,
         case TrackType::ClapGhostSnare:
         {
             int budget = bar.strongBackbeat ? 2 : 1;
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = (bar.role == PhraseRole::Variation || bar.role == PhraseRole::Ending) ? 1 : 0;
             if (bar.role == PhraseRole::Ending)
                 budget += 1;
+            if (substyle == BoomBapSubstyle::Classic)
+                budget = std::min(budget, 1);
             if (substyle == BoomBapSubstyle::LofiRap || substyle == BoomBapSubstyle::RussianUnderground)
                 budget = std::min(budget, 1);
             if (bar.stripToCore)
@@ -480,6 +500,1596 @@ void trimTrackToBarBudgets(TrackState& track,
 
     track.notes = std::move(trimmed);
     dedupeAndSortNotes(track.notes);
+}
+
+int normalizedStepInBar(int step)
+{
+    const int normalized = step % 16;
+    return normalized < 0 ? normalized + 16 : normalized;
+}
+
+int classicGhostPriority(const NoteEvent& note, int bars)
+{
+    const int step = normalizedStepInBar(note.step);
+    const int bar = note.step / 16;
+    int score = note.velocity;
+
+    if (bar == bars - 1)
+        score += 120;
+    if (step == 11)
+        score += 80;
+    else if (step == 3)
+        score += 70;
+    else if (step == 15)
+        score += 55;
+    else if (step == 10 || step == 14)
+        score += 30;
+
+    return score;
+}
+
+int classicKickPriority(const NoteEvent& note)
+{
+    const int step = normalizedStepInBar(note.step);
+    int score = note.velocity;
+
+    if (step == 0)
+        score += 220;
+    else if (step == 8 || step == 10)
+        score += 120;
+    else if (step == 7 || step == 11 || step == 14)
+        score += 80;
+    else if (step == 3 || step == 6 || step == 13 || step == 15)
+        score += 45;
+
+    return score;
+}
+
+void pruneClassicSnareGhosts(TrackState& snare, int bars)
+{
+    std::vector<NoteEvent> anchors;
+    std::vector<NoteEvent> ghosts;
+    anchors.reserve(snare.notes.size());
+    ghosts.reserve(snare.notes.size());
+
+    for (const auto& note : snare.notes)
+    {
+        if (note.isGhost)
+            ghosts.push_back(note);
+        else
+            anchors.push_back(note);
+    }
+
+    const int maxGhosts = std::max(1, (bars + 3) / 4);
+    std::stable_sort(ghosts.begin(), ghosts.end(), [bars](const NoteEvent& left, const NoteEvent& right)
+    {
+        const int leftScore = classicGhostPriority(left, bars);
+        const int rightScore = classicGhostPriority(right, bars);
+        if (leftScore != rightScore)
+            return leftScore > rightScore;
+        return left.step < right.step;
+    });
+    if (static_cast<int>(ghosts.size()) > maxGhosts)
+        ghosts.resize(static_cast<size_t>(maxGhosts));
+
+    anchors.insert(anchors.end(), ghosts.begin(), ghosts.end());
+    snare.notes = std::move(anchors);
+    dedupeAndSortNotes(snare.notes);
+}
+
+void pruneClassicSupportGhostLane(TrackState& track, int bars, const TrackState* snare)
+{
+    track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [snare](const NoteEvent& note)
+    {
+        if (normalizedStepInBar(note.step) == 4 || normalizedStepInBar(note.step) == 12)
+            return true;
+        if (snare == nullptr)
+            return false;
+        return std::any_of(snare->notes.begin(), snare->notes.end(), [&note](const NoteEvent& snareNote)
+        {
+            return !snareNote.isGhost && snareNote.step == note.step;
+        });
+    }), track.notes.end());
+
+    std::stable_sort(track.notes.begin(), track.notes.end(), [bars](const NoteEvent& left, const NoteEvent& right)
+    {
+        const int leftScore = classicGhostPriority(left, bars);
+        const int rightScore = classicGhostPriority(right, bars);
+        if (leftScore != rightScore)
+            return leftScore > rightScore;
+        return left.step < right.step;
+    });
+
+    const int maxEvents = std::max(1, (bars + 3) / 4);
+    if (static_cast<int>(track.notes.size()) > maxEvents)
+        track.notes.resize(static_cast<size_t>(maxEvents));
+
+    dedupeAndSortNotes(track.notes);
+}
+
+void pruneClassicKickDensity(TrackState& kick, int bars)
+{
+    std::vector<NoteEvent> filtered;
+    filtered.reserve(kick.notes.size());
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        std::vector<NoteEvent> barNotes;
+        for (const auto& note : kick.notes)
+        {
+            if (note.step / 16 != bar)
+                continue;
+            const int step = normalizedStepInBar(note.step);
+            if (step == 4 || step == 12)
+                continue;
+            barNotes.push_back(note);
+        }
+
+        std::stable_sort(barNotes.begin(), barNotes.end(), [](const NoteEvent& left, const NoteEvent& right)
+        {
+            const int leftScore = classicKickPriority(left);
+            const int rightScore = classicKickPriority(right);
+            if (leftScore != rightScore)
+                return leftScore > rightScore;
+            return left.step < right.step;
+        });
+
+        const int maxPerBar = bar == bars - 1 ? 5 : 4;
+        if (static_cast<int>(barNotes.size()) > maxPerBar)
+            barNotes.resize(static_cast<size_t>(maxPerBar));
+
+        filtered.insert(filtered.end(), barNotes.begin(), barNotes.end());
+    }
+
+    kick.notes = std::move(filtered);
+    dedupeAndSortNotes(kick.notes);
+}
+
+void reinforceClassicHatEighths(TrackState& hat, int bars, const BoomBapStyleProfile& style)
+{
+    static constexpr std::array<int, 8> kEighthSteps { 0, 2, 4, 6, 8, 10, 12, 14 };
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (size_t i = 0; i < kEighthSteps.size(); ++i)
+        {
+            const int step = bar * 16 + kEighthSteps[i];
+            if (containsStep(hat.notes, step))
+                continue;
+
+            const bool quarter = (kEighthSteps[i] % 4) == 0;
+            const int velocity = std::clamp(style.hatVelocityMin + (quarter ? 22 : 12) + static_cast<int>(i % 2) * 2,
+                                            style.hatVelocityMin,
+                                            style.hatVelocityMax);
+            const int microOffset = quarter ? 0 : 4;
+            hat.notes.push_back({ 42, step, 1, velocity, microOffset, false });
+        }
+    }
+
+    dedupeAndSortNotes(hat.notes);
+}
+
+int deterministicDustyDrift(int seed, int bar, int step, int salt, int spread)
+{
+    if (spread <= 0)
+        return 0;
+
+    unsigned int x = static_cast<unsigned int>(seed * 374761393u
+                                               + bar * 668265263u
+                                               + step * 2246822519u
+                                               + salt * 3266489917u);
+    x ^= x >> 13;
+    x *= 1274126177u;
+    x ^= x >> 16;
+
+    const int width = spread * 2 + 1;
+    return static_cast<int>(x % static_cast<unsigned int>(width)) - spread;
+}
+
+int dustyOffbeatDelayTicks(const PatternProject& project, const BoomBapStyleProfile& style)
+{
+    const float requested = std::clamp(project.params.swingPercent, 56.5f, 62.0f);
+    const float profiled = std::clamp(style.swingPercent, 57.0f, 61.0f);
+    const float swingPoint = requested * 0.42f + profiled * 0.58f;
+    const float delayedEighthTicks = 480.0f * (swingPoint / 100.0f - 0.5f);
+    return std::clamp(static_cast<int>(std::round(delayedEighthTicks)), 28, 48);
+}
+
+int dustyPocketOffsetFor(TrackType type,
+                         const NoteEvent& note,
+                         const PatternProject& project,
+                         const BoomBapStyleProfile& style,
+                         int offbeatDelayTicks)
+{
+    juce::ignoreUnused(style);
+
+    const int step = normalizedStepInBar(note.step);
+    const int bar = std::max(0, note.step / 16);
+    const int phase = step % 4;
+    const int smallDrift = deterministicDustyDrift(project.params.seed, bar, step, static_cast<int>(type) + 11, 3);
+    const int tinyDrift = deterministicDustyDrift(project.params.seed, bar, step, static_cast<int>(type) + 29, 2);
+
+    switch (type)
+    {
+        case TrackType::HiHat:
+            if (phase == 0)
+                return std::clamp(5 + tinyDrift, 0, 12);
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + smallDrift, 28, 52);
+            if (phase == 1)
+                return std::clamp(offbeatDelayTicks / 2 - 8 + smallDrift, 0, 20);
+            return std::clamp(offbeatDelayTicks / 2 + 5 + smallDrift, 10, 32);
+
+        case TrackType::Ride:
+            if (phase == 0)
+                return std::clamp(7 + tinyDrift, 2, 15);
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + 2 + smallDrift, 30, 56);
+            return std::clamp(offbeatDelayTicks / 2 + 6 + smallDrift, 12, 34);
+
+        case TrackType::Snare:
+            if (!note.isGhost && (step == 4 || step == 12))
+            {
+                const float anchorScale = step == 4 ? 0.34f : 0.30f;
+                return std::clamp(static_cast<int>(std::round(static_cast<float>(offbeatDelayTicks) * anchorScale)) + tinyDrift,
+                                  8,
+                                  20);
+            }
+            return std::clamp(static_cast<int>(std::round(static_cast<float>(offbeatDelayTicks) * 0.20f)) + smallDrift,
+                              -4,
+                              16);
+
+        case TrackType::ClapGhostSnare:
+            if (step == 4 || step == 12)
+                return std::clamp(static_cast<int>(std::round(static_cast<float>(offbeatDelayTicks) * 0.34f)) + 10 + tinyDrift,
+                                  16,
+                                  32);
+            return std::clamp(offbeatDelayTicks / 3 + smallDrift, 2, 18);
+
+        case TrackType::Kick:
+            if (step == 0)
+                return std::clamp(tinyDrift, -3, 4);
+            if (step == 8)
+                return std::clamp(2 + tinyDrift, -1, 8);
+            if (phase == 2)
+                return std::clamp(static_cast<int>(std::round(static_cast<float>(offbeatDelayTicks) * 0.56f)) + smallDrift,
+                                  14,
+                                  34);
+            if (step == 3 || step == 7 || step == 11 || step == 15)
+                return std::clamp(-3 + smallDrift, -10, 8);
+            return std::clamp(offbeatDelayTicks / 3 + smallDrift, -4, 22);
+
+        case TrackType::GhostKick:
+            if (step == 3 || step == 7 || step == 11 || step == 15)
+                return std::clamp(-5 + smallDrift, -12, 8);
+            return std::clamp(offbeatDelayTicks / 3 + smallDrift, -4, 18);
+
+        case TrackType::OpenHat:
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + 4 + smallDrift, 32, 58);
+            return std::clamp(offbeatDelayTicks / 2 + 8 + smallDrift, 14, 36);
+
+        case TrackType::Perc:
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + tinyDrift, 28, 54);
+            if (step == 3 || step == 7 || step == 11 || step == 15)
+                return std::clamp(offbeatDelayTicks / 2 + 5 + smallDrift, 10, 34);
+            return std::clamp(7 + smallDrift, -2, 22);
+
+        default:
+            break;
+    }
+
+    return note.microOffset;
+}
+
+int dustyPriority(TrackType type, const NoteEvent& note)
+{
+    const int step = normalizedStepInBar(note.step);
+    int score = note.velocity;
+
+    switch (type)
+    {
+        case TrackType::Kick:
+            if (step == 0)
+                score += 260;
+            else if (step == 8 || step == 10)
+                score += 150;
+            else if (step == 3 || step == 7 || step == 11 || step == 14 || step == 15)
+                score += 80;
+            break;
+        case TrackType::GhostKick:
+            if (step == 3 || step == 7 || step == 11 || step == 15)
+                score += 100;
+            break;
+        case TrackType::ClapGhostSnare:
+            if (step == 4 || step == 12)
+                score += 180;
+            else if (step == 3 || step == 11 || step == 15)
+                score += 70;
+            break;
+        case TrackType::OpenHat:
+            if (step == 14 || step == 15)
+                score += 120;
+            else if (step == 6 || step == 10)
+                score += 60;
+            break;
+        case TrackType::Perc:
+            if (step == 10 || step == 14 || step == 7 || step == 15)
+                score += 90;
+            break;
+        case TrackType::Ride:
+            if ((step % 2) == 0)
+                score += 120;
+            break;
+        default:
+            break;
+    }
+
+    return score;
+}
+
+void pruneDustyBarLimit(TrackState& track, int bars, int maxPerBar, int endingMaxPerBar)
+{
+    std::vector<NoteEvent> filtered;
+    filtered.reserve(track.notes.size());
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        std::vector<NoteEvent> barNotes;
+        for (const auto& note : track.notes)
+        {
+            if (note.step / 16 == bar)
+                barNotes.push_back(note);
+        }
+
+        std::stable_sort(barNotes.begin(), barNotes.end(), [&track](const NoteEvent& left, const NoteEvent& right)
+        {
+            const int leftScore = dustyPriority(track.type, left);
+            const int rightScore = dustyPriority(track.type, right);
+            if (leftScore != rightScore)
+                return leftScore > rightScore;
+            return left.step < right.step;
+        });
+
+        const int limit = bar == bars - 1 ? endingMaxPerBar : maxPerBar;
+        if (static_cast<int>(barNotes.size()) > limit)
+            barNotes.resize(static_cast<size_t>(limit));
+
+        filtered.insert(filtered.end(), barNotes.begin(), barNotes.end());
+    }
+
+    track.notes = std::move(filtered);
+    dedupeAndSortNotes(track.notes);
+}
+
+void shapeDustyVelocity(TrackState& track, const BoomBapStyleProfile& style)
+{
+    for (auto& note : track.notes)
+    {
+        const int step = normalizedStepInBar(note.step);
+        const int phase = step % 4;
+
+        switch (track.type)
+        {
+            case TrackType::HiHat:
+                if (phase == 0)
+                    note.velocity += 4;
+                else if (phase == 2)
+                    note.velocity -= 2;
+                else
+                    note.velocity -= 8;
+                note.velocity = std::clamp(note.velocity, style.hatVelocityMin, style.hatVelocityMax);
+                break;
+            case TrackType::Ride:
+                note.velocity = std::clamp(note.velocity - 12, std::max(38, style.hatVelocityMin - 12), std::min(88, style.hatVelocityMax - 6));
+                break;
+            case TrackType::Kick:
+                if (step == 0 || step == 8)
+                    note.velocity += 5;
+                else
+                    note.velocity -= 4;
+                note.velocity = std::clamp(note.velocity, style.kickVelocityMin, style.kickVelocityMax);
+                break;
+            case TrackType::GhostKick:
+                note.velocity = std::clamp(note.velocity - 6, style.ghostVelocityMin, style.ghostVelocityMax);
+                break;
+            case TrackType::Snare:
+                if (!note.isGhost && (step == 4 || step == 12))
+                    note.velocity += 3;
+                note.velocity = std::clamp(note.velocity, note.isGhost ? style.ghostVelocityMin : style.snareVelocityMin, note.isGhost ? style.ghostVelocityMax : style.snareVelocityMax);
+                break;
+            case TrackType::ClapGhostSnare:
+                note.velocity = std::clamp(note.velocity - (note.isGhost ? 4 : 8), style.ghostVelocityMin, style.clapVelocityMax);
+                break;
+            case TrackType::OpenHat:
+                note.velocity = std::clamp(note.velocity - 4, style.openHatVelocityMin, style.openHatVelocityMax);
+                break;
+            case TrackType::Perc:
+                note.velocity = std::clamp(note.velocity - 5, style.percVelocityMin, style.percVelocityMax);
+                break;
+            default:
+                break;
+        }
+    }
+}
+
+void reinforceDustyHatCarrier(TrackState& hat,
+                              const PatternProject& project,
+                              const BoomBapStyleProfile& style,
+                              int offbeatDelayTicks)
+{
+    static constexpr std::array<int, 8> kDustyCarrierSteps { 0, 2, 4, 6, 8, 10, 12, 14 };
+    static constexpr std::array<int, 4> kDustyOffbeatSteps { 2, 6, 10, 14 };
+
+    const auto* info = TrackRegistry::find(TrackType::HiHat);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 42;
+    const int bars = std::max(1, project.params.bars);
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        auto addHatAt = [&](int stepInBar)
+        {
+            const int step = bar * 16 + stepInBar;
+            if (containsStep(hat.notes, step))
+                return false;
+
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = step;
+            note.length = 1;
+            note.velocity = std::clamp(style.hatVelocityMin + ((stepInBar % 4) == 0 ? 24 : 16), style.hatVelocityMin, style.hatVelocityMax);
+            note.microOffset = dustyPocketOffsetFor(TrackType::HiHat, note, project, style, offbeatDelayTicks);
+            note.isGhost = false;
+            hat.notes.push_back(note);
+            return true;
+        };
+
+        int offbeatCount = static_cast<int>(std::count_if(hat.notes.begin(), hat.notes.end(), [bar](const NoteEvent& note)
+        {
+            const int step = normalizedStepInBar(note.step);
+            return note.step / 16 == bar && (step == 2 || step == 6 || step == 10 || step == 14);
+        }));
+
+        for (const int stepInBar : kDustyOffbeatSteps)
+        {
+            if (offbeatCount >= 3)
+                break;
+
+            if (addHatAt(stepInBar))
+                ++offbeatCount;
+        }
+
+        int count = static_cast<int>(std::count_if(hat.notes.begin(), hat.notes.end(), [bar](const NoteEvent& note)
+        {
+            return note.step / 16 == bar && (normalizedStepInBar(note.step) % 2) == 0;
+        }));
+
+        for (const int stepInBar : kDustyCarrierSteps)
+        {
+            if (count >= 6)
+                break;
+
+            if (addHatAt(stepInBar))
+                ++count;
+        }
+    }
+
+    dedupeAndSortNotes(hat.notes);
+}
+
+void applyDustyPocketRules(PatternProject& project,
+                           const BoomBapStyleProfile& style,
+                           const std::unordered_set<TrackType>& mutableTracks)
+{
+    const int bars = std::max(1, project.params.bars);
+    const int offbeatDelayTicks = dustyOffbeatDelayTicks(project, style);
+
+    if (auto* hat = findTrack(project, TrackType::HiHat);
+        hat != nullptr && hat->enabled && !hat->locked && mutableTracks.count(hat->type) != 0)
+    {
+        reinforceDustyHatCarrier(*hat, project, style, offbeatDelayTicks);
+    }
+
+    for (auto& track : project.tracks)
+    {
+        if (track.locked || mutableTracks.count(track.type) == 0)
+            continue;
+
+        for (auto& note : track.notes)
+            note.microOffset = dustyPocketOffsetFor(track.type, note, project, style, offbeatDelayTicks);
+
+        shapeDustyVelocity(track, style);
+        dedupeAndSortNotes(track.notes);
+    }
+
+    if (auto* hat = findTrack(project, TrackType::HiHat);
+        hat != nullptr && hat->enabled && !hat->locked && mutableTracks.count(hat->type) != 0)
+    {
+        reinforceDustyHatCarrier(*hat, project, style, offbeatDelayTicks);
+    }
+
+    if (auto* kick = findTrack(project, TrackType::Kick);
+        kick != nullptr && !kick->locked && mutableTracks.count(kick->type) != 0)
+    {
+        kick->notes.erase(std::remove_if(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note)
+        {
+            const int step = normalizedStepInBar(note.step);
+            return step == 4 || step == 12;
+        }), kick->notes.end());
+
+        for (int bar = 0; bar < bars; ++bar)
+        {
+            const int anchor = bar * 16;
+            if (!containsStep(kick->notes, anchor))
+            {
+                NoteEvent note;
+                note.pitch = 36;
+                note.step = anchor;
+                note.length = 1;
+                note.velocity = std::clamp(style.kickVelocityMin + 10, style.kickVelocityMin, style.kickVelocityMax);
+                note.microOffset = dustyPocketOffsetFor(TrackType::Kick, note, project, style, offbeatDelayTicks);
+                note.isGhost = false;
+                kick->notes.push_back(note);
+            }
+        }
+        dedupeAndSortNotes(kick->notes);
+        pruneDustyBarLimit(*kick, bars, 4, 5);
+    }
+
+    if (auto* ghostKick = findTrack(project, TrackType::GhostKick);
+        ghostKick != nullptr && !ghostKick->locked && mutableTracks.count(ghostKick->type) != 0)
+    {
+        pruneDustyBarLimit(*ghostKick, bars, 1, 2);
+    }
+
+    if (auto* clap = findTrack(project, TrackType::ClapGhostSnare);
+        clap != nullptr && !clap->locked && mutableTracks.count(clap->type) != 0)
+    {
+        pruneDustyBarLimit(*clap, bars, 2, 2);
+    }
+
+    if (auto* openHat = findTrack(project, TrackType::OpenHat);
+        openHat != nullptr && !openHat->locked && mutableTracks.count(openHat->type) != 0)
+    {
+        pruneDustyBarLimit(*openHat, bars, 1, 2);
+    }
+
+    if (auto* perc = findTrack(project, TrackType::Perc);
+        perc != nullptr && !perc->locked && mutableTracks.count(perc->type) != 0)
+    {
+        pruneDustyBarLimit(*perc, bars, 1, 2);
+    }
+
+    if (auto* ride = findTrack(project, TrackType::Ride);
+        ride != nullptr && !ride->locked && mutableTracks.count(ride->type) != 0)
+    {
+        pruneDustyBarLimit(*ride, bars, 6, 7);
+    }
+}
+
+float jazzySwingRatio(const PatternProject& project, const BoomBapStyleProfile& style)
+{
+    const float bpm = std::clamp(project.params.bpm > 0.0f ? project.params.bpm : interpretedReferenceTempo(style),
+                                 72.0f,
+                                 180.0f);
+    const float slowAmount = std::clamp((128.0f - bpm) / 56.0f, 0.0f, 1.0f);
+    const float requestedSwing = std::clamp(project.params.swingPercent, 58.0f, 66.0f);
+    const float styleSwing = std::clamp(style.swingPercent, 59.0f, 66.0f);
+    const float swingLift = ((requestedSwing * 0.45f + styleSwing * 0.55f) - 62.0f) * 0.035f;
+    return std::clamp(1.55f + slowAmount * 0.62f + swingLift, 1.50f, 2.24f);
+}
+
+int jazzyOffbeatDelayTicks(const PatternProject& project, const BoomBapStyleProfile& style)
+{
+    const float ratio = jazzySwingRatio(project, style);
+    const float offbeatTick = 960.0f * ratio / (1.0f + ratio);
+    return std::clamp(static_cast<int>(std::round(offbeatTick - 480.0f)), 88, 178);
+}
+
+float deterministicJazzyUnit(int seed, int bar, int step, int salt)
+{
+    unsigned int x = static_cast<unsigned int>(seed * 2654435761u
+                                               + bar * 2246822519u
+                                               + step * 3266489917u
+                                               + salt * 668265263u);
+    x ^= x >> 15;
+    x *= 2246822519u;
+    x ^= x >> 13;
+    return static_cast<float>(x & 0x00FFFFFFu) / static_cast<float>(0x01000000u);
+}
+
+int deterministicJazzyDrift(int seed, int bar, int step, int salt, int spread)
+{
+    return deterministicDustyDrift(seed + 97, bar, step, salt + 173, spread);
+}
+
+int jazzyPocketOffsetFor(TrackType type,
+                         const NoteEvent& note,
+                         const PatternProject& project,
+                         const BoomBapStyleProfile& style,
+                         int offbeatDelayTicks)
+{
+    juce::ignoreUnused(style);
+
+    const int step = normalizedStepInBar(note.step);
+    const int bar = std::max(0, note.step / 16);
+    const int phase = step % 4;
+    const int smallDrift = deterministicJazzyDrift(project.params.seed, bar, step, static_cast<int>(type) + 41, 4);
+    const int tinyDrift = deterministicJazzyDrift(project.params.seed, bar, step, static_cast<int>(type) + 67, 2);
+
+    switch (type)
+    {
+        case TrackType::Ride:
+            if (phase == 0)
+                return std::clamp(4 + tinyDrift, -2, 10);
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + smallDrift, 96, 188);
+            return std::clamp(offbeatDelayTicks / 2 + smallDrift, 32, 96);
+
+        case TrackType::HiHat:
+            if (step == 4 || step == 12)
+                return std::clamp(5 + tinyDrift, -1, 12);
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + smallDrift, 92, 184);
+            return std::clamp(8 + smallDrift, -4, 28);
+
+        case TrackType::Kick:
+            if (step == 0 || step == 4 || step == 8 || step == 12)
+                return std::clamp(2 + tinyDrift, -3, 8);
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks - 18 + smallDrift, 74, 164);
+            return std::clamp(8 + smallDrift, -8, 36);
+
+        case TrackType::Snare:
+            if (!note.isGhost && (step == 4 || step == 12))
+                return std::clamp(7 + tinyDrift, 2, 14);
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks - 10 + smallDrift, 82, 174);
+            if (step == 3 || step == 7 || step == 11 || step == 15)
+                return std::clamp(-4 + smallDrift, -14, 10);
+            return std::clamp(10 + smallDrift, -6, 34);
+
+        case TrackType::ClapGhostSnare:
+            if (step == 12)
+                return std::clamp(9 + tinyDrift, 3, 16);
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks - 6 + smallDrift, 88, 178);
+            return std::clamp(9 + smallDrift, -4, 34);
+
+        case TrackType::GhostKick:
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks - 20 + smallDrift, 70, 160);
+            return std::clamp(2 + smallDrift, -12, 22);
+
+        case TrackType::OpenHat:
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + 6 + smallDrift, 104, 196);
+            return std::clamp(18 + smallDrift, 4, 48);
+
+        case TrackType::Perc:
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks - 6 + smallDrift, 84, 178);
+            if (step == 3 || step == 7 || step == 11 || step == 15)
+                return std::clamp(-2 + smallDrift, -12, 18);
+            return std::clamp(12 + smallDrift, -4, 42);
+
+        default:
+            break;
+    }
+
+    return note.microOffset;
+}
+
+NoteEvent* findNoteAtStep(TrackState& track, int step)
+{
+    auto it = std::find_if(track.notes.begin(), track.notes.end(), [step](const NoteEvent& note)
+    {
+        return note.step == step;
+    });
+    return it != track.notes.end() ? &(*it) : nullptr;
+}
+
+void upsertJazzyNote(TrackState& track,
+                     int pitch,
+                     int step,
+                     int velocity,
+                     int microOffset,
+                     bool ghost)
+{
+    if (auto* existing = findNoteAtStep(track, step); existing != nullptr)
+    {
+        existing->pitch = pitch;
+        existing->length = std::max(1, existing->length);
+        existing->velocity = velocity;
+        existing->microOffset = microOffset;
+        existing->isGhost = ghost;
+        return;
+    }
+
+    track.notes.push_back({ pitch, step, 1, velocity, microOffset, ghost });
+}
+
+int jazzyPriority(TrackType type, const NoteEvent& note)
+{
+    const int step = normalizedStepInBar(note.step);
+    int score = note.velocity;
+
+    switch (type)
+    {
+        case TrackType::Ride:
+            if (step == 0 || step == 4 || step == 6 || step == 8 || step == 12 || step == 14)
+                score += 260;
+            break;
+        case TrackType::HiHat:
+            if (step == 0 || step == 4 || step == 6 || step == 8 || step == 12 || step == 14)
+                score += 260;
+            break;
+        case TrackType::Cymbal:
+            if (step == 4 || step == 12)
+                score += 260;
+            else if (step == 6 || step == 14)
+                score += 90;
+            break;
+        case TrackType::Kick:
+            if (step == 0 || step == 4 || step == 8 || step == 12)
+                score += 220;
+            else if (step == 10 || step == 14 || step == 7 || step == 11)
+                score += 90;
+            break;
+        case TrackType::Snare:
+            if (!note.isGhost && (step == 4 || step == 12))
+                score += 240;
+            else if (step == 6 || step == 10 || step == 14)
+                score += 120;
+            else if (step == 3 || step == 7 || step == 11 || step == 15)
+                score += 80;
+            break;
+        case TrackType::ClapGhostSnare:
+        case TrackType::Perc:
+            if (step == 6 || step == 10 || step == 14)
+                score += 120;
+            else if (step == 3 || step == 7 || step == 11 || step == 15)
+                score += 80;
+            break;
+        default:
+            break;
+    }
+
+    return score;
+}
+
+void pruneJazzyBarLimit(TrackState& track, int bars, int maxPerBar, int endingMaxPerBar)
+{
+    std::vector<NoteEvent> filtered;
+    filtered.reserve(track.notes.size());
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        std::vector<NoteEvent> barNotes;
+        for (const auto& note : track.notes)
+            if (note.step / 16 == bar)
+                barNotes.push_back(note);
+
+        std::stable_sort(barNotes.begin(), barNotes.end(), [&track](const NoteEvent& left, const NoteEvent& right)
+        {
+            const int leftScore = jazzyPriority(track.type, left);
+            const int rightScore = jazzyPriority(track.type, right);
+            if (leftScore != rightScore)
+                return leftScore > rightScore;
+            return left.step < right.step;
+        });
+
+        const int limit = bar == bars - 1 ? endingMaxPerBar : maxPerBar;
+        if (static_cast<int>(barNotes.size()) > limit)
+            barNotes.resize(static_cast<size_t>(limit));
+
+        filtered.insert(filtered.end(), barNotes.begin(), barNotes.end());
+    }
+
+    track.notes = std::move(filtered);
+    dedupeAndSortNotes(track.notes);
+}
+
+void reinforceJazzyRidePattern(TrackState& ride,
+                               const PatternProject& project,
+                               const BoomBapStyleProfile& style,
+                               int offbeatDelayTicks)
+{
+    static constexpr std::array<int, 6> kRideSteps { 0, 4, 6, 8, 12, 14 };
+    const auto* info = TrackRegistry::find(TrackType::Ride);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 51;
+    const int bars = std::max(1, project.params.bars);
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (const int stepInBar : kRideSteps)
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            const bool skip = stepInBar == 6 || stepInBar == 14;
+            const bool twoFour = stepInBar == 4 || stepInBar == 12;
+            note.velocity = std::clamp(style.hatVelocityMin + (twoFour ? 34 : (skip ? 20 : 28)),
+                                       style.hatVelocityMin,
+                                       std::min(112, style.hatVelocityMax + 12));
+            note.microOffset = jazzyPocketOffsetFor(TrackType::Ride, note, project, style, offbeatDelayTicks);
+            note.isGhost = false;
+            upsertJazzyNote(ride, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+    }
+
+    dedupeAndSortNotes(ride.notes);
+}
+
+void reinforceJazzyHatCymbalPattern(TrackState& hat,
+                                    const PatternProject& project,
+                                    const BoomBapStyleProfile& style,
+                                    int offbeatDelayTicks)
+{
+    static constexpr std::array<int, 6> kHatCymbalSteps { 0, 4, 6, 8, 12, 14 };
+    const auto* info = TrackRegistry::find(TrackType::HiHat);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 42;
+    const int bars = std::max(1, project.params.bars);
+
+    hat.notes.clear();
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (const int stepInBar : kHatCymbalSteps)
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            const bool skip = stepInBar == 6 || stepInBar == 14;
+            const bool twoFour = stepInBar == 4 || stepInBar == 12;
+            note.velocity = std::clamp(style.hatVelocityMin + (twoFour ? 28 : (skip ? 15 : 22)),
+                                       style.hatVelocityMin,
+                                       std::min(108, style.hatVelocityMax + 8));
+            note.microOffset = jazzyPocketOffsetFor(TrackType::Ride, note, project, style, offbeatDelayTicks);
+            note.isGhost = false;
+            upsertJazzyNote(hat, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+    }
+
+    pruneJazzyBarLimit(hat, bars, 6, 6);
+}
+
+void shapeJazzyCymbalQuietHatFoot(TrackState& cymbal,
+                                  const PatternProject& project,
+                                  const BoomBapStyleProfile& style,
+                                  int offbeatDelayTicks)
+{
+    const auto* info = TrackRegistry::find(TrackType::Cymbal);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 49;
+    const int bars = std::max(1, project.params.bars);
+
+    std::vector<NoteEvent> filtered;
+    filtered.reserve(cymbal.notes.size());
+    for (const auto& note : cymbal.notes)
+    {
+        const int step = normalizedStepInBar(note.step);
+        const int bar = std::max(0, note.step / 16);
+        const bool foot = step == 4 || step == 12;
+        const bool lightBrush = (step == 6 || step == 14)
+            && deterministicJazzyUnit(project.params.seed, bar, step, 211) < 0.18f;
+        if (!foot && !lightBrush)
+            continue;
+
+        auto shaped = note;
+        shaped.pitch = pitch;
+        shaped.velocity = std::clamp(foot ? (step == 12 ? 38 : 34) : 25, 20, 44);
+        shaped.microOffset = jazzyPocketOffsetFor(TrackType::HiHat, shaped, project, style, offbeatDelayTicks);
+        shaped.isGhost = false;
+        filtered.push_back(shaped);
+    }
+    cymbal.notes = std::move(filtered);
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (const int stepInBar : { 4, 12 })
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            note.velocity = stepInBar == 12 ? 38 : 34;
+            note.microOffset = jazzyPocketOffsetFor(TrackType::HiHat, note, project, style, offbeatDelayTicks);
+            note.isGhost = false;
+            upsertJazzyNote(cymbal, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+    }
+
+    pruneJazzyBarLimit(cymbal, bars, 3, 4);
+}
+
+void shapeJazzyKickFeather(TrackState& kick,
+                           const PatternProject& project,
+                           const BoomBapStyleProfile& style,
+                           int offbeatDelayTicks)
+{
+    const auto* info = TrackRegistry::find(TrackType::Kick);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 36;
+    const int bars = std::max(1, project.params.bars);
+    std::vector<NoteEvent> comping;
+    comping.reserve(kick.notes.size());
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        std::vector<NoteEvent> barComp;
+        for (auto note : kick.notes)
+        {
+            if (note.step / 16 != bar)
+                continue;
+
+            const int step = normalizedStepInBar(note.step);
+            if (step == 0 || step == 4 || step == 8 || step == 12)
+                continue;
+
+            note.pitch = pitch;
+            note.velocity = std::clamp(style.kickVelocityMin + 20 + (jazzyPriority(TrackType::Kick, note) % 8),
+                                       style.kickVelocityMin + 8,
+                                       std::min(style.kickVelocityMax, 86));
+            note.microOffset = jazzyPocketOffsetFor(TrackType::Kick, note, project, style, offbeatDelayTicks);
+            note.isGhost = false;
+            barComp.push_back(note);
+        }
+
+        std::stable_sort(barComp.begin(), barComp.end(), [](const NoteEvent& left, const NoteEvent& right)
+        {
+            const int leftScore = jazzyPriority(TrackType::Kick, left);
+            const int rightScore = jazzyPriority(TrackType::Kick, right);
+            if (leftScore != rightScore)
+                return leftScore > rightScore;
+            return left.step < right.step;
+        });
+
+        const int compLimit = bar == bars - 1 ? 2 : 1;
+        if (static_cast<int>(barComp.size()) > compLimit)
+            barComp.resize(static_cast<size_t>(compLimit));
+
+        comping.insert(comping.end(), barComp.begin(), barComp.end());
+    }
+
+    kick.notes = std::move(comping);
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (const int stepInBar : { 0, 4, 8, 12 })
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            note.velocity = std::clamp(style.kickVelocityMin + (stepInBar == 0 || stepInBar == 8 ? 12 : 8),
+                                       style.kickVelocityMin,
+                                       std::min(style.kickVelocityMax, 66));
+            note.microOffset = jazzyPocketOffsetFor(TrackType::Kick, note, project, style, offbeatDelayTicks);
+            note.isGhost = false;
+            upsertJazzyNote(kick, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+
+        const float compChance = deterministicJazzyUnit(project.params.seed, bar, 0, 421);
+        if (compChance < 0.72f || bar == bars - 1)
+        {
+            static constexpr std::array<std::array<int, 2>, 5> kKickCompMotifs {{
+                {{ 10, -1 }},
+                {{ 14, -1 }},
+                {{ 7, -1 }},
+                {{ 10, 14 }},
+                {{ 15, -1 }}
+            }};
+
+            const int motifIndex = static_cast<int>(deterministicJazzyUnit(project.params.seed, bar, 0, 423) * static_cast<float>(kKickCompMotifs.size()))
+                % static_cast<int>(kKickCompMotifs.size());
+            const auto& motif = kKickCompMotifs[static_cast<size_t>(motifIndex)];
+            const int motifLimit = bar == bars - 1 ? 2 : 1;
+            int added = 0;
+            for (const int stepInBar : motif)
+            {
+                if (stepInBar < 0 || added >= motifLimit)
+                    continue;
+
+                NoteEvent note;
+                note.pitch = pitch;
+                note.step = bar * 16 + stepInBar;
+                note.length = 1;
+                note.velocity = std::clamp(style.kickVelocityMin + 17 + static_cast<int>(deterministicJazzyUnit(project.params.seed, bar, stepInBar, 427) * 9.0f),
+                                           style.kickVelocityMin + 10,
+                                           std::min(style.kickVelocityMax, 76));
+                note.microOffset = jazzyPocketOffsetFor(TrackType::Kick, note, project, style, offbeatDelayTicks);
+                note.isGhost = false;
+                upsertJazzyNote(kick, note.pitch, note.step, note.velocity, note.microOffset, false);
+                ++added;
+            }
+        }
+    }
+
+    pruneJazzyBarLimit(kick, bars, 5, 6);
+}
+
+void shapeJazzySnareComping(TrackState& snare,
+                            const PatternProject& project,
+                            const BoomBapStyleProfile& style,
+                            int offbeatDelayTicks)
+{
+    static constexpr std::array<std::array<int, 3>, 6> kCompMotifs {{
+        {{ 6, -1, -1 }},
+        {{ 10, 14, -1 }},
+        {{ 3, 10, -1 }},
+        {{ 7, 11, -1 }},
+        {{ 2, 6, 14 }},
+        {{ 15, -1, -1 }}
+    }};
+
+    const auto* info = TrackRegistry::find(TrackType::Snare);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 38;
+    const int bars = std::max(1, project.params.bars);
+
+    for (auto& note : snare.notes)
+    {
+        const int step = normalizedStepInBar(note.step);
+        note.pitch = pitch;
+        if (!note.isGhost && (step == 4 || step == 12))
+        {
+            note.velocity = std::clamp(style.snareVelocityMin + (step == 12 ? 24 : 18),
+                                       style.snareVelocityMin,
+                                       std::min(style.snareVelocityMax, 100));
+        }
+        else
+        {
+            note.isGhost = true;
+            note.velocity = std::clamp(note.velocity - 10, style.ghostVelocityMin, style.ghostVelocityMax);
+        }
+        note.microOffset = jazzyPocketOffsetFor(TrackType::Snare, note, project, style, offbeatDelayTicks);
+    }
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        const int motifIndex = static_cast<int>(deterministicJazzyUnit(project.params.seed, bar, 0, 307) * static_cast<float>(kCompMotifs.size())) % static_cast<int>(kCompMotifs.size());
+        const auto& motif = kCompMotifs[static_cast<size_t>(motifIndex)];
+
+        for (const int stepInBar : motif)
+        {
+            if (stepInBar < 0)
+                continue;
+            if (stepInBar == 2 && deterministicJazzyUnit(project.params.seed, bar, stepInBar, 311) > 0.42f)
+                continue;
+
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            note.velocity = std::clamp(style.ghostVelocityMin + 12 + static_cast<int>(deterministicJazzyUnit(project.params.seed, bar, stepInBar, 313) * 16.0f),
+                                       style.ghostVelocityMin,
+                                       style.ghostVelocityMax);
+            note.microOffset = jazzyPocketOffsetFor(TrackType::Snare, note, project, style, offbeatDelayTicks);
+            note.isGhost = true;
+            upsertJazzyNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+        }
+    }
+
+    pruneJazzyBarLimit(snare, bars, 5, 6);
+}
+
+void shapeJazzySupportTrack(TrackState& track,
+                            const PatternProject& project,
+                            const BoomBapStyleProfile& style,
+                            int offbeatDelayTicks)
+{
+    for (auto& note : track.notes)
+    {
+        const int step = normalizedStepInBar(note.step);
+        note.microOffset = jazzyPocketOffsetFor(track.type, note, project, style, offbeatDelayTicks);
+        switch (track.type)
+        {
+            case TrackType::ClapGhostSnare:
+                note.isGhost = true;
+                note.velocity = std::clamp(note.velocity - 16, style.ghostVelocityMin, std::min(style.clapVelocityMax, 78));
+                break;
+            case TrackType::GhostKick:
+                note.velocity = std::clamp(note.velocity - 10, style.ghostVelocityMin, style.ghostVelocityMax);
+                break;
+            case TrackType::OpenHat:
+                if (!(step == 14 || step == 15 || step == 6 || step == 10))
+                    note.step = -1;
+                else
+                    note.velocity = std::clamp(note.velocity - 10, style.openHatVelocityMin, style.openHatVelocityMax);
+                break;
+            case TrackType::Perc:
+                note.velocity = std::clamp(note.velocity - 8, style.percVelocityMin, style.percVelocityMax);
+                break;
+            case TrackType::Cymbal:
+                note.velocity = std::clamp(note.velocity - 34, 20, 44);
+                break;
+            case TrackType::Ride:
+                note.velocity = std::clamp(note.velocity, style.hatVelocityMin, std::min(112, style.hatVelocityMax + 12));
+                break;
+            default:
+                break;
+        }
+    }
+
+    track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [](const NoteEvent& note)
+    {
+        return note.step < 0;
+    }), track.notes.end());
+
+    const int bars = std::max(1, project.params.bars);
+    switch (track.type)
+    {
+        case TrackType::ClapGhostSnare: pruneJazzyBarLimit(track, bars, 2, 3); break;
+        case TrackType::GhostKick: pruneJazzyBarLimit(track, bars, 1, 2); break;
+        case TrackType::OpenHat: pruneJazzyBarLimit(track, bars, 1, 2); break;
+        case TrackType::Perc: pruneJazzyBarLimit(track, bars, 2, 3); break;
+        case TrackType::Cymbal: pruneJazzyBarLimit(track, bars, 3, 4); break;
+        case TrackType::Ride: pruneJazzyBarLimit(track, bars, 7, 8); break;
+        default: dedupeAndSortNotes(track.notes); break;
+    }
+}
+
+void applyJazzyPocketRules(PatternProject& project,
+                           const BoomBapStyleProfile& style,
+                           const std::unordered_set<TrackType>& mutableTracks)
+{
+    const int offbeatDelayTicks = jazzyOffbeatDelayTicks(project, style);
+
+    if (auto* ride = findTrack(project, TrackType::Ride);
+        ride != nullptr && ride->enabled && !ride->locked && mutableTracks.count(ride->type) != 0)
+    {
+        ride->notes.clear();
+    }
+
+    if (auto* hat = findTrack(project, TrackType::HiHat);
+        hat != nullptr && hat->enabled && !hat->locked && mutableTracks.count(hat->type) != 0)
+    {
+        reinforceJazzyHatCymbalPattern(*hat, project, style, offbeatDelayTicks);
+    }
+
+    if (auto* cymbal = findTrack(project, TrackType::Cymbal);
+        cymbal != nullptr && cymbal->enabled && !cymbal->locked && mutableTracks.count(cymbal->type) != 0)
+    {
+        shapeJazzyCymbalQuietHatFoot(*cymbal, project, style, offbeatDelayTicks);
+    }
+
+    if (auto* kick = findTrack(project, TrackType::Kick);
+        kick != nullptr && kick->enabled && !kick->locked && mutableTracks.count(kick->type) != 0)
+    {
+        shapeJazzyKickFeather(*kick, project, style, offbeatDelayTicks);
+    }
+
+    if (auto* snare = findTrack(project, TrackType::Snare);
+        snare != nullptr && snare->enabled && !snare->locked && mutableTracks.count(snare->type) != 0)
+    {
+        shapeJazzySnareComping(*snare, project, style, offbeatDelayTicks);
+    }
+
+    for (auto& track : project.tracks)
+    {
+        if (track.locked || mutableTracks.count(track.type) == 0)
+            continue;
+
+        if (track.type == TrackType::ClapGhostSnare
+            || track.type == TrackType::GhostKick
+            || track.type == TrackType::OpenHat
+            || track.type == TrackType::Perc)
+        {
+            shapeJazzySupportTrack(track, project, style, offbeatDelayTicks);
+        }
+    }
+}
+
+int goldOffbeatDelayTicks(const PatternProject& project, const BoomBapStyleProfile& style)
+{
+    const float requested = std::clamp(project.params.swingPercent, 56.0f, 61.5f);
+    const float profiled = std::clamp(style.swingPercent, 56.0f, 61.5f);
+    const float swingPoint = requested * 0.40f + profiled * 0.60f;
+    const float delayedEighthTicks = 480.0f * (swingPoint / 100.0f - 0.5f);
+    return std::clamp(static_cast<int>(std::round(delayedEighthTicks)), 28, 56);
+}
+
+int goldPocketOffsetFor(TrackType type,
+                        const NoteEvent& note,
+                        const PatternProject& project,
+                        int offbeatDelayTicks)
+{
+    const int step = normalizedStepInBar(note.step);
+    const int bar = std::max(0, note.step / 16);
+    const int phase = step % 4;
+    const int drift = deterministicDustyDrift(project.params.seed + 313, bar, step, static_cast<int>(type) + 97, 3);
+    const int tiny = deterministicDustyDrift(project.params.seed + 337, bar, step, static_cast<int>(type) + 101, 2);
+
+    switch (type)
+    {
+        case TrackType::HiHat:
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + drift, 28, 58);
+            return std::clamp(3 + tiny, -2, 9);
+
+        case TrackType::Kick:
+            if (step == 0 || step == 8)
+                return std::clamp(-1 + tiny, -6, 6);
+            if (step == 10 || step == 11 || step == 14 || step == 15)
+                return std::clamp(6 + drift, -2, 18);
+            return std::clamp(2 + drift, -8, 12);
+
+        case TrackType::Snare:
+        case TrackType::ClapGhostSnare:
+            if (!note.isGhost && (step == 4 || step == 12))
+                return std::clamp((step == 12 ? 11 : 9) + tiny, 6, 16);
+            if (step == 3 || step == 11)
+                return std::clamp(-2 + drift, -10, 8);
+            return std::clamp(6 + drift, -4, 18);
+
+        case TrackType::OpenHat:
+        case TrackType::Perc:
+            if (phase == 2)
+                return std::clamp(offbeatDelayTicks + drift, 28, 60);
+            return std::clamp(4 + drift, -4, 18);
+
+        default:
+            break;
+    }
+
+    return note.microOffset;
+}
+
+void upsertGoldNote(TrackState& track,
+                    int pitch,
+                    int step,
+                    int velocity,
+                    int microOffset,
+                    bool ghost)
+{
+    if (auto* existing = findNoteAtStep(track, step); existing != nullptr)
+    {
+        existing->pitch = pitch;
+        existing->length = std::max(1, existing->length);
+        existing->velocity = velocity;
+        existing->microOffset = microOffset;
+        existing->isGhost = ghost;
+        return;
+    }
+
+    track.notes.push_back({ pitch, step, 1, velocity, microOffset, ghost });
+}
+
+int goldPriority(TrackType type, const NoteEvent& note)
+{
+    const int step = normalizedStepInBar(note.step);
+    int score = note.velocity;
+
+    switch (type)
+    {
+        case TrackType::HiHat:
+            if ((step % 2) == 0)
+                score += 180;
+            if (step == 0 || step == 8)
+                score += 50;
+            break;
+        case TrackType::Kick:
+            if (step == 0)
+                score += 260;
+            else if (step == 10 || step == 11)
+                score += 190;
+            else if (step == 8)
+                score += 150;
+            else if (step == 3 || step == 6 || step == 14)
+                score += 100;
+            break;
+        case TrackType::Snare:
+            if (!note.isGhost && (step == 4 || step == 12))
+                score += 260;
+            else if (step == 3 || step == 10 || step == 11 || step == 14)
+                score += 80;
+            break;
+        case TrackType::ClapGhostSnare:
+            if (step == 4 || step == 12)
+                score += 180;
+            break;
+        default:
+            break;
+    }
+
+    return score;
+}
+
+void pruneGoldBarLimit(TrackState& track, int bars, int maxPerBar, int endingMaxPerBar)
+{
+    std::vector<NoteEvent> filtered;
+    filtered.reserve(track.notes.size());
+
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        std::vector<NoteEvent> barNotes;
+        for (const auto& note : track.notes)
+            if (note.step / 16 == bar)
+                barNotes.push_back(note);
+
+        std::stable_sort(barNotes.begin(), barNotes.end(), [&track](const NoteEvent& left, const NoteEvent& right)
+        {
+            const int leftScore = goldPriority(track.type, left);
+            const int rightScore = goldPriority(track.type, right);
+            if (leftScore != rightScore)
+                return leftScore > rightScore;
+            return left.step < right.step;
+        });
+
+        const int limit = bar == bars - 1 ? endingMaxPerBar : maxPerBar;
+        if (static_cast<int>(barNotes.size()) > limit)
+            barNotes.resize(static_cast<size_t>(limit));
+
+        filtered.insert(filtered.end(), barNotes.begin(), barNotes.end());
+    }
+
+    track.notes = std::move(filtered);
+    dedupeAndSortNotes(track.notes);
+}
+
+void shapeGoldHatCarrier(TrackState& hat,
+                         const PatternProject& project,
+                         const BoomBapStyleProfile& style,
+                         int offbeatDelayTicks)
+{
+    static constexpr std::array<int, 8> kEighthSteps { 0, 2, 4, 6, 8, 10, 12, 14 };
+    const auto* info = TrackRegistry::find(TrackType::HiHat);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 42;
+    const int bars = std::max(1, project.params.bars);
+
+    hat.notes.clear();
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (const int stepInBar : kEighthSteps)
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            const bool down = stepInBar == 0 || stepInBar == 8;
+            const bool backbeat = stepInBar == 4 || stepInBar == 12;
+            const bool offbeat = (stepInBar % 4) == 2;
+            note.velocity = std::clamp(style.hatVelocityMin + (down ? 34 : backbeat ? 29 : offbeat ? 17 : 22),
+                                       style.hatVelocityMin,
+                                       style.hatVelocityMax);
+            note.microOffset = goldPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
+            note.isGhost = false;
+            upsertGoldNote(hat, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+
+        if (deterministicJazzyUnit(project.params.seed, bar, 7, 509) < (bar == bars - 1 ? 0.42f : 0.22f))
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + 7;
+            note.length = 1;
+            note.velocity = std::clamp(style.hatVelocityMin + 8, style.hatVelocityMin, style.hatVelocityMax);
+            note.microOffset = std::clamp(offbeatDelayTicks / 2 + 4, 12, 34);
+            note.isGhost = false;
+            upsertGoldNote(hat, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+    }
+
+    pruneGoldBarLimit(hat, bars, 9, 9);
+}
+
+void shapeGoldKickPocket(TrackState& kick,
+                         const PatternProject& project,
+                         const BoomBapStyleProfile& style,
+                         int offbeatDelayTicks)
+{
+    static constexpr std::array<std::array<int, 5>, 6> kGoldKickMotifs {{
+        {{ 0, 3, 10, 11, -1 }},
+        {{ 0, 6, 8, 10, -1 }},
+        {{ 0, 3, 8, 11, 14 }},
+        {{ 0, 5, 10, 11, -1 }},
+        {{ 0, 2, 8, 10, 14 }},
+        {{ 0, 7, 10, 11, -1 }}
+    }};
+
+    const auto* info = TrackRegistry::find(TrackType::Kick);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 36;
+    const int bars = std::max(1, project.params.bars);
+
+    kick.notes.clear();
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        const int motifIndex = static_cast<int>(deterministicJazzyUnit(project.params.seed, bar, 0, 521) * static_cast<float>(kGoldKickMotifs.size()))
+            % static_cast<int>(kGoldKickMotifs.size());
+        const auto& motif = kGoldKickMotifs[static_cast<size_t>(motifIndex)];
+
+        for (const int stepInBar : motif)
+        {
+            if (stepInBar < 0 || stepInBar == 4 || stepInBar == 12)
+                continue;
+
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            const bool root = stepInBar == 0;
+            const bool secondAnchor = stepInBar == 8 || stepInBar == 10 || stepInBar == 11;
+            note.velocity = std::clamp(style.kickVelocityMin + (root ? 22 : secondAnchor ? 14 : 8),
+                                       style.kickVelocityMin,
+                                       style.kickVelocityMax);
+            note.microOffset = goldPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
+            note.isGhost = false;
+            upsertGoldNote(kick, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+    }
+
+    pruneGoldBarLimit(kick, bars, 5, 5);
+}
+
+void shapeGoldSnarePocket(TrackState& snare,
+                          const PatternProject& project,
+                          const BoomBapStyleProfile& style,
+                          int offbeatDelayTicks)
+{
+    juce::ignoreUnused(offbeatDelayTicks);
+
+    const auto* info = TrackRegistry::find(TrackType::Snare);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 38;
+    const int bars = std::max(1, project.params.bars);
+
+    snare.notes.clear();
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        for (const int stepInBar : { 4, 12 })
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            note.velocity = std::clamp(style.snareVelocityMin + (stepInBar == 12 ? 16 : 11), style.snareVelocityMin, style.snareVelocityMax);
+            note.microOffset = goldPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.isGhost = false;
+            upsertGoldNote(snare, note.pitch, note.step, note.velocity, note.microOffset, false);
+        }
+
+        const float ghostPick = deterministicJazzyUnit(project.params.seed, bar, 0, 541);
+        const int ghostStep = ghostPick < 0.34f ? 11 : (ghostPick < 0.58f ? 3 : (ghostPick < 0.78f ? 10 : -1));
+        if (ghostStep >= 0 || bar == bars - 1)
+        {
+            const int stepInBar = ghostStep >= 0 ? ghostStep : 14;
+            NoteEvent note;
+            note.pitch = pitch;
+            note.step = bar * 16 + stepInBar;
+            note.length = 1;
+            note.velocity = std::clamp(style.ghostVelocityMin + 7 + static_cast<int>(deterministicJazzyUnit(project.params.seed, bar, stepInBar, 547) * 9.0f),
+                                       style.ghostVelocityMin,
+                                       style.ghostVelocityMax);
+            note.microOffset = goldPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.isGhost = true;
+            upsertGoldNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+        }
+    }
+
+    pruneGoldBarLimit(snare, bars, 3, 4);
+}
+
+void shapeGoldClapLayer(TrackState& clap,
+                        const PatternProject& project,
+                        const BoomBapStyleProfile& style)
+{
+    const auto* info = TrackRegistry::find(TrackType::ClapGhostSnare);
+    const int pitch = info != nullptr ? info->defaultMidiNote : 39;
+    const int bars = std::max(1, project.params.bars);
+
+    clap.notes.clear();
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        const float layerChance = deterministicJazzyUnit(project.params.seed, bar, 12, 557);
+        if (layerChance > (bar == bars - 1 ? 0.62f : 0.42f))
+            continue;
+
+        const int stepInBar = layerChance < 0.24f ? 4 : 12;
+        NoteEvent note;
+        note.pitch = pitch;
+        note.step = bar * 16 + stepInBar;
+        note.length = 1;
+        note.velocity = std::clamp(style.clapVelocityMin + (stepInBar == 12 ? 10 : 4), style.clapVelocityMin, style.clapVelocityMax);
+        note.microOffset = goldPocketOffsetFor(TrackType::ClapGhostSnare, note, project, 0);
+        note.isGhost = false;
+        upsertGoldNote(clap, note.pitch, note.step, note.velocity, note.microOffset, false);
+    }
+
+    pruneGoldBarLimit(clap, bars, 1, 1);
+}
+
+void shapeGoldSupportTrack(TrackState& track,
+                           const PatternProject& project,
+                           const BoomBapStyleProfile& style,
+                           int offbeatDelayTicks)
+{
+    for (auto& note : track.notes)
+    {
+        const int step = normalizedStepInBar(note.step);
+        note.microOffset = goldPocketOffsetFor(track.type, note, project, offbeatDelayTicks);
+        switch (track.type)
+        {
+            case TrackType::GhostKick:
+                note.velocity = std::clamp(note.velocity - 12, style.ghostVelocityMin, style.ghostVelocityMax);
+                break;
+            case TrackType::OpenHat:
+                if (!(step == 14 || step == 15))
+                    note.step = -1;
+                else
+                    note.velocity = std::clamp(note.velocity - 12, style.openHatVelocityMin, style.openHatVelocityMax);
+                break;
+            case TrackType::Perc:
+                if (!(step == 3 || step == 7 || step == 11 || step == 14))
+                    note.step = -1;
+                else
+                    note.velocity = std::clamp(note.velocity - 10, style.percVelocityMin, style.percVelocityMax);
+                break;
+            case TrackType::Ride:
+            case TrackType::Cymbal:
+                note.step = -1;
+                break;
+            default:
+                break;
+        }
+    }
+
+    track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [](const NoteEvent& note)
+    {
+        return note.step < 0;
+    }), track.notes.end());
+
+    const int bars = std::max(1, project.params.bars);
+    switch (track.type)
+    {
+        case TrackType::GhostKick: pruneGoldBarLimit(track, bars, 1, 1); break;
+        case TrackType::OpenHat: pruneGoldBarLimit(track, bars, 0, 1); break;
+        case TrackType::Perc: pruneGoldBarLimit(track, bars, 1, 2); break;
+        default: dedupeAndSortNotes(track.notes); break;
+    }
+}
+
+void applyBoomBapGoldPocketRules(PatternProject& project,
+                                 const BoomBapStyleProfile& style,
+                                 const std::unordered_set<TrackType>& mutableTracks)
+{
+    const int offbeatDelayTicks = goldOffbeatDelayTicks(project, style);
+
+    if (auto* hat = findTrack(project, TrackType::HiHat);
+        hat != nullptr && hat->enabled && !hat->locked && mutableTracks.count(hat->type) != 0)
+    {
+        shapeGoldHatCarrier(*hat, project, style, offbeatDelayTicks);
+    }
+
+    if (auto* kick = findTrack(project, TrackType::Kick);
+        kick != nullptr && kick->enabled && !kick->locked && mutableTracks.count(kick->type) != 0)
+    {
+        shapeGoldKickPocket(*kick, project, style, offbeatDelayTicks);
+    }
+
+    if (auto* snare = findTrack(project, TrackType::Snare);
+        snare != nullptr && snare->enabled && !snare->locked && mutableTracks.count(snare->type) != 0)
+    {
+        shapeGoldSnarePocket(*snare, project, style, offbeatDelayTicks);
+    }
+
+    if (auto* clap = findTrack(project, TrackType::ClapGhostSnare);
+        clap != nullptr && clap->enabled && !clap->locked && mutableTracks.count(clap->type) != 0)
+    {
+        shapeGoldClapLayer(*clap, project, style);
+    }
+
+    for (auto& track : project.tracks)
+    {
+        if (track.locked || mutableTracks.count(track.type) == 0)
+            continue;
+
+        if (track.type == TrackType::GhostKick
+            || track.type == TrackType::OpenHat
+            || track.type == TrackType::Perc
+            || track.type == TrackType::Ride
+            || track.type == TrackType::Cymbal)
+        {
+            shapeGoldSupportTrack(track, project, style, offbeatDelayTicks);
+        }
+    }
 }
 } // namespace
 
@@ -809,14 +2419,18 @@ void BoomBapEngine::mutateTrack(PatternProject& project, TrackType trackType)
     {
         TrackState candidate = *track;
         const auto& candidateStyle = getBoomBapProfile(project.params.boombapSubstyle);
-        const auto grooveContext = buildGrooveContext(project, candidateStyle, rng);
-        const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
-                                      grooveContext.phraseVariationAmount,
-                                      style.substyle,
-                                      project.params.densityAmount,
-                                      rng);
-        const auto blueprint = buildBoomBapGrooveBlueprint(project.params, candidateStyle, phrasePlan, grooveContext.halfTimeReference, rng);
-        regenerateTrackInternal(project, candidate, candidateStyle, phrasePlan, blueprint, rng);
+        const auto candidateGrooveContext = buildGrooveContext(project, candidateStyle, rng);
+        const auto candidatePhrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
+                                                                          candidateGrooveContext.phraseVariationAmount,
+                                                                          style.substyle,
+                                                                          project.params.densityAmount,
+                                                                          rng);
+        const auto candidateBlueprint = buildBoomBapGrooveBlueprint(project.params,
+                                                                    candidateStyle,
+                                                                    candidatePhrasePlan,
+                                                                    candidateGrooveContext.halfTimeReference,
+                                                                    rng);
+        regenerateTrackInternal(project, candidate, candidateStyle, candidatePhrasePlan, candidateBlueprint, rng);
 
         for (const auto& note : candidate.notes)
         {
@@ -1035,6 +2649,8 @@ void BoomBapEngine::postProcess(PatternProject& project,
                                 std::mt19937& rng,
                                 const std::unordered_set<TrackType>& mutableTracks)
 {
+    juce::ignoreUnused(lanePlan);
+
     GrooveEngine::applySwing(project, style, mutableTracks);
     VelocityEngine::applyVelocityShape(project, style, mutableTracks);
     HumanizeEngine::applyHumanize(project, style, mutableTracks, rng);
@@ -1250,7 +2866,8 @@ void BoomBapEngine::applyPhraseEndingAccents(PatternProject& project,
         snareGhost != nullptr && mutableTracks.count(snareGhost->type) != 0 && snareGhost->enabled && !snareGhost->locked)
     {
         const float laneEnding = getLaneStyleDefaults(styleDefaults, TrackType::ClapGhostSnare).phraseEndingProbability;
-        if (!containsStep(snareGhost->notes, endingBar * 16 + 11) && chance(rng) < std::clamp(0.35f * laneEnding, 0.08f, 0.9f))
+        const float classicScale = style.substyle == BoomBapSubstyle::Classic ? 0.34f : 1.0f;
+        if (!containsStep(snareGhost->notes, endingBar * 16 + 11) && chance(rng) < std::clamp(0.35f * laneEnding * classicScale, 0.02f, 0.9f))
             snareGhost->notes.push_back({ 39, endingBar * 16 + 11, 1, style.ghostVelocityMax - 3, 10, true });
     }
 
@@ -1271,11 +2888,14 @@ void BoomBapEngine::applyPhraseEndingAccents(PatternProject& project,
         if (auto* snare = findTrack(project, TrackType::Snare); snare != nullptr && mutableTracks.count(snare->type) != 0 && !snare->locked)
         {
             const float laneEnding = getLaneStyleDefaults(styleDefaults, TrackType::Snare).phraseEndingProbability;
-            if (!containsStep(snare->notes, bar2 * 16 + 11) && chance(rng) < std::clamp(0.42f * laneEnding, 0.08f, 0.95f))
-                snare->notes.push_back({ 38, bar2 * 16 + 11, 1, style.snareVelocityMin + 6, 8, false });
+            const float supportScale = style.substyle == BoomBapSubstyle::Classic ? 0.26f : 1.0f;
+            const bool asGhost = style.substyle == BoomBapSubstyle::Classic;
+            const int supportVelocity = asGhost ? style.ghostVelocityMax : style.snareVelocityMin + 6;
+            if (!containsStep(snare->notes, bar2 * 16 + 11) && chance(rng) < std::clamp(0.42f * laneEnding * supportScale, 0.02f, 0.95f))
+                snare->notes.push_back({ 38, bar2 * 16 + 11, 1, supportVelocity, 8, asGhost });
 
-            if (!containsStep(snare->notes, bar4 * 16 + 15) && chance(rng) < std::clamp(0.48f * laneEnding, 0.08f, 0.95f))
-                snare->notes.push_back({ 38, bar4 * 16 + 15, 1, style.snareVelocityMin + 10, -6, false });
+            if (!containsStep(snare->notes, bar4 * 16 + 15) && chance(rng) < std::clamp(0.48f * laneEnding * supportScale, 0.02f, 0.95f))
+                snare->notes.push_back({ 38, bar4 * 16 + 15, 1, supportVelocity, -6, asGhost });
         }
     }
 }
@@ -1543,8 +3163,14 @@ void BoomBapEngine::validatePattern(PatternProject& project,
 
         const int bars = std::max(1, project.params.bars);
         int maxHits = bars * 12;
+        if (style.substyle == BoomBapSubstyle::Classic && track.type == TrackType::Kick)
+            maxHits = bars * 5;
         if (track.type == TrackType::GhostKick)
             maxHits = bars * (lowDensity ? 2 : 4);
+        if (style.substyle == BoomBapSubstyle::Classic && track.type == TrackType::GhostKick)
+            maxHits = std::max(1, (bars + 3) / 4);
+        if (style.substyle == BoomBapSubstyle::Classic && track.type == TrackType::ClapGhostSnare)
+            maxHits = std::max(1, (bars + 3) / 4);
         if (track.type == TrackType::Perc)
             maxHits = bars * (lowDensity ? 1 : highDensity ? 5 : 3);
 
@@ -1619,14 +3245,21 @@ void BoomBapEngine::validatePattern(PatternProject& project,
     if (hat != nullptr)
     {
         const int bars = std::max(1, project.params.bars);
-        const int minHatHits = bars * (style.substyle == BoomBapSubstyle::Aggressive ? 8 : (style.substyle == BoomBapSubstyle::LofiRap ? 4 : 6));
+        const int minHatHits = bars * (style.substyle == BoomBapSubstyle::Classic ? 8 : (style.substyle == BoomBapSubstyle::Aggressive ? 8 : (style.substyle == BoomBapSubstyle::LofiRap ? 4 : 6)));
         if (static_cast<int>(hat->notes.size()) < minHatHits)
         {
             auto* mutableHat = findTrack(project, TrackType::HiHat);
             if (mutableHat != nullptr)
             {
-                for (int bar = 0; bar < bars && static_cast<int>(mutableHat->notes.size()) < minHatHits; ++bar)
-                    mutableHat->notes.push_back({ 42, bar * 16, 1, style.hatVelocityMin + 6, 0, false });
+                if (style.substyle == BoomBapSubstyle::Classic)
+                {
+                    reinforceClassicHatEighths(*mutableHat, bars, style);
+                }
+                else
+                {
+                    for (int bar = 0; bar < bars && static_cast<int>(mutableHat->notes.size()) < minHatHits; ++bar)
+                        mutableHat->notes.push_back({ 42, bar * 16, 1, style.hatVelocityMin + 6, 0, false });
+                }
             }
         }
     }
@@ -1660,6 +3293,21 @@ void BoomBapEngine::validatePattern(PatternProject& project,
         }
     }
 
+    if (style.substyle == BoomBapSubstyle::Classic)
+    {
+        const int bars = std::max(1, project.params.bars);
+        if (auto* mutableSnare = findTrack(project, TrackType::Snare); mutableSnare != nullptr)
+            pruneClassicSnareGhosts(*mutableSnare, bars);
+        if (auto* mutableClap = findTrack(project, TrackType::ClapGhostSnare); mutableClap != nullptr)
+            pruneClassicSupportGhostLane(*mutableClap, bars, findTrack(project, TrackType::Snare));
+        if (auto* mutableGhostKick = findTrack(project, TrackType::GhostKick); mutableGhostKick != nullptr)
+            pruneClassicSupportGhostLane(*mutableGhostKick, bars, nullptr);
+        if (auto* mutableKick = findTrack(project, TrackType::Kick); mutableKick != nullptr)
+            pruneClassicKickDensity(*mutableKick, bars);
+        if (auto* mutableHat = findTrack(project, TrackType::HiHat); mutableHat != nullptr)
+            reinforceClassicHatEighths(*mutableHat, bars, style);
+    }
+
     // Guard style identity: aggressive should not be empty, laidback should not get busy.
     if (kick != nullptr)
     {
@@ -1677,6 +3325,13 @@ void BoomBapEngine::validatePattern(PatternProject& project,
                 mutableKick->notes.resize(static_cast<size_t>(bars * 6));
         }
     }
+
+    if (style.substyle == BoomBapSubstyle::Dusty)
+        applyDustyPocketRules(project, style, mutableTracks);
+    if (style.substyle == BoomBapSubstyle::Jazzy)
+        applyJazzyPocketRules(project, style, mutableTracks);
+    if (style.substyle == BoomBapSubstyle::BoomBapGold)
+        applyBoomBapGoldPocketRules(project, style, mutableTracks);
 }
 
 juce::String BoomBapEngine::phraseSummaryString(const std::vector<PhraseRole>& roles)

@@ -15,6 +15,7 @@ float substyleGhostScale(BoomBapSubstyle substyle)
 {
     switch (substyle)
     {
+        case BoomBapSubstyle::Classic: return 0.34f;
         case BoomBapSubstyle::BoomBapGold: return 1.18f;
         case BoomBapSubstyle::Jazzy: return 1.12f;
         case BoomBapSubstyle::RussianUnderground: return 0.72f;
@@ -30,6 +31,66 @@ int sampleLateTicks(int center, int spread, std::mt19937& rng)
     const int maxValue = std::max(minValue + 1, center + std::max(1, spread));
     std::uniform_int_distribution<int> dist(minValue, maxValue);
     return dist(rng);
+}
+
+int classicGhostPriority(const NoteEvent& note, int bars)
+{
+    const int step = ((note.step % 16) + 16) % 16;
+    const int bar = note.step / 16;
+    int score = note.velocity;
+
+    if (bar == bars - 1)
+        score += 120;
+    if (step == 11)
+        score += 80;
+    else if (step == 3)
+        score += 70;
+    else if (step == 15)
+        score += 55;
+    else if (step == 10 || step == 14)
+        score += 30;
+
+    return score;
+}
+
+void pruneClassicGhostSnares(TrackState& track, int bars)
+{
+    std::vector<NoteEvent> anchors;
+    std::vector<NoteEvent> ghosts;
+    anchors.reserve(track.notes.size());
+    ghosts.reserve(track.notes.size());
+
+    for (const auto& note : track.notes)
+    {
+        if (note.isGhost)
+            ghosts.push_back(note);
+        else
+            anchors.push_back(note);
+    }
+
+    const int maxGhosts = std::max(1, (std::max(1, bars) + 3) / 4);
+    std::stable_sort(ghosts.begin(), ghosts.end(), [bars](const NoteEvent& left, const NoteEvent& right)
+    {
+        const int leftScore = classicGhostPriority(left, bars);
+        const int rightScore = classicGhostPriority(right, bars);
+        if (leftScore != rightScore)
+            return leftScore > rightScore;
+        return left.step < right.step;
+    });
+
+    if (static_cast<int>(ghosts.size()) > maxGhosts)
+        ghosts.resize(static_cast<size_t>(maxGhosts));
+
+    anchors.insert(anchors.end(), ghosts.begin(), ghosts.end());
+    std::sort(anchors.begin(), anchors.end(), [](const NoteEvent& left, const NoteEvent& right)
+    {
+        if (left.step != right.step)
+            return left.step < right.step;
+        if (left.isGhost != right.isGhost)
+            return !left.isGhost;
+        return left.velocity > right.velocity;
+    });
+    track.notes = std::move(anchors);
 }
 }
 
@@ -135,14 +196,14 @@ void BoomBapSnareGenerator::generate(TrackState& track,
 
         if (classicTightGhosts)
         {
-            ghostChance = std::min(ghostChance, 0.12f);
-            ghostBefore2Chance = std::min(ghostBefore2Chance, 0.10f);
-            ghostBefore4Chance = std::min(ghostBefore4Chance, 0.10f);
+            ghostChance = std::min(ghostChance, role == PhraseRole::Ending ? 0.07f : 0.035f);
+            ghostBefore2Chance = std::min(ghostBefore2Chance, role == PhraseRole::Ending ? 0.06f : 0.025f);
+            ghostBefore4Chance = std::min(ghostBefore4Chance, role == PhraseRole::Ending ? 0.07f : 0.035f);
             if (role == PhraseRole::Base)
             {
-                ghostChance *= 0.72f;
-                ghostBefore2Chance *= 0.68f;
-                ghostBefore4Chance *= 0.68f;
+                ghostChance *= 0.45f;
+                ghostBefore2Chance *= 0.38f;
+                ghostBefore4Chance *= 0.42f;
             }
         }
 
@@ -151,7 +212,7 @@ void BoomBapSnareGenerator::generate(TrackState& track,
 
         float fillChance = std::clamp(feel.fillHitProbability, 0.0f, 0.45f);
         if (classicTightGhosts)
-            fillChance = std::min(fillChance, 0.12f);
+            fillChance = std::min(fillChance, role == PhraseRole::Ending ? 0.08f : 0.02f);
 
         if (role == PhraseRole::Ending && chance(rng) < fillChance)
         {
@@ -210,5 +271,8 @@ void BoomBapSnareGenerator::generate(TrackState& track,
                 track.notes.push_back({ pitch, bar * 16 + 11, 1, ghostVel(rng), std::max(1, beat4Late / 3), true });
         }
     }
+
+    if (style.substyle == BoomBapSubstyle::Classic)
+        pruneClassicGhostSnares(track, bars);
 }
 } // namespace bbg

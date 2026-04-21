@@ -11,6 +11,7 @@
 #include "../Source/Core/PatternProjectSerialization.h"
 #include "../Source/Core/ProjectStateController.h"
 #include "../Source/Analysis/SampleApplyWeights.h"
+#include "../Source/Engine/BoomBapEngine.h"
 #include "../Source/Engine/DrillEngine.h"
 #include "../Source/Engine/Drill/DrillPatternValidator.h"
 #include "../Source/Engine/Drill/DrillPhrasePlanner.h"
@@ -934,7 +935,11 @@ void testVisibleTransformExportConsistencySmoke()
 
 void testStyleDefaultsSmoke()
 {
-    expect(getBoomBapSubstyleNames().size() > 0, "BoomBap substyles must remain available.");
+    const auto boomBapNames = getBoomBapSubstyleNames();
+    expect(boomBapNames.size() == 6, "BoomBap should expose exactly six public substyles after moving Aggressive/LaidBack out.");
+    expect(boomBapNames.contains("BoomBapGold"), "BoomBap should expose BoomBapGold.");
+    expect(!boomBapNames.contains("Aggressive") && !boomBapNames.contains("LaidBack"),
+           "BoomBap should no longer expose Aggressive or LaidBack as public substyles.");
     expect(getRapSubstyleNames().size() > 0, "Rap substyles must remain available.");
     expect(getTrapSubstyleNames().size() > 0, "Trap substyles must remain available.");
     expect(getDrillSubstyleNames().size() == 1, "Drill Phase 2 should expose exactly one Main substyle.");
@@ -947,6 +952,8 @@ void testStyleDefaultsSmoke()
     expect(rap.genre == GenreType::Rap, "Rap defaults should resolve Rap genre.");
     expect(trap.genre == GenreType::Trap, "Trap defaults should resolve Trap genre.");
     expect(drill.genre == GenreType::Drill, "Drill defaults should resolve Drill genre.");
+    expect(getGenreStyleDefaults(GenreType::BoomBap, 3).substyleName == "BoomBapGold",
+           "BoomBapGold should resolve at public BoomBap substyle index 3.");
     expect(drill.substyleName == "Main", "Drill defaults should expose the Main substyle.");
 }
 
@@ -984,7 +991,7 @@ void testGenerationBpmSelectionSmoke()
         "Generate BPM smoke should adopt the exact host tempo when host sync is enabled.");
 
     params.genre = GenreType::BoomBap;
-    params.boombapSubstyle = 7;
+    params.boombapSubstyle = 5;
     params.seed = 777;
     params.syncDawTempo = false;
 
@@ -2556,6 +2563,478 @@ void testClassicRuleEnforcerSmoke()
         "Classic rule enforcer should keep open hats sparse in Classic mode.");
 }
 
+void testBoomBapClassicPocketGenerationSmoke()
+{
+    BoomBapEngine engine;
+
+    for (int seed = 3100; seed < 3112; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.boombapSubstyle = 0;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 90.0f;
+        project.params.swingPercent = 57.0f;
+        project.params.densityAmount = 0.50f;
+        project.params.timingAmount = 0.38f;
+        project.params.humanizeAmount = 0.30f;
+
+        engine.generate(project);
+
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        expect(snare != nullptr && clapGhost != nullptr && kick != nullptr && hat != nullptr,
+               "BoomBap Classic pocket smoke requires Snare, Clap/Ghost, Kick and HiHat tracks.");
+
+        int snareGhosts = 0;
+        for (const auto& note : snare->notes)
+            if (note.isGhost)
+                ++snareGhosts;
+        expect(snareGhosts + static_cast<int>(clapGhost->notes.size()) <= 2,
+               "BoomBap Classic should keep ghost snare support rare across a four-bar phrase.");
+
+        for (const auto& note : clapGhost->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            expect(step != 4 && step != 12,
+                   "BoomBap Classic ghost snare lane should not double the main backbeat.");
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+            expect(std::any_of(snare->notes.begin(), snare->notes.end(), [beat2](const NoteEvent& note)
+            {
+                return note.step == beat2 && !note.isGhost;
+            }), "BoomBap Classic must keep the main snare on beat 2.");
+            expect(std::any_of(snare->notes.begin(), snare->notes.end(), [beat4](const NoteEvent& note)
+            {
+                return note.step == beat4 && !note.isGhost;
+            }), "BoomBap Classic must keep the main snare on beat 4.");
+
+            const int barKickCount = static_cast<int>(std::count_if(kick->notes.begin(), kick->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+            expect(barKickCount >= 1 && barKickCount <= 5,
+                   "BoomBap Classic kick density should stay in a focused head-nod range.");
+            expect(std::none_of(kick->notes.begin(), kick->notes.end(), [beat2, beat4](const NoteEvent& note)
+            {
+                return note.step == beat2 || note.step == beat4;
+            }), "BoomBap Classic kick should not collide with the main snare backbeat.");
+
+            const int eighthHatCount = static_cast<int>(std::count_if(hat->notes.begin(), hat->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar && ((note.step % 16) % 2) == 0;
+            }));
+            expect(eighthHatCount >= 8,
+                   "BoomBap Classic hats should carry a steady eighth-note backbone.");
+        }
+    }
+}
+
+void testBoomBapDustyPocketGenerationSmoke()
+{
+    BoomBapEngine engine;
+
+    for (int seed = 4200; seed < 4212; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.boombapSubstyle = 1;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 86.0f;
+        project.params.swingPercent = 59.0f;
+        project.params.densityAmount = 0.46f;
+        project.params.timingAmount = 0.52f;
+        project.params.humanizeAmount = 0.36f;
+
+        if (auto* ride = findTrackByType(project, TrackType::Ride); ride != nullptr)
+            ride->enabled = true;
+
+        engine.generate(project);
+
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+
+        expect(snare != nullptr && kick != nullptr && hat != nullptr,
+               "BoomBap Dusty pocket smoke requires Snare, Kick and HiHat tracks.");
+
+        const auto stepInBar = [](const NoteEvent& note)
+        {
+            return ((note.step % 16) + 16) % 16;
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+            const int endingLimit = bar == project.params.bars - 1 ? 2 : 1;
+
+            const auto beat2Snare = std::find_if(snare->notes.begin(), snare->notes.end(), [beat2](const NoteEvent& note)
+            {
+                return note.step == beat2 && !note.isGhost;
+            });
+            const auto beat4Snare = std::find_if(snare->notes.begin(), snare->notes.end(), [beat4](const NoteEvent& note)
+            {
+                return note.step == beat4 && !note.isGhost;
+            });
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "BoomBap Dusty must keep the main snare on beat 2 and beat 4.");
+            expect(beat2Snare->microOffset >= 8 && beat2Snare->microOffset <= 20
+                   && beat4Snare->microOffset >= 8 && beat4Snare->microOffset <= 20,
+                   "BoomBap Dusty snare anchors should sit slightly late, tied to the hat swing.");
+
+            const int carrierHatCount = static_cast<int>(std::count_if(hat->notes.begin(), hat->notes.end(), [bar, stepInBar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar && (stepInBar(note) % 2) == 0;
+            }));
+            const int swungOffbeatHatCount = static_cast<int>(std::count_if(hat->notes.begin(), hat->notes.end(), [bar, stepInBar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar && (stepInBar(note) % 4) == 2;
+            }));
+            expect(carrierHatCount >= 6,
+                   "BoomBap Dusty hats should keep a slow swung eighth-note carrier. Seed "
+                       + juce::String(seed) + " bar " + juce::String(bar)
+                       + " carrier " + juce::String(carrierHatCount));
+            expect(swungOffbeatHatCount >= 3,
+                   "BoomBap Dusty hats should keep delayed offbeats in every bar.");
+
+            for (const auto& note : hat->notes)
+            {
+                if (note.step / 16 == bar && (stepInBar(note) % 4) == 2)
+                {
+                    expect(note.microOffset >= 28 && note.microOffset <= 56,
+                           "BoomBap Dusty offbeat hats should use the Dusty swing delay range.");
+                }
+            }
+
+            const int barKickCount = countInBar(kick, bar);
+            expect(barKickCount >= 1 && barKickCount <= 5,
+                   "BoomBap Dusty kicks should stay slow, grounded and uncluttered.");
+            expect(std::none_of(kick->notes.begin(), kick->notes.end(), [beat2, beat4](const NoteEvent& note)
+            {
+                return note.step == beat2 || note.step == beat4;
+            }), "BoomBap Dusty kick should not collide with the main snare backbeat.");
+
+            expect(countInBar(ghostKick, bar) <= endingLimit,
+                   "BoomBap Dusty ghost kicks should stay rare and supportive.");
+            expect(countInBar(clapGhost, bar) <= 2,
+                   "BoomBap Dusty clap/ghost snare lane should not crowd the backbeat.");
+            expect(countInBar(openHat, bar) <= endingLimit,
+                   "BoomBap Dusty open hats should stay sparse.");
+            expect(countInBar(perc, bar) <= endingLimit,
+                   "BoomBap Dusty perc should stay sparse and groove-led.");
+            expect(countInBar(ride, bar) <= (bar == project.params.bars - 1 ? 7 : 6),
+                   "BoomBap Dusty ride should act as a carrier layer, not a busy extra lane.");
+        }
+    }
+}
+
+void testBoomBapJazzyPocketGenerationSmoke()
+{
+    BoomBapEngine engine;
+
+    for (int seed = 5200; seed < 5212; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.boombapSubstyle = 2;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 94.0f;
+        project.params.swingPercent = 63.0f;
+        project.params.densityAmount = 0.50f;
+        project.params.timingAmount = 0.50f;
+        project.params.humanizeAmount = 0.34f;
+
+        if (auto* ride = findTrackByType(project, TrackType::Ride); ride != nullptr)
+            ride->enabled = true;
+        if (auto* cymbal = findTrackByType(project, TrackType::Cymbal); cymbal != nullptr)
+            cymbal->enabled = true;
+
+        engine.generate(project);
+
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+
+        expect(ride != nullptr && hat != nullptr && cymbal != nullptr && kick != nullptr && snare != nullptr,
+               "BoomBap Jazzy pocket smoke requires Ride, HiHat, Cymbal, Kick and Snare tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phraseCompingGhosts = 0;
+        for (const auto& note : snare->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (note.isGhost && step != 4 && step != 12)
+                ++phraseCompingGhosts;
+        }
+
+        int phraseKickCompHits = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step != 0 && step != 4 && step != 8 && step != 12)
+                ++phraseKickCompHits;
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            for (const int stepInBar : { 0, 4, 6, 8, 12, 14 })
+            {
+                const int absoluteStep = bar * 16 + stepInBar;
+                expect(hasStep(hat, absoluteStep),
+                       "BoomBap Jazzy hi-hat must inherit the cymbal spang-a-lang carrier. Seed "
+                           + juce::String(seed) + " bar " + juce::String(bar));
+            }
+
+            const auto hatSkipA = findStep(hat, bar * 16 + 6);
+            const auto hatSkipB = findStep(hat, bar * 16 + 14);
+            expect(hatSkipA != hat->notes.end() && hatSkipB != hat->notes.end()
+                   && hatSkipA->microOffset >= 96 && hatSkipA->microOffset <= 188
+                   && hatSkipB->microOffset >= 96 && hatSkipB->microOffset <= 188,
+                   "BoomBap Jazzy hi-hat skips should use the cymbal tempo-derived swing delay.");
+
+            for (const int stepInBar : { 4, 12 })
+            {
+                const int absoluteStep = bar * 16 + stepInBar;
+                const auto cymbalFoot = findStep(cymbal, absoluteStep);
+                expect(cymbalFoot != cymbal->notes.end(),
+                       "BoomBap Jazzy cymbal should inherit the old hi-hat 2 and 4 foot layer.");
+                expect(cymbalFoot->velocity <= 44 && cymbalFoot->microOffset >= -1 && cymbalFoot->microOffset <= 12,
+                       "BoomBap Jazzy cymbal foot layer should be much quieter than the carrier.");
+            }
+
+            for (const int stepInBar : { 0, 4, 8, 12 })
+            {
+                const int absoluteStep = bar * 16 + stepInBar;
+                const auto kickFeather = findStep(kick, absoluteStep);
+                expect(kickFeather != kick->notes.end(),
+                       "BoomBap Jazzy kick should feather quiet quarter notes.");
+                expect(kickFeather->velocity <= 66 && kickFeather->microOffset >= -3 && kickFeather->microOffset <= 8,
+                       "BoomBap Jazzy feathered kick should stay quiet and close to the walking pulse.");
+            }
+
+            expect(countInBar(kick, bar) >= 4 && countInBar(kick, bar) <= (bar == project.params.bars - 1 ? 6 : 5),
+                   "BoomBap Jazzy kick should feather without becoming a busy boom-bap kick lane.");
+            expect(countInBar(snare, bar) >= 1 && countInBar(snare, bar) <= (bar == project.params.bars - 1 ? 6 : 5),
+                   "BoomBap Jazzy snare should comp, not hard-loop a dense backbeat lane.");
+            expect(countInBar(hat, bar) == 6,
+                   "BoomBap Jazzy hi-hat should now carry the transferred cymbal swing pattern.");
+            expect(countInBar(cymbal, bar) >= 2 && countInBar(cymbal, bar) <= (bar == project.params.bars - 1 ? 4 : 3),
+                   "BoomBap Jazzy cymbal should keep the transferred hat layer sparse and quiet.");
+            expect(countInBar(ride, bar) == 0,
+                   "BoomBap Jazzy ride should not duplicate the carrier after moving it into hi-hat.");
+            expect(countInBar(clapGhost, bar) <= (bar == project.params.bars - 1 ? 3 : 2),
+                   "BoomBap Jazzy clap/ghost snare support should stay sparse.");
+            expect(countInBar(ghostKick, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "BoomBap Jazzy ghost kicks should not crowd the feathered kick.");
+            expect(countInBar(openHat, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "BoomBap Jazzy open hats should be occasional color.");
+            expect(countInBar(perc, bar) <= (bar == project.params.bars - 1 ? 3 : 2),
+                   "BoomBap Jazzy percussion should be comping color, not the carrier.");
+        }
+
+        expect(phraseCompingGhosts > 0,
+               "BoomBap Jazzy should add at least one snare comping ghost across a phrase.");
+        expect(phraseKickCompHits > 0,
+               "BoomBap Jazzy kick should add a small low comping gesture on top of feathering.");
+    }
+}
+
+void testBoomBapGoldPocketGenerationSmoke()
+{
+    BoomBapEngine engine;
+
+    for (int seed = 6300; seed < 6312; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.boombapSubstyle = 3;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 92.0f;
+        project.params.swingPercent = 58.5f;
+        project.params.densityAmount = 0.52f;
+        project.params.timingAmount = 0.38f;
+        project.params.humanizeAmount = 0.28f;
+
+        if (auto* ride = findTrackByType(project, TrackType::Ride); ride != nullptr)
+            ride->enabled = true;
+        if (auto* cymbal = findTrackByType(project, TrackType::Cymbal); cymbal != nullptr)
+            cymbal->enabled = true;
+
+        engine.generate(project);
+
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+
+        expect(hat != nullptr && kick != nullptr && snare != nullptr,
+               "BoomBapGold smoke requires HiHat, Kick and Snare tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phraseKickPickups = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 10 || step == 11 || step == 14)
+                ++phraseKickPickups;
+        }
+
+        int phraseSnareGhosts = 0;
+        for (const auto& note : snare->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (note.isGhost && step != 4 && step != 12)
+                ++phraseSnareGhosts;
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+
+            const auto beat2Snare = findStep(snare, beat2);
+            const auto beat4Snare = findStep(snare, beat4);
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "BoomBapGold should keep hard golden-era snares on beat 2 and beat 4.");
+            expect(!beat2Snare->isGhost && !beat4Snare->isGhost
+                   && beat2Snare->velocity >= 98 && beat4Snare->velocity >= 98,
+                   "BoomBapGold snare anchors should be strong, not ghosted.");
+            expect(beat2Snare->microOffset >= 6 && beat2Snare->microOffset <= 16
+                   && beat4Snare->microOffset >= 6 && beat4Snare->microOffset <= 16,
+                   "BoomBapGold snare anchors should sit slightly late in the pocket.");
+
+            for (const int stepInBar : { 0, 2, 4, 6, 8, 10, 12, 14 })
+            {
+                const int absoluteStep = bar * 16 + stepInBar;
+                expect(hasStep(hat, absoluteStep),
+                       "BoomBapGold should keep a swung eighth-note hat carrier.");
+
+                const auto hatHit = findStep(hat, absoluteStep);
+                if ((stepInBar % 4) == 2)
+                {
+                    expect(hatHit != hat->notes.end() && hatHit->microOffset >= 28 && hatHit->microOffset <= 58,
+                           "BoomBapGold offbeat hats should carry a clear delayed swing.");
+                }
+            }
+
+            expect(countInBar(hat, bar) >= 8 && countInBar(hat, bar) <= 9,
+                   "BoomBapGold hats should be present but not modern 16th-note clutter.");
+            expect(hasStep(kick, bar * 16),
+                   "BoomBapGold should ground each bar with a kick on the one.");
+            expect(countInBar(kick, bar) >= 3 && countInBar(kick, bar) <= 5,
+                   "BoomBapGold kicks should be active and syncopated without turning into a dense modern lane.");
+            expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
+                   "BoomBapGold kick should not collide with the main snare backbeat.");
+
+            expect(countInBar(clapGhost, bar) <= 1,
+                   "BoomBapGold clap layer should stay as occasional backbeat color.");
+            expect(countInBar(ghostKick, bar) <= 1,
+                   "BoomBapGold ghost kicks should stay rare.");
+            expect(countInBar(openHat, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "BoomBapGold open hats should only appear as rare phrase-end color.");
+            expect(countInBar(perc, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "BoomBapGold percussion should stay sparse and era-appropriate.");
+            expect(countInBar(ride, bar) == 0 && countInBar(cymbal, bar) == 0,
+                   "BoomBapGold should not add ride/cymbal clutter over the core drum break language.");
+        }
+
+        expect(phraseKickPickups >= project.params.bars,
+               "BoomBapGold should use signature pickup kicks around the back half of each bar.");
+        expect(phraseSnareGhosts >= 1 && phraseSnareGhosts <= project.params.bars + 1,
+               "BoomBapGold should keep snare ghosts rare but present enough to add push.");
+    }
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -2615,5 +3094,9 @@ int main()
     failures += runTest("Sample apply weights smoke", testSampleApplyWeightsSmoke);
     failures += runTest("Extract pattern blend and copy smoke", testExtractPatternBlendAndCopySmoke);
     failures += runTest("Classic rule enforcer smoke", testClassicRuleEnforcerSmoke);
+    failures += runTest("BoomBap Classic pocket generation smoke", testBoomBapClassicPocketGenerationSmoke);
+    failures += runTest("BoomBap Dusty pocket generation smoke", testBoomBapDustyPocketGenerationSmoke);
+    failures += runTest("BoomBap Jazzy pocket generation smoke", testBoomBapJazzyPocketGenerationSmoke);
+    failures += runTest("BoomBap Gold pocket generation smoke", testBoomBapGoldPocketGenerationSmoke);
     return failures == 0 ? 0 : 1;
 }

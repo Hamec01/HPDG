@@ -31,6 +31,25 @@ juce::String displayNameForDescriptor(const SoundTargetDescriptor& descriptor)
     return "Global";
 }
 
+bool nearlyEqual(float a, float b, float tolerance = 0.0001f)
+{
+    return std::abs(a - b) <= tolerance;
+}
+
+bool eqAnalyzerStateMatches(const EqDisplayAnalyzerState& lhs, const EqDisplayAnalyzerState& rhs)
+{
+    if (lhs.active != rhs.active || !nearlyEqual(lhs.rms, rhs.rms))
+        return false;
+
+    for (size_t index = 0; index < lhs.magnitudes.size(); ++index)
+    {
+        if (!nearlyEqual(lhs.magnitudes[index], rhs.magnitudes[index]))
+            return false;
+    }
+
+    return true;
+}
+
 bool comboContainsDescriptor(const std::vector<SoundTargetDescriptor>& descriptors, const SoundTargetDescriptor& target)
 {
     return std::find(descriptors.begin(), descriptors.end(), target) != descriptors.end();
@@ -693,15 +712,15 @@ juce::String buildReverbCollapsedSummary(double size, double mix, double predela
 juce::String buildMonstaCollapsedCharacter(const MonstaFxState& monstaFx)
 {
     if (monstaFx.wet <= 0.001f)
-        return "Reverse / glitch / VHS chaos ready";
-
-    return monstaFxFlavorCharacter(resolveMonstaFxFlavor(monstaFx));
+        return "Tempo glitch and broken repeat";
+    if (monstaFx.chaosSeed != 0)
+        return "Stable chaos / sync-sliced damage";
+    return "Sync-sliced repeat / crush gate";
 }
 
 juce::String buildMonstaCollapsedSummary(const MonstaFxState& monstaFx)
 {
-    return juce::String(monstaFxFlavorTitle(resolveMonstaFxFlavor(monstaFx))) + "  |  Dry "
-        + formatPercentValue(static_cast<double>(monstaFx.dry) * 100.0)
+    return "Dry " + formatPercentValue(static_cast<double>(monstaFx.dry) * 100.0)
         + "  |  Wet " + formatPercentValue(static_cast<double>(monstaFx.wet) * 100.0);
 }
 
@@ -1512,7 +1531,7 @@ SoundModuleComponent::SoundModuleComponent()
 
     styleHeaderLabel(monstaSectionLabel, "MONSTAFX", 13.0f);
     addAndMakeVisible(monstaSectionLabel);
-    styleMicroLabel(monstaDescriptorLabel, "Reverse burn / glitch chaos / VHS melt", 10.0f);
+    styleMicroLabel(monstaDescriptorLabel, "Tempo glitch and broken repeat", 10.0f);
     addAndMakeVisible(monstaDescriptorLabel);
     styleMicroLabel(monstaDryLabel, "DRY");
     addAndMakeVisible(monstaDryLabel);
@@ -1544,7 +1563,6 @@ SoundModuleComponent::SoundModuleComponent()
     addAndMakeVisible(monstaWetSlider);
 
     setupActionButton(monstaChaosButton, true);
-    monstaChaosButton.setButtonText("REROLL");
     monstaChaosButton.onClick = [this]
     {
         if (isSyncingUi)
@@ -2627,6 +2645,9 @@ void SoundModuleComponent::setState(const SoundModuleViewState& state)
 
 void SoundModuleComponent::setEqDisplayAnalyzerState(const EqDisplayAnalyzerState& state)
 {
+    if (eqAnalyzerStateMatches(eqDisplayAnalyzerState, state))
+        return;
+
     eqDisplayAnalyzerState = state;
     repaint(toDisplaySpace(eqDisplayBounds));
 }
@@ -2946,8 +2967,7 @@ void SoundModuleComponent::updateChainSummary()
     chain << "  |  STEREO " << juce::String(juce::roundToInt(widthSlider.getValue() * 100.0)) << "%"
           << " / FOC " << juce::String(juce::roundToInt(stereoFocusSlider.getValue())) << "%";
     chain << "  |  " << (compPowerButton.getToggleState() ? compOrderCombo.getText() + " COMP" : juce::String("COMP OFF"));
-    chain << "  |  MONSTA " << juce::String(monstaFxFlavorTitle(resolveMonstaFxFlavor(currentSoundState.monstaFx)))
-          << " " << juce::String(juce::roundToInt(monstaWetSlider.getValue())) << "%";
+    chain << "  |  MONSTA " << juce::String(juce::roundToInt(monstaWetSlider.getValue())) << "%";
     chain << "  |  REV " << juce::String(juce::roundToInt(reverbMixSlider.getValue())) << "%";
     chain << "  |  TRANS " << juce::String(juce::roundToInt(transientAttackSlider.getValue())) << "%";
     chainSummaryLabel.setText(chain, juce::dontSendNotification);

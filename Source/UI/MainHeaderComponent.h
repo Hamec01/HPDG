@@ -33,7 +33,6 @@ public:
     void setGridModeIndicatorText(const juce::String& text);
     void setStyleLabDiagnosticsText(const juce::String& text);
     void setPreviewPlaybackModeId(int id);
-    void setVst3GeneratorChromeEnabled(bool enabled);
     HeaderControlsMode getHeaderControlsMode() const { return controlsMode; }
     int getPreferredHeight() const;
     void setHatFxDensityState(float density, bool locked);
@@ -139,6 +138,5 @@ public:
     juce::ToggleButton hatFxDensityLockToggle { "Lk" };
 
     HeaderControlsMode controlsMode = HeaderControlsMode::Expanded;
-    bool vst3GeneratorChromeEnabled = false;
 };
 } // namespace bbg

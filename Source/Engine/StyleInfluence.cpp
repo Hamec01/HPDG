@@ -110,6 +110,7 @@ void applyBoomBapMusicalHints(const ResolvedStyleDefinition& definition, Pattern
 {
     auto& params = project.params;
     auto& styleInfluence = project.styleInfluence;
+    const float referenceBlend = definition.loadedFromReference ? 0.40f : 1.0f;
     const auto sharedSwing = hintValue(definition.styleHints, "groove.swing", normalizedSwing(params.swingPercent));
     const auto sharedTiming = hintValue(definition.styleHints, "groove.timing", params.timingAmount);
     const auto sharedHumanize = hintValue(definition.styleHints, "groove.humanize", params.humanizeAmount);
@@ -121,19 +122,19 @@ void applyBoomBapMusicalHints(const ResolvedStyleDefinition& definition, Pattern
     const auto kickBias = laneHintValue(definition, TrackType::Kick, "lane.densityBias", 1.0f);
     const auto hatBias = laneHintValue(definition, TrackType::HiHat, "lane.densityBias", 1.0f);
 
-    blendSwing(params.swingPercent, juce::jmax(sharedSwing, hintValue(definition.styleHints, "boom_bap.swing_feel", sharedSwing)), 0.8f);
-    blendParam(params.timingAmount, clampUnit(sharedTiming * 0.45f + looseness * 0.55f), 0.75f);
-    blendParam(params.humanizeAmount, clampUnit(sharedHumanize * 0.35f + looseness * 0.65f), 0.85f);
+    blendSwing(params.swingPercent, juce::jmax(sharedSwing, hintValue(definition.styleHints, "boom_bap.swing_feel", sharedSwing)), 0.8f * referenceBlend);
+    blendParam(params.timingAmount, clampUnit(sharedTiming * 0.45f + looseness * 0.55f), 0.75f * referenceBlend);
+    blendParam(params.humanizeAmount, clampUnit(sharedHumanize * 0.35f + looseness * 0.65f), 0.85f * referenceBlend);
     blendParam(params.densityAmount,
                clampUnit(sharedDensity * 0.7f + kickBias * 0.08f + hatBias * 0.06f - percSparsity * 0.18f),
-               0.7f);
+               0.7f * referenceBlend);
 
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::Kick).activityWeight, 0.96f + kickBias * 0.14f, 0.55f);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 0.92f + hatBias * 0.10f, 0.45f);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::ClapGhostSnare).balanceWeight, 1.0f + clapFocus * 0.24f, 0.8f);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::Perc).activityWeight, 0.56f + (1.0f - percSparsity) * 0.18f, 0.75f);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::OpenHat).activityWeight, 0.66f + (1.0f - percSparsity) * 0.16f, 0.7f);
-    blendWeight(styleInfluence.supportAccentWeight, 1.0f + clapFocus * 0.18f - percSparsity * 0.08f, 0.7f);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Kick).activityWeight, 0.96f + kickBias * 0.14f, 0.55f * referenceBlend);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 0.92f + hatBias * 0.10f, 0.45f * referenceBlend);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::ClapGhostSnare).balanceWeight, 1.0f + clapFocus * 0.24f, 0.8f * referenceBlend);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::Perc).activityWeight, 0.56f + (1.0f - percSparsity) * 0.18f, 0.75f * referenceBlend);
+    blendWeight(laneBiasFor(styleInfluence, TrackRole::OpenHat).activityWeight, 0.66f + (1.0f - percSparsity) * 0.16f, 0.7f * referenceBlend);
+    blendWeight(styleInfluence.supportAccentWeight, 1.0f + clapFocus * 0.18f - percSparsity * 0.08f, 0.7f * referenceBlend);
 }
 
 void applyRapMusicalHints(const ResolvedStyleDefinition& definition, PatternProject& project)

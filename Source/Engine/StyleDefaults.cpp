@@ -127,19 +127,152 @@ std::array<LaneStyleDefaults, 11> makeBaseDrillLanes()
     };
 }
 
-const std::array<GenreStyleDefaults, 8>& boomBapStyles()
+const std::array<GenreStyleDefaults, 6>& boomBapStyles()
 {
-    static const std::array<GenreStyleDefaults, 8> table = []
+    static const std::array<GenreStyleDefaults, 6> table = []
     {
-        std::array<GenreStyleDefaults, 8> styles;
+        std::array<GenreStyleDefaults, 6> styles;
 
-        { auto lanes = makeBaseBoomBapLanes(); styles[0] = { GenreType::BoomBap, "Classic", 90.0f, 88, 92, 57.0f, 0.52f, 0.42f, 0.34f, 0.50f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 0.86f; lanes[5].densityBias = 0.82f; lanes[10].enabledByDefault = false; lanes[10].noteProbability = 0.32f; styles[1] = { GenreType::BoomBap, "Dusty", 87.0f, 84, 90, 58.0f, 0.50f, 0.38f, 0.30f, 0.44f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 1.06f; lanes[8].enabledByDefault = true; lanes[8].noteProbability = 0.58f; lanes[8].volumeDefault = 0.70f; lanes[10].noteProbability = 0.58f; styles[2] = { GenreType::BoomBap, "Jazzy", 93.0f, 90, 96, 62.0f, 0.48f, 0.46f, 0.38f, 0.56f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[5].densityBias = 1.2f; lanes[0].densityBias = 1.08f; lanes[4].noteProbability = 0.48f; styles[3] = { GenreType::BoomBap, "Aggressive", 93.0f, 90, 96, 55.0f, 0.58f, 0.34f, 0.24f, 0.62f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[5].densityBias = 0.84f; lanes[0].densityBias = 0.88f; lanes[2].noteProbability = 0.48f; lanes[9].enabledByDefault = false; styles[4] = { GenreType::BoomBap, "LaidBack", 85.0f, 82, 88, 60.0f, 0.50f, 0.48f, 0.40f, 0.46f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[2].noteProbability = 0.62f; lanes[8].enabledByDefault = true; lanes[8].noteProbability = 0.52f; lanes[10].noteProbability = 0.64f; styles[5] = { GenreType::BoomBap, "BoomBapGold", 91.0f, 89, 93, 59.0f, 0.56f, 0.44f, 0.36f, 0.57f, lanes }; }
-        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 0.74f; lanes[0].noteProbability = 0.78f; lanes[5].densityBias = 0.78f; lanes[2].noteProbability = 0.28f; lanes[8].enabledByDefault = false; lanes[10].noteProbability = 0.26f; lanes[3].volumeDefault = 0.94f; styles[6] = { GenreType::BoomBap, "RussianUnderground", 86.5f, 84, 89, 56.0f, 0.54f, 0.32f, 0.26f, 0.38f, lanes }; }
+        {
+            auto lanes = makeBaseBoomBapLanes();
+            lanes[0].densityBias = 0.96f;
+            lanes[0].noteProbability = 1.0f;
+            lanes[2].densityBias = 0.36f;
+            lanes[2].noteProbability = 0.28f;
+            lanes[2].phraseEndingProbability = 0.34f;
+            lanes[3].phraseEndingProbability = 0.18f;
+            lanes[4].volumeDefault = 0.58f;
+            lanes[4].densityBias = 0.24f;
+            lanes[4].noteProbability = 0.14f;
+            lanes[4].phraseEndingProbability = 0.16f;
+            lanes[5].densityBias = 0.92f;
+            lanes[6].volumeDefault = 0.56f;
+            lanes[6].densityBias = 0.26f;
+            lanes[6].noteProbability = 0.18f;
+            lanes[6].phraseEndingProbability = 0.18f;
+            lanes[8].enabledByDefault = false;
+            lanes[8].noteProbability = 0.04f;
+            lanes[10].densityBias = 0.24f;
+            lanes[10].noteProbability = 0.18f;
+            lanes[10].phraseEndingProbability = 0.18f;
+            styles[0] = { GenreType::BoomBap, "Classic", 90.0f, 88, 92, 57.0f, 0.52f, 0.38f, 0.30f, 0.46f, lanes };
+        }
+        {
+            auto lanes = makeBaseBoomBapLanes();
+            lanes[0].volumeDefault = 0.80f;
+            lanes[0].densityBias = 0.90f;
+            lanes[0].timingBias = 1.14f;
+            lanes[0].humanizeBias = 1.02f;
+            lanes[0].noteProbability = 0.96f;
+            lanes[2].noteProbability = 0.18f;
+            lanes[2].phraseEndingProbability = 0.42f;
+            lanes[3].volumeDefault = 0.86f;
+            lanes[3].timingBias = 1.10f;
+            lanes[4].volumeDefault = 0.56f;
+            lanes[4].densityBias = 0.24f;
+            lanes[4].noteProbability = 0.20f;
+            lanes[4].phraseEndingProbability = 0.24f;
+            lanes[5].densityBias = 0.78f;
+            lanes[5].timingBias = 1.06f;
+            lanes[6].volumeDefault = 0.54f;
+            lanes[6].densityBias = 0.24f;
+            lanes[6].noteProbability = 0.18f;
+            lanes[8].enabledByDefault = true;
+            lanes[8].volumeDefault = 0.48f;
+            lanes[8].densityBias = 0.42f;
+            lanes[8].timingBias = 1.08f;
+            lanes[8].noteProbability = 0.34f;
+            lanes[9].enabledByDefault = false;
+            lanes[9].noteProbability = 0.04f;
+            lanes[10].volumeDefault = 0.54f;
+            lanes[10].densityBias = 0.28f;
+            lanes[10].noteProbability = 0.24f;
+            lanes[10].phraseEndingProbability = 0.30f;
+            styles[1] = { GenreType::BoomBap, "Dusty", 86.0f, 82, 90, 59.0f, 0.46f, 0.52f, 0.40f, 0.38f, lanes };
+        }
+        {
+            auto lanes = makeBaseBoomBapLanes();
+            lanes[0].volumeDefault = 0.72f;
+            lanes[0].densityBias = 0.44f;
+            lanes[0].timingBias = 1.04f;
+            lanes[0].noteProbability = 0.56f;
+            lanes[2].noteProbability = 0.18f;
+            lanes[2].phraseEndingProbability = 0.46f;
+            lanes[3].volumeDefault = 0.78f;
+            lanes[3].densityBias = 0.72f;
+            lanes[3].timingBias = 0.96f;
+            lanes[3].noteProbability = 0.62f;
+            lanes[3].phraseEndingProbability = 0.58f;
+            lanes[4].volumeDefault = 0.55f;
+            lanes[4].densityBias = 0.62f;
+            lanes[4].noteProbability = 0.46f;
+            lanes[4].phraseEndingProbability = 0.62f;
+            lanes[5].volumeDefault = 0.62f;
+            lanes[5].densityBias = 0.56f;
+            lanes[5].timingBias = 0.90f;
+            lanes[5].noteProbability = 0.78f;
+            lanes[6].volumeDefault = 0.48f;
+            lanes[6].densityBias = 0.34f;
+            lanes[6].noteProbability = 0.24f;
+            lanes[8].enabledByDefault = true;
+            lanes[8].volumeDefault = 0.78f;
+            lanes[8].densityBias = 1.12f;
+            lanes[8].timingBias = 1.08f;
+            lanes[8].noteProbability = 1.0f;
+            lanes[8].phraseEndingProbability = 0.72f;
+            lanes[9].enabledByDefault = true;
+            lanes[9].volumeDefault = 0.30f;
+            lanes[9].densityBias = 0.30f;
+            lanes[9].timingBias = 0.94f;
+            lanes[9].noteProbability = 0.42f;
+            lanes[9].phraseEndingProbability = 0.40f;
+            lanes[10].volumeDefault = 0.60f;
+            lanes[10].densityBias = 0.70f;
+            lanes[10].timingBias = 1.06f;
+            lanes[10].noteProbability = 0.52f;
+            lanes[10].phraseEndingProbability = 0.66f;
+            styles[2] = { GenreType::BoomBap, "Jazzy", 94.0f, 88, 102, 63.0f, 0.50f, 0.50f, 0.34f, 0.58f, lanes };
+        }
+        {
+            auto lanes = makeBaseBoomBapLanes();
+            lanes[0].volumeDefault = 0.78f;
+            lanes[0].densityBias = 0.96f;
+            lanes[0].timingBias = 1.04f;
+            lanes[0].humanizeBias = 0.92f;
+            lanes[0].noteProbability = 0.96f;
+            lanes[2].volumeDefault = 0.50f;
+            lanes[2].densityBias = 0.18f;
+            lanes[2].noteProbability = 0.10f;
+            lanes[2].phraseEndingProbability = 0.18f;
+            lanes[3].volumeDefault = 0.94f;
+            lanes[3].densityBias = 1.0f;
+            lanes[3].timingBias = 1.0f;
+            lanes[3].noteProbability = 1.0f;
+            lanes[3].phraseEndingProbability = 0.34f;
+            lanes[4].volumeDefault = 0.52f;
+            lanes[4].densityBias = 0.22f;
+            lanes[4].noteProbability = 0.18f;
+            lanes[4].phraseEndingProbability = 0.20f;
+            lanes[5].volumeDefault = 0.94f;
+            lanes[5].densityBias = 0.98f;
+            lanes[5].timingBias = 0.96f;
+            lanes[5].noteProbability = 1.0f;
+            lanes[5].phraseEndingProbability = 0.44f;
+            lanes[6].volumeDefault = 0.48f;
+            lanes[6].densityBias = 0.18f;
+            lanes[6].noteProbability = 0.12f;
+            lanes[6].phraseEndingProbability = 0.16f;
+            lanes[8].enabledByDefault = false;
+            lanes[8].noteProbability = 0.02f;
+            lanes[9].enabledByDefault = false;
+            lanes[9].noteProbability = 0.03f;
+            lanes[10].volumeDefault = 0.50f;
+            lanes[10].densityBias = 0.22f;
+            lanes[10].noteProbability = 0.18f;
+            lanes[10].phraseEndingProbability = 0.24f;
+            styles[3] = { GenreType::BoomBap, "BoomBapGold", 92.0f, 89, 96, 58.5f, 0.58f, 0.38f, 0.28f, 0.52f, lanes };
+        }
+        { auto lanes = makeBaseBoomBapLanes(); lanes[0].densityBias = 0.74f; lanes[0].noteProbability = 0.78f; lanes[5].densityBias = 0.78f; lanes[2].noteProbability = 0.28f; lanes[8].enabledByDefault = false; lanes[10].noteProbability = 0.26f; lanes[3].volumeDefault = 0.94f; styles[4] = { GenreType::BoomBap, "RussianUnderground", 86.5f, 84, 89, 56.0f, 0.54f, 0.32f, 0.26f, 0.38f, lanes }; }
         {
             auto lanes = makeBaseBoomBapLanes();
             lanes[0].densityBias = 0.82f;
@@ -162,7 +295,7 @@ const std::array<GenreStyleDefaults, 8>& boomBapStyles()
             lanes[9].enabledByDefault = false;
             lanes[10].noteProbability = 0.18f;
             lanes[10].volumeDefault = 0.58f;
-            styles[7] = { GenreType::BoomBap, "LofiRap", 80.0f, 76, 84, 56.0f, 0.38f, 0.36f, 0.44f, 0.34f, lanes };
+            styles[5] = { GenreType::BoomBap, "LofiRap", 80.0f, 76, 84, 56.0f, 0.38f, 0.36f, 0.44f, 0.34f, lanes };
         }
         return styles;
     }();

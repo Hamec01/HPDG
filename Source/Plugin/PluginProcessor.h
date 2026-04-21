@@ -2,7 +2,6 @@
 
 #include <array>
 #include <atomic>
-#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -70,7 +69,6 @@ public:
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
-    void reset() override;
 
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
@@ -94,17 +92,6 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    void beginShutdown() noexcept
-    {
-        audioRenderSuspended.store(true, std::memory_order_release);
-        shuttingDown.store(true, std::memory_order_release);
-    }
-
-    bool isShuttingDown() const noexcept
-    {
-        return shuttingDown.load(std::memory_order_acquire);
-    }
-
     juce::AudioProcessorValueTreeState& getApvts() { return apvts; }
     const juce::AudioProcessorValueTreeState& getApvts() const { return apvts; }
 
@@ -114,7 +101,6 @@ public:
     void regenerateTrack(const RuntimeLaneId& laneId);
     void mutatePattern();
     void mutateTrack(TrackType track);
-    void mutateTrack(const RuntimeLaneId& laneId);
     void startPreview();
     void stopPreview();
     bool isPreviewPlaying() const;
@@ -219,17 +205,6 @@ public:
     juce::String getGenerationDebugSummary() const;
 
 private:
-    struct LiveRenderUpdate
-    {
-        bool performanceChanged = false;
-        bool playbackTimingChanged = false;
-
-        bool requiresCacheRebuild() const noexcept
-        {
-            return performanceChanged || playbackTimingChanged;
-        }
-    };
-
     struct PreviewEvent
     {
         int sample = 0;
@@ -329,16 +304,14 @@ private:
     void advanceSeedForGeneration(std::optional<TrackType> trackForRg);
     void setSeedParameterValue(int newSeed);
     void setFloatParameterValue(const juce::String& paramId, float value);
-    bool shouldSuppressHostParameterWrites() const noexcept;
-    void setParameterValueNotifyingHostIfNeeded(juce::AudioProcessorParameter& parameter, float normalizedValue) const;
-    LiveRenderUpdate syncLivePerformanceStateLocked(const GeneratorParams& liveParams);
+    void syncLivePerformanceStateLocked(const GeneratorParams& liveParams);
     void captureEditedTrackPerformanceBaseLocked(TrackType trackType);
     void rebuildMidiCache();
-    juce::MidiMessageSequence buildMidiCacheForProject(const PatternProject& sourceProject, double sampleRate) const;
     void refreshHatFxDragSourceLocked();
     void applyHatFxDragDensityLocked();
     void startPreviewFromCurrentStartStepLocked();
     void rescanLaneSamplesLocked();
+    void rotateLaneSamplesForGenerationLocked(const PatternProject& previousProject, std::optional<TrackType> focusTrack);
     void updateSampleAwareContextLocked();
     bool applySampleAwarePostProcessLocked();
     bool extractPatternFromAnalyzedSampleLocked();
@@ -361,9 +334,6 @@ private:
     SoundLayerState sanitizeSoundLayer(const SoundLayerState& state) const;
     float computePreviewEventGain(const TrackState& track, const NoteEvent& note) const;
     void syncSelectedSampleStateForTrackType(TrackType track);
-    void suspendAudioRenderAndWait() noexcept;
-    void resumeAudioRender() noexcept;
-    void waitForActiveProcessBlocks() noexcept;
     TrackState* findTrackState(TrackType track);
     const TrackState* findTrackState(TrackType track) const;
     TrackState* findTrackState(const RuntimeLaneId& laneId);
@@ -379,13 +349,8 @@ private:
     RapEngine rapEngine;
     TrapEngine trapEngine;
     juce::AudioProcessorValueTreeState apvts;
-    std::atomic<bool> shuttingDown { false };
-    std::atomic<bool> audioRenderSuspended { false };
-    std::atomic<int> activeProcessBlockCount { 0 };
-    std::atomic<bool> runtimeResetPending { false };
 
     juce::MidiMessageSequence midiCache;
-    std::uint64_t midiCacheRevision = 0;
     TransportSnapshot lastTransport;
     PreviewEngine previewEngine;
     SampleLibraryManager sampleLibraryManager;

@@ -13,6 +13,8 @@ namespace bbg
 {
 namespace
 {
+constexpr float kStyleLabReferenceBlend = 0.40f;
+
 const BoomBapBarBlueprint* blueprintBarAt(const BoomBapGrooveBlueprint& blueprint, int bar)
 {
     if (bar < 0 || bar >= static_cast<int>(blueprint.bars.size()))
@@ -258,11 +260,11 @@ int blendedReferenceHatVelocity(const ReferenceBoomBapHatFeel& feel,
     float target = static_cast<float>(fallbackVelocity);
     const float laneAverage = strongGridPoint ? feel.carrierVelocity : feel.supportVelocity;
     if (laneAverage > 0.0f)
-        target = target * 0.55f + laneAverage * 0.45f;
+        target = target * (1.0f - kStyleLabReferenceBlend) + laneAverage * kStyleLabReferenceBlend;
 
     const int clampedSlot = std::clamp(slot, 0, 7);
     if (feel.slotVelocityWeight[static_cast<size_t>(clampedSlot)] > 0.0f)
-        target = target * 0.55f + feel.slotVelocity[static_cast<size_t>(clampedSlot)] * 0.45f;
+        target = target * (1.0f - kStyleLabReferenceBlend) + feel.slotVelocity[static_cast<size_t>(clampedSlot)] * kStyleLabReferenceBlend;
 
     return std::clamp(static_cast<int>(std::round(target)), style.hatVelocityMin, style.hatVelocityMax);
 }
@@ -357,18 +359,27 @@ void BoomBapHatGenerator::generate(TrackState& track,
 
             if (style.substyle == BoomBapSubstyle::Classic)
             {
+                const bool eighthCarrier = (finalStep % 2) == 0;
                 if (strongGridPoint)
                 {
-                    gate = std::clamp(gate * 1.12f, 0.16f, 1.0f);
+                    gate = std::clamp(gate * 1.16f, 0.82f, 1.0f);
+                }
+                else if (eighthCarrier)
+                {
+                    const float minGate = role == PhraseRole::Base ? 0.74f : 0.68f;
+                    const float referenceLift = referenceFeel.available
+                        ? std::clamp(0.92f + referenceFeel.supportRatio * 0.12f, 0.86f, 1.08f)
+                        : 1.0f;
+                    gate = std::clamp(gate * 1.04f * referenceLift, minGate, 0.96f);
                 }
                 else
                 {
                     const float offbeatScale = referenceFeel.available
-                        ? std::clamp(0.42f + referenceFeel.supportRatio * 0.42f + referenceFeel.gapRatio * 0.08f, 0.34f, 0.78f)
-                        : 0.54f;
-                    gate = std::clamp(gate * offbeatScale, 0.02f, 0.82f);
+                        ? std::clamp(0.24f + referenceFeel.supportRatio * 0.28f + referenceFeel.gapRatio * 0.06f, 0.18f, 0.52f)
+                        : 0.34f;
+                    gate = std::clamp(gate * offbeatScale, 0.01f, role == PhraseRole::Ending ? 0.42f : 0.30f);
                     if (role == PhraseRole::Base && finalStep >= 12)
-                        gate = std::clamp(gate * 0.82f, 0.02f, 0.72f);
+                        gate = std::clamp(gate * 0.66f, 0.01f, 0.22f);
                 }
             }
 
@@ -402,7 +413,11 @@ void BoomBapHatGenerator::generate(TrackState& track,
                 velocity = blendedReferenceHatVelocity(referenceFeel, slot, strongGridPoint, velocity, style);
             }
             if (style.substyle == BoomBapSubstyle::Classic)
-                velocity = std::clamp(velocity + (strongGridPoint ? 3 : -4), style.hatVelocityMin, style.hatVelocityMax);
+            {
+                const bool eighthCarrier = (finalStep % 2) == 0;
+                const int classicDelta = strongGridPoint ? 5 : (eighthCarrier ? -2 : -8);
+                velocity = std::clamp(velocity + classicDelta, style.hatVelocityMin, style.hatVelocityMax);
+            }
 
             const float looseScale = std::clamp((0.65f + barLooseness * 0.9f) * (referenceFeel.available ? refLoose : 1.0f), 0.4f, 1.5f);
             int microOffset = static_cast<int>(static_cast<float>(microDist(rng)) * looseScale);
@@ -419,6 +434,8 @@ void BoomBapHatGenerator::generate(TrackState& track,
             {
                 if (strongGridPoint)
                     microOffset = std::clamp(microOffset, -4, 8);
+                else if ((finalStep % 2) == 0)
+                    microOffset = std::clamp(microOffset + 3, -4, 12);
                 else
                     microOffset = std::clamp(microOffset, -10, 18);
             }

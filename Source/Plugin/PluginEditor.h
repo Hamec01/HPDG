@@ -198,6 +198,11 @@ private:
     std::vector<RuntimeLaneId> laneDisplayOrder;
     GridEditorComponent::EditorRegionState editorRegionState;
     bool isClosingEditor = false;
+    float lastTimerPlayheadStep = -1000.0f;
+    bool lastTimerPreviewPlaying = false;
+    bool lastTimerTransportPlaying = false;
+    int currentEditorTimerHz = 5;
+    int idleTimerTicksSinceRefresh = 0;
     bool soundModuleGestureActive = false;
     std::optional<PatternProject> soundModuleGestureBefore;
 

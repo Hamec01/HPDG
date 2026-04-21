@@ -1121,7 +1121,8 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 #endif
 
     refreshFromProcessor();
-    startTimerHz(30);
+    currentEditorTimerHz = 5;
+    startTimerHz(currentEditorTimerHz);
 }
 
 BoomBGeneratorAudioProcessorEditor::~BoomBGeneratorAudioProcessorEditor()
@@ -1788,12 +1789,37 @@ void BoomBGeneratorAudioProcessorEditor::timerCallback()
     audioProcessor.applySelectedStylePreset(false);
 
     const auto after = audioProcessor.getProjectSnapshot();
-    if (historyController.getLastObservedProjectState().has_value())
+    const bool projectChanged = !projectsEquivalent(before, after);
+    if (projectChanged && historyController.getLastObservedProjectState().has_value())
         pushProjectHistoryState(before, after);
-    else
+    else if (!historyController.getLastObservedProjectState().has_value())
         historyController.observeProjectState(after);
 
-    refreshFromProcessor(false);
+    const bool previewPlaying = audioProcessor.isPreviewPlaying();
+    const auto transport = audioProcessor.getLastTransportSnapshot();
+    const float playheadStep = audioProcessor.getPreviewPlayheadStep();
+    const int desiredTimerHz = (previewPlaying || transport.isPlaying) ? 30 : 5;
+    if (desiredTimerHz != currentEditorTimerHz)
+    {
+        currentEditorTimerHz = desiredTimerHz;
+        startTimerHz(currentEditorTimerHz);
+    }
+
+    const bool playbackStateChanged = previewPlaying != lastTimerPreviewPlaying
+        || transport.isPlaying != lastTimerTransportPlaying;
+    const bool playheadMoved = std::abs(playheadStep - lastTimerPlayheadStep) > 0.001f;
+    const int periodicRefreshTicks = (previewPlaying || transport.isPlaying) ? 60 : 10;
+    const bool periodicIdleRefresh = ++idleTimerTicksSinceRefresh >= periodicRefreshTicks;
+
+    if (projectChanged || previewPlaying || transport.isPlaying || playbackStateChanged || playheadMoved || periodicIdleRefresh)
+    {
+        refreshFromProcessor(false);
+        idleTimerTicksSinceRefresh = 0;
+    }
+
+    lastTimerPreviewPlaying = previewPlaying;
+    lastTimerTransportPlaying = transport.isPlaying;
+    lastTimerPlayheadStep = playheadStep;
 }
 
 void BoomBGeneratorAudioProcessorEditor::beginSoundModuleGesture()

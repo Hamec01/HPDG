@@ -128,6 +128,27 @@ void testLaneAwareSampleCommandPath()
     expect(!invalidLaneResult, "Missing lane sample command must fail safely.");
 }
 
+void testGeneratePatternRotatesLaneSamples()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    const auto beforeProject = processor.getProjectSnapshot();
+    const auto* beforeKick = ProjectLaneAccess::findTrackState(beforeProject, TrackType::Kick);
+    expect(beforeKick != nullptr, "Sample rotation smoke requires a Kick track.");
+    expect(beforeKick->selectedSampleName.isNotEmpty() && beforeKick->selectedSampleName != "(empty)",
+           "Sample rotation smoke requires loaded Kick samples.");
+
+    const int beforeIndex = beforeKick->selectedSampleIndex;
+    const auto beforeName = beforeKick->selectedSampleName;
+
+    processor.generatePattern();
+
+    const auto afterProject = processor.getProjectSnapshot();
+    const auto* afterKick = ProjectLaneAccess::findTrackState(afterProject, TrackType::Kick);
+    expect(afterKick != nullptr, "Sample rotation smoke must keep the Kick track.");
+    expect(afterKick->selectedSampleIndex != beforeIndex || afterKick->selectedSampleName != beforeName,
+           "Generate Pattern must rotate the selected Kick sample.");
+}
+
 void testPreviewProcessBlockProducesAudio()
 {
     BoomBapGeneratorAudioProcessor processor;
@@ -251,6 +272,7 @@ int main()
     failures += runTest("Lane-aware export path", testLaneAwareExportTrackPath);
     failures += runTest("Lane-aware temporary MIDI path", testLaneAwareTemporaryMidiPath);
     failures += runTest("Lane-aware sample command path", testLaneAwareSampleCommandPath);
+    failures += runTest("Generate Pattern rotates lane samples", testGeneratePatternRotatesLaneSamples);
     failures += runTest("Preview processBlock audio smoke", testPreviewProcessBlockProducesAudio);
     failures += runTest("Preview processBlock neutral EQ smoke", testPreviewProcessBlockWithNeutralEqProducesAudio);
 

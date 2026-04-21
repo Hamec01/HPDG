@@ -10,6 +10,8 @@ namespace bbg
 {
 namespace
 {
+constexpr float kStyleLabReferenceBlend = 0.40f;
+
 struct ReferenceBoomBapSupportFeel
 {
     bool available = false;
@@ -85,6 +87,14 @@ ReferenceBoomBapSupportFeel buildReferenceBoomBapSupportFeel(const StyleInfluenc
     feel.kickSupportRatio = kickNotes > 0.0f ? kickSupport / kickNotes : 0.0f;
     feel.gapRatio = hatBars > 0 ? emptySlots / (static_cast<float>(hatBars) * 8.0f) : 0.0f;
     return feel;
+}
+
+bool hasNonGhostSnareAtStep(const TrackState& snareTrack, int step)
+{
+    return std::any_of(snareTrack.notes.begin(), snareTrack.notes.end(), [step](const NoteEvent& note)
+    {
+        return !note.isGhost && note.step == step;
+    });
 }
 }
 
@@ -164,6 +174,50 @@ void BoomBapGhostGenerator::generateClapLayer(TrackState& clapTrack,
     std::uniform_int_distribution<int> vel(style.clapVelocityMin, style.clapVelocityMax);
     std::uniform_int_distribution<int> late(std::max(2, style.clapLateTicks / 2), std::max(4, style.clapLateTicks));
     const auto& feel = chooseSnareFeelProfile(style.substyle, 0.5f, rng);
+
+    if (style.substyle == BoomBapSubstyle::Classic)
+    {
+        int bars = std::max(1, static_cast<int>(phraseRoles.size()));
+        for (const auto& snare : snareTrack.notes)
+            bars = std::max(bars, snare.step / 16 + 1);
+
+        const int maxEvents = std::max(1, (bars + 3) / 4);
+        std::uniform_int_distribution<int> ghostVel(style.ghostVelocityMin, style.ghostVelocityMax);
+        int generated = 0;
+
+        for (int bar = 0; bar < bars && generated < maxEvents; ++bar)
+        {
+            const auto referenceFeel = buildReferenceBoomBapSupportFeel(styleInfluence, bar);
+            const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : PhraseRole::Base;
+
+            float gate = role == PhraseRole::Ending ? 0.26f
+                       : role == PhraseRole::Variation ? 0.10f
+                       : role == PhraseRole::Contrast ? 0.08f
+                       : 0.035f;
+            if (referenceFeel.available)
+            {
+                const float desired = std::clamp(0.74f + referenceFeel.hatSupportRatio * 0.18f + referenceFeel.kickSupportRatio * 0.12f,
+                                                 0.70f,
+                                                 1.10f);
+                gate *= (1.0f - kStyleLabReferenceBlend) + desired * kStyleLabReferenceBlend;
+            }
+
+            if (chance(rng) > gate)
+                continue;
+
+            const int stepInBar = role == PhraseRole::Ending
+                ? (chance(rng) < 0.65f ? 11 : 15)
+                : (chance(rng) < 0.58f ? 11 : 3);
+            const int step = bar * 16 + stepInBar;
+            if (hasNonGhostSnareAtStep(snareTrack, step))
+                continue;
+
+            clapTrack.notes.push_back({ pitch, step, 1, ghostVel(rng), std::max(4, late(rng) / 2), true });
+            ++generated;
+        }
+
+        return;
+    }
 
     for (const auto& snare : snareTrack.notes)
     {

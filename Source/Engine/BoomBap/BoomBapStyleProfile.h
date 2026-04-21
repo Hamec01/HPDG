@@ -85,7 +85,7 @@ struct BoomBapStyleProfile
     float laneCymbalActivity = 0.24f;
 };
 
-const std::array<BoomBapStyleProfile, 8>& getBoomBapProfiles();
+const std::array<BoomBapStyleProfile, 6>& getBoomBapProfiles();
 const BoomBapStyleProfile& getBoomBapProfile(int index);
 int getSubstyleMask(BoomBapSubstyle substyle);
 float interpretedReferenceTempo(const BoomBapStyleProfile& style);

@@ -1,0 +1,28 @@
+MSAFD: Pending APCs in cleanup! Waiting...
+MSAFD: (cleanup) ... No APCs fired, keeping DLL ref count
+[HPDG_TRACE] VST3 getState ENTER thread=0x7e00
+[HPDG_TRACE] VST3 getState EXIT thread=0x7e00
+[HPDG_TRACE] VST3 setProcessing state=false ENTER thread=0x7e00
+[HPDG_TRACE] Processor reset ENTER thread=0x7e00
+[HPDG_TRACE] Processor reset EXIT thread=0x7e00
+[HPDG_TRACE] VST3 setProcessing state=false EXIT thread=0x7e00
+[HPDG_TRACE] VST3 setActive state=false ENTER thread=0x7e00
+[HPDG_TRACE] Processor releaseResources ENTER thread=0x7e00
+[HPDG_TRACE] Processor releaseResources EXIT thread=0x7e00
+[HPDG_TRACE] VST3 setActive state=false EXIT thread=0x7e00
+[HPDG_TRACE] VST3 editor removed ENTER thread=0x7e00
+[HPDG_TRACE] VST3 editor removed EXIT thread=0x7e00
+[HPDG_TRACE] VST3 editor destructor ENTER thread=0x7e00
+[HPDG_TRACE] VST3 editor destructor EXIT thread=0x7e00
+[HPDG_TRACE] VST3 EditController terminate ENTER thread=0x7e00
+[HPDG_TRACE] VST3 EditController terminate EXIT thread=0x7e00
+[HPDG_TRACE] VST3 EditController destructor ENTER thread=0x7e00
+[HPDG_TRACE] VST3 EditController destructor EXIT thread=0x7e00
+[HPDG_TRACE] VST3 terminate ENTER thread=0x7e00
+[HPDG_TRACE] Processor releaseResources ENTER thread=0x7e00
+[HPDG_TRACE] Processor releaseResources EXIT thread=0x7e00
+[HPDG_TRACE] VST3 terminate EXIT thread=0x7e00
+[HPDG_TRACE] VST3 component destructor ENTER thread=0x7e00
+[HPDG_TRACE] VST3 component destructor EXIT thread=0x7e00
+[HPDG_TRACE] Processor destructor ENTER thread=0x7e00
+[HPDG_TRACE] Processor destructor EXIT thread=0x7e00

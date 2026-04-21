@@ -59,6 +59,25 @@ BoomBapLaneActivation decideLaneActivation(const GeneratorParams& params,
     const float cymbalP = styleLaneBias(style.substyle, style.laneCymbalActivity, 0.46f)
         * (bar.role == PhraseRole::Ending ? 0.96f : 0.06f);
 
+    if (style.substyle == BoomBapSubstyle::Classic)
+    {
+        const bool phraseLift = bar.role == PhraseRole::Variation || bar.role == PhraseRole::Ending;
+        lane.useClapGhostSnare = bar.allowClapLayer
+            && phraseLift
+            && decideActivation(clapP * (bar.role == PhraseRole::Ending ? 0.42f : 0.24f), rng);
+        lane.useGhostKick = bar.allowGhostKick
+            && decideActivation(ghostP * (bar.role == PhraseRole::Ending ? 0.52f : 0.36f), rng);
+        lane.useOpenHat = bar.allowOpenHat
+            && (bar.role == PhraseRole::Ending || bar.endLiftAmount > 0.66f)
+            && decideActivation(openHatP * 0.42f, rng);
+        lane.usePerc = bar.allowPerc
+            && phraseLift
+            && decideActivation(percP * 0.36f, rng);
+        lane.useRide = false;
+        lane.useCymbal = (bar.role == PhraseRole::Ending) && decideActivation(cymbalP * 0.40f, rng);
+        return lane;
+    }
+
     lane.useClapGhostSnare = bar.allowClapLayer && decideActivation(clapP, rng);
     lane.useGhostKick = bar.allowGhostKick && decideActivation(ghostP, rng);
     lane.useOpenHat = bar.allowOpenHat && decideActivation(openHatP, rng);
@@ -85,7 +104,27 @@ BoomBapLaneActivation decideLaneActivation(const GeneratorParams& params,
         lane.useGhostKick = bar.allowGhostKick && decideActivation(std::min(0.96f, ghostP + 0.12f), rng);
         lane.usePerc = bar.allowPerc && decideActivation(std::min(0.96f, percP + 0.08f), rng);
     }
-    else if (style.substyle == BoomBapSubstyle::Dusty || style.substyle == BoomBapSubstyle::LaidBack)
+    else if (style.substyle == BoomBapSubstyle::Dusty)
+    {
+        const bool phraseLift = bar.role == PhraseRole::Variation || bar.role == PhraseRole::Ending;
+        lane.useClapGhostSnare = lane.useClapGhostSnare && decideActivation(phraseLift ? 0.52f : 0.30f, rng);
+        lane.useGhostKick = lane.useGhostKick && decideActivation(0.42f + bar.kickSupportAmount * 0.18f, rng);
+        lane.useOpenHat = lane.useOpenHat && decideActivation(bar.role == PhraseRole::Ending ? 0.46f : 0.28f, rng);
+        lane.usePerc = lane.usePerc && decideActivation(phraseLift ? 0.58f : 0.42f, rng);
+        lane.useRide = lane.useRide && decideActivation((bar.hatActivity > 0.58f || phraseLift) ? 0.62f : 0.42f, rng);
+        lane.useCymbal = false;
+    }
+    else if (style.substyle == BoomBapSubstyle::Jazzy)
+    {
+        const bool phraseLift = bar.role == PhraseRole::Variation || bar.role == PhraseRole::Ending;
+        lane.useRide = bar.allowRide && decideActivation(phraseLift ? 0.98f : 0.90f, rng);
+        lane.useClapGhostSnare = lane.useClapGhostSnare && decideActivation(phraseLift ? 0.72f : 0.52f, rng);
+        lane.useGhostKick = lane.useGhostKick && decideActivation(0.32f + bar.kickSupportAmount * 0.20f, rng);
+        lane.useOpenHat = lane.useOpenHat && decideActivation(bar.role == PhraseRole::Ending ? 0.42f : 0.18f, rng);
+        lane.usePerc = lane.usePerc && decideActivation(phraseLift ? 0.74f : 0.58f, rng);
+        lane.useCymbal = (bar.role == PhraseRole::Ending) && decideActivation(cymbalP * 0.48f, rng);
+    }
+    else if (style.substyle == BoomBapSubstyle::LaidBack)
     {
         lane.useRide = lane.useRide && decideActivation(0.42f, rng);
         lane.usePerc = lane.usePerc && decideActivation(0.68f, rng);

@@ -94,68 +94,6 @@ struct MonstaFxState
     bool pendingChaosReseed = false;
 };
 
-enum class MonstaFxFlavor
-{
-    SyncGlitch = 0,
-    ReverseBurn,
-    TrashMachine,
-    VhsMelt
-};
-
-inline std::uint32_t hashMonstaFxSeed(std::uint32_t value) noexcept
-{
-    value ^= value >> 16;
-    value *= 0x7feb352du;
-    value ^= value >> 15;
-    value *= 0x846ca68bu;
-    value ^= value >> 16;
-    return value;
-}
-
-inline MonstaFxFlavor resolveMonstaFxFlavor(std::uint32_t chaosSeed) noexcept
-{
-    if (chaosSeed == 0)
-        return MonstaFxFlavor::SyncGlitch;
-
-    switch (hashMonstaFxSeed(chaosSeed) & 0x3u)
-    {
-        case 1u: return MonstaFxFlavor::ReverseBurn;
-        case 2u: return MonstaFxFlavor::TrashMachine;
-        case 3u: return MonstaFxFlavor::VhsMelt;
-        case 0u:
-        default: return MonstaFxFlavor::SyncGlitch;
-    }
-}
-
-inline MonstaFxFlavor resolveMonstaFxFlavor(const MonstaFxState& monstaFx) noexcept
-{
-    return resolveMonstaFxFlavor(monstaFx.chaosSeed);
-}
-
-inline const char* monstaFxFlavorTitle(MonstaFxFlavor flavor) noexcept
-{
-    switch (flavor)
-    {
-        case MonstaFxFlavor::ReverseBurn: return "Reverse Burn";
-        case MonstaFxFlavor::TrashMachine: return "Trash Machine";
-        case MonstaFxFlavor::VhsMelt: return "VHS Melt";
-        case MonstaFxFlavor::SyncGlitch:
-        default: return "Sync Glitch";
-    }
-}
-
-inline const char* monstaFxFlavorCharacter(MonstaFxFlavor flavor) noexcept
-{
-    switch (flavor)
-    {
-        case MonstaFxFlavor::ReverseBurn: return "Reverse burn / recoil chop / pitch snap";
-        case MonstaFxFlavor::TrashMachine: return "Trash burst / clip chew / gate smash";
-        case MonstaFxFlavor::VhsMelt: return "VHS melt / wow flutter / dropout haze";
-        case MonstaFxFlavor::SyncGlitch:
-        default: return "Sync glitch / broken repeat / crushed gate";
-    }
-}
-
 inline EqState createDefaultEqState()
 {
     EqState eq;

@@ -21,23 +21,10 @@ SampleAnalysisPanelComponent::SampleAnalysisPanelComponent()
 void SampleAnalysisPanelComponent::paint(juce::Graphics& g)
 {
     auto panel = getLocalBounds().toFloat().reduced(1.0f);
-    juce::ColourGradient fill(juce::Colour::fromRGB(21, 19, 18), panel.getTopLeft(),
-                              juce::Colour::fromRGB(11, 12, 14), panel.getBottomLeft(), false);
-    fill.addColour(0.30, juce::Colour::fromRGB(30, 24, 21));
-    fill.addColour(0.72, juce::Colour::fromRGB(16, 17, 20));
-    g.setGradientFill(fill);
+    g.setColour(juce::Colour::fromRGB(17, 19, 23));
     g.fillRoundedRectangle(panel, 8.0f);
-
-    auto header = panel.reduced(1.0f).removeFromTop(22.0f);
-    g.setColour(juce::Colour::fromRGBA(229, 178, 102, 24));
-    g.fillRoundedRectangle(header, 6.0f);
-    g.setColour(juce::Colour::fromRGBA(255, 210, 142, 34));
-    g.fillRoundedRectangle(header.removeFromTop(2.5f), 2.5f);
-
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
+    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
     g.drawRoundedRectangle(panel, 8.0f, 1.0f);
-    g.setColour(juce::Colour::fromRGBA(229, 178, 102, 76));
-    g.drawRoundedRectangle(panel.reduced(0.5f), 8.0f, 1.0f);
 
     if (analysisFileDropHighlight)
     {
@@ -218,7 +205,7 @@ void SampleAnalysisPanelComponent::setupUi()
 {
     analysisTitleLabel.setText("SAMPLE ANALYSIS", juce::dontSendNotification);
     analysisTitleLabel.setFont(juce::Font(12.5f, juce::Font::bold));
-    analysisTitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(239, 225, 209));
+    analysisTitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(222, 228, 236));
     analysisTitleLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(analysisTitleLabel);
 
@@ -237,7 +224,7 @@ void SampleAnalysisPanelComponent::setupUi()
     auto styleLabel = [](juce::Label& label)
     {
         label.setJustificationType(juce::Justification::centredLeft);
-        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(186, 168, 146));
+        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(166, 176, 192));
         label.setFont(juce::Font(11.0f));
     };
 
@@ -252,9 +239,9 @@ void SampleAnalysisPanelComponent::setupUi()
     styleLabel(statusLabel);
     styleLabel(detailsLabel);
     styleLabel(debugLabel);
-    statusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(248, 207, 132));
-    detailsLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(201, 189, 174));
-    debugLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(214, 198, 180));
+    statusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(152, 200, 255));
+    detailsLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(174, 188, 208));
+    debugLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(192, 198, 210));
 
     debugTextBox.setMultiLine(true);
     debugTextBox.setReadOnly(true);
@@ -262,10 +249,10 @@ void SampleAnalysisPanelComponent::setupUi()
     debugTextBox.setScrollbarsShown(true);
     debugTextBox.setPopupMenuEnabled(false);
     debugTextBox.setText("No generator debug details yet.", juce::dontSendNotification);
-    debugTextBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(18, 16, 15));
-    debugTextBox.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(223, 206, 182));
-    debugTextBox.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(96, 71, 46));
-    debugTextBox.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour::fromRGB(188, 132, 72));
+    debugTextBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(22, 25, 30));
+    debugTextBox.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(178, 194, 214));
+    debugTextBox.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(44, 52, 66));
+    debugTextBox.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour::fromRGB(76, 120, 182));
 
     sourceCombo.addItem("None", 1);
     sourceCombo.addItem("Live Input", 2);
@@ -310,24 +297,8 @@ void SampleAnalysisPanelComponent::setupUi()
     supportSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(234, 150, 88));
     supportSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(248, 210, 168));
 
-    auto styleCombo = [](juce::ComboBox& combo)
-    {
-        combo.setColour(juce::ComboBox::backgroundColourId, juce::Colour::fromRGB(24, 22, 20));
-        combo.setColour(juce::ComboBox::outlineColourId, juce::Colour::fromRGBA(222, 167, 94, 120));
-        combo.setColour(juce::ComboBox::textColourId, juce::Colour::fromRGB(231, 219, 201));
-        combo.setColour(juce::ComboBox::arrowColourId, juce::Colour::fromRGB(248, 207, 132));
-    };
-
-    styleCombo(sourceCombo);
-    styleCombo(modeCombo);
-    styleCombo(applyModeCombo);
-    styleCombo(barsCombo);
-    styleCombo(tempoCombo);
-
-    chooseFileButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(94, 68, 44));
-    chooseFileButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(238, 227, 210));
-    analyzeButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(176, 122, 62));
-    analyzeButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(24, 21, 19));
+    chooseFileButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(74, 88, 118));
+    analyzeButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(96, 132, 176));
 
     addAndMakeVisible(sourceLabel);
     addAndMakeVisible(modeLabel);

@@ -71,7 +71,6 @@ TrackListComponent::TrackListComponent()
     };
     addAndMakeVisible(addLaneButton);
     setupAnalysisPanel();
-    setupSoundPanel();
 }
 
 void TrackListComponent::setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order)
@@ -89,39 +88,6 @@ void TrackListComponent::setShowAnalysisPanel(bool shouldShow)
     repaint();
 }
 
-void TrackListComponent::setShowSoundPanel(bool shouldShow)
-{
-    if (showSoundPanel == shouldShow)
-        return;
-
-    showSoundPanel = shouldShow;
-    resized();
-    repaint();
-}
-
-void TrackListComponent::setCompactAuxPanelLayout(bool shouldUseCompactLayout)
-{
-    if (compactAuxPanelLayout == shouldUseCompactLayout)
-        return;
-
-    compactAuxPanelLayout = shouldUseCompactLayout;
-    resized();
-    repaint();
-}
-
-void TrackListComponent::setAuxPanelHeights(int analysisHeightPixels, int soundHeightPixels)
-{
-    const int nextAnalysisHeight = juce::jlimit(140, 520, analysisHeightPixels);
-    const int nextSoundHeight = juce::jlimit(120, 420, soundHeightPixels);
-    if (analysisPanelHeight == nextAnalysisHeight && soundPanelHeight == nextSoundHeight)
-        return;
-
-    analysisPanelHeight = nextAnalysisHeight;
-    soundPanelHeight = nextSoundHeight;
-    resized();
-    repaint();
-}
-
 void TrackListComponent::setDisplayMode(LaneRackDisplayMode mode)
 {
     if (displayMode == mode)
@@ -130,18 +96,6 @@ void TrackListComponent::setDisplayMode(LaneRackDisplayMode mode)
     displayMode = mode;
     for (auto& row : rows)
         row->setDisplayMode(displayMode);
-
-    repaint();
-}
-
-void TrackListComponent::setVisualStyle(RackVisualStyle style)
-{
-    if (visualStyle == style)
-        return;
-
-    visualStyle = style;
-    for (auto& row : rows)
-        row->setVisualStyle(visualStyle);
 
     repaint();
 }
@@ -155,13 +109,7 @@ void TrackListComponent::setRowHeight(int newHeight)
 
 int TrackListComponent::getContentHeight() const
 {
-    const int auxHeight = compactAuxPanelLayout && showAnalysisPanel && showSoundPanel
-        ? juce::jmax(analysisPanelHeight, soundPanelHeight)
-        : (showAnalysisPanel ? analysisPanelHeight : 0) + (showSoundPanel ? soundPanelHeight : 0);
-
-    return rulerHeight
-        + rowHeight * static_cast<int>(rows.size())
-        + auxHeight;
+    return rulerHeight + rowHeight * static_cast<int>(rows.size()) + (showAnalysisPanel ? analysisPanelHeight : 0);
 }
 
 int TrackListComponent::getLaneSectionHeight() const
@@ -242,45 +190,15 @@ void TrackListComponent::setHatFxDragUiState(float density, bool locked)
 
 void TrackListComponent::paint(juce::Graphics& g)
 {
-    auto bounds = getLocalBounds();
-    if (visualStyle == RackVisualStyle::HpdgSoundVst3)
-    {
-        juce::ColourGradient bg(juce::Colour::fromRGB(17, 16, 16), 0.0f, 0.0f,
-                                juce::Colour::fromRGB(11, 12, 14), 0.0f, static_cast<float>(getHeight()), false);
-        bg.addColour(0.32, juce::Colour::fromRGB(28, 23, 20));
-        bg.addColour(0.78, juce::Colour::fromRGB(14, 15, 18));
-        g.setGradientFill(bg);
-        g.fillAll();
-    }
-    else
-    {
-        g.fillAll(juce::Colour::fromRGB(17, 19, 23));
-    }
+    g.fillAll(juce::Colour::fromRGB(17, 19, 23));
 
-    auto ruler = juce::Rectangle<int>(0, 0, getWidth(), rulerHeight);
-    if (visualStyle == RackVisualStyle::HpdgSoundVst3)
-    {
-        juce::ColourGradient headerFill(juce::Colour::fromRGB(45, 33, 21), ruler.getTopLeft().toFloat(),
-                                        juce::Colour::fromRGB(21, 20, 21), ruler.getBottomLeft().toFloat(), false);
-        headerFill.addColour(0.55, juce::Colour::fromRGB(32, 28, 25));
-        g.setGradientFill(headerFill);
-        g.fillRect(ruler);
-        g.setColour(juce::Colour::fromRGBA(240, 197, 122, 42));
-        g.fillRect(ruler.removeFromTop(3));
-        g.setColour(juce::Colour::fromRGB(239, 225, 209));
-    }
-    else
-    {
-        g.setColour(juce::Colour::fromRGB(30, 34, 40));
-        g.fillRect(ruler);
-        g.setColour(juce::Colour::fromRGB(210, 216, 224));
-    }
-
+    g.setColour(juce::Colour::fromRGB(30, 34, 40));
+    g.fillRect(0, 0, getWidth(), rulerHeight);
+    g.setColour(juce::Colour::fromRGB(210, 216, 224));
     g.setFont(juce::Font(12.5f, juce::Font::bold));
     g.drawText("INSTRUMENT RACK", 10, 0, juce::jmax(120, getWidth() - 260), rulerHeight, juce::Justification::centredLeft);
 
-    g.setColour(visualStyle == RackVisualStyle::HpdgSoundVst3 ? juce::Colour::fromRGB(187, 168, 145)
-                                                              : juce::Colour::fromRGB(154, 164, 178));
+    g.setColour(juce::Colour::fromRGB(154, 164, 178));
     g.setFont(juce::Font(9.5f));
     g.drawText("RG: regenerate lane | S: solo | M: mute | < / >: samples | Drag: export/drag | ...: lane actions",
                170,
@@ -290,14 +208,13 @@ void TrackListComponent::paint(juce::Graphics& g)
                juce::Justification::centredLeft,
                false);
 
-    g.setColour(visualStyle == RackVisualStyle::HpdgSoundVst3 ? juce::Colour::fromRGBA(240, 197, 122, 54)
-                                                              : juce::Colour::fromRGBA(255, 255, 255, 20));
+    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
     g.drawLine(0.0f, static_cast<float>(rulerHeight), static_cast<float>(getWidth()), static_cast<float>(rulerHeight));
 
     const int rowsBottom = rulerHeight + rowHeight * static_cast<int>(rows.size());
     if (rowsBottom < getHeight())
     {
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 18));
+        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 22));
         g.drawLine(0.0f,
                    static_cast<float>(rowsBottom),
                    static_cast<float>(getWidth()),
@@ -420,7 +337,6 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
         for (size_t i = 0; i < rows.size(); ++i)
         {
             rows[i]->syncFromState(visibleLanes[i]);
-            rows[i]->setVisualStyle(visualStyle);
             rows[i]->setBassControls(bassKeyRootChoice, bassScaleModeChoice);
             rows[i]->setSub808Settings(visibleLanes[i].sub808Settings);
             if (rows[i]->isBackedBy(TrackType::HatFX))
@@ -437,17 +353,11 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
     {
         auto row = std::make_unique<LaneHeaderComponent>(lane);
         row->setDisplayMode(displayMode);
-        row->setVisualStyle(visualStyle);
         row->syncFromState(lane);
         row->onRegenerate = [this](const RuntimeLaneId& laneId)
         {
             if (onRegenerateTrack)
                 onRegenerateTrack(laneId);
-        };
-        row->onMutate = [this](const RuntimeLaneId& laneId)
-        {
-            if (onMutateTrack)
-                onMutateTrack(laneId);
         };
         row->onImportMidiToLane = [this](const RuntimeLaneId& laneId)
         {
@@ -591,7 +501,7 @@ void TrackListComponent::resized()
     for (auto& row : rows)
         row->setBounds(area.removeFromTop(rowHeight));
 
-    auto clearAnalysisBounds = [this]
+    if (!showAnalysisPanel)
     {
         analysisTitleLabel.setBounds({});
         sourceLabel.setBounds({});
@@ -613,207 +523,60 @@ void TrackListComponent::resized()
         chooseFileButton.setBounds({});
         analyzeButton.setBounds({});
         debugTextBox.setBounds({});
-    };
-
-    auto clearSoundBounds = [this]
-    {
-        soundTitleLabel.setBounds({});
-        soundTargetLabel.setBounds({});
-        soundTargetCombo.setBounds({});
-        panLabel.setBounds({});
-        widthLabel.setBounds({});
-        eqLabel.setBounds({});
-        compLabel.setBounds({});
-        reverbLabel.setBounds({});
-        gateLabel.setBounds({});
-        transientLabel.setBounds({});
-        driveLabel.setBounds({});
-        panSlider.setBounds({});
-        widthSlider.setBounds({});
-        eqSlider.setBounds({});
-        compSlider.setBounds({});
-        reverbSlider.setBounds({});
-        gateSlider.setBounds({});
-        transientSlider.setBounds({});
-        driveSlider.setBounds({});
-    };
-
-    auto layoutAnalysisPanel = [this](juce::Rectangle<int> panel, bool compact)
-    {
-        panel = panel.reduced(8, 8);
-        if (panel.isEmpty())
-            return;
-
-        analysisTitleLabel.setBounds(panel.removeFromTop(22));
-        panel.removeFromTop(2);
-
-        if (compact)
-        {
-            auto line1 = panel.removeFromTop(24);
-            sourceLabel.setBounds(line1.removeFromLeft(46));
-            sourceCombo.setBounds(line1.removeFromLeft(98));
-            line1.removeFromLeft(6);
-            modeLabel.setBounds(line1.removeFromLeft(38));
-            modeCombo.setBounds(line1);
-
-            panel.removeFromTop(4);
-            auto line2 = panel.removeFromTop(24);
-            barsLabel.setBounds(line2.removeFromLeft(40));
-            barsCombo.setBounds(line2.removeFromLeft(74));
-            line2.removeFromLeft(6);
-            tempoLabel.setBounds(line2.removeFromLeft(34));
-            tempoCombo.setBounds(line2.removeFromLeft(90));
-            line2.removeFromLeft(6);
-            chooseFileButton.setBounds(line2.removeFromLeft(84));
-            line2.removeFromLeft(4);
-            analyzeButton.setBounds(line2.removeFromLeft(76));
-
-            panel.removeFromTop(4);
-            fileLabel.setBounds(panel.removeFromTop(18));
-            panel.removeFromTop(4);
-
-            auto line3 = panel.removeFromTop(20);
-            reactivityLabel.setBounds(line3.removeFromLeft(44));
-            reactivitySlider.setBounds(line3);
-
-            panel.removeFromTop(4);
-            auto line4 = panel.removeFromTop(20);
-            supportLabel.setBounds(line4.removeFromLeft(44));
-            supportSlider.setBounds(line4);
-
-            panel.removeFromTop(4);
-            statusLabel.setBounds(panel.removeFromTop(28));
-            panel.removeFromTop(2);
-            detailsLabel.setBounds(panel.removeFromTop(34));
-            panel.removeFromTop(4);
-            debugLabel.setBounds(panel.removeFromTop(16));
-            panel.removeFromTop(2);
-            debugTextBox.setBounds(panel);
-            return;
-        }
-
-        auto line1 = panel.removeFromTop(26);
-        sourceLabel.setBounds(line1.removeFromLeft(68));
-        sourceCombo.setBounds(line1.removeFromLeft(130));
-        line1.removeFromLeft(8);
-        modeLabel.setBounds(line1.removeFromLeft(52));
-        modeCombo.setBounds(line1);
-
-        panel.removeFromTop(6);
-        auto line2 = panel.removeFromTop(26);
-        barsLabel.setBounds(line2.removeFromLeft(68));
-        barsCombo.setBounds(line2.removeFromLeft(74));
-        line2.removeFromLeft(6);
-        tempoLabel.setBounds(line2.removeFromLeft(52));
-        tempoCombo.setBounds(line2.removeFromLeft(130));
-        line2.removeFromLeft(8);
-        chooseFileButton.setBounds(line2.removeFromLeft(90));
-        line2.removeFromLeft(6);
-        analyzeButton.setBounds(line2.removeFromLeft(80));
-
-        panel.removeFromTop(6);
-        fileLabel.setBounds(panel.removeFromTop(20));
-
-        panel.removeFromTop(4);
-        auto line3 = panel.removeFromTop(24);
-        reactivityLabel.setBounds(line3.removeFromLeft(78));
-        reactivitySlider.setBounds(line3);
-
-        panel.removeFromTop(4);
-        auto line4 = panel.removeFromTop(24);
-        supportLabel.setBounds(line4.removeFromLeft(78));
-        supportSlider.setBounds(line4);
-
-        panel.removeFromTop(6);
-        statusLabel.setBounds(panel.removeFromTop(36));
-
-        panel.removeFromTop(4);
-        detailsLabel.setBounds(panel.removeFromTop(48));
-
-        panel.removeFromTop(6);
-        debugLabel.setBounds(panel.removeFromTop(18));
-
-        panel.removeFromTop(2);
-        debugTextBox.setBounds(panel.removeFromTop(104));
-    };
-
-    auto layoutSoundPanel = [this](juce::Rectangle<int> panel, bool compact)
-    {
-        panel = panel.reduced(8, 8);
-        if (panel.isEmpty())
-            return;
-
-        soundTitleLabel.setBounds(panel.removeFromTop(22));
-        panel.removeFromTop(2);
-
-        auto targetLine = panel.removeFromTop(26);
-        soundTargetLabel.setBounds(targetLine.removeFromLeft(compact ? 46 : 56));
-        soundTargetCombo.setBounds(targetLine);
-
-        panel.removeFromTop(compact ? 4 : 8);
-
-        auto row1 = panel.removeFromTop(24);
-        panLabel.setBounds(row1.removeFromLeft(compact ? 44 : 58));
-        panSlider.setBounds(row1.removeFromLeft(compact ? 98 : 120));
-        row1.removeFromLeft(compact ? 8 : 12);
-        widthLabel.setBounds(row1.removeFromLeft(compact ? 48 : 58));
-        widthSlider.setBounds(row1);
-
-        panel.removeFromTop(6);
-        auto row2 = panel.removeFromTop(24);
-        eqLabel.setBounds(row2.removeFromLeft(compact ? 50 : 58));
-        eqSlider.setBounds(row2.removeFromLeft(compact ? 108 : 120));
-        row2.removeFromLeft(compact ? 8 : 12);
-        compLabel.setBounds(row2.removeFromLeft(compact ? 72 : 86));
-        compSlider.setBounds(row2);
-
-        panel.removeFromTop(6);
-        auto row3 = panel.removeFromTop(24);
-        reverbLabel.setBounds(row3.removeFromLeft(compact ? 50 : 58));
-        reverbSlider.setBounds(row3.removeFromLeft(compact ? 108 : 120));
-        row3.removeFromLeft(compact ? 8 : 12);
-        gateLabel.setBounds(row3.removeFromLeft(compact ? 44 : 58));
-        gateSlider.setBounds(row3);
-
-        panel.removeFromTop(6);
-        auto row4 = panel.removeFromTop(24);
-        transientLabel.setBounds(row4.removeFromLeft(compact ? 64 : 58));
-        transientSlider.setBounds(row4.removeFromLeft(compact ? 94 : 120));
-        row4.removeFromLeft(compact ? 8 : 12);
-        driveLabel.setBounds(row4.removeFromLeft(compact ? 74 : 86));
-        driveSlider.setBounds(row4);
-    };
-
-    if (compactAuxPanelLayout && showAnalysisPanel && showSoundPanel)
-    {
-        auto auxArea = area.removeFromTop(juce::jmax(analysisPanelHeight, soundPanelHeight));
-        auto analysisArea = auxArea.removeFromLeft((auxArea.getWidth() - 6) / 2);
-        auxArea.removeFromLeft(6);
-        auto soundArea = auxArea;
-
-        layoutAnalysisPanel(analysisArea, true);
-        layoutSoundPanel(soundArea, true);
-    }
-    else if (showAnalysisPanel)
-    {
-        layoutAnalysisPanel(area.removeFromTop(analysisPanelHeight), compactAuxPanelLayout);
-    }
-    else
-    {
-        clearAnalysisBounds();
+        return;
     }
 
-    if (!compactAuxPanelLayout || !showAnalysisPanel || !showSoundPanel)
-    {
-        if (showSoundPanel)
-            layoutSoundPanel(area.removeFromTop(soundPanelHeight), compactAuxPanelLayout);
-        else
-            clearSoundBounds();
-    }
-    else if (!showSoundPanel)
-    {
-        clearSoundBounds();
-    }
+    auto panel = area.reduced(8, 8);
+    if (panel.isEmpty())
+        return;
+
+    analysisTitleLabel.setBounds(panel.removeFromTop(22));
+    panel.removeFromTop(2);
+
+    auto line1 = panel.removeFromTop(26);
+    sourceLabel.setBounds(line1.removeFromLeft(68));
+    sourceCombo.setBounds(line1.removeFromLeft(130));
+    line1.removeFromLeft(8);
+    modeLabel.setBounds(line1.removeFromLeft(52));
+    modeCombo.setBounds(line1);
+
+    panel.removeFromTop(6);
+    auto line2 = panel.removeFromTop(26);
+    barsLabel.setBounds(line2.removeFromLeft(68));
+    barsCombo.setBounds(line2.removeFromLeft(74));
+    line2.removeFromLeft(6);
+    tempoLabel.setBounds(line2.removeFromLeft(52));
+    tempoCombo.setBounds(line2.removeFromLeft(130));
+    line2.removeFromLeft(8);
+    chooseFileButton.setBounds(line2.removeFromLeft(90));
+    line2.removeFromLeft(6);
+    analyzeButton.setBounds(line2.removeFromLeft(80));
+
+    panel.removeFromTop(6);
+    fileLabel.setBounds(panel.removeFromTop(20));
+
+    panel.removeFromTop(4);
+    auto line3 = panel.removeFromTop(24);
+    reactivityLabel.setBounds(line3.removeFromLeft(78));
+    reactivitySlider.setBounds(line3);
+
+    panel.removeFromTop(4);
+    auto line4 = panel.removeFromTop(24);
+    supportLabel.setBounds(line4.removeFromLeft(78));
+    supportSlider.setBounds(line4);
+
+    panel.removeFromTop(6);
+    statusLabel.setBounds(panel.removeFromTop(36));
+
+    panel.removeFromTop(4);
+    detailsLabel.setBounds(panel.removeFromTop(48));
+
+    panel.removeFromTop(6);
+    debugLabel.setBounds(panel.removeFromTop(18));
+
+    panel.removeFromTop(2);
+    debugTextBox.setBounds(panel.removeFromTop(104));
+
 }
 
 void TrackListComponent::setupAnalysisPanel()

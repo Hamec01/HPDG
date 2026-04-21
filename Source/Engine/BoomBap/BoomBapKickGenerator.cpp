@@ -12,6 +12,8 @@ namespace bbg
 {
 namespace
 {
+constexpr float kStyleLabReferenceBlend = 0.40f;
+
 float substyleSupportScale(BoomBapSubstyle substyle)
 {
     switch (substyle)
@@ -174,12 +176,12 @@ int blendedReferenceKickVelocity(const ReferenceBoomBapKickFeel& feel,
         : (role == KickHitRole::Pickup ? feel.punctuationVelocity : feel.supportVelocity);
 
     if (laneAverage > 0.0f)
-        target = target * 0.58f + laneAverage * 0.42f;
+        target = target * (1.0f - kStyleLabReferenceBlend) + laneAverage * kStyleLabReferenceBlend;
 
     const int clampedStep = std::clamp(stepInBar, 0, 15);
     const float stepWeight = feel.velocityWeight[static_cast<size_t>(clampedStep)];
     if (stepWeight > 0.0f)
-        target = target * 0.52f + (feel.velocitySum[static_cast<size_t>(clampedStep)] / stepWeight) * 0.48f;
+        target = target * (1.0f - kStyleLabReferenceBlend) + (feel.velocitySum[static_cast<size_t>(clampedStep)] / stepWeight) * kStyleLabReferenceBlend;
 
     return std::clamp(static_cast<int>(std::round(target)), style.kickVelocityMin, style.kickVelocityMax);
 }
@@ -254,6 +256,8 @@ void BoomBapKickGenerator::generate(TrackState& track,
             int stepInBar = identityAnchors[static_cast<size_t>(i)];
             if (stepInBar < 0 || stepInBar > 15 || usedSteps[static_cast<size_t>(stepInBar)])
                 continue;
+            if (style.substyle == BoomBapSubstyle::Classic && (stepInBar == 4 || stepInBar == 12))
+                continue;
 
             usedSteps[static_cast<size_t>(stepInBar)] = true;
 
@@ -299,6 +303,8 @@ void BoomBapKickGenerator::generate(TrackState& track,
 
             if (stepInBar > 15 || usedSteps[static_cast<size_t>(stepInBar)])
                 continue;
+            if (style.substyle == BoomBapSubstyle::Classic && (stepInBar == 4 || stepInBar == 12))
+                continue;
 
             const auto hitRole = barTemplate->roles[static_cast<size_t>(i)];
             const float profileScale = substyleSupportScale(style.substyle);
@@ -318,15 +324,15 @@ void BoomBapKickGenerator::generate(TrackState& track,
             if (style.substyle == BoomBapSubstyle::Classic && hitRole != KickHitRole::Anchor)
             {
                 if (hitRole == KickHitRole::Support)
-                    keepChance = std::min(keepChance, role == PhraseRole::Ending ? 0.62f : 0.54f);
+                    keepChance = std::min(keepChance, role == PhraseRole::Ending ? 0.52f : 0.44f);
                 else
-                    keepChance = std::min(keepChance, role == PhraseRole::Ending ? 0.46f : 0.30f);
+                    keepChance = std::min(keepChance, role == PhraseRole::Ending ? 0.34f : 0.20f);
 
                 if (role == PhraseRole::Base)
-                    keepChance = std::clamp(keepChance * 0.84f, 0.03f, 1.0f);
+                    keepChance = std::clamp(keepChance * 0.72f, 0.03f, 1.0f);
 
                 if (hitRole == KickHitRole::Pickup && role != PhraseRole::Ending && stepInBar >= 13)
-                    keepChance = std::clamp(keepChance * 0.62f, 0.03f, 1.0f);
+                    keepChance = std::clamp(keepChance * 0.50f, 0.03f, 1.0f);
             }
             if (tempoBand != TempoBand::Base && hitRole != KickHitRole::Anchor)
                 keepChance = std::clamp(keepChance * (tempoBand == TempoBand::Fast ? 0.58f : 0.72f), 0.03f, 1.0f);
