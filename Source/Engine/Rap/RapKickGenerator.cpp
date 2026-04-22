@@ -24,11 +24,11 @@ std::vector<KickZone> kickZonesForStyle(RapSubstyle substyle)
     {
         case RapSubstyle::WestCoast:
         case RapSubstyle::RnBRap:
-            return { { 0, 1.0f, true }, { 5, 0.52f, false }, { 8, 0.86f, true }, { 10, 0.52f, false }, { 13, 0.48f, false }, { 15, 0.42f, false } };
+            return { { 0, 1.0f, true }, { 5, 0.52f, false }, { 7, 0.34f, false }, { 8, 0.86f, true }, { 10, 0.56f, false }, { 13, 0.50f, false }, { 15, 0.38f, false } };
         case RapSubstyle::DirtySouthClassic:
-            return { { 0, 1.0f, true }, { 4, 0.58f, false }, { 8, 0.90f, true }, { 10, 0.62f, false }, { 12, 0.52f, false }, { 14, 0.56f, false } };
+            return { { 0, 1.0f, true }, { 3, 0.42f, false }, { 6, 0.54f, false }, { 8, 0.86f, true }, { 10, 0.64f, false }, { 11, 0.40f, false }, { 14, 0.58f, false }, { 15, 0.46f, false } };
         case RapSubstyle::GermanStreetRap:
-            return { { 0, 1.0f, true }, { 4, 0.56f, false }, { 8, 0.90f, true }, { 10, 0.54f, false }, { 12, 0.48f, false }, { 14, 0.52f, false } };
+            return { { 0, 1.0f, true }, { 3, 0.30f, false }, { 6, 0.46f, false }, { 8, 0.78f, true }, { 10, 0.58f, false }, { 14, 0.44f, false }, { 15, 0.26f, false } };
         case RapSubstyle::RussianRap:
             return { { 0, 1.0f, true }, { 6, 0.52f, false }, { 8, 0.88f, true }, { 10, 0.54f, false }, { 14, 0.48f, false } };
         case RapSubstyle::HardcoreRap:
@@ -44,6 +44,7 @@ std::vector<KickZone> kickZonesForStyle(RapSubstyle substyle)
                 { 15, 0.36f, false }
             };
         case RapSubstyle::EastCoast:
+            return { { 0, 1.0f, true }, { 3, 0.36f, false }, { 6, 0.58f, false }, { 8, 0.74f, true }, { 10, 0.66f, false }, { 14, 0.42f, false }, { 15, 0.26f, false } };
         case RapSubstyle::LofiRap:
         default:
             return { { 0, 1.0f, true }, { 6, 0.56f, false }, { 8, 0.90f, true }, { 10, 0.58f, false }, { 14, 0.50f, false }, { 3, 0.32f, false }, { 7, 0.28f, false }, { 15, 0.34f, false } };

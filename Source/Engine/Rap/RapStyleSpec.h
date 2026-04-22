@@ -69,60 +69,78 @@ inline RapStyleSpec getRapStyleSpec(RapSubstyle substyle)
     switch (substyle)
     {
         case RapSubstyle::EastCoast:
-            s.swingMin = 0.50f; s.swingMax = 0.56f;
-            s.timingAmountMin = 0.24f; s.timingAmountMax = 0.36f;
-            s.humanizeAmountMin = 0.20f; s.humanizeAmountMax = 0.34f;
-            s.kickDensityMin = 0.34f; s.kickDensityMax = 0.56f;
-            s.hatDensityMin = 0.40f; s.hatDensityMax = 0.62f;
-            s.openHatDensityMin = 0.01f; s.openHatDensityMax = 0.08f;
-            s.percDensityMin = 0.01f; s.percDensityMax = 0.10f;
-            s.sub808DensityMin = 0.00f; s.sub808DensityMax = 0.10f;
+            s.swingMin = 0.52f; s.swingMax = 0.57f;
+            s.timingAmountMin = 0.18f; s.timingAmountMax = 0.34f;
+            s.humanizeAmountMin = 0.16f; s.humanizeAmountMax = 0.30f;
+            s.velocityAmountMin = 0.32f; s.velocityAmountMax = 0.54f;
+            s.densityAmountMin = 0.34f; s.densityAmountMax = 0.58f;
+            s.kickDensityMin = 0.34f; s.kickDensityMax = 0.52f;
+            s.hatDensityMin = 0.42f; s.hatDensityMax = 0.60f;
+            s.ghostKickDensityMin = 0.01f; s.ghostKickDensityMax = 0.08f;
+            s.clapGhostDensityMin = 0.01f; s.clapGhostDensityMax = 0.08f;
+            s.openHatDensityMin = 0.00f; s.openHatDensityMax = 0.04f;
+            s.percDensityMin = 0.01f; s.percDensityMax = 0.08f;
+            s.sub808DensityMin = 0.00f; s.sub808DensityMax = 0.03f;
             s.openHatUseful = false;
             s.percUseful = true;
             s.sub808EnabledByDefault = false;
             break;
 
         case RapSubstyle::WestCoast:
-            s.swingMin = 0.52f; s.swingMax = 0.58f;
-            s.timingAmountMin = 0.26f; s.timingAmountMax = 0.40f;
-            s.humanizeAmountMin = 0.24f; s.humanizeAmountMax = 0.38f;
-            s.kickDensityMin = 0.32f; s.kickDensityMax = 0.54f;
-            s.hatDensityMin = 0.40f; s.hatDensityMax = 0.62f;
-            s.openHatDensityMin = 0.04f; s.openHatDensityMax = 0.16f;
-            s.percDensityMin = 0.04f; s.percDensityMax = 0.14f;
-            s.sub808DensityMin = 0.04f; s.sub808DensityMax = 0.18f;
-            s.openHatUseful = true;
-            s.percUseful = true;
-            s.sub808EnabledByDefault = false;
-            break;
-
-        case RapSubstyle::DirtySouthClassic:
-            s.swingMin = 0.50f; s.swingMax = 0.55f;
-            s.timingAmountMin = 0.22f; s.timingAmountMax = 0.34f;
-            s.humanizeAmountMin = 0.18f; s.humanizeAmountMax = 0.32f;
-            s.kickDensityMin = 0.44f; s.kickDensityMax = 0.68f;
-            s.hatDensityMin = 0.44f; s.hatDensityMax = 0.66f;
-            s.openHatDensityMin = 0.06f; s.openHatDensityMax = 0.20f;
+            s.swingMin = 0.54f; s.swingMax = 0.60f;
+            s.timingAmountMin = 0.30f; s.timingAmountMax = 0.48f;
+            s.humanizeAmountMin = 0.24f; s.humanizeAmountMax = 0.42f;
+            s.velocityAmountMin = 0.26f; s.velocityAmountMax = 0.48f;
+            s.densityAmountMin = 0.36f; s.densityAmountMax = 0.60f;
+            s.kickDensityMin = 0.32f; s.kickDensityMax = 0.56f;
+            s.hatDensityMin = 0.42f; s.hatDensityMax = 0.64f;
+            s.ghostKickDensityMin = 0.02f; s.ghostKickDensityMax = 0.12f;
+            s.clapGhostDensityMin = 0.06f; s.clapGhostDensityMax = 0.20f;
+            s.openHatDensityMin = 0.05f; s.openHatDensityMax = 0.18f;
             s.percDensityMin = 0.04f; s.percDensityMax = 0.16f;
-            s.sub808DensityMin = 0.14f; s.sub808DensityMax = 0.34f;
+            s.sub808DensityMin = 0.05f; s.sub808DensityMax = 0.18f;
             s.openHatUseful = true;
             s.percUseful = true;
             s.sub808EnabledByDefault = true;
             s.sub808FollowKickMoreOften = true;
             break;
 
+        case RapSubstyle::DirtySouthClassic:
+            s.swingMin = 0.53f; s.swingMax = 0.58f;
+            s.timingAmountMin = 0.28f; s.timingAmountMax = 0.44f;
+            s.humanizeAmountMin = 0.20f; s.humanizeAmountMax = 0.36f;
+            s.velocityAmountMin = 0.30f; s.velocityAmountMax = 0.56f;
+            s.densityAmountMin = 0.38f; s.densityAmountMax = 0.64f;
+            s.kickDensityMin = 0.40f; s.kickDensityMax = 0.62f;
+            s.hatDensityMin = 0.46f; s.hatDensityMax = 0.68f;
+            s.ghostKickDensityMin = 0.04f; s.ghostKickDensityMax = 0.14f;
+            s.clapGhostDensityMin = 0.10f; s.clapGhostDensityMax = 0.26f;
+            s.openHatDensityMin = 0.08f; s.openHatDensityMax = 0.24f;
+            s.percDensityMin = 0.05f; s.percDensityMax = 0.18f;
+            s.sub808DensityMin = 0.00f; s.sub808DensityMax = 0.00f;
+            s.openHatUseful = true;
+            s.percUseful = true;
+            s.sub808EnabledByDefault = false;
+            s.sub808FollowKickMoreOften = false;
+            break;
+
         case RapSubstyle::GermanStreetRap:
-            s.swingMin = 0.50f; s.swingMax = 0.54f;
-            s.timingAmountMin = 0.16f; s.timingAmountMax = 0.28f;
-            s.humanizeAmountMin = 0.14f; s.humanizeAmountMax = 0.24f;
-            s.kickDensityMin = 0.36f; s.kickDensityMax = 0.56f;
-            s.hatDensityMin = 0.34f; s.hatDensityMax = 0.54f;
-            s.openHatDensityMin = 0.01f; s.openHatDensityMax = 0.08f;
-            s.percDensityMin = 0.00f; s.percDensityMax = 0.06f;
-            s.sub808DensityMin = 0.06f; s.sub808DensityMax = 0.20f;
+            s.swingMin = 0.505f; s.swingMax = 0.545f;
+            s.timingAmountMin = 0.14f; s.timingAmountMax = 0.30f;
+            s.humanizeAmountMin = 0.10f; s.humanizeAmountMax = 0.22f;
+            s.velocityAmountMin = 0.34f; s.velocityAmountMax = 0.56f;
+            s.densityAmountMin = 0.34f; s.densityAmountMax = 0.56f;
+            s.kickDensityMin = 0.34f; s.kickDensityMax = 0.54f;
+            s.hatDensityMin = 0.40f; s.hatDensityMax = 0.58f;
+            s.ghostKickDensityMin = 0.00f; s.ghostKickDensityMax = 0.06f;
+            s.clapGhostDensityMin = 0.01f; s.clapGhostDensityMax = 0.08f;
+            s.openHatDensityMin = 0.00f; s.openHatDensityMax = 0.035f;
+            s.percDensityMin = 0.00f; s.percDensityMax = 0.035f;
+            s.sub808DensityMin = 0.00f; s.sub808DensityMax = 0.00f;
             s.openHatUseful = false;
             s.percUseful = false;
             s.sub808EnabledByDefault = false;
+            s.sub808FollowKickMoreOften = false;
             break;
 
         case RapSubstyle::RussianRap:

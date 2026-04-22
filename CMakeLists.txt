@@ -144,6 +144,8 @@ add_executable(HPDG_CoreTests
     Source/Engine/Drill/DrillPhrasePlanner.cpp
     Source/Engine/Drill/DrillSnareGenerator.cpp
     Source/Engine/HumanizeEngine.cpp
+    Source/Engine/SampleLibraryManager.cpp
+    Source/Engine/LaneSampleBank.cpp
     Source/Engine/MidiExportEngine.cpp
     Source/Engine/ExtractPatternBuilder.cpp
     Source/Engine/PatternBlendEngine.cpp
@@ -163,7 +165,12 @@ add_executable(HPDG_CoreTests
     Source/Engine/BoomBap/BoomBapGhostGenerator.cpp
     Source/Engine/BoomBap/BoomBapOpenHatGenerator.cpp
     Source/Engine/BoomBap/BoomBapPercGenerator.cpp
+    Source/Engine/RapEngine.cpp
     Source/Engine/Rap/RapStyleProfile.cpp
+    Source/Engine/Rap/RapPhrasePlanner.cpp
+    Source/Engine/Rap/RapKickGenerator.cpp
+    Source/Engine/Rap/RapSnareGenerator.cpp
+    Source/Engine/Rap/RapHatGenerator.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/StyleLabReferenceService.cpp

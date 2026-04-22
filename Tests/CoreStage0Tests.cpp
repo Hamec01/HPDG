@@ -18,9 +18,12 @@
 #include "../Source/Engine/Drill/DrillSnareGenerator.h"
 #include "../Source/Engine/ExtractPatternBuilder.h"
 #include "../Source/Engine/HiResTiming.h"
+#include "../Source/Engine/LaneSampleBank.h"
 #include "../Source/Engine/MidiExportEngine.h"
 #include "../Source/Engine/PatternPerformanceTransformEngine.h"
 #include "../Source/Engine/PatternBlendEngine.h"
+#include "../Source/Engine/RapEngine.h"
+#include "../Source/Engine/SampleLibraryManager.h"
 #include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Engine/StyleDefinitionLoader.h"
 #include "../Source/Engine/StyleInfluence.h"
@@ -3333,6 +3336,1128 @@ void testBoomBapLofiRapPocketGenerationSmoke()
     }
 }
 
+void testRapEastCoastPocketGenerationSmoke()
+{
+    RapEngine engine;
+
+    for (int seed = 7300; seed < 7312; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Rap;
+        project.params.rapSubstyle = 0;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 92.0f;
+        project.params.swingPercent = 54.0f;
+        project.params.densityAmount = 0.46f;
+        project.params.timingAmount = 0.30f;
+        project.params.humanizeAmount = 0.24f;
+        project.params.velocityAmount = 0.54f;
+
+        if (auto* openHat = findTrackByType(project, TrackType::OpenHat); openHat != nullptr)
+            openHat->enabled = true;
+        if (auto* ride = findTrackByType(project, TrackType::Ride); ride != nullptr)
+            ride->enabled = true;
+        if (auto* cymbal = findTrackByType(project, TrackType::Cymbal); cymbal != nullptr)
+            cymbal->enabled = true;
+        if (auto* sub = findTrackByType(project, TrackType::Sub808); sub != nullptr)
+            sub->enabled = true;
+
+        engine.generate(project);
+
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+        const auto* sub = findTrackByType(project, TrackType::Sub808);
+
+        expect(hat != nullptr && kick != nullptr && snare != nullptr,
+               "Rap EastCoast smoke requires HiHat, Kick and Snare tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phraseLateKicks = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 10 || step == 14 || step == 15)
+                ++phraseLateKicks;
+        }
+
+        int phraseSnareGhosts = 0;
+        for (const auto& note : snare->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (note.isGhost && step != 4 && step != 12)
+            {
+                ++phraseSnareGhosts;
+                expect(note.velocity <= 48,
+                       "Rap EastCoast ghost snares should stay quiet and rare.");
+            }
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+
+            const auto beat2Snare = findStep(snare, beat2);
+            const auto beat4Snare = findStep(snare, beat4);
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "Rap EastCoast should keep the main snare on beat 2 and beat 4.");
+            expect(!beat2Snare->isGhost && !beat4Snare->isGhost
+                   && beat2Snare->velocity >= 98 && beat4Snare->velocity >= 98,
+                   "Rap EastCoast snare anchors should be firm and upfront.");
+            expect(beat2Snare->microOffset >= 2 && beat2Snare->microOffset <= 15
+                   && beat4Snare->microOffset >= 2 && beat4Snare->microOffset <= 15,
+                   "Rap EastCoast snare anchors should sit slightly late but tight.");
+
+            expect(countInBar(hat, bar) >= 7 && countInBar(hat, bar) <= 8,
+                   "Rap EastCoast hats should be tight eighth-note carriers with limited extra 16ths.");
+
+            int swungOffbeats = 0;
+            for (const int stepInBar : { 2, 6, 10, 14 })
+            {
+                const auto hatHit = findStep(hat, bar * 16 + stepInBar);
+                if (hatHit != hat->notes.end())
+                {
+                    ++swungOffbeats;
+                    expect(hatHit->microOffset >= 8 && hatHit->microOffset <= 42,
+                           "Rap EastCoast offbeat hats should carry a moderate MPC-style swing.");
+                    expect(hatHit->velocity <= 86,
+                           "Rap EastCoast hats should not get modern-bright.");
+                }
+            }
+            expect(swungOffbeats >= 3,
+                   "Rap EastCoast hats should keep enough swung offbeats for the head-nod.");
+
+            int oddHatHits = 0;
+            for (const auto& note : hat->notes)
+            {
+                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                    ++oddHatHits;
+            }
+            expect(oddHatHits <= 1,
+                   "Rap EastCoast should avoid busy modern 16th-hat chatter.");
+
+            expect(hasStep(kick, bar * 16),
+                   "Rap EastCoast should ground each bar with a kick on the one.");
+            expect(countInBar(kick, bar) >= 3 && countInBar(kick, bar) <= 4,
+                   "Rap EastCoast kicks should be sparse but assertive.");
+            expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
+                   "Rap EastCoast kick should not collide with the main snare backbeat.");
+
+            expect(countInBar(clapGhost, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "Rap EastCoast clap support should stay phrase-end color only.");
+            expect(countInBar(ghostKick, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "Rap EastCoast ghost kicks should stay rare.");
+            expect(countInBar(openHat, bar) == 0,
+                   "Rap EastCoast should avoid open-hat shine.");
+            expect(countInBar(perc, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "Rap EastCoast percussion should stay as small sampled texture.");
+            expect(countInBar(ride, bar) == 0 && countInBar(cymbal, bar) == 0,
+                   "Rap EastCoast should not add ride/cymbal gloss.");
+            expect(countInBar(sub, bar) == 0,
+                   "Rap EastCoast should not default to modern Sub808 movement.");
+        }
+
+        expect(phraseLateKicks >= project.params.bars,
+               "Rap EastCoast should answer the one with late-bar pickup kicks.");
+        expect(phraseSnareGhosts >= 1 && phraseSnareGhosts <= project.params.bars,
+               "Rap EastCoast should keep ghost snares quiet, rare, and phrase-aware.");
+    }
+}
+
+void testRapEastCoastControlsInfluenceSmoke()
+{
+    RapEngine engine;
+
+    auto low = createDefaultProject();
+    low.params.genre = GenreType::Rap;
+    low.params.rapSubstyle = 0;
+    low.params.bars = 4;
+    low.params.seed = 7401;
+    low.params.bpm = 92.0f;
+    low.params.swingPercent = 51.0f;
+    low.params.densityAmount = 0.18f;
+    low.params.timingAmount = 0.10f;
+    low.params.humanizeAmount = 0.08f;
+    low.params.velocityAmount = 0.18f;
+
+    auto high = low;
+    high.params.swingPercent = 58.0f;
+    high.params.densityAmount = 0.82f;
+    high.params.timingAmount = 0.82f;
+    high.params.humanizeAmount = 0.82f;
+    high.params.velocityAmount = 0.82f;
+
+    engine.generate(low);
+    engine.generate(high);
+
+    const auto* lowHat = findTrackByType(low, TrackType::HiHat);
+    const auto* highHat = findTrackByType(high, TrackType::HiHat);
+    const auto* lowKick = findTrackByType(low, TrackType::Kick);
+    const auto* highKick = findTrackByType(high, TrackType::Kick);
+    const auto* lowSnare = findTrackByType(low, TrackType::Snare);
+    const auto* highSnare = findTrackByType(high, TrackType::Snare);
+
+    expect(lowHat != nullptr && highHat != nullptr && lowKick != nullptr && highKick != nullptr && lowSnare != nullptr && highSnare != nullptr,
+           "Rap EastCoast controls smoke requires core tracks.");
+
+    expect(highHat->notes.size() >= lowHat->notes.size(),
+           "Rap EastCoast Density should not make hats thinner when raised.");
+    expect(highKick->notes.size() >= lowKick->notes.size(),
+           "Rap EastCoast Density should not make kicks thinner when raised.");
+
+    const auto averageOffbeatHatMicro = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 2 || step == 6 || step == 10 || step == 14)
+            {
+                sum += note.microOffset;
+                ++count;
+            }
+        }
+
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageOffbeatHatMicro(*highHat) > averageOffbeatHatMicro(*lowHat) + 6.0f,
+           "Rap EastCoast Swing should push offbeat hats later when raised.");
+
+    const auto maxAbsMicro = [](const TrackState& track)
+    {
+        int out = 0;
+        for (const auto& note : track.notes)
+            out = std::max(out, std::abs(note.microOffset));
+        return out;
+    };
+
+    expect(maxAbsMicro(*highKick) >= maxAbsMicro(*lowKick),
+           "Rap EastCoast Timing/Humanize should allow wider kick microtiming when raised.");
+
+    const auto averageMainSnareVelocity = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (!note.isGhost && (step == 4 || step == 12))
+            {
+                sum += note.velocity;
+                ++count;
+            }
+        }
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageMainSnareVelocity(*highSnare) > averageMainSnareVelocity(*lowSnare),
+           "Rap EastCoast Velocity should lift main snare accents when raised.");
+}
+
+void testRapWestCoastPocketGenerationSmoke()
+{
+    RapEngine engine;
+
+    for (int seed = 7500; seed < 7512; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Rap;
+        project.params.rapSubstyle = 1;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 94.0f;
+        project.params.swingPercent = 55.5f;
+        project.params.densityAmount = 0.50f;
+        project.params.timingAmount = 0.38f;
+        project.params.humanizeAmount = 0.34f;
+        project.params.velocityAmount = 0.44f;
+
+        if (auto* openHat = findTrackByType(project, TrackType::OpenHat); openHat != nullptr)
+            openHat->enabled = true;
+        if (auto* clap = findTrackByType(project, TrackType::ClapGhostSnare); clap != nullptr)
+            clap->enabled = true;
+        if (auto* sub = findTrackByType(project, TrackType::Sub808); sub != nullptr)
+            sub->enabled = true;
+        if (auto* ride = findTrackByType(project, TrackType::Ride); ride != nullptr)
+            ride->enabled = true;
+        if (auto* cymbal = findTrackByType(project, TrackType::Cymbal); cymbal != nullptr)
+            cymbal->enabled = true;
+
+        engine.generate(project);
+
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clap = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+        const auto* sub = findTrackByType(project, TrackType::Sub808);
+
+        expect(hat != nullptr && kick != nullptr && snare != nullptr && clap != nullptr && sub != nullptr,
+               "Rap WestCoast smoke requires HiHat, Kick, Snare, Clap and Sub tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phraseFunkKicks = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 5 || step == 7 || step == 10 || step == 13 || step == 15)
+                ++phraseFunkKicks;
+        }
+
+        int phraseOpenHats = 0;
+        for (const auto& note : openHat->notes)
+        {
+            if (((note.step % 16) + 16) % 16 == 6 || ((note.step % 16) + 16) % 16 == 14 || ((note.step % 16) + 16) % 16 == 15)
+                ++phraseOpenHats;
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+
+            const auto beat2Snare = findStep(snare, beat2);
+            const auto beat4Snare = findStep(snare, beat4);
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "Rap WestCoast should keep the snare on beat 2 and beat 4.");
+            expect(!beat2Snare->isGhost && !beat4Snare->isGhost
+                   && beat2Snare->velocity >= 92 && beat4Snare->velocity >= 92,
+                   "Rap WestCoast snare anchors should be firm but smoother than EastCoast.");
+            expect(beat2Snare->microOffset >= 7 && beat2Snare->microOffset <= 26
+                   && beat4Snare->microOffset >= 7 && beat4Snare->microOffset <= 26,
+                   "Rap WestCoast snare anchors should lean later for laid-back bounce.");
+
+            expect(countInBar(clap, bar) >= 1 && countInBar(clap, bar) <= 2,
+                   "Rap WestCoast should layer snare with clap color.");
+
+            expect(countInBar(hat, bar) >= 8 && countInBar(hat, bar) <= (bar == project.params.bars - 1 ? 10 : 9),
+                   "Rap WestCoast hats should be smooth eighth carriers with light 16th bounce.");
+
+            int swungOffbeats = 0;
+            for (const int stepInBar : { 2, 6, 10, 14 })
+            {
+                const auto hatHit = findStep(hat, bar * 16 + stepInBar);
+                if (hatHit != hat->notes.end())
+                {
+                    ++swungOffbeats;
+                    expect(hatHit->microOffset >= 18 && hatHit->microOffset <= 66,
+                           "Rap WestCoast offbeat hats should have a wider laid-back swing.");
+                    expect(hatHit->velocity <= 88,
+                           "Rap WestCoast hats should stay smooth, not modern-bright.");
+                }
+            }
+            expect(swungOffbeats >= 3,
+                   "Rap WestCoast hats need swung offbeats to carry the bounce.");
+
+            int oddHatHits = 0;
+            for (const auto& note : hat->notes)
+            {
+                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                    ++oddHatHits;
+            }
+            expect(oddHatHits <= 2,
+                   "Rap WestCoast should use 16th hats as bounce, not trap chatter.");
+
+            expect(hasStep(kick, bar * 16),
+                   "Rap WestCoast should ground each bar with a kick on the one.");
+            expect(countInBar(kick, bar) >= 3 && countInBar(kick, bar) <= (bar == project.params.bars - 1 ? 5 : 4),
+                   "Rap WestCoast kicks should be bouncy but not overcrowded.");
+            expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
+                   "Rap WestCoast kick should not collide with the snare/clap backbeat.");
+
+            expect(countInBar(ghostKick, bar) <= 1,
+                   "Rap WestCoast ghost kicks should stay as small pickup color.");
+            expect(countInBar(openHat, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "Rap WestCoast open hats should be controlled phrase lift.");
+            expect(countInBar(perc, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "Rap WestCoast percussion should be light G-funk texture.");
+            expect(countInBar(sub, bar) >= 1 && countInBar(sub, bar) <= 2,
+                   "Rap WestCoast should keep a simple low-end bounce tied to kick anchors.");
+            expect(countInBar(ride, bar) == 0 && countInBar(cymbal, bar) == 0,
+                   "Rap WestCoast should avoid ride/cymbal gloss.");
+        }
+
+        expect(phraseFunkKicks >= project.params.bars,
+               "Rap WestCoast should answer the one with syncopated funk kicks.");
+        expect(phraseOpenHats >= 1,
+               "Rap WestCoast should include occasional open-hat lift.");
+    }
+}
+
+void testRapWestCoastControlsInfluenceSmoke()
+{
+    RapEngine engine;
+
+    auto low = createDefaultProject();
+    low.params.genre = GenreType::Rap;
+    low.params.rapSubstyle = 1;
+    low.params.bars = 4;
+    low.params.seed = 7601;
+    low.params.bpm = 94.0f;
+    low.params.swingPercent = 52.0f;
+    low.params.densityAmount = 0.18f;
+    low.params.timingAmount = 0.12f;
+    low.params.humanizeAmount = 0.10f;
+    low.params.velocityAmount = 0.18f;
+
+    if (auto* sub = findTrackByType(low, TrackType::Sub808); sub != nullptr)
+        sub->enabled = true;
+    if (auto* openHat = findTrackByType(low, TrackType::OpenHat); openHat != nullptr)
+        openHat->enabled = true;
+
+    auto high = low;
+    high.params.swingPercent = 60.0f;
+    high.params.densityAmount = 0.84f;
+    high.params.timingAmount = 0.84f;
+    high.params.humanizeAmount = 0.84f;
+    high.params.velocityAmount = 0.84f;
+
+    engine.generate(low);
+    engine.generate(high);
+
+    const auto* lowHat = findTrackByType(low, TrackType::HiHat);
+    const auto* highHat = findTrackByType(high, TrackType::HiHat);
+    const auto* lowKick = findTrackByType(low, TrackType::Kick);
+    const auto* highKick = findTrackByType(high, TrackType::Kick);
+    const auto* lowSnare = findTrackByType(low, TrackType::Snare);
+    const auto* highSnare = findTrackByType(high, TrackType::Snare);
+    const auto* lowOpen = findTrackByType(low, TrackType::OpenHat);
+    const auto* highOpen = findTrackByType(high, TrackType::OpenHat);
+
+    expect(lowHat != nullptr && highHat != nullptr && lowKick != nullptr && highKick != nullptr
+           && lowSnare != nullptr && highSnare != nullptr && lowOpen != nullptr && highOpen != nullptr,
+           "Rap WestCoast controls smoke requires core and open-hat tracks.");
+
+    expect(highHat->notes.size() >= lowHat->notes.size(),
+           "Rap WestCoast Density should not make hats thinner when raised.");
+    expect(highKick->notes.size() >= lowKick->notes.size(),
+           "Rap WestCoast Density should not make kicks thinner when raised.");
+    expect(highOpen->notes.size() >= lowOpen->notes.size(),
+           "Rap WestCoast Density should not make open-hat lift thinner when raised.");
+
+    const auto averageOffbeatHatMicro = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 2 || step == 6 || step == 10 || step == 14)
+            {
+                sum += note.microOffset;
+                ++count;
+            }
+        }
+
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageOffbeatHatMicro(*highHat) > averageOffbeatHatMicro(*lowHat) + 8.0f,
+           "Rap WestCoast Swing should push offbeat hats later when raised.");
+
+    const auto maxAbsMicro = [](const TrackState& track)
+    {
+        int out = 0;
+        for (const auto& note : track.notes)
+            out = std::max(out, std::abs(note.microOffset));
+        return out;
+    };
+
+    expect(maxAbsMicro(*highKick) >= maxAbsMicro(*lowKick),
+           "Rap WestCoast Timing/Humanize should allow wider kick microtiming when raised.");
+
+    const auto averageMainSnareVelocity = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (!note.isGhost && (step == 4 || step == 12))
+            {
+                sum += note.velocity;
+                ++count;
+            }
+        }
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageMainSnareVelocity(*highSnare) > averageMainSnareVelocity(*lowSnare),
+           "Rap WestCoast Velocity should lift snare/clap accents when raised.");
+}
+
+void testRapDirtySouthPocketGenerationSmoke()
+{
+    RapEngine engine;
+
+    for (int seed = 7700; seed < 7712; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Rap;
+        project.params.rapSubstyle = 2;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 80.0f;
+        project.params.swingPercent = 54.5f;
+        project.params.densityAmount = 0.56f;
+        project.params.timingAmount = 0.36f;
+        project.params.humanizeAmount = 0.30f;
+        project.params.velocityAmount = 0.56f;
+
+        for (const auto type : { TrackType::ClapGhostSnare, TrackType::OpenHat, TrackType::Sub808, TrackType::Perc, TrackType::Cymbal, TrackType::Ride, TrackType::HatFX })
+        {
+            if (auto* track = findTrackByType(project, type); track != nullptr)
+                track->enabled = true;
+        }
+
+        engine.generate(project);
+
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clap = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+        const auto* hatFx = findTrackByType(project, TrackType::HatFX);
+        const auto* sub = findTrackByType(project, TrackType::Sub808);
+
+        expect(hat != nullptr && kick != nullptr && snare != nullptr && clap != nullptr && sub != nullptr,
+               "Rap DirtySouth smoke requires HiHat, Kick, Snare, Clap and Sub tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phrasePickupKicks = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 3 || step == 6 || step == 10 || step == 14 || step == 15)
+                ++phrasePickupKicks;
+        }
+
+        int phraseOpenHats = 0;
+        for (const auto& note : openHat->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 6 || step == 14 || step == 15)
+                ++phraseOpenHats;
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+
+            const auto beat2Snare = findStep(snare, beat2);
+            const auto beat4Snare = findStep(snare, beat4);
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "Rap DirtySouth should keep the snare on beat 2 and beat 4.");
+            expect(!beat2Snare->isGhost && !beat4Snare->isGhost
+                   && beat2Snare->velocity >= 94 && beat4Snare->velocity >= 94,
+                   "Rap DirtySouth snares should stay strong enough for clap stacking.");
+            expect(beat2Snare->microOffset >= 6 && beat2Snare->microOffset <= 26
+                   && beat4Snare->microOffset >= 6 && beat4Snare->microOffset <= 26,
+                   "Rap DirtySouth snares should lean late but stay locked.");
+
+            expect(countInBar(clap, bar) == 2,
+                   "Rap DirtySouth should stack both backbeats with claps.");
+
+            expect(countInBar(hat, bar) >= 8 && countInBar(hat, bar) <= (bar == project.params.bars - 1 ? 10 : 10),
+                   "Rap DirtySouth hats should be eighth-led with selected 16th bounce.");
+
+            int swungOffbeats = 0;
+            for (const int stepInBar : { 2, 6, 10, 14 })
+            {
+                const auto hatHit = findStep(hat, bar * 16 + stepInBar);
+                if (hatHit != hat->notes.end())
+                {
+                    ++swungOffbeats;
+                    expect(hatHit->microOffset >= 14 && hatHit->microOffset <= 58,
+                           "Rap DirtySouth offbeat hats should carry a southern swing pocket.");
+                    expect(hatHit->velocity <= 94,
+                           "Rap DirtySouth hats should be crisp but not trap-bright.");
+                }
+            }
+            expect(swungOffbeats >= 3,
+                   "Rap DirtySouth hats need enough swung offbeats to carry the bounce.");
+
+            int oddHatHits = 0;
+            for (const auto& note : hat->notes)
+            {
+                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                    ++oddHatHits;
+            }
+            expect(oddHatHits <= (bar == project.params.bars - 1 ? 3 : 2),
+                   "Rap DirtySouth should use 16ths as bounce, not modern hat rolls.");
+
+            expect(hasStep(kick, bar * 16),
+                   "Rap DirtySouth should ground every bar with a kick on the one.");
+            expect(countInBar(kick, bar) >= 3 && countInBar(kick, bar) <= (bar == project.params.bars - 1 ? 6 : 5),
+                   "Rap DirtySouth kicks should be heavy, syncopated, and not overcrowded.");
+            expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
+                   "Rap DirtySouth kick should not collide with the snare/clap backbeat.");
+
+            expect(countInBar(ghostKick, bar) <= 1,
+                   "Rap DirtySouth ghost kicks should stay as small pickup color.");
+            expect(countInBar(openHat, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "Rap DirtySouth open hats should be controlled southern lift.");
+            expect(countInBar(perc, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "Rap DirtySouth percussion should be small bounce texture.");
+            expect(countInBar(sub, bar) == 0,
+                   "Rap DirtySouth should keep Sub808 disabled in this substyle.");
+            expect(countInBar(cymbal, bar) <= 1,
+                   "Rap DirtySouth cymbals should be occasional markers only.");
+            expect(countInBar(ride, bar) == 0 && countInBar(hatFx, bar) == 0,
+                   "Rap DirtySouth should avoid ride gloss and modern hat-fx chatter.");
+        }
+
+        expect(phrasePickupKicks >= project.params.bars,
+               "Rap DirtySouth should answer the one with southern pickup kicks.");
+        expect(phraseOpenHats >= 1,
+               "Rap DirtySouth should include occasional open-hat lift.");
+    }
+}
+
+void testRapDirtySouthControlsInfluenceSmoke()
+{
+    RapEngine engine;
+
+    auto low = createDefaultProject();
+    low.params.genre = GenreType::Rap;
+    low.params.rapSubstyle = 2;
+    low.params.bars = 4;
+    low.params.seed = 7801;
+    low.params.bpm = 80.0f;
+    low.params.swingPercent = 51.0f;
+    low.params.densityAmount = 0.18f;
+    low.params.timingAmount = 0.12f;
+    low.params.humanizeAmount = 0.10f;
+    low.params.velocityAmount = 0.18f;
+
+    for (const auto type : { TrackType::ClapGhostSnare, TrackType::OpenHat, TrackType::Sub808, TrackType::Perc, TrackType::Cymbal })
+    {
+        if (auto* track = findTrackByType(low, type); track != nullptr)
+            track->enabled = true;
+    }
+
+    auto high = low;
+    high.params.swingPercent = 59.0f;
+    high.params.densityAmount = 0.84f;
+    high.params.timingAmount = 0.84f;
+    high.params.humanizeAmount = 0.84f;
+    high.params.velocityAmount = 0.84f;
+
+    engine.generate(low);
+    engine.generate(high);
+
+    const auto* lowHat = findTrackByType(low, TrackType::HiHat);
+    const auto* highHat = findTrackByType(high, TrackType::HiHat);
+    const auto* lowKick = findTrackByType(low, TrackType::Kick);
+    const auto* highKick = findTrackByType(high, TrackType::Kick);
+    const auto* lowSnare = findTrackByType(low, TrackType::Snare);
+    const auto* highSnare = findTrackByType(high, TrackType::Snare);
+    const auto* lowOpen = findTrackByType(low, TrackType::OpenHat);
+    const auto* highOpen = findTrackByType(high, TrackType::OpenHat);
+    const auto* lowSub = findTrackByType(low, TrackType::Sub808);
+    const auto* highSub = findTrackByType(high, TrackType::Sub808);
+
+    expect(lowHat != nullptr && highHat != nullptr && lowKick != nullptr && highKick != nullptr
+           && lowSnare != nullptr && highSnare != nullptr && lowOpen != nullptr && highOpen != nullptr
+           && lowSub != nullptr && highSub != nullptr,
+           "Rap DirtySouth controls smoke requires core, open-hat and sub tracks.");
+
+    expect(highHat->notes.size() >= lowHat->notes.size(),
+           "Rap DirtySouth Density should not make hats thinner when raised.");
+    expect(highKick->notes.size() >= lowKick->notes.size(),
+           "Rap DirtySouth Density should not make kicks thinner when raised.");
+    expect(highOpen->notes.size() >= lowOpen->notes.size(),
+           "Rap DirtySouth Density should not make open hats thinner when raised.");
+    expect(lowSub->notes.empty() && highSub->notes.empty()
+           && !lowSub->enabled && !highSub->enabled,
+           "Rap DirtySouth controls should keep Sub808 disabled even when density is raised.");
+
+    const auto averageOffbeatHatMicro = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 2 || step == 6 || step == 10 || step == 14)
+            {
+                sum += note.microOffset;
+                ++count;
+            }
+        }
+
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageOffbeatHatMicro(*highHat) > averageOffbeatHatMicro(*lowHat) + 8.0f,
+           "Rap DirtySouth Swing should push offbeat hats later when raised.");
+
+    const auto maxAbsMicro = [](const TrackState& track)
+    {
+        int out = 0;
+        for (const auto& note : track.notes)
+            out = std::max(out, std::abs(note.microOffset));
+        return out;
+    };
+
+    expect(maxAbsMicro(*highKick) >= maxAbsMicro(*lowKick),
+           "Rap DirtySouth Timing/Humanize should allow wider kick microtiming when raised.");
+
+    const auto averageMainSnareVelocity = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (!note.isGhost && (step == 4 || step == 12))
+            {
+                sum += note.velocity;
+                ++count;
+            }
+        }
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageMainSnareVelocity(*highSnare) > averageMainSnareVelocity(*lowSnare),
+           "Rap DirtySouth Velocity should lift backbeat accents when raised.");
+}
+
+void testRapGermanStreetPocketGenerationSmoke()
+{
+    RapEngine engine;
+
+    for (int seed = 7900; seed < 7912; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Rap;
+        project.params.rapSubstyle = 3;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 88.0f;
+        project.params.swingPercent = 51.5f;
+        project.params.densityAmount = 0.48f;
+        project.params.timingAmount = 0.22f;
+        project.params.humanizeAmount = 0.16f;
+        project.params.velocityAmount = 0.54f;
+
+        for (const auto type : { TrackType::ClapGhostSnare, TrackType::OpenHat, TrackType::Sub808, TrackType::Perc, TrackType::Cymbal, TrackType::Ride, TrackType::HatFX })
+        {
+            if (auto* track = findTrackByType(project, type); track != nullptr)
+                track->enabled = true;
+        }
+
+        engine.generate(project);
+
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clap = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+        const auto* hatFx = findTrackByType(project, TrackType::HatFX);
+        const auto* sub = findTrackByType(project, TrackType::Sub808);
+
+        expect(hat != nullptr && kick != nullptr && snare != nullptr && clap != nullptr && sub != nullptr,
+               "Rap GermanStreet smoke requires HiHat, Kick, Snare, Clap and Sub tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phraseHardKicks = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 6 || step == 8 || step == 10 || step == 14 || step == 15)
+                ++phraseHardKicks;
+        }
+
+        int ghostSnares = 0;
+        for (const auto& note : snare->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (note.isGhost)
+            {
+                ++ghostSnares;
+                expect((step == 3 || step == 11) && note.velocity <= 56,
+                       "Rap GermanStreet ghost snares should be rare, quiet, and only pre-backbeat color.");
+            }
+        }
+        expect(ghostSnares <= project.params.bars,
+               "Rap GermanStreet should not flood the pattern with ghost snares.");
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+
+            const auto beat2Snare = findStep(snare, beat2);
+            const auto beat4Snare = findStep(snare, beat4);
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "Rap GermanStreet should keep the dry snare on beat 2 and beat 4.");
+            expect(!beat2Snare->isGhost && !beat4Snare->isGhost
+                   && beat2Snare->velocity >= 102 && beat4Snare->velocity >= 102,
+                   "Rap GermanStreet snares should hit hard and upfront.");
+            expect(beat2Snare->microOffset >= -2 && beat2Snare->microOffset <= 12
+                   && beat4Snare->microOffset >= -2 && beat4Snare->microOffset <= 12,
+                   "Rap GermanStreet snares should stay tight with only a small late lean.");
+
+            expect(countInBar(hat, bar) >= 7 && countInBar(hat, bar) <= 8,
+                   "Rap GermanStreet hats should be restrained eighth-led carriers.");
+
+            int swungOffbeats = 0;
+            for (const int stepInBar : { 2, 6, 10, 14 })
+            {
+                const auto hatHit = findStep(hat, bar * 16 + stepInBar);
+                if (hatHit != hat->notes.end())
+                {
+                    ++swungOffbeats;
+                    expect(hatHit->microOffset >= 3 && hatHit->microOffset <= 32,
+                           "Rap GermanStreet offbeat hats should swing subtly, not slump.");
+                    expect(hatHit->velocity <= 86,
+                           "Rap GermanStreet hats should stay cold and controlled.");
+                }
+            }
+            expect(swungOffbeats >= 3,
+                   "Rap GermanStreet hats need enough offbeats for the marching street pocket.");
+
+            int oddHatHits = 0;
+            for (const auto& note : hat->notes)
+            {
+                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                    ++oddHatHits;
+            }
+            expect(oddHatHits <= 1,
+                   "Rap GermanStreet should avoid modern 16th-hat chatter.");
+
+            expect(hasStep(kick, bar * 16),
+                   "Rap GermanStreet should ground every bar with a kick on the one.");
+            expect(countInBar(kick, bar) >= 3 && countInBar(kick, bar) <= (bar == project.params.bars - 1 ? 5 : 4),
+                   "Rap GermanStreet kicks should be hard, short, and not overcrowded.");
+            expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
+                   "Rap GermanStreet kick should not collide with the main snare backbeat.");
+
+            expect(countInBar(clap, bar) <= 1,
+                   "Rap GermanStreet clap support should be a dry single layer only.");
+            if (countInBar(clap, bar) == 1)
+            {
+                const auto clapHit = findStep(clap, beat4);
+                expect(clapHit != clap->notes.end() && clapHit->velocity <= 98,
+                       "Rap GermanStreet clap layer should sit quietly on beat 4.");
+            }
+
+            expect(countInBar(ghostKick, bar) <= 1,
+                   "Rap GermanStreet ghost kicks should stay as rare pickups.");
+            expect(countInBar(openHat, bar) <= 1,
+                   "Rap GermanStreet open hats should be phrase markers only.");
+            expect(countInBar(perc, bar) <= 1,
+                   "Rap GermanStreet percussion should stay almost absent.");
+            expect(countInBar(ride, bar) == 0 && countInBar(cymbal, bar) == 0 && countInBar(hatFx, bar) == 0,
+                   "Rap GermanStreet should avoid ride/cymbal gloss and hat-fx chatter.");
+            expect(countInBar(sub, bar) == 0,
+                   "Rap GermanStreet should keep Sub808 disabled.");
+        }
+
+        expect(sub->notes.empty() && !sub->enabled,
+               "Rap GermanStreet should clear and disable Sub808 even when the lane is forced on.");
+        expect(phraseHardKicks >= project.params.bars,
+               "Rap GermanStreet should answer the one with hard syncopated kick punctuation.");
+    }
+}
+
+void testRapGermanStreetControlsInfluenceSmoke()
+{
+    RapEngine engine;
+
+    auto low = createDefaultProject();
+    low.params.genre = GenreType::Rap;
+    low.params.rapSubstyle = 3;
+    low.params.bars = 4;
+    low.params.seed = 8001;
+    low.params.bpm = 88.0f;
+    low.params.swingPercent = 50.5f;
+    low.params.densityAmount = 0.18f;
+    low.params.timingAmount = 0.10f;
+    low.params.humanizeAmount = 0.08f;
+    low.params.velocityAmount = 0.18f;
+
+    for (const auto type : { TrackType::ClapGhostSnare, TrackType::OpenHat, TrackType::Sub808, TrackType::Perc, TrackType::Cymbal, TrackType::Ride, TrackType::HatFX })
+    {
+        if (auto* track = findTrackByType(low, type); track != nullptr)
+            track->enabled = true;
+    }
+
+    auto high = low;
+    high.params.swingPercent = 55.5f;
+    high.params.densityAmount = 0.84f;
+    high.params.timingAmount = 0.84f;
+    high.params.humanizeAmount = 0.84f;
+    high.params.velocityAmount = 0.84f;
+
+    engine.generate(low);
+    engine.generate(high);
+
+    const auto* lowHat = findTrackByType(low, TrackType::HiHat);
+    const auto* highHat = findTrackByType(high, TrackType::HiHat);
+    const auto* lowKick = findTrackByType(low, TrackType::Kick);
+    const auto* highKick = findTrackByType(high, TrackType::Kick);
+    const auto* lowSnare = findTrackByType(low, TrackType::Snare);
+    const auto* highSnare = findTrackByType(high, TrackType::Snare);
+    const auto* lowOpen = findTrackByType(low, TrackType::OpenHat);
+    const auto* highOpen = findTrackByType(high, TrackType::OpenHat);
+    const auto* lowSub = findTrackByType(low, TrackType::Sub808);
+    const auto* highSub = findTrackByType(high, TrackType::Sub808);
+
+    expect(lowHat != nullptr && highHat != nullptr && lowKick != nullptr && highKick != nullptr
+           && lowSnare != nullptr && highSnare != nullptr && lowOpen != nullptr && highOpen != nullptr
+           && lowSub != nullptr && highSub != nullptr,
+           "Rap GermanStreet controls smoke requires core, open-hat and sub tracks.");
+
+    expect(highHat->notes.size() >= lowHat->notes.size(),
+           "Rap GermanStreet Density should not make hats thinner when raised.");
+    expect(highKick->notes.size() >= lowKick->notes.size(),
+           "Rap GermanStreet Density should not make kicks thinner when raised.");
+    expect(highOpen->notes.size() >= lowOpen->notes.size(),
+           "Rap GermanStreet Density should not make phrase open hats thinner when raised.");
+    expect(lowSub->notes.empty() && highSub->notes.empty()
+           && !lowSub->enabled && !highSub->enabled,
+           "Rap GermanStreet controls should keep Sub808 disabled even when density is raised.");
+
+    const auto averageOffbeatHatMicro = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 2 || step == 6 || step == 10 || step == 14)
+            {
+                sum += note.microOffset;
+                ++count;
+            }
+        }
+
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageOffbeatHatMicro(*highHat) > averageOffbeatHatMicro(*lowHat) + 5.0f,
+           "Rap GermanStreet Swing should push offbeat hats later while staying tight.");
+
+    const auto maxAbsMicro = [](const TrackState& track)
+    {
+        int out = 0;
+        for (const auto& note : track.notes)
+            out = std::max(out, std::abs(note.microOffset));
+        return out;
+    };
+
+    expect(maxAbsMicro(*highKick) >= maxAbsMicro(*lowKick),
+           "Rap GermanStreet Timing/Humanize should widen kick microtiming carefully when raised.");
+
+    const auto averageMainSnareVelocity = [](const TrackState& track)
+    {
+        int sum = 0;
+        int count = 0;
+        for (const auto& note : track.notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (!note.isGhost && (step == 4 || step == 12))
+            {
+                sum += note.velocity;
+                ++count;
+            }
+        }
+        return count > 0 ? static_cast<float>(sum) / static_cast<float>(count) : 0.0f;
+    };
+
+    expect(averageMainSnareVelocity(*highSnare) > averageMainSnareVelocity(*lowSnare),
+           "Rap GermanStreet Velocity should lift dry backbeat accents when raised.");
+}
+
+void testLaneSampleBankPreferredTagRotationSmoke()
+{
+    const auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("HPDG_CoreSampleTagTests");
+    if (root.exists())
+        root.deleteRecursively();
+
+    const auto kickDir = root.getChildFile("Rap").getChildFile("Kick");
+    const auto snareDir = root.getChildFile("Rap").getChildFile("Snare");
+    expect(kickDir.createDirectory() && snareDir.createDirectory(),
+           "Sample tag test must create temporary lane folders.");
+
+    const auto writePlaceholder = [](const juce::File& file)
+    {
+        return file.replaceWithText("placeholder");
+    };
+
+    expect(writePlaceholder(kickDir.getChildFile("A_Generic_Kick.wav"))
+           && writePlaceholder(kickDir.getChildFile("Dirty_South_Kick_A.wav"))
+           && writePlaceholder(kickDir.getChildFile("Dirty_South_Kick_B.wav"))
+           && writePlaceholder(snareDir.getChildFile("A_Generic_Snare.wav"))
+           && writePlaceholder(snareDir.getChildFile("B_Generic_Snare.wav")),
+           "Sample tag test must create placeholder wav entries.");
+
+    SampleLibraryManager library;
+    library.setRootDirectory(root);
+    library.setGenre(GenreType::Rap);
+    library.scan();
+
+    LaneSampleBank bank;
+    bank.applyLibrary(library);
+
+    const std::vector<juce::String> dirtyTags { "Dirty_South", "Dirty South", "DirtySouth" };
+    expect(bank.hasSamplesMatchingAnyTag(TrackType::Kick, dirtyTags),
+           "Sample bank should detect Dirty_South-tagged kick samples.");
+    expect(!bank.hasSamplesMatchingAnyTag(TrackType::Snare, dirtyTags),
+           "Sample bank should report no tagged snare samples when only generic files exist.");
+
+    expect(bank.selectIndex(TrackType::Kick, 0), "Sample bank should select the first kick.");
+    expect(bank.selectNextMatchingAnyTag(TrackType::Kick, dirtyTags),
+           "Sample bank should select a preferred tagged kick when one exists.");
+    expect(bank.getSelectedName(TrackType::Kick).containsIgnoreCase("Dirty_South"),
+           "DirtySouth generation should prefer Dirty_South-tagged lane samples.");
+
+    const auto firstDirty = bank.getSelectedName(TrackType::Kick);
+    expect(bank.selectNextMatchingAnyTag(TrackType::Kick, dirtyTags),
+           "Sample bank should keep rotating inside the tagged sample group.");
+    expect(bank.getSelectedName(TrackType::Kick) != firstDirty,
+           "Tagged sample rotation should move to the next Dirty_South sample when available.");
+
+    expect(bank.selectIndex(TrackType::Snare, 0), "Sample bank should select the first generic snare.");
+    const auto firstSnare = bank.getSelectedName(TrackType::Snare);
+    expect(bank.selectNextMatchingAnyTag(TrackType::Snare, dirtyTags),
+           "Sample bank should fall back to normal rotation when no tagged sample exists.");
+    expect(bank.getSelectedName(TrackType::Snare) != firstSnare,
+           "Fallback sample rotation should still change the selected sample.");
+
+    root.deleteRecursively();
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -3391,6 +4516,15 @@ int main()
     failures += runTest("Trap style influence smoke", testTrapStyleInfluenceSmoke);
     failures += runTest("Sample apply weights smoke", testSampleApplyWeightsSmoke);
     failures += runTest("Extract pattern blend and copy smoke", testExtractPatternBlendAndCopySmoke);
+    failures += runTest("Lane sample preferred tag rotation smoke", testLaneSampleBankPreferredTagRotationSmoke);
+    failures += runTest("Rap EastCoast pocket generation smoke", testRapEastCoastPocketGenerationSmoke);
+    failures += runTest("Rap EastCoast controls influence smoke", testRapEastCoastControlsInfluenceSmoke);
+    failures += runTest("Rap WestCoast pocket generation smoke", testRapWestCoastPocketGenerationSmoke);
+    failures += runTest("Rap WestCoast controls influence smoke", testRapWestCoastControlsInfluenceSmoke);
+    failures += runTest("Rap DirtySouth pocket generation smoke", testRapDirtySouthPocketGenerationSmoke);
+    failures += runTest("Rap DirtySouth controls influence smoke", testRapDirtySouthControlsInfluenceSmoke);
+    failures += runTest("Rap GermanStreet pocket generation smoke", testRapGermanStreetPocketGenerationSmoke);
+    failures += runTest("Rap GermanStreet controls influence smoke", testRapGermanStreetControlsInfluenceSmoke);
     failures += runTest("Classic rule enforcer smoke", testClassicRuleEnforcerSmoke);
     failures += runTest("BoomBap Classic pocket generation smoke", testBoomBapClassicPocketGenerationSmoke);
     failures += runTest("BoomBap Dusty pocket generation smoke", testBoomBapDustyPocketGenerationSmoke);

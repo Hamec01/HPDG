@@ -14,11 +14,11 @@ std::pair<int, int> snareLateRange(RapSubstyle substyle)
 {
     switch (substyle)
     {
-        case RapSubstyle::GermanStreetRap: return { -2, 6 };
+        case RapSubstyle::GermanStreetRap: return { -1, 5 };
         case RapSubstyle::HardcoreRap: return { -2, 6 };
-        case RapSubstyle::DirtySouthClassic: return { 0, 6 };
-        case RapSubstyle::EastCoast: return { 0, 8 };
-        case RapSubstyle::WestCoast: return { 2, 10 };
+        case RapSubstyle::DirtySouthClassic: return { 4, 14 };
+        case RapSubstyle::EastCoast: return { 3, 11 };
+        case RapSubstyle::WestCoast: return { 6, 18 };
         case RapSubstyle::RussianRap: return { 0, 10 };
         case RapSubstyle::RnBRap: return { 4, 14 };
         default: return { 0, 8 };

@@ -16,12 +16,12 @@ float oddStepGateForStyle(RapSubstyle substyle)
 {
     switch (substyle)
     {
-        case RapSubstyle::GermanStreetRap: return 0.14f;
+        case RapSubstyle::GermanStreetRap: return 0.10f;
         case RapSubstyle::RussianRap: return 0.18f;
-        case RapSubstyle::EastCoast: return 0.22f;
+        case RapSubstyle::EastCoast: return 0.12f;
         case RapSubstyle::HardcoreRap: return 0.16f;
-        case RapSubstyle::WestCoast: return 0.24f;
-        case RapSubstyle::DirtySouthClassic: return 0.26f;
+        case RapSubstyle::WestCoast: return 0.18f;
+        case RapSubstyle::DirtySouthClassic: return 0.22f;
         case RapSubstyle::RnBRap: return 0.28f;
         default: return 0.22f;
     }

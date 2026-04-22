@@ -4,6 +4,21 @@
 
 namespace bbg
 {
+namespace
+{
+bool sampleInfoMatchesAnyTag(const LaneSampleInfo& info, const std::vector<juce::String>& preferredTags)
+{
+    if (preferredTags.empty())
+        return false;
+
+    const auto haystack = info.name + " " + info.file.getFullPathName();
+    return std::any_of(preferredTags.begin(), preferredTags.end(), [&haystack](const juce::String& tag)
+    {
+        return tag.isNotEmpty() && haystack.containsIgnoreCase(tag);
+    });
+}
+} // namespace
+
 LaneSampleBank::LaneSampleBank()
 {
     formatManager.registerBasicFormats();
@@ -72,6 +87,40 @@ bool LaneSampleBank::selectNext(TrackType track)
     return selectIndex(track, next);
 }
 
+bool LaneSampleBank::selectNextMatchingAnyTag(TrackType track, const std::vector<juce::String>& preferredTags)
+{
+    auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
+    if (state.infos.empty())
+        return false;
+
+    if (preferredTags.empty())
+        return selectNext(track);
+
+    std::vector<int> matchingIndices;
+    matchingIndices.reserve(state.infos.size());
+
+    for (int i = 0; i < static_cast<int>(state.infos.size()); ++i)
+    {
+        if (sampleInfoMatchesAnyTag(state.infos[static_cast<size_t>(i)], preferredTags))
+            matchingIndices.push_back(i);
+    }
+
+    if (matchingIndices.empty())
+        return selectNext(track);
+
+    int next = matchingIndices.front();
+    for (const int index : matchingIndices)
+    {
+        if (index > state.selectedIndex)
+        {
+            next = index;
+            break;
+        }
+    }
+
+    return selectIndex(track, next);
+}
+
 bool LaneSampleBank::selectPrevious(TrackType track)
 {
     auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
@@ -115,6 +164,15 @@ bool LaneSampleBank::hasSamples(TrackType track) const
 {
     const auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
     return !state.infos.empty();
+}
+
+bool LaneSampleBank::hasSamplesMatchingAnyTag(TrackType track, const std::vector<juce::String>& preferredTags) const
+{
+    const auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
+    return std::any_of(state.infos.begin(), state.infos.end(), [&preferredTags](const LaneSampleInfo& info)
+    {
+        return sampleInfoMatchesAnyTag(info, preferredTags);
+    });
 }
 
 bool LaneSampleBank::loadWavToBuffer(const juce::File& file,

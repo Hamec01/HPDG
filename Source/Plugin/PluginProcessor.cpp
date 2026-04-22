@@ -88,6 +88,17 @@ GenreType genreFromChoice(int choice)
     }
 }
 
+std::vector<juce::String> preferredSampleTagsForProject(const PatternProject& project)
+{
+    if (project.params.genre == GenreType::Rap
+        && getRapProfile(project.params.rapSubstyle).substyle == RapSubstyle::DirtySouthClassic)
+    {
+        return { "Dirty_South", "Dirty South", "DirtySouth" };
+    }
+
+    return {};
+}
+
 float playbackRateForTrackPitch(TrackType track, int pitch)
 {
     const auto* info = TrackRegistry::find(track);
@@ -1854,6 +1865,8 @@ void BoomBapGeneratorAudioProcessor::rescanLaneSamplesLocked()
 
 void BoomBapGeneratorAudioProcessor::rotateLaneSamplesForGenerationLocked(const PatternProject& previousProject, std::optional<TrackType> focusTrack)
 {
+    const auto preferredTags = preferredSampleTagsForProject(project);
+
     bool hasAnyLoadedSamples = false;
     for (const auto& track : project.tracks)
     {
@@ -1912,7 +1925,9 @@ void BoomBapGeneratorAudioProcessor::rotateLaneSamplesForGenerationLocked(const 
 
         const auto trackType = static_cast<TrackType>(typeIndex);
         laneSampleBank.selectIndex(trackType, desiredIndices[static_cast<size_t>(typeIndex)]);
-        rotatedType[static_cast<size_t>(typeIndex)] = laneSampleBank.selectNext(trackType);
+        rotatedType[static_cast<size_t>(typeIndex)] = preferredTags.empty()
+            ? laneSampleBank.selectNext(trackType)
+            : laneSampleBank.selectNextMatchingAnyTag(trackType, preferredTags);
     }
 
     for (auto& track : project.tracks)

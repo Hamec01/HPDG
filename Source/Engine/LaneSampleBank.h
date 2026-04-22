@@ -18,12 +18,14 @@ public:
 
     bool selectIndex(TrackType track, int index);
     bool selectNext(TrackType track);
+    bool selectNextMatchingAnyTag(TrackType track, const std::vector<juce::String>& preferredTags);
     bool selectPrevious(TrackType track);
 
     int getSelectedIndex(TrackType track) const;
     juce::String getSelectedName(TrackType track) const;
     const juce::AudioBuffer<float>* getSelectedBuffer(TrackType track) const;
     bool hasSamples(TrackType track) const;
+    bool hasSamplesMatchingAnyTag(TrackType track, const std::vector<juce::String>& preferredTags) const;
 
 private:
     struct LaneState
