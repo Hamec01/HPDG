@@ -41,8 +41,8 @@ SubstyleBehavior behaviorForSubstyle(BoomBapSubstyle substyle)
         case BoomBapSubstyle::Aggressive: return { 0.68f, 0.72f, 0.36f, 0.52f, 0.42f, 0.20f, 0.44f, 0.05f };
         case BoomBapSubstyle::LaidBack: return { 0.44f, 0.52f, 0.42f, 0.60f, 0.72f, 0.46f, 0.22f, 0.20f };
         case BoomBapSubstyle::BoomBapGold: return { 0.58f, 0.66f, 0.50f, 0.59f, 0.58f, 0.26f, 0.18f, 0.08f };
-        case BoomBapSubstyle::RussianUnderground: return { 0.54f, 0.42f, 0.30f, 0.54f, 0.60f, 0.40f, 0.62f, 0.30f };
-        case BoomBapSubstyle::LofiRap: return { 0.36f, 0.40f, 0.26f, 0.54f, 0.64f, 0.52f, 0.36f, 0.38f };
+        case BoomBapSubstyle::RussianUnderground: return { 0.48f, 0.46f, 0.28f, 0.55f, 0.72f, 0.34f, 0.82f, 0.22f };
+        case BoomBapSubstyle::LofiRap: return { 0.32f, 0.42f, 0.22f, 0.56f, 0.70f, 0.58f, 0.46f, 0.34f };
         default: return {};
     }
 }

@@ -954,6 +954,16 @@ void testStyleDefaultsSmoke()
     expect(drill.genre == GenreType::Drill, "Drill defaults should resolve Drill genre.");
     expect(getGenreStyleDefaults(GenreType::BoomBap, 3).substyleName == "BoomBapGold",
            "BoomBapGold should resolve at public BoomBap substyle index 3.");
+    const auto& russianUnderground = getGenreStyleDefaults(GenreType::BoomBap, 4);
+    expect(russianUnderground.substyleName == "RussianUnderground",
+           "RussianUnderground should resolve at public BoomBap substyle index 4.");
+    expect(russianUnderground.bpmMin <= 78 && russianUnderground.bpmMax <= 88,
+           "RussianUnderground defaults should live in a slower underground BoomBap BPM range.");
+    const auto& lofiRap = getGenreStyleDefaults(GenreType::BoomBap, 5);
+    expect(lofiRap.substyleName == "LofiRap",
+           "LofiRap should resolve at public BoomBap substyle index 5.");
+    expect(lofiRap.bpmMin <= 74 && lofiRap.bpmMax <= 84,
+           "LofiRap defaults should stay in a slow, relaxed BoomBap BPM range.");
     expect(drill.substyleName == "Main", "Drill defaults should expose the Main substyle.");
 }
 
@@ -3035,6 +3045,294 @@ void testBoomBapGoldPocketGenerationSmoke()
     }
 }
 
+void testBoomBapRussianUndergroundPocketGenerationSmoke()
+{
+    BoomBapEngine engine;
+
+    for (int seed = 7100; seed < 7112; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.boombapSubstyle = 4;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 82.0f;
+        project.params.swingPercent = 56.5f;
+        project.params.densityAmount = 0.42f;
+        project.params.timingAmount = 0.34f;
+        project.params.humanizeAmount = 0.28f;
+
+        if (auto* ride = findTrackByType(project, TrackType::Ride); ride != nullptr)
+            ride->enabled = true;
+        if (auto* cymbal = findTrackByType(project, TrackType::Cymbal); cymbal != nullptr)
+            cymbal->enabled = true;
+        if (auto* openHat = findTrackByType(project, TrackType::OpenHat); openHat != nullptr)
+            openHat->enabled = true;
+
+        engine.generate(project);
+
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+
+        expect(hat != nullptr && kick != nullptr && snare != nullptr,
+               "BoomBap RussianUnderground smoke requires HiHat, Kick and Snare tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phraseLateKicks = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 10 || step == 11 || step == 14 || step == 15)
+                ++phraseLateKicks;
+        }
+
+        int phraseSnareGhosts = 0;
+        for (const auto& note : snare->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (note.isGhost && step != 4 && step != 12)
+                ++phraseSnareGhosts;
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+
+            const auto beat2Snare = findStep(snare, beat2);
+            const auto beat4Snare = findStep(snare, beat4);
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "RussianUnderground should keep the dry main snare on beat 2 and beat 4.");
+            expect(!beat2Snare->isGhost && !beat4Snare->isGhost
+                   && beat2Snare->velocity >= 101 && beat4Snare->velocity >= 101,
+                   "RussianUnderground snare anchors should stay hard and dry.");
+            expect(beat2Snare->microOffset >= 10 && beat2Snare->microOffset <= 24
+                   && beat4Snare->microOffset >= 10 && beat4Snare->microOffset <= 24,
+                   "RussianUnderground snare anchors should sit late in a slow pocket.");
+
+            expect(countInBar(hat, bar) >= 6 && countInBar(hat, bar) <= (bar == project.params.bars - 1 ? 9 : 8),
+                   "RussianUnderground hats should stay sparse, not full modern 16ths.");
+
+            int swungOffbeats = 0;
+            for (const int stepInBar : { 2, 6, 10, 14 })
+            {
+                const auto hatHit = findStep(hat, bar * 16 + stepInBar);
+                if (hatHit != hat->notes.end())
+                {
+                    ++swungOffbeats;
+                    expect(hatHit->microOffset >= 20 && hatHit->microOffset <= 50,
+                           "RussianUnderground offbeat hats should have a modest late head-nod delay.");
+                }
+            }
+            expect(swungOffbeats >= 2,
+                   "RussianUnderground hats should keep enough delayed offbeats to carry the head-nod.");
+
+            expect(hasStep(kick, bar * 16),
+                   "RussianUnderground should ground each bar with a heavy kick on the one.");
+            expect(countInBar(kick, bar) >= 3 && countInBar(kick, bar) <= 5,
+                   "RussianUnderground kicks should be heavy and sparse, with a few syncopated answers.");
+            expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
+                   "RussianUnderground kick should not collide with the main backbeat.");
+
+            expect(countInBar(clapGhost, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "RussianUnderground clap/ghost support should be nearly absent.");
+            expect(countInBar(ghostKick, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "RussianUnderground ghost kicks should be almost empty.");
+            expect(countInBar(openHat, bar) == 0,
+                   "RussianUnderground should avoid open-hat shine.");
+            expect(countInBar(perc, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "RussianUnderground percussion should stay as rare basement texture.");
+            expect(countInBar(ride, bar) == 0 && countInBar(cymbal, bar) == 0,
+                   "RussianUnderground should not use ride/cymbal gloss.");
+        }
+
+        expect(phraseLateKicks >= project.params.bars,
+               "RussianUnderground should answer the one with late-bar kick weight.");
+        expect(phraseSnareGhosts >= 1 && phraseSnareGhosts <= project.params.bars,
+               "RussianUnderground should keep ghost snares rare but not sterile.");
+    }
+}
+
+void testBoomBapLofiRapPocketGenerationSmoke()
+{
+    BoomBapEngine engine;
+
+    for (int seed = 7200; seed < 7212; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.boombapSubstyle = 5;
+        project.params.bars = 4;
+        project.params.seed = seed;
+        project.params.bpm = 78.0f;
+        project.params.swingPercent = 57.0f;
+        project.params.densityAmount = 0.36f;
+        project.params.timingAmount = 0.40f;
+        project.params.humanizeAmount = 0.50f;
+
+        if (auto* ride = findTrackByType(project, TrackType::Ride); ride != nullptr)
+            ride->enabled = true;
+        if (auto* cymbal = findTrackByType(project, TrackType::Cymbal); cymbal != nullptr)
+            cymbal->enabled = true;
+        if (auto* openHat = findTrackByType(project, TrackType::OpenHat); openHat != nullptr)
+            openHat->enabled = true;
+
+        engine.generate(project);
+
+        const auto* hat = findTrackByType(project, TrackType::HiHat);
+        const auto* kick = findTrackByType(project, TrackType::Kick);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const auto* clapGhost = findTrackByType(project, TrackType::ClapGhostSnare);
+        const auto* ghostKick = findTrackByType(project, TrackType::GhostKick);
+        const auto* openHat = findTrackByType(project, TrackType::OpenHat);
+        const auto* perc = findTrackByType(project, TrackType::Perc);
+        const auto* ride = findTrackByType(project, TrackType::Ride);
+        const auto* cymbal = findTrackByType(project, TrackType::Cymbal);
+
+        expect(hat != nullptr && kick != nullptr && snare != nullptr,
+               "BoomBap LofiRap smoke requires HiHat, Kick and Snare tracks.");
+
+        const auto hasStep = [](const TrackState* track, int step)
+        {
+            return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto findStep = [](const TrackState* track, int step)
+        {
+            return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+            {
+                return note.step == step;
+            });
+        };
+
+        const auto countInBar = [](const TrackState* track, int bar)
+        {
+            if (track == nullptr)
+                return 0;
+
+            return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.step / 16 == bar;
+            }));
+        };
+
+        int phraseLateKicks = 0;
+        for (const auto& note : kick->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (step == 10 || step == 11 || step == 14 || step == 15)
+                ++phraseLateKicks;
+        }
+
+        int phraseSnareGhosts = 0;
+        for (const auto& note : snare->notes)
+        {
+            const int step = ((note.step % 16) + 16) % 16;
+            if (note.isGhost && step != 4 && step != 12)
+            {
+                ++phraseSnareGhosts;
+                expect(note.velocity <= 44,
+                       "LofiRap ghost snares should stay very quiet.");
+            }
+        }
+
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const int beat2 = bar * 16 + 4;
+            const int beat4 = bar * 16 + 12;
+
+            const auto beat2Snare = findStep(snare, beat2);
+            const auto beat4Snare = findStep(snare, beat4);
+            expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
+                   "LofiRap should keep the mellow main snare on beat 2 and beat 4.");
+            expect(!beat2Snare->isGhost && !beat4Snare->isGhost
+                   && beat2Snare->velocity >= 78 && beat4Snare->velocity <= 108,
+                   "LofiRap snare anchors should be present but not hard/bright.");
+            expect(beat2Snare->microOffset >= 10 && beat2Snare->microOffset <= 26
+                   && beat4Snare->microOffset >= 10 && beat4Snare->microOffset <= 26,
+                   "LofiRap snare anchors should sit a little late in the pocket.");
+
+            expect(countInBar(hat, bar) >= 5 && countInBar(hat, bar) <= (bar == project.params.bars - 1 ? 8 : 7),
+                   "LofiRap hats should be dusty, sparse eighths with holes.");
+
+            int swungOffbeats = 0;
+            for (const int stepInBar : { 2, 6, 10, 14 })
+            {
+                const auto hatHit = findStep(hat, bar * 16 + stepInBar);
+                if (hatHit != hat->notes.end())
+                {
+                    ++swungOffbeats;
+                    expect(hatHit->microOffset >= 22 && hatHit->microOffset <= 58,
+                           "LofiRap offbeat hats should have a soft late swing.");
+                    expect(hatHit->velocity <= 78,
+                           "LofiRap hats should stay soft.");
+                }
+            }
+            expect(swungOffbeats >= 2,
+                   "LofiRap needs enough delayed offbeat hats to carry the relaxed head-nod.");
+
+            expect(hasStep(kick, bar * 16),
+                   "LofiRap should keep a soft kick on the one.");
+            expect(countInBar(kick, bar) >= 2 && countInBar(kick, bar) <= (bar == project.params.bars - 1 ? 5 : 4),
+                   "LofiRap kicks should be sparse with a few lazy answers.");
+            expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
+                   "LofiRap kick should not collide with the main snare backbeat.");
+
+            expect(countInBar(clapGhost, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "LofiRap clap support should be phrase-end dust only.");
+            expect(countInBar(ghostKick, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "LofiRap ghost kicks should stay almost empty.");
+            expect(countInBar(openHat, bar) <= (bar == project.params.bars - 1 ? 1 : 0),
+                   "LofiRap open hats should be rare phrase-end color.");
+            expect(countInBar(perc, bar) <= (bar == project.params.bars - 1 ? 2 : 1),
+                   "LofiRap percussion should stay as small tape texture.");
+            expect(countInBar(ride, bar) == 0 && countInBar(cymbal, bar) == 0,
+                   "LofiRap should not use ride/cymbal gloss.");
+        }
+
+        expect(phraseLateKicks >= project.params.bars,
+               "LofiRap should answer the one with late, lazy kick movement.");
+        expect(phraseSnareGhosts >= 1 && phraseSnareGhosts <= project.params.bars + 1,
+               "LofiRap should keep ghost snares quiet, rare, and musical.");
+    }
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -3098,5 +3396,7 @@ int main()
     failures += runTest("BoomBap Dusty pocket generation smoke", testBoomBapDustyPocketGenerationSmoke);
     failures += runTest("BoomBap Jazzy pocket generation smoke", testBoomBapJazzyPocketGenerationSmoke);
     failures += runTest("BoomBap Gold pocket generation smoke", testBoomBapGoldPocketGenerationSmoke);
+    failures += runTest("BoomBap Russian Underground pocket generation smoke", testBoomBapRussianUndergroundPocketGenerationSmoke);
+    failures += runTest("BoomBap LofiRap pocket generation smoke", testBoomBapLofiRapPocketGenerationSmoke);
     return failures == 0 ? 0 : 1;
 }

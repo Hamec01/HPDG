@@ -11,8 +11,8 @@ float styleLaneBias(BoomBapSubstyle substyle, float defaultBias, float strongBia
     switch (substyle)
     {
         case BoomBapSubstyle::Aggressive: return strongBias;
-        case BoomBapSubstyle::LofiRap: return defaultBias * 0.72f;
-        case BoomBapSubstyle::RussianUnderground: return defaultBias * 0.82f;
+        case BoomBapSubstyle::LofiRap: return defaultBias * 0.52f;
+        case BoomBapSubstyle::RussianUnderground: return defaultBias * 0.56f;
         default: return defaultBias;
     }
 }
@@ -89,15 +89,33 @@ BoomBapLaneActivation decideLaneActivation(const GeneratorParams& params,
     {
         lane.useRide = false;
         lane.useCymbal = false;
-        lane.useClapGhostSnare = lane.useClapGhostSnare && (bar.role == PhraseRole::Ending);
-        lane.useGhostKick = lane.useGhostKick && (bar.kickSupportAmount > 0.65f);
+        lane.useOpenHat = lane.useOpenHat
+            && bar.role == PhraseRole::Ending
+            && decideActivation(0.16f, rng);
+        lane.useClapGhostSnare = lane.useClapGhostSnare
+            && bar.role == PhraseRole::Ending
+            && decideActivation(0.14f, rng);
+        lane.useGhostKick = lane.useGhostKick
+            && bar.kickSupportAmount > 0.68f
+            && decideActivation(0.18f, rng);
+        lane.usePerc = lane.usePerc
+            && (bar.role == PhraseRole::Ending || bar.hatSyncopation > 0.62f)
+            && decideActivation(0.22f, rng);
     }
     else if (style.substyle == BoomBapSubstyle::RussianUnderground)
     {
         lane.useRide = false;
         lane.useCymbal = false;
-        lane.usePerc = lane.usePerc && (bar.hatSyncopation > 0.48f);
-        lane.useClapGhostSnare = lane.useClapGhostSnare && (bar.role == PhraseRole::Ending);
+        lane.useOpenHat = false;
+        lane.useGhostKick = lane.useGhostKick
+            && bar.kickSupportAmount > 0.55f
+            && decideActivation(0.22f, rng);
+        lane.usePerc = lane.usePerc
+            && (bar.role == PhraseRole::Ending || bar.hatSyncopation > 0.55f)
+            && decideActivation(0.28f, rng);
+        lane.useClapGhostSnare = lane.useClapGhostSnare
+            && bar.role == PhraseRole::Ending
+            && decideActivation(0.18f, rng);
     }
     else if (style.substyle == BoomBapSubstyle::Aggressive)
     {

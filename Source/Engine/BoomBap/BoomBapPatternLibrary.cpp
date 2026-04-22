@@ -71,6 +71,16 @@ const std::vector<KickTemplateDefinition>& getBoomBapKickTemplates()
         { { 0, 3, 8, 10, 14, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kGoldMask, 0.25f, 1.0f, 0xE },
         { { 0, 5, 10, 11, 14, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kGoldMask, 0.25f, 0.9f, 0xD },
 
+        { { 0, 7, 10, -1, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kRussianUndergroundMask, 0.0f, 0.72f, 0xF },
+        { { 0, 5, 10, 11, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kRussianUndergroundMask, 0.18f, 0.9f, 0xF },
+        { { 0, 3, 8, 11, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kRussianUndergroundMask, 0.15f, 0.85f, 0xE },
+        { { 0, 6, 10, 15, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kRussianUndergroundMask, 0.25f, 1.0f, 0xD },
+
+        { { 0, 10, -1, -1, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kLofiRapMask, 0.0f, 0.66f, 0x7 },
+        { { 0, 8, 11, -1, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kLofiRapMask, 0.0f, 0.82f, 0xF },
+        { { 0, 3, 10, -1, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kLofiRapMask, 0.12f, 0.88f, 0xE },
+        { { 0, 6, 10, 14, -1, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kLofiRapMask, 0.22f, 1.0f, 0xD },
+
         { { 0, 3, 5, 10, 11, -1, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kAllMasks, 0.2f, 0.9f, 0xF },
         { { 0, 4, 7, 9, 12, 15, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kAllMasks, 0.35f, 1.0f, 0xE },
         { { 0, 2, 5, 8, 11, 14, -1, -1 }, roles(KickHitRole::Anchor, KickHitRole::Pickup, KickHitRole::Support, KickHitRole::Anchor, KickHitRole::Support, KickHitRole::Pickup, KickHitRole::Pickup, KickHitRole::Pickup), kClassicMask | kAggressiveMask | kJazzyMask, 0.35f, 1.0f, 0xE },
@@ -112,6 +122,12 @@ const std::vector<HatPatternProfile>& getBoomBapHatPatternProfiles()
         { "1/8 Swung", hats({1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0}), hats({94,0,72,0,89,0,70,0,92,0,74,0,90,0,98,0}), noSubs, kClassicMask | kLaidBackMask | kDustyMask, 0.1f, 0.8f },
         { "Gold Swung Eighth", hats({1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0}), hats({96,0,70,0,90,0,68,0,94,0,72,0,90,0,98,0}), noSubs, kGoldMask, 0.0f, 1.0f },
         { "Gold Dusty Broken", hats({1,0,1,0,1,0,1,1,1,0,1,0,1,0,1,0}), hats({94,0,70,0,88,0,66,58,92,0,70,0,88,0,74,0}), hats({-1,-1,-1,-1,-1,-1,-1,6,-1,-1,-1,-1,-1,-1,-1,-1}), kGoldMask, 0.35f, 1.0f },
+        { "Russian Basement Eighth", hats({1,0,1,0,1,0,1,0,1,0,1,0,1,0,1,0}), hats({82,0,62,0,78,0,60,0,80,0,64,0,82,0,68,0}), noSubs, kRussianUndergroundMask, 0.0f, 1.0f },
+        { "Russian Broken Sparse", hats({1,0,1,0,1,0,0,0,1,0,1,0,1,0,1,0}), hats({80,0,60,0,76,0,0,0,78,0,62,0,80,0,66,0}), noSubs, kRussianUndergroundMask, 0.0f, 0.72f },
+        { "Russian Courtyard Drag", hats({1,0,0,0,1,0,1,0,1,0,0,1,1,0,1,0}), hats({78,0,0,0,80,0,58,0,76,0,0,54,82,0,64,0}), hats({-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,10,-1,-1,-1,-1}), kRussianUndergroundMask, 0.25f, 1.0f },
+        { "Lofi Dusty Eighth", hats({1,0,1,0,1,0,0,0,1,0,1,0,1,0,1,0}), hats({70,0,54,0,66,0,0,0,68,0,56,0,70,0,58,0}), noSubs, kLofiRapMask, 0.0f, 1.0f },
+        { "Lofi Tape Holes", hats({1,0,1,0,1,0,1,0,1,0,0,0,1,0,1,0}), hats({68,0,52,0,64,0,50,0,66,0,0,0,68,0,56,0}), noSubs, kLofiRapMask, 0.0f, 0.76f },
+        { "Lofi Lazy Drag", hats({1,0,0,0,1,0,1,0,1,0,1,0,1,0,0,1}), hats({66,0,0,0,68,0,50,0,64,0,54,0,68,0,0,52}), hats({-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,14}), kLofiRapMask, 0.18f, 1.0f },
         { "1/16 Soft", hats({1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}), hats({84,62,78,58,82,60,76,58,84,62,78,58,82,60,76,64}), noSubs, kClassicMask | kJazzyMask | kAggressiveMask, 0.45f, 1.0f },
         { "1/16 Swung", hats({1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}), hats({88,60,80,56,86,58,78,54,88,60,80,56,86,58,78,66}), noSubs, kClassicMask | kLaidBackMask, 0.5f, 1.0f },
         { "Broken A", hats({1,0,1,1,1,0,1,0,1,1,0,1,1,0,1,0}), hats({94,0,76,68,88,0,72,0,90,66,0,70,86,0,78,0}), hats({-1,-1,-1,2,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,12,-1}), kAllMasks, 0.3f, 1.0f },
@@ -121,7 +137,7 @@ const std::vector<HatPatternProfile>& getBoomBapHatPatternProfiles()
         { "Jazz Foot 2 And 4", hats({0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0}), hats({0,0,0,0,88,0,0,0,0,0,0,0,92,0,0,0}), noSubs, kJazzyMask, 0.0f, 1.0f },
         { "Accented Hats", hats({1,1,1,0,1,1,1,0,1,1,1,0,1,1,1,0}), hats({98,62,82,0,94,60,80,0,96,62,82,0,94,60,80,0}), noSubs, kAggressiveMask | kClassicMask, 0.45f, 1.0f },
         { "Bar Ending Phrase", hats({1,0,1,0,1,0,1,0,1,0,1,1,1,1,1,1}), hats({90,0,76,0,86,0,74,0,88,0,76,70,82,74,86,98}), noSubs, kAllMasks, 0.25f, 1.0f },
-        { "Dusty Sparse Ending", hats({1,0,1,0,0,0,1,0,1,0,0,1,0,1,0,1}), hats({84,0,72,0,0,0,70,0,82,0,0,66,0,72,0,92}), noSubs, kDustyMask | kLaidBackMask, 0.0f, 0.6f },
+        { "Dusty Sparse Ending", hats({1,0,1,0,0,0,1,0,1,0,0,1,0,1,0,1}), hats({84,0,72,0,0,0,70,0,82,0,0,66,0,72,0,92}), noSubs, kDustyMask | kLaidBackMask | kRussianUndergroundMask, 0.0f, 0.6f },
         { "Aggressive Tight", hats({1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1}), hats({94,66,82,62,92,0,80,68,94,66,84,0,90,68,82,96}), noSubs, kAggressiveMask, 0.55f, 1.0f },
         { "Pocket Push", hats({1,0,1,1,1,0,1,0,1,1,1,0,1,0,1,1}), hats({96,0,76,84,92,0,74,0,94,82,88,0,90,0,80,98}), hats({-1,-1,-1,2,-1,-1,-1,-1,-1,8,-1,-1,-1,-1,-1,14}), kClassicMask | kAggressiveMask | kJazzyMask, 0.4f, 1.0f },
         { "Laid Late Hat", hats({1,0,1,0,1,0,1,0,1,0,1,0,1,1,0,1}), hats({88,0,72,0,84,0,70,0,86,0,74,0,82,68,0,94}), hats({-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,12,-1,14}), kLaidBackMask | kDustyMask, 0.2f, 0.8f }
@@ -134,7 +150,7 @@ const std::vector<GhostBehaviorPreset>& getBoomBapGhostPresets()
 {
     static const std::vector<GhostBehaviorPreset> presets = {
         { "Ghost Kick Pickup", 0.14f, 2, false, kClassicMask | kAggressiveMask },
-        { "Sparse Ghost Kick", 0.08f, 1, false, kDustyMask | kLaidBackMask },
+        { "Sparse Ghost Kick", 0.08f, 1, false, kDustyMask | kLaidBackMask | kRussianUndergroundMask | kLofiRapMask },
         { "Snare Pickup", 0.12f, 2, false, kClassicMask | kLaidBackMask },
         { "Bar-End Ghost", 0.13f, 2, true, kAllMasks },
         { "Dusty Inner Tap", 0.09f, 2, false, kDustyMask },
@@ -150,7 +166,7 @@ const std::vector<OpenHatPreset>& getBoomBapOpenHatPresets()
         { "End-of-Bar Lift", 0.18f, true, false, kAllMasks },
         { "After-Kick Punctuation", 0.14f, false, true, kClassicMask | kAggressiveMask },
         { "Phrase Marker", 0.20f, true, false, kJazzyMask | kLaidBackMask },
-        { "Rare Pickup Accent", 0.08f, false, true, kDustyMask | kLaidBackMask }
+        { "Rare Pickup Accent", 0.08f, false, true, kDustyMask | kLaidBackMask | kRussianUndergroundMask | kLofiRapMask }
     };
 
     return presets;
@@ -159,12 +175,12 @@ const std::vector<OpenHatPreset>& getBoomBapOpenHatPresets()
 const std::vector<PercDecorationPreset>& getBoomBapPercPresets()
 {
     static const std::vector<PercDecorationPreset> presets = {
-        { "Sparse Dusty", 0.08f, 2, false, kDustyMask },
+        { "Sparse Dusty", 0.08f, 2, false, kDustyMask | kRussianUndergroundMask | kLofiRapMask },
         { "Shaker-Like Light", 0.12f, 3, false, kClassicMask | kJazzyMask },
         { "Rim Punctuation", 0.10f, 2, false, kClassicMask | kAggressiveMask },
         { "Bar 4 Decoration", 0.16f, 3, true, kAllMasks },
         { "Syncopated Soft", 0.13f, 3, false, kJazzyMask | kLaidBackMask },
-        { "Almost Empty", 0.05f, 1, false, kLaidBackMask | kDustyMask }
+        { "Almost Empty", 0.05f, 1, false, kLaidBackMask | kDustyMask | kRussianUndergroundMask | kLofiRapMask }
     };
 
     return presets;
@@ -282,10 +298,10 @@ const SnareFeelProfile& chooseSnareFeelProfile(BoomBapSubstyle substyle, float d
             candidates = density > 0.55f ? std::vector<int> { 9, 0, 5, 3 } : std::vector<int> { 9, 0, 4 };
             break;
         case BoomBapSubstyle::RussianUnderground:
-            candidates = density > 0.5f ? std::vector<int> { 6, 2, 3 } : std::vector<int> { 6, 7, 8 };
+            candidates = density > 0.5f ? std::vector<int> { 6, 6, 3, 5 } : std::vector<int> { 6, 6, 0, 1, 7 };
             break;
         case BoomBapSubstyle::LofiRap:
-            candidates = density > 0.5f ? std::vector<int> { 8, 7, 1 } : std::vector<int> { 8, 7, 6 };
+            candidates = density > 0.5f ? std::vector<int> { 8, 8, 7, 1 } : std::vector<int> { 8, 8, 7, 6 };
             break;
         default:
             break;
@@ -473,6 +489,78 @@ const HatPatternProfile& chooseHatPatternProfile(BoomBapSubstyle substyle, float
             default:
                 addNamedPattern("Gold Swung Eighth", 7, true);
                 addNamedPattern("1/8 Straight", 3, true);
+                break;
+        }
+
+        if (!candidates.empty())
+        {
+            std::uniform_int_distribution<int> pick(0, static_cast<int>(candidates.size() - 1));
+            return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
+        }
+    }
+
+    if (substyle == BoomBapSubstyle::RussianUnderground)
+    {
+        switch (role)
+        {
+            case PhraseRole::Base:
+                addNamedPattern("Russian Basement Eighth", 7, true);
+                addNamedPattern("Russian Broken Sparse", density < 0.58f ? 4 : 2, false);
+                addNamedPattern("Russian Courtyard Drag", 2, false);
+                break;
+            case PhraseRole::Variation:
+                addNamedPattern("Russian Courtyard Drag", 5, true);
+                addNamedPattern("Russian Basement Eighth", 4, true);
+                addNamedPattern("Russian Broken Sparse", 3, true);
+                break;
+            case PhraseRole::Contrast:
+                addNamedPattern("Russian Broken Sparse", 7, true);
+                addNamedPattern("Russian Basement Eighth", 2, true);
+                break;
+            case PhraseRole::Ending:
+                addNamedPattern("Russian Courtyard Drag", 5, true);
+                addNamedPattern("Russian Basement Eighth", 4, true);
+                addNamedPattern("Dusty Sparse Ending", 2, true);
+                break;
+            default:
+                addNamedPattern("Russian Basement Eighth", 6, true);
+                addNamedPattern("Russian Broken Sparse", 4, true);
+                break;
+        }
+
+        if (!candidates.empty())
+        {
+            std::uniform_int_distribution<int> pick(0, static_cast<int>(candidates.size() - 1));
+            return all[static_cast<size_t>(candidates[static_cast<size_t>(pick(rng))])];
+        }
+    }
+
+    if (substyle == BoomBapSubstyle::LofiRap)
+    {
+        switch (role)
+        {
+            case PhraseRole::Base:
+                addNamedPattern("Lofi Dusty Eighth", 7, true);
+                addNamedPattern("Lofi Tape Holes", density < 0.58f ? 5 : 3, true);
+                addNamedPattern("Lofi Lazy Drag", 2, false);
+                break;
+            case PhraseRole::Variation:
+                addNamedPattern("Lofi Tape Holes", 6, true);
+                addNamedPattern("Lofi Dusty Eighth", 4, true);
+                addNamedPattern("Lofi Lazy Drag", 3, true);
+                break;
+            case PhraseRole::Contrast:
+                addNamedPattern("Lofi Tape Holes", 7, true);
+                addNamedPattern("Lofi Lazy Drag", 3, true);
+                break;
+            case PhraseRole::Ending:
+                addNamedPattern("Lofi Lazy Drag", 5, true);
+                addNamedPattern("Lofi Dusty Eighth", 4, true);
+                addNamedPattern("Dusty Sparse Ending", 2, true);
+                break;
+            default:
+                addNamedPattern("Lofi Dusty Eighth", 6, true);
+                addNamedPattern("Lofi Tape Holes", 4, true);
                 break;
         }
 
