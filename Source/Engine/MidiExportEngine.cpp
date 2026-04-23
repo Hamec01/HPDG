@@ -15,11 +15,9 @@ bool isHatChokeTrack(TrackType type)
     return type == TrackType::HiHat || type == TrackType::HatFX;
 }
 
-bool isNoteWithinVisibleBars(const NoteEvent& note, int bars, int ppq)
+bool isNoteWithinVisibleBars(const NoteEvent& note, int bars)
 {
-    const int startTick = stepToTicks(note.step, ppq) + note.microOffset;
-    const int visibleTickLimit = std::max(1, bars) * ticksPerStep(ppq) * 16;
-    return startTick >= 0 && startTick < visibleTickLimit;
+    return stepWithinPatternBars(note.step, bars);
 }
 
 bool hasSoloTracks(const PatternProject& project)
@@ -95,8 +93,8 @@ std::vector<int> collectHatChokeStarts(const PatternProject& project,
 
         for (const auto& note : track.notes)
         {
-            if (isNoteWithinVisibleBars(note, bars, ppq))
-                starts.push_back(std::max(0, stepToTicks(note.step, ppq) + note.microOffset));
+            if (isNoteWithinVisibleBars(note, bars))
+                starts.push_back(clampedNoteStartTicks(note.step, note.microOffset, bars, ppq));
         }
     }
 
@@ -116,8 +114,8 @@ std::vector<int> collectHatChokeStartsAll(const PatternProject& project, int bar
 
         for (const auto& note : track.notes)
         {
-            if (isNoteWithinVisibleBars(note, bars, ppq))
-                starts.push_back(std::max(0, stepToTicks(note.step, ppq) + note.microOffset));
+            if (isNoteWithinVisibleBars(note, bars))
+                starts.push_back(clampedNoteStartTicks(note.step, note.microOffset, bars, ppq));
         }
     }
 
@@ -145,8 +143,8 @@ juce::MidiMessageSequence MidiExportEngine::trackToSequence(const TrackState& tr
     localStarts.reserve(track.notes.size());
     for (const auto& note : track.notes)
     {
-        if (isNoteWithinVisibleBars(note, bars, ppq))
-            localStarts.push_back(std::max(0, stepToTicks(note.step, ppq) + note.microOffset));
+        if (isNoteWithinVisibleBars(note, bars))
+            localStarts.push_back(clampedNoteStartTicks(note.step, note.microOffset, bars, ppq));
     }
     std::sort(localStarts.begin(), localStarts.end());
     localStarts.erase(std::unique(localStarts.begin(), localStarts.end()), localStarts.end());
@@ -156,13 +154,12 @@ juce::MidiMessageSequence MidiExportEngine::trackToSequence(const TrackState& tr
 
     for (const auto& note : track.notes)
     {
-        if (!isNoteWithinVisibleBars(note, bars, ppq))
+        if (!isNoteWithinVisibleBars(note, bars))
             continue;
 
         const int midiNote = exportMidiPitch(track, note);
 
-        const int baseTick = stepToTicks(note.step, ppq);
-        const int startTick = baseTick + note.microOffset;
+        const int startTick = clampedNoteStartTicks(note.step, note.microOffset, bars, ppq);
         int gateTicks = std::max(1, note.length) * ticksPerStep(ppq);
         if (applyHatCutoff)
             gateTicks = std::min(gateTicks, std::max(1, ticksPerStep(ppq) / 2));

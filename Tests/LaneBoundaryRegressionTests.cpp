@@ -6,6 +6,7 @@
 
 #include "../Source/Core/ProjectLaneAccess.h"
 #include "../Source/Core/RuntimeLaneLifecycle.h"
+#include "../Source/Engine/MidiExportEngine.h"
 #include "../Source/Plugin/PluginProcessor.h"
 
 namespace bbg
@@ -101,6 +102,46 @@ void testLaneAwareTemporaryMidiPath()
 
     cleanupFile(trackFile);
     cleanupFile(laneFile);
+}
+
+void testMidiExportKeepsFirstKickWithNegativeMicrotiming()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    auto project = processor.getProjectSnapshot();
+    for (auto& track : project.tracks)
+    {
+        track.enabled = false;
+        track.notes.clear();
+        track.sub808Notes.clear();
+        track.baseNotes.clear();
+        track.baseSub808Notes.clear();
+    }
+
+    auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+    expect(kick != nullptr, "Negative first-kick MIDI export regression requires a Kick track.");
+    kick->enabled = true;
+    kick->muted = false;
+    kick->solo = false;
+    kick->notes.push_back({ 36, 0, 1, 120, -36, false, "negative_first_kick", false, false, false });
+
+    project.params.bars = 1;
+    const auto sequence = MidiExportEngine::patternToSequence(project, TrackType::Kick, 960, false, false);
+
+    bool foundKickAtZero = false;
+    for (int index = 0; index < sequence.getNumEvents(); ++index)
+    {
+        const auto* event = sequence.getEventPointer(index);
+        if (event != nullptr
+            && event->message.isNoteOn()
+            && event->message.getNoteNumber() == 60
+            && static_cast<int>(std::lround(event->message.getTimeStamp())) == 0)
+        {
+            foundKickAtZero = true;
+            break;
+        }
+    }
+
+    expect(foundKickAtZero, "MIDI export must keep a step-0 Kick even when groove timing nudges it before tick 0.");
 }
 
 void testLaneAwareSampleCommandPath()
@@ -245,6 +286,50 @@ void testPreviewProcessBlockWithNeutralEqProducesAudio()
     expect(peak > 1.0e-4f, "Neutral EQ must not mute preview audio.");
 }
 
+void testPreviewProcessBlockKeepsFirstKickWithNegativeMicrotiming()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(44100.0, 512);
+
+    auto project = processor.getProjectSnapshot();
+    for (auto& track : project.tracks)
+    {
+        track.enabled = false;
+        track.notes.clear();
+        track.sub808Notes.clear();
+        track.baseNotes.clear();
+        track.baseSub808Notes.clear();
+    }
+
+    auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+    expect(kick != nullptr, "Negative first-kick preview regression requires a Kick track.");
+    kick->enabled = true;
+    kick->muted = false;
+    kick->solo = false;
+    kick->laneVolume = 1.0f;
+    kick->notes.push_back({ 36, 0, 1, 120, -36, false, "negative_preview_kick", false, false, false });
+
+    project.params.bars = 1;
+    project.previewStartStep = 0;
+    processor.restoreEditorProjectSnapshot(project);
+    processor.startPreview();
+
+    juce::AudioBuffer<float> buffer(2, 512);
+    juce::MidiBuffer midi;
+    float peak = 0.0f;
+
+    for (int block = 0; block < 12; ++block)
+    {
+        buffer.clear();
+        midi.clear();
+        processor.processBlock(buffer, midi);
+        peak = juce::jmax(peak, maxAbsSample(buffer));
+    }
+
+    processor.stopPreview();
+    expect(peak > 1.0e-4f, "Preview must play a step-0 Kick even when groove timing nudges it before tick 0.");
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -271,10 +356,12 @@ int main()
     int failures = 0;
     failures += runTest("Lane-aware export path", testLaneAwareExportTrackPath);
     failures += runTest("Lane-aware temporary MIDI path", testLaneAwareTemporaryMidiPath);
+    failures += runTest("MIDI export keeps negative first Kick", testMidiExportKeepsFirstKickWithNegativeMicrotiming);
     failures += runTest("Lane-aware sample command path", testLaneAwareSampleCommandPath);
     failures += runTest("Generate Pattern rotates lane samples", testGeneratePatternRotatesLaneSamples);
     failures += runTest("Preview processBlock audio smoke", testPreviewProcessBlockProducesAudio);
     failures += runTest("Preview processBlock neutral EQ smoke", testPreviewProcessBlockWithNeutralEqProducesAudio);
+    failures += runTest("Preview keeps negative first Kick", testPreviewProcessBlockKeepsFirstKickWithNegativeMicrotiming);
 
     if (failures == 0)
     {

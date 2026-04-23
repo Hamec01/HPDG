@@ -109,6 +109,7 @@ target_sources(HPDG
         Source/UI/Sub808PianoRollComponent.cpp
         Source/UI/GridEditActions.cpp
         Source/UI/GridEditorComponent.cpp
+        Source/UI/Vst3GridLiteComponent.cpp
 )
 
 target_include_directories(HPDG

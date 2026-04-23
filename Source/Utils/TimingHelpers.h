@@ -17,6 +17,27 @@ inline int stepToTicks(int step, int ppq = kInternalPpq)
     return step * ticksPerStep(ppq);
 }
 
+inline int patternLengthTicks(int bars, int ppq = kInternalPpq)
+{
+    return std::max(1, bars) * ticksPerStep(ppq) * 16;
+}
+
+inline int rawNoteStartTicks(int step, int microOffset, int ppq = kInternalPpq)
+{
+    return stepToTicks(step, ppq) + microOffset;
+}
+
+inline int clampedNoteStartTicks(int step, int microOffset, int bars, int ppq = kInternalPpq)
+{
+    const int maxTick = std::max(0, patternLengthTicks(bars, ppq) - 1);
+    return std::clamp(rawNoteStartTicks(step, microOffset, ppq), 0, maxTick);
+}
+
+inline bool stepWithinPatternBars(int step, int bars)
+{
+    return step >= 0 && step < std::max(1, bars) * 16;
+}
+
 inline double ticksToMs(int ticks, double bpm, int ppq = kInternalPpq)
 {
     const auto safeBpm = std::max(1.0, bpm);

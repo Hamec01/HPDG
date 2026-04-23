@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
+#include <numeric>
 
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/Sub808TrackAccess.h"
@@ -17,6 +19,12 @@
 #include "../Engine/StyleDefaults.h"
 #include "../Engine/SubstyleRuleEnforcer.h"
 #include "../Services/TemporaryMidiExportService.h"
+#include "../UI/EditorCommandController.h"
+#include "../UI/MainHeaderComponent.h"
+#include "../UI/SampleAnalysisPanelComponent.h"
+#include "../UI/SoundModuleController.h"
+#include "../UI/TrackListComponent.h"
+#include "../UI/Vst3GridLiteComponent.h"
 #include "../Utils/TimingHelpers.h"
 
 namespace bbg
@@ -155,6 +163,966 @@ void logDrag(const juce::String& message)
     const auto line = juce::Time::getCurrentTime().toString(true, true) + " | PROCESSOR | " + message + "\n";
     file.appendText(line, false, false, "\n");
 }
+
+std::vector<RuntimeLaneId> buildVst3LaneOrder(const PatternProject& project,
+                                              const std::vector<RuntimeLaneId>& laneOrderPreference)
+{
+    std::vector<RuntimeLaneId> laneOrder;
+    laneOrder.reserve(project.runtimeLaneProfile.lanes.size());
+
+    for (const auto& laneId : laneOrderPreference)
+    {
+        const auto* lane = findRuntimeLaneById(project.runtimeLaneProfile, laneId);
+        if (lane != nullptr && std::find(laneOrder.begin(), laneOrder.end(), lane->laneId) == laneOrder.end())
+            laneOrder.push_back(lane->laneId);
+    }
+
+    for (const auto& lane : project.runtimeLaneProfile.lanes)
+    {
+        if (std::find(laneOrder.begin(), laneOrder.end(), lane.laneId) == laneOrder.end())
+            laneOrder.push_back(lane.laneId);
+    }
+
+    return laneOrder;
+}
+
+class ProcessorSplitterHandleComponent final : public juce::Component
+{
+public:
+    std::function<void(const juce::MouseEvent&)> onDragMove;
+
+    explicit ProcessorSplitterHandleComponent(juce::MouseCursor::StandardCursorType cursorType)
+    {
+        setMouseCursor(juce::MouseCursor(cursorType));
+        setInterceptsMouseClicks(true, false);
+    }
+
+    void paint(juce::Graphics&) override {}
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (onDragMove)
+            onDragMove(event);
+    }
+};
+
+// Standalone keeps the full authoring editor. VST3 uses this DAW-safe shell:
+// same generator, rack, analysis, sound module and export actions, but a
+// passive grid surface without note move/edit gestures.
+class Vst3SafeHeaderEditor final : public juce::AudioProcessorEditor,
+                                   private juce::Timer
+{
+public:
+    using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+
+    explicit Vst3SafeHeaderEditor(BoomBapGeneratorAudioProcessor& processor)
+        : juce::AudioProcessorEditor(&processor)
+        , audioProcessor(processor)
+        , commandController(processor)
+        , soundModuleController(processor, soundModule)
+    {
+        addAndMakeVisible(header);
+        addAndMakeVisible(trackListViewport);
+        addAndMakeVisible(analysisPanel);
+        addAndMakeVisible(soundModule);
+
+        laneGridWorkspace.addAndMakeVisible(trackList);
+        laneGridWorkspace.addAndMakeVisible(gridLite);
+        trackListViewport.setViewedComponent(&laneGridWorkspace, false);
+        trackListViewport.setScrollBarsShown(true, false);
+        trackListViewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
+
+        auto* verticalSplitter = new ProcessorSplitterHandleComponent(juce::MouseCursor::LeftRightResizeCursor);
+        verticalSplitter->onDragMove = [this](const juce::MouseEvent& event)
+        {
+            if (event.mouseWasDraggedSinceMouseDown())
+                updateColumnWidthFromScreenX(static_cast<int>(event.getEventRelativeTo(this).position.x));
+        };
+        verticalSplitterHandle.reset(verticalSplitter);
+        addAndMakeVisible(*verticalSplitterHandle);
+
+        auto* horizontalSplitter = new ProcessorSplitterHandleComponent(juce::MouseCursor::UpDownResizeCursor);
+        horizontalSplitter->onDragMove = [this](const juce::MouseEvent& event)
+        {
+            if (event.mouseWasDraggedSinceMouseDown())
+                updateTopSectionHeightFromScreenY(static_cast<int>(event.getEventRelativeTo(this).position.y));
+        };
+        horizontalSplitterHandle.reset(horizontalSplitter);
+        addAndMakeVisible(*horizontalSplitterHandle);
+
+        setSize(1460, 860);
+        setResizable(true, true);
+        setResizeLimits(1180, 720, 2200, 1500);
+
+        header.setStandaloneWindowButtonVisible(false);
+        header.setHeaderControlsMode(MainHeaderComponent::HeaderControlsMode::Compact);
+        header.setGridModeIndicatorText("VST3 GRID");
+        header.zoomSlider.setEnabled(false);
+        header.laneHeightSlider.setEnabled(false);
+        header.gridResolutionCombo.setEnabled(false);
+
+        trackList.setShowAnalysisPanel(false);
+        trackList.setDisplayMode(LaneRackDisplayMode::Full);
+        trackList.setRowHeight(32);
+        gridLite.setRowHeight(trackList.getRowHeight());
+
+        soundModuleController.setHostCallbacks([this](const std::function<void()>& mutation, bool refreshTrackRows)
+                                               {
+                                                   mutation();
+                                                   refreshFromProcessor(refreshTrackRows);
+                                               },
+                                               [this](bool refreshTrackRows)
+                                               {
+                                                   refreshFromProcessor(refreshTrackRows);
+                                               });
+
+        setupAttachments();
+        wireCallbacks();
+        refreshFromProcessor(true);
+        startTimerHz(10);
+    }
+
+    ~Vst3SafeHeaderEditor() override
+    {
+        stopTimer();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        juce::ColourGradient bg(juce::Colour::fromRGB(18, 17, 17), 0.0f, 0.0f,
+                                juce::Colour::fromRGB(9, 10, 12), 0.0f, static_cast<float>(getHeight()), false);
+        bg.addColour(0.20, juce::Colour::fromRGB(31, 24, 20));
+        bg.addColour(0.70, juce::Colour::fromRGB(13, 14, 17));
+        g.setGradientFill(bg);
+        g.fillAll();
+
+        drawPanelShell(g, trackListViewport.getBounds(), "PATTERN RACK", true);
+        drawPanelShell(g, analysisPanel.getBounds(), "ANALYSIS", false);
+        drawPanelShell(g, soundModule.getBounds(), juce::String(), false);
+
+        g.setColour(juce::Colour::fromRGBA(214, 171, 98, 58));
+        g.fillRect(verticalSplitterVisualBounds);
+        g.fillRect(horizontalSplitterVisualBounds);
+    }
+
+    void resized() override
+    {
+        auto area = getWorkspaceBounds();
+        header.setBounds(area.removeFromTop(header.getPreferredHeight()));
+        area.removeFromTop(10);
+
+        constexpr int splitterHitWidth = 10;
+        constexpr int splitterVisualWidth = 2;
+        constexpr int splitterHitHeight = 10;
+        constexpr int splitterVisualHeight = 2;
+        constexpr int paneGap = 8;
+        constexpr int minLeftWidth = 520;
+        constexpr int minRightWidth = 360;
+        constexpr int minTopHeight = 250;
+        constexpr int minBottomHeight = 230;
+
+        const int maxLeftWidth = juce::jmax(minLeftWidth, area.getWidth() - splitterHitWidth - paneGap - minRightWidth);
+        leftColumnWidth = juce::jlimit(minLeftWidth, maxLeftWidth, leftColumnWidth);
+
+        const int maxTopHeight = juce::jmax(minTopHeight, area.getHeight() - splitterHitHeight - paneGap - minBottomHeight);
+        topSectionHeight = juce::jlimit(minTopHeight, maxTopHeight, topSectionHeight);
+
+        auto topArea = area.removeFromTop(topSectionHeight);
+        auto horizontalHit = area.removeFromTop(splitterHitHeight);
+        area.removeFromTop(paneGap);
+        auto bottomArea = area;
+
+        auto topLeft = topArea.removeFromLeft(leftColumnWidth);
+        auto verticalHitTop = topArea.removeFromLeft(splitterHitWidth);
+        topArea.removeFromLeft(paneGap);
+        auto topRight = topArea;
+
+        auto bottomLeft = bottomArea.removeFromLeft(leftColumnWidth);
+        auto verticalHitBottom = bottomArea.removeFromLeft(splitterHitWidth);
+        bottomArea.removeFromLeft(paneGap);
+        auto bottomRight = bottomArea;
+
+        juce::ignoreUnused(verticalHitBottom);
+
+        const int verticalHitX = verticalHitTop.getX();
+        verticalSplitterHandle->setBounds(verticalHitX,
+                                          topLeft.getY(),
+                                          splitterHitWidth,
+                                          bottomRight.getBottom() - topLeft.getY());
+        verticalSplitterVisualBounds = juce::Rectangle<int>(verticalHitX + (splitterHitWidth - splitterVisualWidth) / 2,
+                                                            topLeft.getY(),
+                                                            splitterVisualWidth,
+                                                            bottomRight.getBottom() - topLeft.getY());
+
+        horizontalSplitterHandle->setBounds(topLeft.getX(),
+                                            horizontalHit.getY(),
+                                            topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
+                                            splitterHitHeight);
+        horizontalSplitterVisualBounds = juce::Rectangle<int>(topLeft.getX(),
+                                                              horizontalHit.getY() + (splitterHitHeight - splitterVisualHeight) / 2,
+                                                              topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
+                                                              splitterVisualHeight);
+
+        trackListViewport.setBounds(juce::Rectangle<int>(topLeft.getX(),
+                                                         topLeft.getY(),
+                                                         topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
+                                                         topLeft.getHeight()));
+        syncRackViewportContentSize();
+        analysisPanel.setBounds(bottomLeft);
+        soundModule.setBounds(bottomRight);
+    }
+
+private:
+    static float averageOrZero(const std::vector<float>& values)
+    {
+        if (values.empty())
+            return 0.0f;
+
+        return std::accumulate(values.begin(), values.end(), 0.0f) / static_cast<float>(values.size());
+    }
+
+    static PreviewPlaybackMode previewModeFromChoiceId(int id)
+    {
+        return id == 2 ? PreviewPlaybackMode::LoopRange : PreviewPlaybackMode::FromFlag;
+    }
+
+    static int previewModeToChoiceId(PreviewPlaybackMode mode)
+    {
+        return mode == PreviewPlaybackMode::LoopRange ? 2 : 1;
+    }
+
+    void timerCallback() override
+    {
+        refreshSubstyleBindingForGenre();
+        audioProcessor.applySelectedStylePreset(false);
+        refreshFromProcessor(false);
+    }
+
+    void setupAttachments()
+    {
+        auto& apvts = audioProcessor.getApvts();
+
+        bpmAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::bpm, header.bpmSlider);
+        bpmLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::bpmLock, header.bpmLockToggle);
+        syncAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::syncDawTempo, header.syncTempoToggle);
+        swingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::swingPercent, header.swingSlider);
+        velocityAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::velocityAmount, header.velocitySlider);
+        timingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::timingAmount, header.timingSlider);
+        humanizeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::humanizeAmount, header.humanizeSlider);
+        densityAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::densityAmount, header.densitySlider);
+        tempoInterpretationAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::tempoInterpretation, header.tempoInterpretationCombo);
+        barsAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::bars, header.barsCombo);
+        genreAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::genre, header.genreCombo);
+        seedAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::seed, header.seedSlider);
+        seedLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::seedLock, header.seedLockToggle);
+        masterVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, header.masterVolumeSlider);
+
+        refreshSubstyleBindingForGenre();
+    }
+
+    void refreshSubstyleBindingForGenre()
+    {
+        auto& apvts = audioProcessor.getApvts();
+        const auto* genreValue = apvts.getRawParameterValue(ParamIds::genre);
+        const int genreChoice = genreValue != nullptr ? static_cast<int>(genreValue->load()) : 0;
+        if (genreChoice == lastGenreChoice && substyleAttachment != nullptr)
+            return;
+
+        lastGenreChoice = genreChoice;
+
+        juce::StringArray choices;
+        const char* substyleParamId = ParamIds::boombapSubstyle;
+        switch (genreChoice)
+        {
+            case 1: choices = getRapSubstyleNames(); substyleParamId = ParamIds::rapSubstyle; break;
+            case 2: choices = getTrapSubstyleNames(); substyleParamId = ParamIds::trapSubstyle; break;
+            case 3: choices = getDrillSubstyleNames(); substyleParamId = ParamIds::drillSubstyle; break;
+            case 0:
+            default: choices = getBoomBapSubstyleNames(); substyleParamId = ParamIds::boombapSubstyle; break;
+        }
+
+        substyleAttachment.reset();
+        header.substyleCombo.clear(juce::dontSendNotification);
+        for (int i = 0; i < choices.size(); ++i)
+            header.substyleCombo.addItem(choices[i], i + 1);
+
+        substyleAttachment = std::make_unique<ComboAttachment>(apvts, substyleParamId, header.substyleCombo);
+    }
+
+    void wireCallbacks()
+    {
+        header.onGeneratePressed = [this]
+        {
+            audioProcessor.applySelectedStylePreset(false);
+            audioProcessor.generatePattern();
+            refreshFromProcessor(true);
+        };
+
+        header.onMutatePressed = [this]
+        {
+            audioProcessor.applySelectedStylePreset(false);
+            audioProcessor.mutatePattern();
+            refreshFromProcessor(true);
+        };
+
+        header.onPlayToggled = [this](bool shouldStart)
+        {
+            if (shouldStart)
+                audioProcessor.startPreview();
+            else
+                audioProcessor.stopPreview();
+
+            refreshFromProcessor(false);
+        };
+
+        header.barsCombo.onChange = [this]
+        {
+            audioProcessor.syncBarsFromState();
+            refreshFromProcessor(true);
+        };
+
+        header.onStartPlayWithDawToggled = [this](bool enabled)
+        {
+            audioProcessor.setStartPlayWithDawEnabled(enabled);
+            refreshFromProcessor(false);
+        };
+
+        header.onTransportToStart = [this]
+        {
+            audioProcessor.setPreviewStartStep(0);
+            refreshFromProcessor(false);
+        };
+
+        header.onTransportStepBack = [this]
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            audioProcessor.setPreviewStartStep(juce::jmax(0, project.previewStartStep - 1));
+            refreshFromProcessor(false);
+        };
+
+        header.onTransportStepForward = [this]
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            const int maxStep = juce::jmax(0, project.params.bars * 16 - 1);
+            audioProcessor.setPreviewStartStep(juce::jmin(maxStep, project.previewStartStep + 1));
+            refreshFromProcessor(false);
+        };
+
+        header.onTransportToEnd = [this]
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            audioProcessor.setPreviewStartStep(juce::jmax(0, project.params.bars * 16 - 1));
+            refreshFromProcessor(false);
+        };
+
+        header.onClearAllPressed = [this]
+        {
+            clearAllPatternNotes();
+        };
+
+        header.onExportFullPressed = [this] { commandController.exportFullPattern(this); };
+        header.onExportLoopWavPressed = [this] { commandController.exportLoopWav(this, logUiAction); };
+        header.onDragFullPressed = [this] { commandController.dragFullPatternTempMidi(logUiAction); };
+        header.onDragFullGesture = [this] { commandController.dragFullPatternExternal(this, logUiAction); };
+        header.onToggleStandaloneWindow = [] {};
+        header.onZoomChanged = [](float, float) {};
+        header.onGridResolutionChanged = [](int) {};
+        header.onHeaderControlsModeChanged = [](MainHeaderComponent::HeaderControlsMode) {};
+
+        header.onPreviewPlaybackModeChanged = [this](int selectedId)
+        {
+            audioProcessor.setPreviewPlaybackMode(previewModeFromChoiceId(selectedId));
+            refreshFromProcessor(false);
+        };
+
+        header.hatFxDensitySlider.onValueChange = [this]
+        {
+            applyHatFxDragDensityFromUi(static_cast<float>(header.hatFxDensitySlider.getValue()), false);
+        };
+
+        header.hatFxDensityLockToggle.onClick = [this]
+        {
+            hatFxDragLockedUi = header.hatFxDensityLockToggle.getToggleState();
+            applyHatFxDragDensityFromUi(hatFxDragDensityUi, true);
+        };
+
+        gridLite.onLaneClicked = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.setSelectedTrack(laneId);
+            refreshFromProcessor(false);
+        };
+
+        gridLite.onStepClicked = [this](int step)
+        {
+            audioProcessor.setPreviewStartStep(step);
+            refreshFromProcessor(false);
+        };
+
+        bindTrackCallbacks();
+        bindAnalysisCallbacks();
+    }
+
+    void bindTrackCallbacks()
+    {
+        trackList.onRegenerateTrack = [this](const RuntimeLaneId& laneId)
+        {
+            applyProcessorProjectMutation([this, laneId] { audioProcessor.regenerateTrack(laneId); });
+        };
+
+        trackList.onSoloTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            applyProcessorProjectMutation([this, laneId, value] { audioProcessor.setTrackSolo(laneId, value); });
+        };
+
+        trackList.onMuteTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            applyProcessorProjectMutation([this, laneId, value] { audioProcessor.setTrackMuted(laneId, value); });
+        };
+
+        trackList.onClearTrack = [this](const RuntimeLaneId& laneId) { clearLaneNotes(laneId); };
+        trackList.onLockTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            applyProcessorProjectMutation([this, laneId, value] { audioProcessor.setTrackLocked(laneId, value); });
+        };
+        trackList.onEnableTrack = [this](const RuntimeLaneId& laneId, bool value)
+        {
+            applyProcessorProjectMutation([this, laneId, value] { audioProcessor.setTrackEnabled(laneId, value); });
+        };
+
+        trackList.onDragTrack = [this](const RuntimeLaneId& laneId) { commandController.dragTrackTempMidi(laneId, logUiAction); };
+        trackList.onDragTrackGesture = [this](const RuntimeLaneId& laneId) { commandController.dragTrackExternal(laneId, this, logUiAction); };
+        trackList.onExportTrack = [this](const RuntimeLaneId& laneId) { commandController.exportTrack(laneId, this); };
+
+        trackList.onDragDensityTrack = [this](const RuntimeLaneId& laneId, float density)
+        {
+            if (isHatFxLane(laneId))
+                applyHatFxDragDensityFromUi(density, false);
+        };
+
+        trackList.onDragDensityLockTrack = [this](const RuntimeLaneId& laneId, bool locked)
+        {
+            if (!isHatFxLane(laneId))
+                return;
+
+            hatFxDragLockedUi = locked;
+            applyHatFxDragDensityFromUi(hatFxDragDensityUi, true);
+        };
+
+        trackList.onPrevSampleTrack = [this](const RuntimeLaneId& laneId)
+        {
+            applyProcessorProjectMutation([this, laneId] { audioProcessor.selectPreviousLaneSample(laneId); });
+        };
+
+        trackList.onNextSampleTrack = [this](const RuntimeLaneId& laneId)
+        {
+            applyProcessorProjectMutation([this, laneId] { audioProcessor.selectNextLaneSample(laneId); });
+        };
+
+        trackList.onSampleMenuTrack = [this](const RuntimeLaneId& laneId) { showSampleMenu(laneId); };
+        trackList.onImportMidiLaneTrack = [this](const RuntimeLaneId& laneId) { showImportMidiToLaneDialog(laneId); };
+
+        trackList.onTrackNameClicked = [this](const RuntimeLaneId& laneId)
+        {
+            audioProcessor.setSelectedTrack(laneId);
+            refreshFromProcessor(false);
+        };
+
+        trackList.onLaneVolumeTrack = [this](const RuntimeLaneId& laneId, float volume)
+        {
+            applyProcessorProjectMutation([this, laneId, volume] { audioProcessor.setTrackLaneVolume(laneId, volume); }, false);
+        };
+
+        trackList.onLaneSoundTrack = [this](const RuntimeLaneId& laneId, const SoundLayerState& state)
+        {
+            applyProcessorProjectMutation([this, laneId, state] { audioProcessor.setTrackSoundLayer(laneId, state); }, false);
+        };
+
+        trackList.onRenameLaneRequested = [this](const RuntimeLaneId& laneId) { showRenameLaneDialog(laneId); };
+        trackList.onDeleteLaneRequested = [this](const RuntimeLaneId& laneId) { requestDeleteLane(laneId); };
+        trackList.onLaneMoveUpTrack = [this](const RuntimeLaneId& laneId) { moveLaneDisplayOrder(laneId, -1); };
+        trackList.onLaneMoveDownTrack = [this](const RuntimeLaneId& laneId) { moveLaneDisplayOrder(laneId, 1); };
+        trackList.onAddLaneRequested = [this] { showAddLaneMenu(); };
+
+        trackList.onBassKeyChanged = [this](int choice)
+        {
+            applyProcessorProjectMutation([this, choice] { audioProcessor.setBassKeyRootChoice(choice); }, false);
+        };
+
+        trackList.onBassScaleChanged = [this](int choice)
+        {
+            applyProcessorProjectMutation([this, choice] { audioProcessor.setBassScaleModeChoice(choice); }, false);
+        };
+
+        trackList.onSub808SettingsChanged = [this](const RuntimeLaneId& laneId, const Sub808LaneSettings& settings)
+        {
+            applyProcessorProjectMutation([this, laneId, settings] { audioProcessor.setSub808LaneSettings(laneId, settings); }, true);
+        };
+    }
+
+    void bindAnalysisCallbacks()
+    {
+        analysisPanel.onAnalysisSourceChanged = [this](SampleAnalysisRequest::SourceType source)
+        {
+            applyProcessorProjectMutation([this, source]
+            {
+                auto request = audioProcessor.getSampleAnalysisRequest();
+                request.source = source;
+                audioProcessor.setSampleAnalysisRequest(request);
+            }, false);
+        };
+
+        analysisPanel.onAnalysisModeChanged = [this](AnalysisMode mode)
+        {
+            applyProcessorProjectMutation([this, mode] { audioProcessor.setAnalysisMode(mode); }, false);
+        };
+
+        analysisPanel.onSampleApplyModeChanged = [this](SampleApplyMode mode)
+        {
+            applyProcessorProjectMutation([this, mode] { audioProcessor.setSampleApplyMode(mode); }, false);
+        };
+
+        analysisPanel.onAnalysisBarsChanged = [this](int bars)
+        {
+            applyProcessorProjectMutation([this, bars]
+            {
+                auto request = audioProcessor.getSampleAnalysisRequest();
+                request.barsToCapture = juce::jlimit(2, 16, bars);
+                audioProcessor.setSampleAnalysisRequest(request);
+            }, false);
+        };
+
+        analysisPanel.onAnalysisTempoHandlingChanged = [this](SampleAnalysisRequest::TempoHandling tempoHandling)
+        {
+            applyProcessorProjectMutation([this, tempoHandling]
+            {
+                auto request = audioProcessor.getSampleAnalysisRequest();
+                request.tempoHandling = tempoHandling;
+                audioProcessor.setSampleAnalysisRequest(request);
+            }, false);
+        };
+
+        analysisPanel.onAnalysisReactivityChanged = [this](float value)
+        {
+            applyProcessorProjectMutation([this, value] { audioProcessor.setSampleReactivity(value); }, false);
+        };
+
+        analysisPanel.onSupportVsContrastChanged = [this](float value)
+        {
+            applyProcessorProjectMutation([this, value] { audioProcessor.setSupportVsContrast(value); }, false);
+        };
+
+        analysisPanel.onChooseAnalysisFile = [this]
+        {
+            auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+            auto chooser = std::make_shared<juce::FileChooser>("Select audio file for analysis",
+                                                               juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+                                                               "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+
+            chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                 [safeEditor, chooser](const juce::FileChooser& fc)
+                                 {
+                                     const auto selected = fc.getResult();
+                                     if (safeEditor == nullptr || selected == juce::File())
+                                         return;
+
+                                     auto request = safeEditor->audioProcessor.getSampleAnalysisRequest();
+                                     request.source = SampleAnalysisRequest::SourceType::AudioFile;
+                                     request.audioFile = selected;
+                                     safeEditor->audioProcessor.setSampleAnalysisRequest(request);
+                                     safeEditor->refreshFromProcessor(false);
+                                 });
+        };
+
+        analysisPanel.onAnalysisFileDropped = [this](const juce::File& file)
+        {
+            if (!file.existsAsFile())
+                return;
+
+            applyProcessorProjectMutation([this, file]
+            {
+                auto request = audioProcessor.getSampleAnalysisRequest();
+                request.source = SampleAnalysisRequest::SourceType::AudioFile;
+                request.audioFile = file;
+                audioProcessor.setSampleAnalysisRequest(request);
+            }, false);
+        };
+
+        analysisPanel.onRunAnalysis = [this]
+        {
+            juce::String error;
+            const bool ok = audioProcessor.analyzeCurrentSampleSource(&error);
+            if (!ok && error.isNotEmpty())
+                logUiAction("analysis error: " + error);
+            refreshFromProcessor(true);
+        };
+    }
+
+    void refreshFromProcessor(bool refreshTrackRows)
+    {
+        const auto project = audioProcessor.getProjectSnapshot();
+        syncLaneDisplayOrder(project);
+
+        const auto analysisRequest = audioProcessor.getSampleAnalysisRequest();
+        const auto analysisResult = audioProcessor.getSampleAnalysisResult();
+        const auto sampleContext = audioProcessor.getSampleAwareGenerationContext();
+        const bool analysisReady = audioProcessor.isSampleAnalysisReady();
+        const auto analysisMode = audioProcessor.getAnalysisMode();
+        const auto selectedTrack = project.tracks.empty()
+            ? RuntimeLaneId{}
+            : project.tracks[static_cast<size_t>(juce::jlimit(0,
+                                                              static_cast<int>(project.tracks.size()) - 1,
+                                                              project.selectedTrackIndex))].laneId;
+
+        header.setPreviewPlaying(audioProcessor.isPreviewPlaying());
+        header.setStartPlayWithDawEnabled(audioProcessor.isStartPlayWithDawEnabled());
+        header.setPreviewPlaybackModeId(previewModeToChoiceId(audioProcessor.getPreviewPlaybackMode()));
+        header.setHatFxDensityState(audioProcessor.getHatFxDragDensity(), audioProcessor.isHatFxDragDensityLocked());
+
+        hatFxDragDensityUi = audioProcessor.getHatFxDragDensity();
+        hatFxDragLockedUi = audioProcessor.isHatFxDragDensityLocked();
+
+        gridLite.setProject(project);
+        gridLite.setLaneDisplayOrder(laneDisplayOrder);
+        gridLite.setSelectedTrack(selectedTrack);
+        gridLite.setPlayheadStep(audioProcessor.getPreviewPlayheadStep());
+        gridLite.setPreviewStartStep(project.previewStartStep);
+        gridLite.setLoopRegion(audioProcessor.getPreviewLoopRegion());
+        gridLite.setRowHeight(trackList.getRowHeight());
+
+        if (refreshTrackRows)
+        {
+            trackList.setLaneDisplayOrder(buildVst3LaneOrder(project, laneDisplayOrder));
+            trackList.setTracks(project.runtimeLaneProfile,
+                                project.tracks,
+                                audioProcessor.getBassKeyRootChoice(),
+                                audioProcessor.getBassScaleModeChoice());
+        }
+        trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
+
+        juce::String status;
+        juce::String details;
+        if (analysisReady)
+        {
+            status = "BPM " + juce::String(analysisResult.detectedBpm, 1)
+                + (analysisResult.bpmReliable ? " (reliable)" : " (estimate)")
+                + " | bars " + juce::String(analysisResult.analyzedBars)
+                + " | boundaries " + juce::String(static_cast<int>(analysisResult.phraseBoundaryBars.size()));
+
+            details = "Energy " + juce::String(averageOrZero(analysisResult.energyPerStep), 2)
+                + " | onset " + juce::String(averageOrZero(analysisResult.onsetStrengthPerStep), 2)
+                + " | density bars " + juce::String(static_cast<int>(analysisResult.densityPerBar.size()))
+                + "\nFlags: sparse=" + juce::String(analysisResult.sparse ? "yes" : "no")
+                + " dense=" + juce::String(analysisResult.dense ? "yes" : "no")
+                + " transientRich=" + juce::String(analysisResult.transientRich ? "yes" : "no")
+                + " loopLike=" + juce::String(analysisResult.loopLike ? "yes" : "no");
+        }
+
+        juce::String generationDebug = audioProcessor.getGenerationDebugSummary();
+        const auto featureMap = audioProcessor.getAudioFeatureMap();
+        if (analysisReady && !featureMap.steps.empty())
+        {
+            int strongestStep = 0;
+            float strongestOnset = featureMap.steps.front().onset;
+            for (int i = 1; i < static_cast<int>(featureMap.steps.size()); ++i)
+            {
+                if (featureMap.steps[static_cast<size_t>(i)].onset > strongestOnset)
+                {
+                    strongestOnset = featureMap.steps[static_cast<size_t>(i)].onset;
+                    strongestStep = i;
+                }
+            }
+
+            generationDebug += "\nPeak onset step: " + juce::String(strongestStep + 1)
+                + " / " + juce::String(static_cast<int>(featureMap.steps.size()))
+                + " (" + juce::String(strongestOnset, 2) + ")";
+        }
+
+        analysisPanel.setPanelState(analysisRequest.source,
+                                    analysisMode,
+                                    sampleContext.applyMode,
+                                    analysisRequest.barsToCapture,
+                                    analysisRequest.tempoHandling,
+                                    sampleContext.reactivity,
+                                    sampleContext.supportVsContrast,
+                                    analysisRequest.audioFile.existsAsFile() ? ("File: " + analysisRequest.audioFile.getFileName()) : "File: (none)",
+                                    status,
+                                    details,
+                                    generationDebug,
+                                    analysisReady);
+
+        soundModuleController.sync(project);
+        soundModule.setEqDisplayAnalyzerState(audioProcessor.getEqDisplayAnalyzerState());
+        syncRackViewportContentSize();
+    }
+
+    void syncRackViewportContentSize()
+    {
+        if (trackListViewport.getWidth() <= 0 || trackListViewport.getHeight() <= 0)
+            return;
+
+        const int contentWidth = juce::jmax(1, trackListViewport.getMaximumVisibleWidth());
+        const int contentHeight = juce::jmax(trackList.getLaneSectionHeight(), gridLite.getPreferredContentHeight());
+        const int gridGap = 8;
+        const int gridWidth = juce::jmax(300, contentWidth - leftColumnWidth - gridGap);
+
+        trackList.setBounds(0, 0, leftColumnWidth, contentHeight);
+        gridLite.setBounds(leftColumnWidth + gridGap, 0, gridWidth, contentHeight);
+        laneGridWorkspace.setSize(contentWidth, contentHeight);
+    }
+
+    void syncLaneDisplayOrder(const PatternProject& project)
+    {
+        std::vector<RuntimeLaneId> normalized;
+        normalized.reserve(project.tracks.size());
+
+        for (const auto& laneId : laneDisplayOrder)
+        {
+            if (findRuntimeLaneById(project.runtimeLaneProfile, laneId) != nullptr
+                && std::find(normalized.begin(), normalized.end(), laneId) == normalized.end())
+                normalized.push_back(laneId);
+        }
+
+        for (const auto& laneId : project.runtimeLaneOrder)
+        {
+            if (findRuntimeLaneById(project.runtimeLaneProfile, laneId) != nullptr
+                && std::find(normalized.begin(), normalized.end(), laneId) == normalized.end())
+                normalized.push_back(laneId);
+        }
+
+        for (const auto& lane : project.runtimeLaneProfile.lanes)
+        {
+            if (std::find(normalized.begin(), normalized.end(), lane.laneId) == normalized.end())
+                normalized.push_back(lane.laneId);
+        }
+
+        laneDisplayOrder.swap(normalized);
+    }
+
+    void moveLaneDisplayOrder(const RuntimeLaneId& laneId, int delta)
+    {
+        if (delta == 0)
+            return;
+
+        auto it = std::find(laneDisplayOrder.begin(), laneDisplayOrder.end(), laneId);
+        if (it == laneDisplayOrder.end())
+            return;
+
+        const int index = static_cast<int>(std::distance(laneDisplayOrder.begin(), it));
+        const int target = juce::jlimit(0, static_cast<int>(laneDisplayOrder.size()) - 1, index + delta);
+        if (target == index)
+            return;
+
+        std::swap(laneDisplayOrder[static_cast<size_t>(index)], laneDisplayOrder[static_cast<size_t>(target)]);
+        const auto project = audioProcessor.getProjectSnapshot();
+        trackList.setLaneDisplayOrder(buildVst3LaneOrder(project, laneDisplayOrder));
+        gridLite.setLaneDisplayOrder(laneDisplayOrder);
+        refreshFromProcessor(true);
+    }
+
+    void applyHatFxDragDensityFromUi(float density, bool forceWhenLocked)
+    {
+        hatFxDragDensityUi = juce::jlimit(0.0f, 2.0f, density);
+        if (hatFxDragLockedUi && !forceWhenLocked)
+        {
+            trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
+            return;
+        }
+
+        applyProcessorProjectMutation([this]
+        {
+            audioProcessor.setHatFxDragDensity(hatFxDragDensityUi, hatFxDragLockedUi);
+        }, false);
+    }
+
+    bool isHatFxLane(const RuntimeLaneId& laneId) const
+    {
+        const auto project = audioProcessor.getProjectSnapshot();
+        const auto type = ProjectLaneAccess::backingTrackTypeForLaneId(project, laneId);
+        return type.has_value() && *type == TrackType::HatFX;
+    }
+
+    void applyProcessorProjectMutation(const std::function<void()>& mutation, bool refreshTrackRows = true)
+    {
+        mutation();
+        refreshFromProcessor(refreshTrackRows);
+    }
+
+    void applyProjectSnapshotChange(const PatternProject&, const PatternProject& after, bool refreshTrackRows)
+    {
+        audioProcessor.restoreEditorProjectSnapshot(after);
+        refreshFromProcessor(refreshTrackRows);
+    }
+
+    bool clearLaneNotes(const RuntimeLaneId& laneId)
+    {
+        return commandController.clearLaneNotes(laneId,
+                                                [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                                {
+                                                    applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                                },
+                                                [] {});
+    }
+
+    bool clearAllPatternNotes()
+    {
+        return commandController.clearAllPatternNotes([this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                                      {
+                                                          applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                                      },
+                                                      [] {});
+    }
+
+    void showSampleMenu(const RuntimeLaneId& laneId)
+    {
+        commandController.showSampleMenu(laneId,
+                                         this,
+                                         [this](const PatternProject& before, const PatternProject& after)
+                                         {
+                                             applyProjectSnapshotChange(before, after, true);
+                                         },
+                                         [this]()
+                                         {
+                                             refreshFromProcessor(true);
+                                         },
+                                         logUiAction);
+    }
+
+    void showImportMidiToLaneDialog(const RuntimeLaneId& laneId)
+    {
+        commandController.showImportMidiToLaneDialog(laneId,
+                                                     this,
+                                                     [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                                     {
+                                                         applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                                     });
+    }
+
+    void showRenameLaneDialog(const RuntimeLaneId& laneId)
+    {
+        commandController.showRenameLaneDialog(laneId,
+                                               this,
+                                               [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                               {
+                                                   applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                               });
+    }
+
+    void requestDeleteLane(const RuntimeLaneId& laneId)
+    {
+        commandController.requestDeleteLane(laneId,
+                                            this,
+                                            [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                            {
+                                                applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                            });
+    }
+
+    void showAddLaneMenu()
+    {
+        commandController.showAddLaneMenu(this,
+                                          [this](const PatternProject& before, const PatternProject& after, bool refreshTrackRows)
+                                          {
+                                              applyProjectSnapshotChange(before, after, refreshTrackRows);
+                                          });
+    }
+
+    void drawPanelShell(juce::Graphics& g, juce::Rectangle<int> childBounds, const juce::String& title, bool emphasise) const
+    {
+        if (childBounds.isEmpty())
+            return;
+
+        auto shell = childBounds.expanded(5);
+        const auto shellF = shell.toFloat();
+        juce::ColourGradient fill(juce::Colour::fromRGB(32, 25, 20), shellF.getTopLeft(),
+                                  juce::Colour::fromRGB(13, 14, 17), shellF.getBottomLeft(), false);
+        fill.addColour(0.24, juce::Colour::fromRGB(48, 33, 22));
+        fill.addColour(0.66, juce::Colour::fromRGB(20, 20, 22));
+        g.setGradientFill(fill);
+        g.fillRoundedRectangle(shellF, 8.0f);
+
+        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 12));
+        g.drawRoundedRectangle(shellF, 8.0f, 1.0f);
+        g.setColour(juce::Colour::fromRGBA(214, 171, 98, emphasise ? 132 : 78));
+        g.drawRoundedRectangle(shellF.reduced(0.5f), 8.0f, 1.0f);
+
+        if (title.isEmpty())
+            return;
+
+        auto titleBounds = shell.removeFromTop(22).reduced(12, 2);
+        g.setColour(juce::Colour::fromRGB(239, 202, 132));
+        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.drawText(title, titleBounds, juce::Justification::centredLeft, true);
+    }
+
+    juce::Rectangle<int> getWorkspaceBounds() const
+    {
+        return getLocalBounds().reduced(12);
+    }
+
+    void updateColumnWidthFromScreenX(int x)
+    {
+        auto body = getWorkspaceBounds();
+        body.removeFromTop(header.getPreferredHeight() + 10);
+        const int maxLeftWidth = juce::jmax(520, body.getWidth() - 10 - 8 - 360);
+        leftColumnWidth = juce::jlimit(520, maxLeftWidth, x - body.getX());
+        resized();
+        repaint();
+    }
+
+    void updateTopSectionHeightFromScreenY(int y)
+    {
+        auto body = getWorkspaceBounds();
+        body.removeFromTop(header.getPreferredHeight() + 10);
+        const int maxTopHeight = juce::jmax(250, body.getHeight() - 10 - 8 - 230);
+        topSectionHeight = juce::jlimit(250, maxTopHeight, y - body.getY());
+        resized();
+        repaint();
+    }
+
+    BoomBapGeneratorAudioProcessor& audioProcessor;
+    EditorCommandController commandController;
+    std::function<void(const juce::String&)> logUiAction = [](const juce::String& message)
+    {
+        juce::Logger::writeToLog("[HPDG_VST3_UI] " + message);
+    };
+
+    MainHeaderComponent header;
+    juce::Viewport trackListViewport;
+    juce::Component laneGridWorkspace;
+    TrackListComponent trackList;
+    Vst3GridLiteComponent gridLite;
+    SampleAnalysisPanelComponent analysisPanel;
+    SoundModuleComponent soundModule;
+    SoundModuleController soundModuleController;
+    std::unique_ptr<ProcessorSplitterHandleComponent> verticalSplitterHandle;
+    std::unique_ptr<ProcessorSplitterHandleComponent> horizontalSplitterHandle;
+    juce::Rectangle<int> verticalSplitterVisualBounds;
+    juce::Rectangle<int> horizontalSplitterVisualBounds;
+    std::vector<RuntimeLaneId> laneDisplayOrder;
+    int leftColumnWidth = 760;
+    int topSectionHeight = 320;
+    float hatFxDragDensityUi = 1.0f;
+    bool hatFxDragLockedUi = false;
+
+    std::unique_ptr<SliderAttachment> bpmAttachment;
+    std::unique_ptr<ButtonAttachment> bpmLockAttachment;
+    std::unique_ptr<ButtonAttachment> syncAttachment;
+    std::unique_ptr<SliderAttachment> swingAttachment;
+    std::unique_ptr<SliderAttachment> velocityAttachment;
+    std::unique_ptr<SliderAttachment> timingAttachment;
+    std::unique_ptr<SliderAttachment> humanizeAttachment;
+    std::unique_ptr<SliderAttachment> densityAttachment;
+    std::unique_ptr<ComboAttachment> tempoInterpretationAttachment;
+    std::unique_ptr<ComboAttachment> barsAttachment;
+    std::unique_ptr<ComboAttachment> genreAttachment;
+    std::unique_ptr<ComboAttachment> substyleAttachment;
+    std::unique_ptr<SliderAttachment> seedAttachment;
+    std::unique_ptr<ButtonAttachment> seedLockAttachment;
+    std::unique_ptr<SliderAttachment> masterVolumeAttachment;
+    int lastGenreChoice = -1;
+};
 
 bool soundLayerHasActiveEq(const SoundLayerState& state)
 {
@@ -1481,6 +2449,9 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 
 juce::AudioProcessorEditor* BoomBapGeneratorAudioProcessor::createEditor()
 {
+    if (wrapperType == juce::AudioProcessor::wrapperType_VST3)
+        return new Vst3SafeHeaderEditor(*this);
+
     return new BoomBGeneratorAudioProcessorEditor(*this);
 }
 
@@ -3085,7 +4056,7 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
                 ? toLegacyNoteEvent(sub808Notes[static_cast<size_t>(noteIndex)])
                 : track.notes[static_cast<size_t>(noteIndex)];
             PreviewEvent event;
-            const int noteTicks = note.step * ticksPerStep() + note.microOffset;
+            const int noteTicks = clampedNoteStartTicks(note.step, note.microOffset, project.params.bars);
             event.sample = ticksToSamples(noteTicks, currentSampleRate, project.params.bpm);
             event.track = track.type;
             event.pitch = juce::jlimit(0, 127, note.pitch);
