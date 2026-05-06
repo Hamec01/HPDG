@@ -12,6 +12,7 @@
 #include "../Source/Core/ProjectStateController.h"
 #include "../Source/Analysis/SampleApplyWeights.h"
 #include "../Source/Engine/BoomBapEngine.h"
+#include "../Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.h"
 #include "../Source/Engine/DrillEngine.h"
 #include "../Source/Engine/Drill/DrillPatternValidator.h"
 #include "../Source/Engine/Drill/DrillPhrasePlanner.h"
@@ -4458,6 +4459,108 @@ void testLaneSampleBankPreferredTagRotationSmoke()
     root.deleteRecursively();
 }
 
+void testBoomBapClassicAlgebraGeneratorSmoke()
+{
+    BoomBapClassicAlgebraParams params;
+    params.seed = 4242;
+    params.bars = 4;
+    params.bpm = 88.0f;
+    params.density = 0.58f;
+    params.swing = 0.60f;
+    params.humanize = 0.48f;
+    params.variation = 0.42f;
+
+    BoomBapClassicAlgebraGenerator generator;
+    const auto first = generator.generate(params);
+    const auto second = generator.generate(params);
+
+    const auto allNotesEqual = [](const BoomBapClassicAlgebraPattern& a, const BoomBapClassicAlgebraPattern& b)
+    {
+        const auto lhs = a.allNotes();
+        const auto rhs = b.allNotes();
+        if (lhs.size() != rhs.size())
+            return false;
+
+        for (size_t index = 0; index < lhs.size(); ++index)
+        {
+            const auto& left = lhs[index];
+            const auto& right = rhs[index];
+            if (left.laneIndex != right.laneIndex
+                || left.barIndex != right.barIndex
+                || left.tick64 != right.tick64
+                || left.length != right.length
+                || left.velocity != right.velocity
+                || left.microTimingTicks != right.microTimingTicks
+                || left.role != right.role
+                || left.roleString != right.roleString)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    expect(allNotesEqual(first, second),
+           "BoomBap Classic Algebra generator should be deterministic for the same seed and params.");
+
+    const auto hasLaneTick = [](const BoomBapClassicAlgebraPattern& pattern, int lane, int bar, int tickInBar)
+    {
+        const auto& notes = pattern.notesByLane[static_cast<size_t>(lane)];
+        return std::any_of(notes.begin(), notes.end(), [bar, tickInBar](const auto& note)
+        {
+            return note.barIndex == bar && (note.tick64 % 64) == tickInBar;
+        });
+    };
+
+    for (int bar = 0; bar < params.bars; ++bar)
+    {
+        expect(hasLaneTick(first, BoomBapClassicLanes::Snare, bar, 16),
+               "BoomBap Classic Algebra should keep mandatory snare on beat 2.");
+        expect(hasLaneTick(first, BoomBapClassicLanes::Snare, bar, 48),
+               "BoomBap Classic Algebra should keep mandatory snare on beat 4.");
+    }
+
+    expect(hasLaneTick(first, BoomBapClassicLanes::Kick, 0, 0),
+           "BoomBap Classic Algebra should anchor the first bar with kick on tick 0.");
+    expect(first.notesByLane[BoomBapClassicLanes::Sub808].empty(),
+           "BoomBap Classic Algebra should leave Sub808 empty by default.");
+    expect(static_cast<int>(first.notesByLane[BoomBapClassicLanes::OpenHat].size()) <= 2,
+           "BoomBap Classic Algebra should keep open hats rare.");
+    expect(static_cast<int>(first.notesByLane[BoomBapClassicLanes::Cymbal].size()) <= 2,
+           "BoomBap Classic Algebra should keep cymbals rare.");
+
+    const auto& hats = first.notesByLane[BoomBapClassicLanes::HiHat];
+    expect(hats.size() >= static_cast<size_t>(params.bars * 8),
+           "BoomBap Classic Algebra should create the eighth-note hat pulse.");
+    expect(!std::all_of(hats.begin() + 1, hats.end(), [&](const auto& note) { return note.velocity == hats.front().velocity; }),
+           "BoomBap Classic Algebra hats should not have flat velocity.");
+
+    bool hasSwungHat = false;
+    for (const auto& note : hats)
+    {
+        const int tick = note.tick64 % 64;
+        if ((tick == 8 || tick == 24 || tick == 40 || tick == 56) && note.microTimingTicks > 0)
+            hasSwungHat = true;
+    }
+    expect(hasSwungHat,
+           "BoomBap Classic Algebra should delay offbeat hats for swing.");
+
+    int maxSnareVelocity = 0;
+    for (const auto& note : first.notesByLane[BoomBapClassicLanes::Snare])
+        maxSnareVelocity = std::max(maxSnareVelocity, note.velocity);
+    for (const auto& note : first.notesByLane[BoomBapClassicLanes::ClapGhost])
+        expect(note.velocity < maxSnareVelocity,
+               "BoomBap Classic Algebra clap ghosts should be lower velocity than main snare.");
+
+    expect(first.score.quality > 0.0f,
+           "BoomBap Classic Algebra scorer should produce a positive selected quality.");
+    expect(first.debugSummary.contains("style: Boom Bap Classic Algebra")
+               && first.debugSummary.contains("selected candidate index")
+               && first.debugSummary.contains("repairs applied"),
+           "BoomBap Classic Algebra debug summary should include compact generation diagnostics.");
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -4527,6 +4630,7 @@ int main()
     failures += runTest("Rap GermanStreet controls influence smoke", testRapGermanStreetControlsInfluenceSmoke);
     failures += runTest("Classic rule enforcer smoke", testClassicRuleEnforcerSmoke);
     failures += runTest("BoomBap Classic pocket generation smoke", testBoomBapClassicPocketGenerationSmoke);
+    failures += runTest("BoomBap Classic Algebra generator smoke", testBoomBapClassicAlgebraGeneratorSmoke);
     failures += runTest("BoomBap Dusty pocket generation smoke", testBoomBapDustyPocketGenerationSmoke);
     failures += runTest("BoomBap Jazzy pocket generation smoke", testBoomBapJazzyPocketGenerationSmoke);
     failures += runTest("BoomBap Gold pocket generation smoke", testBoomBapGoldPocketGenerationSmoke);

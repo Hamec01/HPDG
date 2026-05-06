@@ -82,6 +82,8 @@ target_sources(HPDG
     Source/Engine/BoomBap/BoomBapGhostGenerator.cpp
     Source/Engine/BoomBap/BoomBapOpenHatGenerator.cpp
     Source/Engine/BoomBap/BoomBapPercGenerator.cpp
+    Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/Rap/RapStyleProfile.cpp
     Source/Engine/Rap/RapPhrasePlanner.cpp
     Source/Engine/Rap/RapKickGenerator.cpp
@@ -166,6 +168,8 @@ add_executable(HPDG_CoreTests
     Source/Engine/BoomBap/BoomBapGhostGenerator.cpp
     Source/Engine/BoomBap/BoomBapOpenHatGenerator.cpp
     Source/Engine/BoomBap/BoomBapPercGenerator.cpp
+    Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/RapEngine.cpp
     Source/Engine/Rap/RapStyleProfile.cpp
     Source/Engine/Rap/RapPhrasePlanner.cpp
