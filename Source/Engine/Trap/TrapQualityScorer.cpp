@@ -209,6 +209,11 @@ float gridScore(const RollSegment& segment)
     return static_cast<float>(valid) / static_cast<float>(segment.notes.size() - 1);
 }
 
+float closenessScore(float value, float target, float tolerance)
+{
+    return clamp01(1.0f - std::abs(value - target) / std::max(0.0001f, tolerance));
+}
+
 float lowEndPocketScore(const TrapPatternMatrix& matrix)
 {
     const int bars = std::max(1, matrix.getBars());
@@ -306,6 +311,8 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
                                               const TrapAlgebraParams& params,
                                               const TrapSubstyleWeights& weights) const
 {
+    juce::ignoreUnused(params);
+
     TrapQualityBreakdown out;
     const int bars = std::max(1, matrix.getBars());
     const int totalTicks = matrix.getTotalTicks();
@@ -353,9 +360,7 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
     const auto rolls = collectRolls(matrix);
     out.rollCount = static_cast<int>(rolls.size());
     if (rolls.empty())
-    {
-        out.averageRollQuality = params.substyle == TrapAlgebraSubstyle::MinimalTrap || params.substyle == TrapAlgebraSubstyle::DarkTrap ? 0.85f : 0.55f;
-    }
+        out.averageRollQuality = weights.rollRate < 0.24f ? 0.82f : 0.55f;
     else
     {
         float totalRollQuality = 0.0f;
@@ -407,7 +412,8 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
             || note.laneIndex == TrapAlgebraLanes::HatAccent
             || note.laneIndex == TrapAlgebraLanes::ClapGhost
             || note.laneIndex == TrapAlgebraLanes::Perc;
-        if (std::abs(note.microTimingTicks) <= (laneAllowsTiming ? 2 : 1))
+        const int limit = laneAllowsTiming ? 18 : 10;
+        if (std::abs(note.microTimingTicks) <= limit)
             ++tastefulMicro;
     }
     out.grooveMicrotimingScore = allNotes.empty() ? 0.0f : static_cast<float>(tastefulMicro) / static_cast<float>(allNotes.size());
@@ -421,17 +427,29 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
                             + std::max(0, cymbals - 2) * 0.18f
                             + std::max(0, perc - bars * 2) * 0.08f);
 
-    const float weightedPositive = weights.snare * out.snareBackboneScore
-        + weights.kick808 * out.kick808CouplingScore
-        + weights.hat * out.hiHatMovementScore
-        + weights.roll * out.rollQualityScore
-        + weights.negativeSpace * out.negativeSpaceScore
-        + weights.variation * out.barVariationScore
-        + weights.groove * out.grooveMicrotimingScore;
+    const float syncopationScore = lowEndPocketScore(matrix);
+    const float bassWeightScore = rangeScore(out.sub808Density, 0.18f, 0.65f, 0.18f);
+    const float coreScore = clamp01((1.22f * out.snareBackboneScore
+                                  + 1.24f * out.kick808CouplingScore
+                                  + 1.00f * out.hiHatMovementScore
+                                  + 0.86f * syncopationScore
+                                  + 0.96f * bassWeightScore
+                                  + 0.90f * out.negativeSpaceScore
+                                  + 0.82f * out.barVariationScore
+                                  + 0.55f * out.grooveMicrotimingScore) / 7.55f);
+
+    const float rollDensity = bars > 0 ? static_cast<float>(out.rollCount) / static_cast<float>(bars) : 0.0f;
+    const float percDensity = bars > 0 ? static_cast<float>(perc) / static_cast<float>(bars) : 0.0f;
+    const float styleScore = clamp01((closenessScore(hatDensity, std::max(0.05f, weights.hatRate * 0.55f), 0.18f)
+                                   + closenessScore(rollDensity, weights.rollRate * 0.75f, 0.75f)
+                                   + closenessScore(out.sub808Density, std::clamp(0.22f + weights.bassLegato * 0.18f, 0.18f, 0.65f), 0.22f)
+                                   + closenessScore(percDensity, weights.cowbell * 1.25f, 1.60f)
+                                   + closenessScore(1.0f - out.negativeSpaceScore, weights.kickIrregularity * 0.38f, 0.42f)
+                                   + closenessScore(out.overloadPenalty, (1.0f - weights.drumDryness) * 0.05f, 0.10f)) / 6.0f);
+
     const float weightedPenalty = weights.overload * (out.overloadPenalty + out.spamPenalty)
         + weights.mud * out.mudPenalty;
-    const float positiveMax = weights.snare + weights.kick808 + weights.hat + weights.roll + weights.negativeSpace + weights.variation + weights.groove;
-    out.quality = clamp01((weightedPositive - weightedPenalty) / std::max(0.0001f, positiveMax));
+    out.quality = clamp01(0.68f * coreScore + 0.32f * styleScore - weightedPenalty * 0.18f);
     out.energy = TrapEnergyModel().energy(out, weights);
     return out;
 }
@@ -455,6 +473,20 @@ juce::StringArray TrapConstraintValidator::validate(const TrapPatternMatrix& mat
         issues.add("empty_808");
     if (score.kick808CouplingRatio < 0.45f)
         issues.add("low_kick_808_coupling");
+    if (score.kick808CouplingScore < 0.60f)
+        issues.add("low_trap_core_low_end");
+    if (score.hiHatMovementScore < 0.60f)
+        issues.add("weak_hat_driver");
+    if (score.negativeSpaceScore < 0.35f)
+        issues.add("lost_negative_space");
+    for (const auto& note : matrix.allNotes())
+    {
+        if (std::abs(note.microTimingTicks) >= 60)
+        {
+            issues.add("whole_tick_microtiming");
+            break;
+        }
+    }
     if (score.hatVelocityVariance < TrapAlgebraEngine::weightsForSubstyle(params.substyle).hatVarianceMin)
         issues.add("flat_hats");
     if (score.d01 < 0.001f && score.d02 < 0.001f && score.d03 < 0.001f && bars >= 4)

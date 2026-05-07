@@ -9,6 +9,7 @@ namespace bbg
 namespace
 {
 constexpr int kTicksPerBar = 64;
+constexpr int kPpqPerQuarter = 960;
 
 float clamp01(float value)
 {
@@ -49,6 +50,23 @@ int tickInBar(int tick64)
 int swingOffsetTicks(float swing)
 {
     return std::clamp(static_cast<int>(std::lround((swing - 0.5f) * 8.0f)), 0, 2);
+}
+
+int microMsToPpq(float milliseconds, const TrapAlgebraParams& params)
+{
+    const float safeBpm = std::clamp(params.bpm, 40.0f, 240.0f);
+    const float ppq = milliseconds * static_cast<float>(kPpqPerQuarter) * safeBpm / 60000.0f;
+    return static_cast<int>(std::lround(ppq));
+}
+
+int randomMicroPpq(std::mt19937& rng,
+                   const TrapAlgebraParams& params,
+                   float minMs,
+                   float maxMs)
+{
+    std::uniform_real_distribution<float> distribution(minMs, maxMs);
+    const float scaledMs = distribution(rng) * std::clamp(0.35f + params.humanize * 0.90f, 0.0f, 1.0f);
+    return microMsToPpq(scaledMs, params);
 }
 
 float barEnergy(int bar)
@@ -105,28 +123,26 @@ int fallbackKickLocalTickForBar(int bar)
 
 int microTimingForLane(int lane, int tick, const TrapAlgebraParams& params, std::mt19937& rng)
 {
-    const float humanize = clamp01(params.humanize);
-    const int jitter = humanize > 0.18f ? randomInt(rng, -1, 1) : 0;
-    const int swing = swingOffsetTicks(params.swing);
-
     switch (lane)
     {
         case TrapAlgebraLanes::Kick:
         case TrapAlgebraLanes::Sub808:
-            return std::clamp(jitter, -1, 1);
+            return 0;
         case TrapAlgebraLanes::Snare:
+            return randomMicroPpq(rng, params, 0.0f, 4.0f);
         case TrapAlgebraLanes::ClapGhost:
-            return std::clamp((humanize > 0.35f ? randomInt(rng, 0, 1) : 0) + (lane == TrapAlgebraLanes::ClapGhost ? randomInt(rng, -1, 1) : 0), -2, 2);
+            return randomMicroPpq(rng, params, -3.0f, 5.0f);
         case TrapAlgebraLanes::HiHat:
         case TrapAlgebraLanes::HatAccent:
         {
             const bool offbeat = tickInBar(tick) == 8 || tickInBar(tick) == 24 || tickInBar(tick) == 40 || tickInBar(tick) == 56;
-            return std::clamp((offbeat ? swing : 0) + jitter, -1, 2);
+            const float swingMs = static_cast<float>(swingOffsetTicks(params.swing)) * 2.2f;
+            return randomMicroPpq(rng, params, offbeat ? swingMs : -1.2f, offbeat ? swingMs + 3.0f : 1.8f);
         }
         case TrapAlgebraLanes::Perc:
-            return std::clamp(randomInt(rng, -2, 2), -2, 2);
+            return randomMicroPpq(rng, params, -5.0f, 5.0f);
         default:
-            return std::clamp(jitter, -1, 2);
+            return randomMicroPpq(rng, params, -2.0f, 2.0f);
     }
 }
 
@@ -236,7 +252,7 @@ bool TrapPatternMatrix::setNote(int lane,
     cell.active = true;
     cell.velocity = std::clamp(velocity, 1, 127);
     cell.durationTicks = std::clamp(durationTicks, 1, getTotalTicks() - tick64);
-    cell.microTimingTicks = std::clamp(microTimingTicks, -2, 3);
+    cell.microTimingTicks = std::clamp(microTimingTicks, -24, 24);
     cell.role = role;
     cell.roleString = TrapAlgebraEngine::roleToString(role);
     return true;
@@ -530,7 +546,8 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
                                              std::mt19937& rng) const
 {
     const int start = barStart(bar);
-    const float density = params.density;
+    const auto style = weightsForSubstyle(params.substyle);
+    const float density = std::clamp(params.density * (0.72f + style.hatRate * 0.56f), 0.0f, 1.0f);
     const float energy = barEnergy(bar);
     const float variation = barVariationAmount(bar) * (0.65f + params.variation * 0.70f);
     const bool bar4 = (bar % 4) == 3;
@@ -556,7 +573,8 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
                                     [static_cast<size_t>(bar % 4)];
 
     const int motifKickCount = static_cast<int>(std::count_if(motif.begin(), motif.end(), [](int tick) { return tick >= 0; }));
-    const int targetKicks = std::clamp(motifKickCount, 1, bar4 ? 3 : 2);
+    const int styleKickLimit = style.kickIrregularity >= 0.54f ? 3 : 2;
+    const int targetKicks = std::clamp(motifKickCount, 1, bar4 ? std::max(2, styleKickLimit) : styleKickLimit);
 
     for (const int candidateTick : motif)
     {
@@ -596,7 +614,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
 
     std::sort(selectedKicks.begin(), selectedKicks.end());
 
-    if (params.substyle == TrapAlgebraSubstyle::HardTrap && bar4 && chance(rng, 0.04f + density * 0.04f))
+    if (params.substyle == TrapAlgebraSubstyle::RageTrap && bar4 && chance(rng, 0.04f + density * 0.04f))
     {
         const int tick = 48;
         const bool nearMainKick = std::any_of(selectedKicks.begin(), selectedKicks.end(), [tick](int mainTick)
@@ -624,13 +642,14 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         if (kickTick >= 32 && kickTick < 56)
             endLimit = std::min(endLimit, 54);
 
-        const int maxDuration = std::clamp(endLimit - kickTick, 4, bar4 ? 12 : 10);
-        const int minDuration = std::min(maxDuration, kickTick == 0 ? 7 : 4);
+        const int styleExtra = static_cast<int>(std::lround(style.bassLegato * 5.0f));
+        const int maxDuration = std::clamp(endLimit - kickTick, 4, (bar4 ? 10 : 8) + styleExtra);
+        const int minDuration = std::min(maxDuration, kickTick == 0 ? 6 + static_cast<int>(style.bassLegato * 3.0f) : 4);
         const int duration = randomInt(rng, minDuration, maxDuration);
         auto* subCell = matrix.cellAt(TrapAlgebraLanes::Sub808, start + kickTick);
         if (subCell != nullptr && subCell->active)
         {
-            subCell->velocity = std::clamp(subCell->velocity, 88, 116);
+            subCell->velocity = std::clamp(subCell->velocity + static_cast<int>(style.bassDistortion * 5.0f), 88, 120);
             subCell->durationTicks = duration;
             subCell->microTimingTicks = 0;
             subCell->role = TrapAlgebraRole::Bass;
@@ -664,9 +683,9 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
     {
         const bool preSnare = tick == 28;
         const bool ending = bar4 && tick >= 52;
-        float probability = 0.10f + density * 0.32f + variation * 0.20f + (preSnare ? 0.08f : 0.0f) + (ending ? 0.10f : 0.0f);
-        if (params.substyle == TrapAlgebraSubstyle::MinimalTrap)
-            probability *= 0.55f;
+        float probability = 0.05f + style.hatRate * 0.28f + density * 0.18f + variation * 0.16f + (preSnare ? 0.08f : 0.0f) + (ending ? 0.10f : 0.0f);
+        if (params.substyle == TrapAlgebraSubstyle::CloudTrap || params.substyle == TrapAlgebraSubstyle::LuxuryTrap)
+            probability *= 0.80f;
         if (chance(rng, probability))
         {
             const bool accent = chance(rng, 0.18f + energy * 0.18f + (preSnare || ending ? 0.18f : 0.0f));
@@ -679,11 +698,9 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         }
     }
 
-    const int desiredRolls = params.substyle == TrapAlgebraSubstyle::MinimalTrap
-                                 ? 0
-                                 : (bar4
-                                        ? (chance(rng, 0.48f + density * 0.18f + params.variation * 0.12f) ? 1 : 0)
-                                        : (chance(rng, 0.12f + density * 0.14f + params.variation * 0.08f) ? 1 : 0));
+    const int desiredRolls = bar4
+                                 ? (chance(rng, 0.10f + style.rollRate * 0.80f + params.variation * 0.10f) ? 1 : 0)
+                                 : (chance(rng, style.rollRate * 0.40f + density * 0.05f) ? 1 : 0);
     for (int i = 0; i < desiredRolls; ++i)
         addRoll(matrix, params, bar, bar4, rng);
 
@@ -693,7 +710,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
     if ((bar == 0 && candidateIndex % 7 == 0 && chance(rng, 0.28f)) || (bar4 && chance(rng, 0.36f)))
         matrix.setNote(TrapAlgebraLanes::Cymbal, start + (bar4 ? 60 : 0), randomInt(rng, 78, 116), 5, 0, bar4 ? TrapAlgebraRole::Ending : TrapAlgebraRole::Accent);
 
-    if (chance(rng, 0.06f + density * 0.12f + (bar == 2 ? 0.06f : 0.0f)))
+    if (chance(rng, 0.04f + density * 0.08f + style.cowbell * 0.22f + (bar == 2 ? 0.05f : 0.0f)))
         matrix.setNote(TrapAlgebraLanes::Perc, start + randomInt(rng, 0, 15) * 4, randomInt(rng, 48, 94), 1, microTimingForLane(TrapAlgebraLanes::Perc, start, params, rng), TrapAlgebraRole::Support);
 
     if (chance(rng, 0.08f + params.humanize * 0.08f + (bar == 1 || bar4 ? 0.05f : 0.0f)))
@@ -726,8 +743,10 @@ void TrapAlgebraEngine::addRoll(TrapPatternMatrix& matrix,
         zoneEnd = 63;
     }
 
-    const int step = chance(rng, params.substyle == TrapAlgebraSubstyle::ModernTrap || params.substyle == TrapAlgebraSubstyle::HardTrap ? 0.42f : 0.16f) ? 1 : 2;
-    const int maxLen = barFill ? 7 : 4;
+    const auto style = weightsForSubstyle(params.substyle);
+    const bool tripletRoll = chance(rng, style.tripletBias * 0.55f);
+    const int step = tripletRoll ? 3 : (chance(rng, params.substyle == TrapAlgebraSubstyle::RageTrap ? 0.42f : 0.16f) ? 1 : 2);
+    const int maxLen = barFill ? (style.rollRate > 0.55f ? 8 : 6) : (style.rollRate > 0.55f ? 5 : 4);
     const int length = randomInt(rng, 2, maxLen);
     const int rollStart = std::clamp(randomInt(rng, zoneStart, std::max(zoneStart, zoneEnd - length * step + 1)), zoneStart, zoneEnd);
     const int contour = randomInt(rng, 0, 3);
@@ -859,6 +878,27 @@ void TrapAlgebraEngine::repair(TrapAlgebraPattern& pattern,
     }
 
     const int totalTicks = matrix.getTotalTicks();
+    if (matrix.active808Ticks() < static_cast<int>(0.18f * static_cast<float>(totalTicks)))
+    {
+        auto subs = matrix.notesForLane(TrapAlgebraLanes::Sub808);
+        std::stable_sort(subs.begin(), subs.end(), [](const auto& a, const auto& b)
+        {
+            return a.velocity > b.velocity;
+        });
+        for (int pass = 0; pass < 6 && matrix.active808Ticks() < static_cast<int>(0.18f * static_cast<float>(totalTicks)); ++pass)
+        {
+            for (const auto& sub : subs)
+            {
+                auto* cell = matrix.cellAt(TrapAlgebraLanes::Sub808, sub.tick64);
+                if (cell != nullptr && cell->active)
+                    cell->durationTicks = std::min(32, cell->durationTicks + 4);
+                if (matrix.active808Ticks() >= static_cast<int>(0.18f * static_cast<float>(totalTicks)))
+                    break;
+            }
+        }
+        pattern.repairsApplied.add("restore_808_bass_weight");
+    }
+
     if (matrix.active808Ticks() > static_cast<int>(0.65f * static_cast<float>(totalTicks)))
     {
         auto subs = matrix.notesForLane(TrapAlgebraLanes::Sub808);
@@ -953,24 +993,30 @@ TrapSubstyleWeights TrapAlgebraEngine::weightsForSubstyle(TrapAlgebraSubstyle su
     TrapSubstyleWeights weights;
     switch (substyle)
     {
-        case TrapAlgebraSubstyle::ModernTrap:
-            weights = { "ModernTrap", 1.20f, 1.35f, 1.50f, 1.40f, 0.80f, 1.00f, 0.70f, 1.50f, 1.20f, 0.34f, 70.0f, 5 };
-            break;
         case TrapAlgebraSubstyle::DarkTrap:
-            weights = { "DarkTrap", 1.50f, 1.60f, 0.90f, 0.50f, 1.70f, 0.70f, 0.80f, 1.80f, 1.60f, 0.18f, 45.0f, 4 };
+            weights = { "DarkTrap", 1.50f, 1.60f, 0.90f, 0.50f, 1.70f, 0.70f, 0.80f, 1.80f, 1.60f, 0.18f, 45.0f, 4,
+                        0.40f, 0.22f, 0.20f, 0.42f, 0.62f, 0.68f, 0.82f, 0.20f, 0.15f, 0.20f, 0.08f, 0.10f, 0.18f, 0.12f };
             break;
-        case TrapAlgebraSubstyle::HardTrap:
-            weights = { "HardTrap", 1.30f, 1.45f, 1.40f, 1.20f, 0.70f, 0.90f, 0.60f, 1.70f, 1.30f, 0.38f, 75.0f, 5 };
+        case TrapAlgebraSubstyle::CloudTrap:
+            weights = { "CloudTrap", 1.35f, 1.45f, 1.00f, 0.80f, 1.45f, 0.90f, 0.80f, 1.45f, 1.20f, 0.20f, 50.0f, 4,
+                        0.34f, 0.18f, 0.12f, 0.30f, 0.42f, 0.20f, 0.22f, 0.95f, 0.60f, 0.10f, 0.12f, 0.05f, 0.12f, 0.28f };
             break;
-        case TrapAlgebraSubstyle::MinimalTrap:
-            weights = { "MinimalTrap", 1.60f, 1.40f, 0.70f, 0.30f, 2.00f, 0.60f, 0.80f, 2.10f, 1.70f, 0.16f, 40.0f, 4 };
+        case TrapAlgebraSubstyle::RageTrap:
+            weights = { "RageTrap", 1.30f, 1.45f, 1.45f, 1.35f, 0.82f, 0.95f, 0.65f, 1.65f, 1.25f, 0.38f, 75.0f, 5,
+                        0.60f, 0.70f, 0.10f, 0.58f, 0.45f, 0.80f, 0.75f, 0.65f, 0.90f, 0.05f, 0.95f, 0.05f, 0.06f, 0.18f };
             break;
-        case TrapAlgebraSubstyle::MelodicTrap:
-            weights = { "MelodicTrap", 1.35f, 1.45f, 1.00f, 0.80f, 1.40f, 0.90f, 0.80f, 1.50f, 1.30f, 0.24f, 55.0f, 4 };
+        case TrapAlgebraSubstyle::MemphisTrap:
+            weights = { "MemphisTrap", 1.45f, 1.50f, 1.25f, 1.15f, 1.10f, 0.85f, 0.70f, 1.60f, 1.35f, 0.30f, 65.0f, 4,
+                        0.52f, 0.40f, 0.95f, 0.44f, 0.50f, 0.55f, 0.80f, 0.15f, 0.20f, 0.10f, 0.05f, 0.90f, 0.70f, 0.08f };
             break;
-        case TrapAlgebraSubstyle::ClassicTrap:
+        case TrapAlgebraSubstyle::LuxuryTrap:
+            weights = { "LuxuryTrap", 1.45f, 1.45f, 1.05f, 0.70f, 1.40f, 0.85f, 0.80f, 1.65f, 1.20f, 0.22f, 55.0f, 4,
+                        0.42f, 0.20f, 0.08f, 0.36f, 0.48f, 0.25f, 0.70f, 0.70f, 0.65f, 0.25f, 0.08f, 0.05f, 0.05f, 0.95f };
+            break;
+        case TrapAlgebraSubstyle::ATLClassic:
         default:
-            weights = { "ClassicTrap", 1.40f, 1.50f, 1.20f, 0.90f, 1.10f, 0.80f, 0.70f, 1.60f, 1.40f, 0.25f, 55.0f, 4 };
+            weights = { "ATLClassic", 1.40f, 1.50f, 1.20f, 0.90f, 1.10f, 0.80f, 0.70f, 1.60f, 1.40f, 0.25f, 55.0f, 4,
+                        0.48f, 0.25f, 0.15f, 0.48f, 0.35f, 0.35f, 0.90f, 0.25f, 0.45f, 0.90f, 0.05f, 0.05f, 0.05f, 0.35f };
             break;
     }
     return weights;
@@ -996,13 +1042,13 @@ const char* TrapAlgebraEngine::substyleToString(TrapAlgebraSubstyle substyle)
 {
     switch (substyle)
     {
-        case TrapAlgebraSubstyle::ModernTrap: return "ModernTrap";
+        case TrapAlgebraSubstyle::ATLClassic: return "ATLClassic";
         case TrapAlgebraSubstyle::DarkTrap: return "DarkTrap";
-        case TrapAlgebraSubstyle::HardTrap: return "HardTrap";
-        case TrapAlgebraSubstyle::MinimalTrap: return "MinimalTrap";
-        case TrapAlgebraSubstyle::MelodicTrap: return "MelodicTrap";
-        case TrapAlgebraSubstyle::ClassicTrap:
-        default: return "ClassicTrap";
+        case TrapAlgebraSubstyle::CloudTrap: return "CloudTrap";
+        case TrapAlgebraSubstyle::RageTrap: return "RageTrap";
+        case TrapAlgebraSubstyle::MemphisTrap: return "MemphisTrap";
+        case TrapAlgebraSubstyle::LuxuryTrap: return "LuxuryTrap";
+        default: return "ATLClassic";
     }
 }
 

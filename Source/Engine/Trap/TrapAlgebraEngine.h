@@ -40,12 +40,12 @@ constexpr std::array<const char*, Count> Names {
 
 enum class TrapAlgebraSubstyle
 {
-    ClassicTrap = 0,
-    ModernTrap,
+    ATLClassic = 0,
     DarkTrap,
-    HardTrap,
-    MinimalTrap,
-    MelodicTrap
+    CloudTrap,
+    RageTrap,
+    MemphisTrap,
+    LuxuryTrap
 };
 
 enum class TrapAlgebraRole
@@ -72,7 +72,7 @@ struct TrapAlgebraParams
     float temperature = 0.40f;
     float qMin = 0.62f;
     int candidateCount = 64;
-    TrapAlgebraSubstyle substyle = TrapAlgebraSubstyle::ClassicTrap;
+    TrapAlgebraSubstyle substyle = TrapAlgebraSubstyle::ATLClassic;
 };
 
 struct TrapAlgebraNote
@@ -82,7 +82,7 @@ struct TrapAlgebraNote
     int tick64 = 0;
     int durationTicks = 1;
     int velocity = 100;
-    int microTimingTicks = 0;
+    int microTimingTicks = 0; // PPQ subtick offset, not 1/64-grid ticks.
     TrapAlgebraRole role = TrapAlgebraRole::Support;
     juce::String roleString = "support";
 };
@@ -92,7 +92,7 @@ struct TrapPatternCell
     bool active = false;
     int velocity = 0;
     int durationTicks = 0;
-    int microTimingTicks = 0;
+    int microTimingTicks = 0; // PPQ subtick offset, not 1/64-grid ticks.
     TrapAlgebraRole role = TrapAlgebraRole::Support;
     juce::String roleString;
 };
@@ -133,7 +133,7 @@ private:
 
 struct TrapSubstyleWeights
 {
-    juce::String name = "ClassicTrap";
+    juce::String name = "ATLClassic";
     float snare = 1.40f;
     float kick808 = 1.50f;
     float hat = 1.20f;
@@ -147,6 +147,21 @@ struct TrapSubstyleWeights
     float targetHatDensity = 0.25f;
     float hatVarianceMin = 55.0f;
     int activeLaneMax = 4;
+
+    float hatRate = 0.48f;
+    float rollRate = 0.25f;
+    float tripletBias = 0.15f;
+    float kickIrregularity = 0.48f;
+    float bassLegato = 0.35f;
+    float bassDistortion = 0.35f;
+    float drumDryness = 0.90f;
+    float stereoAir = 0.25f;
+    float melodicBrightness = 0.45f;
+    float pianoOrgan = 0.90f;
+    float tranceLead = 0.05f;
+    float cowbell = 0.05f;
+    float lofiNoise = 0.05f;
+    float luxuryPolish = 0.35f;
 };
 
 struct TrapQualityBreakdown

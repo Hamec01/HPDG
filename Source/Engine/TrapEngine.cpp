@@ -384,7 +384,7 @@ int phrase808PitchForTrapAlgebraNote(const TrapAlgebraNote& note, const Generato
         interval = 7;
     else if (bar == 3 && local >= 56)
         interval = 12;
-    else if (params.trapSubstyle == 2 && local == 44)
+    else if (params.trapSubstyle == 5 && local == 40)
         interval = third;
 
     int pitch = base + interval;
@@ -400,12 +400,12 @@ TrapAlgebraSubstyle trapAlgebraSubstyleForProject(int trapSubstyle)
     switch (trapSubstyle)
     {
         case 1: return TrapAlgebraSubstyle::DarkTrap;
-        case 2: return TrapAlgebraSubstyle::MelodicTrap;
-        case 3: return TrapAlgebraSubstyle::HardTrap;
-        case 4: return TrapAlgebraSubstyle::HardTrap;
-        case 5: return TrapAlgebraSubstyle::MelodicTrap;
+        case 2: return TrapAlgebraSubstyle::CloudTrap;
+        case 3: return TrapAlgebraSubstyle::RageTrap;
+        case 4: return TrapAlgebraSubstyle::MemphisTrap;
+        case 5: return TrapAlgebraSubstyle::LuxuryTrap;
         case 0:
-        default: return TrapAlgebraSubstyle::ClassicTrap;
+        default: return TrapAlgebraSubstyle::ATLClassic;
     }
 }
 
@@ -945,7 +945,7 @@ void TrapEngine::applyTrapAlgebraPattern(PatternProject& project,
         if (track == nullptr || track->locked || !track->enabled)
             continue;
 
-        const int ppqTick = note.tick64 * HiResTiming::kTicks1_64 + note.microTimingTicks * HiResTiming::kTicks1_64;
+        const int ppqTick = note.tick64 * HiResTiming::kTicks1_64 + note.microTimingTicks;
         const int lengthSteps = std::max(1, static_cast<int>(std::ceil(static_cast<float>(note.durationTicks) / 4.0f)));
         const bool isGhost = note.role == TrapAlgebraRole::Ghost || note.laneIndex == TrapAlgebraLanes::KickGhost || note.laneIndex == TrapAlgebraLanes::ClapGhost;
 

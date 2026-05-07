@@ -2450,8 +2450,8 @@ void testTrapAlgebraEngineSmoke()
     params.variation = 0.52f;
     params.temperature = 0.40f;
     params.qMin = 0.62f;
-    params.candidateCount = 16;
-    params.substyle = TrapAlgebraSubstyle::ClassicTrap;
+    params.candidateCount = 32;
+    params.substyle = TrapAlgebraSubstyle::ATLClassic;
 
     TrapAlgebraEngine engine;
     const auto first = engine.generate(params);
@@ -2530,6 +2530,17 @@ void testTrapAlgebraEngineSmoke()
            "Trap Algebra Engine should keep 808 density inside the musical negative-space range.");
     expect(first.score.hatVelocityVariance >= 40.0f,
            "Trap Algebra Engine hats should have non-flat velocity variance.");
+    expect(first.score.kick808CouplingScore >= 0.60f,
+           "Trap Algebra Engine should pass the core low-end trap validator.");
+    expect(first.score.hiHatMovementScore >= 0.60f,
+           "Trap Algebra Engine should pass the core hat-driver validator.");
+    expect(first.score.negativeSpaceScore >= 0.35f,
+           "Trap Algebra Engine should preserve trap negative space.");
+    const auto firstAllNotes = first.matrix.allNotes();
+    expect(std::none_of(firstAllNotes.begin(), firstAllNotes.end(), [](const auto& note)
+    {
+        return std::abs(note.microTimingTicks) >= 60;
+    }), "Trap Algebra Engine microtiming must stay in PPQ subticks, not whole 1/64 ticks.");
     expect(first.score.d01 > 0.001f || first.score.d02 > 0.001f || first.score.d03 > 0.001f,
            "Trap Algebra Engine should not return four identical bars.");
     expect(first.score.quality > 0.50f,
@@ -2575,6 +2586,36 @@ void testTrapAlgebraEngineSmoke()
                "Trap Algebra Engine should not hard-wire non-mandatory kick positions across generations: tick "
                    + std::to_string(absoluteTick));
     }
+
+    const std::array<TrapAlgebraSubstyle, 6> substyles {{
+        TrapAlgebraSubstyle::ATLClassic,
+        TrapAlgebraSubstyle::DarkTrap,
+        TrapAlgebraSubstyle::CloudTrap,
+        TrapAlgebraSubstyle::RageTrap,
+        TrapAlgebraSubstyle::MemphisTrap,
+        TrapAlgebraSubstyle::LuxuryTrap
+    }};
+    std::vector<int> profileHatCounts;
+    std::vector<int> profileRollCounts;
+    for (const auto substyle : substyles)
+    {
+        auto styledParams = params;
+        styledParams.substyle = substyle;
+        styledParams.seed += static_cast<int>(profileHatCounts.size()) * 97;
+        const auto pattern = engine.generate(styledParams);
+        expect(pattern.score.kick808CouplingScore >= 0.60f,
+               "Every Trap Algebra substyle should retain trap low-end core.");
+        expect(pattern.score.hiHatMovementScore >= 0.55f,
+               "Every Trap Algebra substyle should retain a readable hat driver.");
+        expect(pattern.score.negativeSpaceScore >= 0.35f,
+               "Every Trap Algebra substyle should retain negative space.");
+        profileHatCounts.push_back(pattern.matrix.countLane(TrapAlgebraLanes::HiHat) + pattern.matrix.countLane(TrapAlgebraLanes::HatAccent));
+        profileRollCounts.push_back(pattern.score.rollCount);
+    }
+    expect(*std::max_element(profileHatCounts.begin(), profileHatCounts.end()) > *std::min_element(profileHatCounts.begin(), profileHatCounts.end()),
+           "Trap Algebra substyles should separate through hat-rate priors.");
+    expect(*std::max_element(profileRollCounts.begin(), profileRollCounts.end()) > *std::min_element(profileRollCounts.begin(), profileRollCounts.end()),
+           "Trap Algebra substyles should separate through roll-rate priors.");
 }
 
 void testTrapEngineUsesAlgebraGenerationSmoke()
