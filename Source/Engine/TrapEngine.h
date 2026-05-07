@@ -8,6 +8,7 @@
 #include "Trap/Trap808Generator.h"
 #include "Trap/TrapHatFxGenerator.h"
 #include "Trap/TrapHatGenerator.h"
+#include "Trap/TrapAlgebraEngine.h"
 #include "Trap/TrapKickGenerator.h"
 #include "Trap/TrapPhrasePlanner.h"
 #include "Trap/TrapSnareGenerator.h"
@@ -83,6 +84,9 @@ private:
                                std::mt19937& rng,
                                const std::unordered_set<TrackType>& mutableTracks) const;
     void validatePattern(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks) const;
+    void applyTrapAlgebraPattern(PatternProject& project,
+                                 const TrapAlgebraPattern& pattern,
+                                 const std::unordered_set<TrackType>& mutableTracks) const;
 
     TrapKickGenerator kickGenerator;
     TrapSnareGenerator snareGenerator;

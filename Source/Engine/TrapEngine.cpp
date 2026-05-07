@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "../Core/TrackSemantics.h"
 #include "../Core/TrackRegistry.h"
+#include "../Core/Sub808Types.h"
 #include "HiResTiming.h"
 #include "PatternPerformanceTransformEngine.h"
 #include "StyleInfluence.h"
@@ -319,6 +321,98 @@ void pruneHatFxOverLowEndAnchors(TrackState& hatFx,
         return kickHere && subHere && n.velocity >= 86;
     }), hatFx.notes.end());
 }
+
+std::optional<TrackType> trackTypeForTrapAlgebraLane(int lane)
+{
+    switch (lane)
+    {
+        case TrapAlgebraLanes::HiHat: return TrackType::HiHat;
+        case TrapAlgebraLanes::HatAccent: return TrackType::HatFX;
+        case TrapAlgebraLanes::OpenHat: return TrackType::OpenHat;
+        case TrapAlgebraLanes::Snare: return TrackType::Snare;
+        case TrapAlgebraLanes::ClapGhost: return TrackType::ClapGhostSnare;
+        case TrapAlgebraLanes::Kick: return TrackType::Kick;
+        case TrapAlgebraLanes::KickGhost: return TrackType::GhostKick;
+        case TrapAlgebraLanes::Ride: return TrackType::Ride;
+        case TrapAlgebraLanes::Cymbal: return TrackType::Cymbal;
+        case TrapAlgebraLanes::Perc: return TrackType::Perc;
+        case TrapAlgebraLanes::Sub808: return TrackType::Sub808;
+        default: return std::nullopt;
+    }
+}
+
+int pitchForTrapAlgebraLane(int lane)
+{
+    switch (lane)
+    {
+        case TrapAlgebraLanes::HiHat: return 42;
+        case TrapAlgebraLanes::HatAccent: return 44;
+        case TrapAlgebraLanes::OpenHat: return 46;
+        case TrapAlgebraLanes::Snare: return 38;
+        case TrapAlgebraLanes::ClapGhost: return 39;
+        case TrapAlgebraLanes::Kick: return 36;
+        case TrapAlgebraLanes::KickGhost: return 35;
+        case TrapAlgebraLanes::Ride: return 51;
+        case TrapAlgebraLanes::Cymbal: return 49;
+        case TrapAlgebraLanes::Perc: return 50;
+        case TrapAlgebraLanes::Sub808: return 36;
+        default: return 36;
+    }
+}
+
+int phrase808PitchForTrapAlgebraNote(const TrapAlgebraNote& note, const GeneratorParams& params)
+{
+    if (note.laneIndex != TrapAlgebraLanes::Sub808)
+        return pitchForTrapAlgebraLane(note.laneIndex);
+
+    const int root = ((params.keyRoot % 12) + 12) % 12;
+    int base = 24 + root;
+    if (base < 28)
+        base += 12;
+    while (base > 40)
+        base -= 12;
+
+    const bool major = params.scaleMode == 1;
+    const int third = major ? 4 : 3;
+    const int local = note.tick64 % 64;
+    const int bar = note.barIndex % 4;
+
+    int interval = 0;
+    if (bar == 1 && (local == 24 || local == 36))
+        interval = 7;
+    else if (bar == 2 && local >= 32)
+        interval = 7;
+    else if (bar == 3 && local >= 56)
+        interval = 12;
+    else if (params.trapSubstyle == 2 && local == 44)
+        interval = third;
+
+    int pitch = base + interval;
+    while (pitch > 48)
+        pitch -= 12;
+    while (pitch < 28)
+        pitch += 12;
+    return std::clamp(pitch, 28, 48);
+}
+
+TrapAlgebraSubstyle trapAlgebraSubstyleForProject(int trapSubstyle)
+{
+    switch (trapSubstyle)
+    {
+        case 1: return TrapAlgebraSubstyle::DarkTrap;
+        case 2: return TrapAlgebraSubstyle::MelodicTrap;
+        case 3: return TrapAlgebraSubstyle::HardTrap;
+        case 4: return TrapAlgebraSubstyle::HardTrap;
+        case 5: return TrapAlgebraSubstyle::MelodicTrap;
+        case 0:
+        default: return TrapAlgebraSubstyle::ClassicTrap;
+    }
+}
+
+juce::String semanticRoleForTrapAlgebraNote(const TrapAlgebraNote& note)
+{
+    return juce::String("trap_algebra_") + note.roleString;
+}
 }
 
 TrapEngine::TrapEngine() = default;
@@ -327,9 +421,6 @@ void TrapEngine::generate(PatternProject& project)
 {
     applyTrapStyleInfluence(project);
     const auto& style = getTrapProfile(project.params.trapSubstyle);
-    const auto styleSpec = getTrapStyleSpec(style.substyle);
-    std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.generationCounter * 41 + 601));
-    const auto phrase = TrapPhrasePlanner::createPlan(std::max(1, project.params.bars), project.params.densityAmount, rng);
 
     std::unordered_set<TrackType> mutableTracks;
     for (auto& track : project.tracks)
@@ -345,15 +436,23 @@ void TrapEngine::generate(PatternProject& project)
         mutableTracks.insert(track.type);
     }
 
-    generateTrapSnareBackbone(project, style, phrase, rng, mutableTracks);
-    generateTrapKickSkeleton(project, style, phrase, rng, mutableTracks);
-    generateSub808RhythmFromTrapKicks(project, style, styleSpec, phrase, rng, mutableTracks);
-    assignTrapSub808Pitches(project, style, styleSpec, phrase, rng, mutableTracks);
-    applyTrapSub808Slides(project, style, styleSpec, phrase, rng, mutableTracks);
-    generateTrapHiHatScaffold(project, style, phrase, rng, mutableTracks);
-    generateTrapHatFX(project, style, phrase, rng, mutableTracks);
-    generateTrapSupportLanes(project, style, styleSpec, phrase, rng, mutableTracks);
-    applyTrapHumanization(project, style, rng, mutableTracks);
+    TrapAlgebraParams algebraParams;
+    algebraParams.seed = project.params.seed + project.generationCounter * 41 + 601;
+    algebraParams.bars = std::max(1, project.params.bars);
+    algebraParams.bpm = project.params.bpm;
+    algebraParams.density = project.params.densityAmount;
+    algebraParams.swing = std::clamp(project.params.swingPercent / 100.0f, 0.50f, 0.60f);
+    algebraParams.humanize = project.params.humanizeAmount;
+    algebraParams.variation = std::max(project.params.velocityAmount, project.params.timingAmount);
+    algebraParams.temperature = 0.40f;
+    algebraParams.qMin = 0.62f;
+    algebraParams.candidateCount = 32;
+    algebraParams.substyle = trapAlgebraSubstyleForProject(project.params.trapSubstyle);
+
+    const auto algebraPattern = TrapAlgebraEngine().generate(algebraParams);
+    applyTrapAlgebraPattern(project, algebraPattern, mutableTracks);
+
+    juce::ignoreUnused(style);
     validatePattern(project, mutableTracks);
     PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
@@ -372,21 +471,27 @@ void TrapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
         return;
 
     const auto& style = getTrapProfile(project.params.trapSubstyle);
-    const auto styleSpec = getTrapStyleSpec(style.substyle);
-    std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + static_cast<int>(trackType) * 37 + project.generationCounter * 19 + 509));
-    const auto phrase = TrapPhrasePlanner::createPlan(std::max(1, project.params.bars), project.params.densityAmount, rng);
 
     std::unordered_set<TrackType> mutableTracks { trackType };
     expandCoupledTracks(trackType, mutableTracks);
-    generateTrapSnareBackbone(project, style, phrase, rng, mutableTracks);
-    generateTrapKickSkeleton(project, style, phrase, rng, mutableTracks);
-    generateSub808RhythmFromTrapKicks(project, style, styleSpec, phrase, rng, mutableTracks);
-    assignTrapSub808Pitches(project, style, styleSpec, phrase, rng, mutableTracks);
-    applyTrapSub808Slides(project, style, styleSpec, phrase, rng, mutableTracks);
-    generateTrapHiHatScaffold(project, style, phrase, rng, mutableTracks);
-    generateTrapHatFX(project, style, phrase, rng, mutableTracks);
-    generateTrapSupportLanes(project, style, styleSpec, phrase, rng, mutableTracks);
-    applyTrapHumanization(project, style, rng, mutableTracks);
+
+    TrapAlgebraParams algebraParams;
+    algebraParams.seed = project.params.seed + static_cast<int>(trackType) * 37 + project.generationCounter * 19 + 509;
+    algebraParams.bars = std::max(1, project.params.bars);
+    algebraParams.bpm = project.params.bpm;
+    algebraParams.density = project.params.densityAmount;
+    algebraParams.swing = std::clamp(project.params.swingPercent / 100.0f, 0.50f, 0.60f);
+    algebraParams.humanize = project.params.humanizeAmount;
+    algebraParams.variation = std::max(project.params.velocityAmount, project.params.timingAmount);
+    algebraParams.temperature = 0.40f;
+    algebraParams.qMin = 0.62f;
+    algebraParams.candidateCount = 24;
+    algebraParams.substyle = trapAlgebraSubstyleForProject(project.params.trapSubstyle);
+
+    const auto algebraPattern = TrapAlgebraEngine().generate(algebraParams);
+    applyTrapAlgebraPattern(project, algebraPattern, mutableTracks);
+
+    juce::ignoreUnused(style);
     validatePattern(project, mutableTracks);
     PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
@@ -397,192 +502,31 @@ void TrapEngine::regenerateTrackVariation(PatternProject& project, TrackType tra
     if (target == nullptr || target->locked || !target->enabled)
         return;
 
-    const auto before = target->notes;
     generateTrackNew(project, trackType);
 
     target = findTrack(project, trackType);
     if (target == nullptr)
         return;
 
-    const auto& styleDefaults = getGenreStyleDefaults(GenreType::Trap, project.params.trapSubstyle);
-    const auto& laneDefaults = getLaneStyleDefaults(styleDefaults, trackType);
-    const float rgIntensity = std::clamp(laneDefaults.rgVariationIntensity, 0.6f, 1.35f);
-
-    if (trackType == TrackType::HiHat)
-    {
-        std::vector<NoteEvent> merged = target->notes;
-        for (const auto& oldNote : before)
-            if (isTrapHatBackbone(oldNote))
-                merged.push_back(oldNote);
-        target->notes = std::move(merged);
-    }
-    else if (trackType == TrackType::HatFX)
-    {
-        std::vector<NoteEvent> merged = target->notes;
-        const size_t keep = std::min(static_cast<size_t>(before.size() * 0.2f * rgIntensity), before.size());
-        for (size_t i = 0; i < keep; ++i)
-            merged.push_back(before[i]);
-        target->notes = std::move(merged);
-    }
-    else
-    {
-        const size_t keep = std::min(static_cast<size_t>(before.size() * 0.32f * rgIntensity), target->notes.size());
-        for (size_t i = 0; i < keep; ++i)
-            target->notes[i] = before[i];
-    }
-
     dedupeAndSort(target->notes);
     target->variationId += 1;
-    target->mutationDepth = std::clamp(target->mutationDepth + 0.08f, 0.0f, 1.0f);
+    target->mutationDepth = std::clamp(target->mutationDepth + 0.10f, 0.0f, 1.0f);
 
     PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
 }
 
 void TrapEngine::mutatePattern(PatternProject& project)
 {
-    applyTrapStyleInfluence(project);
-    std::vector<TrackType> candidates;
-    for (const auto& track : project.tracks)
-        if (!track.locked && track.enabled)
-            candidates.push_back(track.type);
-
-    if (candidates.empty())
-        return;
-
-    std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.mutationCounter * 401 + 3));
-    std::shuffle(candidates.begin(), candidates.end(), rng);
-    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
-
-    const int count = std::max(1, static_cast<int>(candidates.size() / 3));
-    for (int i = 0; i < count && i < static_cast<int>(candidates.size()); ++i)
-        mutateTrack(project, candidates[static_cast<size_t>(i)]);
-
-    if (chance(rng) < 0.68f)
-    {
-        auto* kick = findTrack(project, TrackType::Kick);
-        auto* sub = findTrack(project, TrackType::Sub808);
-        if (kick != nullptr && sub != nullptr
-            && !kick->locked && kick->enabled
-            && !sub->locked && sub->enabled)
-        {
-            mutateTrack(project, TrackType::Kick);
-            mutateTrack(project, TrackType::Sub808);
-        }
-    }
+    generate(project);
 }
 
 void TrapEngine::mutateTrack(PatternProject& project, TrackType trackType)
 {
-    applyTrapStyleInfluence(project);
     auto* track = findTrack(project, trackType);
     if (track == nullptr || track->locked || !track->enabled)
         return;
 
-    if (track->notes.empty())
-    {
-        generateTrackNew(project, trackType);
-        return;
-    }
-
-    std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.mutationCounter * 313 + static_cast<int>(trackType) * 71));
-    std::uniform_real_distribution<float> chance(0.0f, 1.0f);
-
-    const auto& styleDefaults = getGenreStyleDefaults(GenreType::Trap, project.params.trapSubstyle);
-    const auto& lane = getLaneStyleDefaults(styleDefaults, trackType);
-    const float intensity = std::clamp(lane.mutationIntensity, 0.5f, 1.4f);
-
-    if (trackType == TrackType::HiHat || trackType == TrackType::HatFX)
-    {
-        TrackState rebuilt;
-        rebuilt.type = track->type;
-
-        std::uniform_int_distribution<int> shiftPicker(0, 3);
-        for (const auto& note : track->notes)
-        {
-            const bool backbone = trackType == TrackType::HiHat && isTrapHatBackbone(note);
-            if (!backbone && chance(rng) < 0.24f * intensity)
-                continue;
-
-            int tick = HiResTiming::noteTick(note);
-            if (!backbone && chance(rng) < 0.56f * intensity)
-            {
-                const int pick = shiftPicker(rng);
-                const int delta = pick == 0 ? -HiResTiming::kTicks1_64
-                                            : pick == 1 ? HiResTiming::kTicks1_64
-                                                        : pick == 2 ? -HiResTiming::kTicks1_32
-                                                                    : HiResTiming::kTicks1_32;
-                tick += delta;
-            }
-
-            const int velJ = static_cast<int>(std::round((chance(rng) - 0.5f) * 18.0f));
-            HiResTiming::addNoteAtTick(rebuilt,
-                                       note.pitch,
-                                       tick,
-                                       std::clamp(note.velocity + velJ, 1, 127),
-                                       note.isGhost,
-                                       std::max(1, project.params.bars),
-                                       note.length);
-        }
-
-        if (chance(rng) < 0.52f * intensity)
-        {
-            const int bars = std::max(1, project.params.bars);
-            const int edgeTick = bars * HiResTiming::kTicksPerBar4_4 - HiResTiming::kTicks1_8;
-            for (int i = 0; i < 4; ++i)
-                HiResTiming::addNoteAtTick(rebuilt,
-                                           44,
-                                           edgeTick + i * HiResTiming::kTicks1_64,
-                                           std::clamp(84 + i * 8, 1, 127),
-                                           true,
-                                           bars);
-        }
-
-        track->notes = std::move(rebuilt.notes);
-        dedupeAndSort(track->notes);
-        track->variationId += 1;
-        track->mutationDepth = std::clamp(track->mutationDepth + 0.14f, 0.0f, 1.0f);
-        PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
-        return;
-    }
-
-    if (chance(rng) < 0.52f * intensity)
-    {
-        std::vector<size_t> removable;
-        for (size_t i = 0; i < track->notes.size(); ++i)
-            if (!isAnchorStep(trackType, track->notes[i].step % 16))
-                removable.push_back(i);
-
-        if (!removable.empty())
-        {
-            std::uniform_int_distribution<size_t> pick(0, removable.size() - 1);
-            track->notes.erase(track->notes.begin() + static_cast<long long>(removable[pick(rng)]));
-        }
-    }
-
-    if (!track->notes.empty() && chance(rng) < 0.66f * intensity)
-    {
-        std::uniform_int_distribution<size_t> pick(0, track->notes.size() - 1);
-        auto& n = track->notes[pick(rng)];
-        if (!isAnchorStep(trackType, n.step % 16))
-        {
-            std::uniform_int_distribution<int> shift(-1, 1);
-            n.step = std::clamp(n.step + shift(rng), 0, std::max(0, project.params.bars * 16 - 1));
-        }
-    }
-
-    if (!track->notes.empty() && chance(rng) < 0.72f * intensity)
-    {
-        std::uniform_int_distribution<size_t> pick(0, track->notes.size() - 1);
-        auto& n = track->notes[pick(rng)];
-        std::uniform_int_distribution<int> v(-10, 10);
-        n.velocity = std::clamp(n.velocity + v(rng), 1, 127);
-    }
-
-    dedupeAndSort(track->notes);
-    track->variationId += 1;
-    track->mutationDepth = std::clamp(track->mutationDepth + 0.12f, 0.0f, 1.0f);
-
-    PatternPerformanceTransformEngine::captureBasePatterns(project, { trackType });
+    generateTrackNew(project, trackType);
 }
 
 void TrapEngine::regenerateTrackInternal(PatternProject& project,
@@ -955,10 +899,16 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
     {
         dedupeAndSort(sub->notes);
         moveSubOffBackbeat(*sub, snare, clap, bars);
-        clampLowEndStartsPerBar(*sub, bars, 3);
+        const bool algebraSub = std::any_of(sub->notes.begin(), sub->notes.end(), [](const NoteEvent& note)
+        {
+            return note.semanticRole.startsWith("trap_algebra_");
+        });
+        clampLowEndStartsPerBar(*sub, bars, algebraSub ? 4 : 3);
         clampLowEndPitchChanges(*sub, bars, 3);
-        ensureLowEndPhraseEnding(*sub, bars);
+        if (!algebraSub)
+            ensureLowEndPhraseEnding(*sub, bars);
         dedupeAndSort(sub->notes);
+        sub->sub808Notes = toSub808NoteEvents(sub->notes);
     }
 
     auto* hatFx = findTrack(project, TrackType::HatFX);
@@ -966,6 +916,59 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
     {
         pruneHatFxOverLowEndAnchors(*hatFx, kick, sub);
         dedupeAndSort(hatFx->notes);
+    }
+}
+
+void TrapEngine::applyTrapAlgebraPattern(PatternProject& project,
+                                         const TrapAlgebraPattern& pattern,
+                                         const std::unordered_set<TrackType>& mutableTracks) const
+{
+    const int bars = std::max(1, project.params.bars);
+
+    for (auto& track : project.tracks)
+    {
+        if (mutableTracks.count(track.type) == 0 || track.locked || !track.enabled)
+            continue;
+
+        track.notes.clear();
+        if (track.type == TrackType::Sub808)
+            track.sub808Notes.clear();
+    }
+
+    for (const auto& note : pattern.matrix.allNotes())
+    {
+        const auto type = trackTypeForTrapAlgebraLane(note.laneIndex);
+        if (!type.has_value() || mutableTracks.count(*type) == 0)
+            continue;
+
+        auto* track = findTrack(project, *type);
+        if (track == nullptr || track->locked || !track->enabled)
+            continue;
+
+        const int ppqTick = note.tick64 * HiResTiming::kTicks1_64 + note.microTimingTicks * HiResTiming::kTicks1_64;
+        const int lengthSteps = std::max(1, static_cast<int>(std::ceil(static_cast<float>(note.durationTicks) / 4.0f)));
+        const bool isGhost = note.role == TrapAlgebraRole::Ghost || note.laneIndex == TrapAlgebraLanes::KickGhost || note.laneIndex == TrapAlgebraLanes::ClapGhost;
+
+        HiResTiming::addNoteAtTick(*track,
+                                   phrase808PitchForTrapAlgebraNote(note, project.params),
+                                   ppqTick,
+                                   note.velocity,
+                                   isGhost,
+                                   bars,
+                                   lengthSteps);
+
+        if (!track->notes.empty())
+            track->notes.back().semanticRole = semanticRoleForTrapAlgebraNote(note);
+    }
+
+    for (auto& track : project.tracks)
+    {
+        if (mutableTracks.count(track.type) == 0)
+            continue;
+
+        dedupeAndSort(track.notes);
+        if (track.type == TrackType::Sub808)
+            track.sub808Notes = toSub808NoteEvents(track.notes);
     }
 }
 } // namespace bbg

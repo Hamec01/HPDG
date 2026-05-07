@@ -29,6 +29,8 @@
 #include "../Source/Engine/StyleDefinitionLoader.h"
 #include "../Source/Engine/StyleInfluence.h"
 #include "../Source/Engine/SubstyleRuleEnforcer.h"
+#include "../Source/Engine/TrapEngine.h"
+#include "../Source/Engine/Trap/TrapAlgebraEngine.h"
 
 namespace bbg
 {
@@ -2437,6 +2439,223 @@ void testTrapStyleInfluenceSmoke()
     expect(TrapStyleInfluence::apply(project, &error), "TrapStyleInfluence smoke application failed: " + error);
 }
 
+void testTrapAlgebraEngineSmoke()
+{
+    TrapAlgebraParams params;
+    params.seed = 9090;
+    params.bars = 4;
+    params.density = 0.58f;
+    params.swing = 0.55f;
+    params.humanize = 0.42f;
+    params.variation = 0.52f;
+    params.temperature = 0.40f;
+    params.qMin = 0.62f;
+    params.candidateCount = 16;
+    params.substyle = TrapAlgebraSubstyle::ClassicTrap;
+
+    TrapAlgebraEngine engine;
+    const auto first = engine.generate(params);
+    const auto second = engine.generate(params);
+
+    const auto notesEqual = [](const TrapAlgebraPattern& a, const TrapAlgebraPattern& b)
+    {
+        const auto lhs = a.matrix.allNotes();
+        const auto rhs = b.matrix.allNotes();
+        if (lhs.size() != rhs.size())
+            return false;
+
+        for (size_t index = 0; index < lhs.size(); ++index)
+        {
+            const auto& left = lhs[index];
+            const auto& right = rhs[index];
+            if (left.laneIndex != right.laneIndex
+                || left.barIndex != right.barIndex
+                || left.tick64 != right.tick64
+                || left.durationTicks != right.durationTicks
+                || left.velocity != right.velocity
+                || left.microTimingTicks != right.microTimingTicks
+                || left.role != right.role
+                || left.roleString != right.roleString)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    expect(notesEqual(first, second),
+           "Trap Algebra Engine should be deterministic for the same seed and params.");
+
+    for (int bar = 0; bar < params.bars; ++bar)
+        expect(first.matrix.hasNote(TrapAlgebraLanes::Snare, bar * 64 + 32),
+               "Trap Algebra Engine must keep snare backbone on tick 32 in every bar.");
+
+    int barsWithSnareAnswer = 0;
+    for (int bar = 0; bar < params.bars; ++bar)
+    {
+        const auto kicks = first.matrix.notesForLane(TrapAlgebraLanes::Kick);
+        std::vector<int> barKickTicks;
+        for (const auto& kick : kicks)
+            if (kick.barIndex == bar)
+                barKickTicks.push_back(kick.tick64 % 64);
+
+        expect(static_cast<int>(barKickTicks.size()) >= 1
+                   && static_cast<int>(barKickTicks.size()) <= ((bar % 4) == 3 ? 4 : 3),
+               "Trap Algebra Engine should keep main kick count inside the pocket range.");
+        expect(std::none_of(barKickTicks.begin(), barKickTicks.end(), [bar](int tick)
+        {
+            juce::ignoreUnused(bar);
+            return tick == 12 || tick == 28 || tick == 44 || tick == 52 || tick == 60;
+        }), "Trap Algebra Engine should avoid stumbling main kick positions.");
+
+        const bool hasSnareAnswer = std::any_of(barKickTicks.begin(), barKickTicks.end(), [](int tick)
+        {
+            return tick == 16 || tick == 24 || tick == 36 || tick == 40;
+        });
+        if (hasSnareAnswer)
+            ++barsWithSnareAnswer;
+
+        for (const auto& kick : kicks)
+            if (kick.barIndex == bar)
+                expect(kick.microTimingTicks == 0,
+                       "Trap Algebra Engine should keep main kicks locked; hats carry swing, not the kick backbone.");
+    }
+    expect(barsWithSnareAnswer >= 3,
+           "Trap Algebra Engine should bind the kick phrase to the snare backbone across the phrase.");
+
+    expect(first.score.kick808CouplingRatio >= 0.70f,
+           "Trap Algebra Engine should strongly couple kick starts with 808 starts.");
+    expect(first.score.sub808Density >= 0.18f && first.score.sub808Density <= 0.65f,
+           "Trap Algebra Engine should keep 808 density inside the musical negative-space range.");
+    expect(first.score.hatVelocityVariance >= 40.0f,
+           "Trap Algebra Engine hats should have non-flat velocity variance.");
+    expect(first.score.d01 > 0.001f || first.score.d02 > 0.001f || first.score.d03 > 0.001f,
+           "Trap Algebra Engine should not return four identical bars.");
+    expect(first.score.quality > 0.50f,
+           "Trap Algebra Engine should select by positive Q score.");
+    expect(first.debugSummary.contains("Trap Algebra Engine")
+               && first.debugSummary.contains("kick/808 coupling ratio")
+               && first.debugSummary.contains("bar distances D01/D02/D03"),
+           "Trap Algebra Engine debug summary should expose optimizer diagnostics.");
+
+    std::vector<std::vector<int>> kickSignatures;
+    for (int i = 0; i < 24; ++i)
+    {
+        auto variedParams = params;
+        variedParams.seed = params.seed + i * 41;
+        const auto pattern = engine.generate(variedParams);
+        std::vector<int> signature;
+        for (const auto& kick : pattern.matrix.notesForLane(TrapAlgebraLanes::Kick))
+            signature.push_back(kick.tick64);
+        std::sort(signature.begin(), signature.end());
+        kickSignatures.push_back(signature);
+    }
+
+    int uniqueKickSignatures = 0;
+    for (size_t i = 0; i < kickSignatures.size(); ++i)
+    {
+        const bool firstSeen = std::none_of(kickSignatures.begin(), kickSignatures.begin() + static_cast<std::ptrdiff_t>(i), [&](const auto& previous)
+        {
+            return previous == kickSignatures[i];
+        });
+        if (firstSeen)
+            ++uniqueKickSignatures;
+    }
+    expect(uniqueKickSignatures >= 8,
+           "Trap Algebra Engine should produce varied low-end phrases across generation seeds.");
+
+    for (int absoluteTick = 1; absoluteTick < params.bars * 64; ++absoluteTick)
+    {
+        const bool presentInEveryPattern = std::all_of(kickSignatures.begin(), kickSignatures.end(), [absoluteTick](const auto& signature)
+        {
+            return std::find(signature.begin(), signature.end(), absoluteTick) != signature.end();
+        });
+        expect(!presentInEveryPattern,
+               "Trap Algebra Engine should not hard-wire non-mandatory kick positions across generations: tick "
+                   + std::to_string(absoluteTick));
+    }
+}
+
+void testTrapEngineUsesAlgebraGenerationSmoke()
+{
+    TrapEngine engine;
+
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Trap;
+    project.params.trapSubstyle = 0;
+    project.params.bars = 4;
+    project.params.seed = 30303;
+    project.params.bpm = 140.0f;
+    project.params.densityAmount = 0.58f;
+    project.params.swingPercent = 55.0f;
+    project.params.humanizeAmount = 0.42f;
+    project.params.timingAmount = 0.44f;
+    project.params.velocityAmount = 0.50f;
+
+    for (auto& track : project.tracks)
+        track.enabled = true;
+
+    engine.generate(project);
+
+    const auto* snare = findTrackByType(project, TrackType::Snare);
+    const auto* kick = findTrackByType(project, TrackType::Kick);
+    const auto* sub = findTrackByType(project, TrackType::Sub808);
+    const auto* hat = findTrackByType(project, TrackType::HiHat);
+    expect(snare != nullptr && kick != nullptr && sub != nullptr && hat != nullptr,
+           "Trap Algebra integration smoke requires Snare, Kick, Sub808 and HiHat tracks.");
+
+    const auto hasStep = [](const TrackState* track, int step)
+    {
+        return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
+        {
+            return note.step == step;
+        });
+    };
+
+    for (int bar = 0; bar < project.params.bars; ++bar)
+        expect(hasStep(snare, bar * 16 + 8),
+               "TrapEngine Algebra path should keep the trap snare backbone on beat 3.");
+
+    int coupledKicks = 0;
+    for (const auto& kickNote : kick->notes)
+    {
+        const int kickTick = HiResTiming::noteTick(kickNote);
+        const bool coupled = std::any_of(sub->notes.begin(), sub->notes.end(), [kickTick](const NoteEvent& subNote)
+        {
+            return std::abs(HiResTiming::noteTick(subNote) - kickTick) <= HiResTiming::kTicks1_32;
+        });
+        if (coupled)
+            ++coupledKicks;
+    }
+    expect(!kick->notes.empty() && coupledKicks >= static_cast<int>(kick->notes.size() * 0.65f),
+           "TrapEngine Algebra path should preserve measurable kick/808 coupling after conversion.");
+
+    const auto velocityVariance = [](const std::vector<NoteEvent>& notes)
+    {
+        if (notes.size() < 2)
+            return 0.0f;
+        float mean = 0.0f;
+        for (const auto& note : notes)
+            mean += static_cast<float>(note.velocity);
+        mean /= static_cast<float>(notes.size());
+        float variance = 0.0f;
+        for (const auto& note : notes)
+        {
+            const float delta = static_cast<float>(note.velocity) - mean;
+            variance += delta * delta;
+        }
+        return variance / static_cast<float>(notes.size());
+    };
+
+    expect(velocityVariance(hat->notes) > 30.0f,
+           "TrapEngine Algebra path should avoid flat metronomic hats.");
+    expect(std::any_of(hat->notes.begin(), hat->notes.end(), [](const NoteEvent& note)
+    {
+        return note.semanticRole.startsWith("trap_algebra_");
+    }), "TrapEngine should source the generated hat notes from the Algebra path.");
+}
+
 void testSampleApplyWeightsSmoke()
 {
     const auto genreFirst = makeSampleApplyWeights(SampleApplyMode::GenreFirst, AnalysisMode::GenerateFromSample);
@@ -4617,6 +4836,8 @@ int main()
     failures += runTest("Drill hat copy mostly still varies smoke", testDrillHatCopyMostlyStillVariesSmoke);
     failures += runTest("Drill full engine smoke", testDrillFullEngineSmoke);
     failures += runTest("Trap style influence smoke", testTrapStyleInfluenceSmoke);
+    failures += runTest("Trap Algebra engine smoke", testTrapAlgebraEngineSmoke);
+    failures += runTest("TrapEngine uses Algebra generation smoke", testTrapEngineUsesAlgebraGenerationSmoke);
     failures += runTest("Sample apply weights smoke", testSampleApplyWeightsSmoke);
     failures += runTest("Extract pattern blend and copy smoke", testExtractPatternBlendAndCopySmoke);
     failures += runTest("Lane sample preferred tag rotation smoke", testLaneSampleBankPreferredTagRotationSmoke);

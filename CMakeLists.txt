@@ -96,6 +96,8 @@ target_sources(HPDG
     Source/Engine/Trap/TrapHatGenerator.cpp
     Source/Engine/Trap/TrapHatFxGenerator.cpp
     Source/Engine/Trap/Trap808Generator.cpp
+    Source/Engine/Trap/TrapAlgebraEngine.cpp
+    Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/StyleLabReferenceService.cpp
     Source/Services/StyleLabReferenceBrowserService.cpp
     Source/Services/MidiImportService.cpp
@@ -176,7 +178,16 @@ add_executable(HPDG_CoreTests
     Source/Engine/Rap/RapKickGenerator.cpp
     Source/Engine/Rap/RapSnareGenerator.cpp
     Source/Engine/Rap/RapHatGenerator.cpp
+    Source/Engine/TrapEngine.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
+    Source/Engine/Trap/TrapPhrasePlanner.cpp
+    Source/Engine/Trap/TrapKickGenerator.cpp
+    Source/Engine/Trap/TrapSnareGenerator.cpp
+    Source/Engine/Trap/TrapHatGenerator.cpp
+    Source/Engine/Trap/TrapHatFxGenerator.cpp
+    Source/Engine/Trap/Trap808Generator.cpp
+    Source/Engine/Trap/TrapAlgebraEngine.cpp
+    Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/StyleLabReferenceService.cpp
     Source/Services/StyleLabReferenceBrowserService.cpp

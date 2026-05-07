@@ -395,6 +395,14 @@ private:
 
     void timerCallback() override
     {
+        const bool previewPlaying = audioProcessor.isPreviewPlaying();
+        const auto transport = audioProcessor.getLastTransportSnapshot();
+        if (previewPlaying || transport.isPlaying)
+        {
+            header.setPreviewPlaying(previewPlaying);
+            return;
+        }
+
         refreshSubstyleBindingForGenre();
         audioProcessor.applySelectedStylePreset(false);
         refreshFromProcessor(false);

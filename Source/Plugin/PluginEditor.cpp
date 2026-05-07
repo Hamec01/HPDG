@@ -1781,6 +1781,34 @@ void BoomBGeneratorAudioProcessorEditor::timerCallback()
     if (isClosingEditor)
         return;
 
+    const bool previewPlaying = audioProcessor.isPreviewPlaying();
+    const auto transport = audioProcessor.getLastTransportSnapshot();
+    const float playheadStep = audioProcessor.getPreviewPlayheadStep();
+    const int desiredTimerHz = (previewPlaying || transport.isPlaying) ? 15 : 5;
+    if (desiredTimerHz != currentEditorTimerHz)
+    {
+        currentEditorTimerHz = desiredTimerHz;
+        startTimerHz(currentEditorTimerHz);
+    }
+
+    if (previewPlaying || transport.isPlaying)
+    {
+        const bool playbackStateChanged = previewPlaying != lastTimerPreviewPlaying
+            || transport.isPlaying != lastTimerTransportPlaying;
+        const bool playheadMoved = std::abs(playheadStep - lastTimerPlayheadStep) > 0.001f;
+
+        if (playbackStateChanged || playheadMoved)
+        {
+            grid.setPlayheadStep(playheadStep);
+            header.setPreviewPlaying(previewPlaying);
+        }
+
+        lastTimerPreviewPlaying = previewPlaying;
+        lastTimerTransportPlaying = transport.isPlaying;
+        lastTimerPlayheadStep = playheadStep;
+        return;
+    }
+
     const auto before = historyController.getLastObservedProjectState().has_value()
         ? *historyController.getLastObservedProjectState()
         : audioProcessor.getProjectSnapshot();
@@ -1794,16 +1822,6 @@ void BoomBGeneratorAudioProcessorEditor::timerCallback()
         pushProjectHistoryState(before, after);
     else if (!historyController.getLastObservedProjectState().has_value())
         historyController.observeProjectState(after);
-
-    const bool previewPlaying = audioProcessor.isPreviewPlaying();
-    const auto transport = audioProcessor.getLastTransportSnapshot();
-    const float playheadStep = audioProcessor.getPreviewPlayheadStep();
-    const int desiredTimerHz = (previewPlaying || transport.isPlaying) ? 30 : 5;
-    if (desiredTimerHz != currentEditorTimerHz)
-    {
-        currentEditorTimerHz = desiredTimerHz;
-        startTimerHz(currentEditorTimerHz);
-    }
 
     const bool playbackStateChanged = previewPlaying != lastTimerPreviewPlaying
         || transport.isPlaying != lastTimerTransportPlaying;
