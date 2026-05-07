@@ -7,6 +7,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include "BoomBapStyleProfile.h"
+
 namespace bbg
 {
 namespace BoomBapClassicLanes
@@ -58,7 +60,8 @@ struct BoomBapClassicAlgebraParams
     float swing = 0.58f;
     float humanize = 0.35f;
     float variation = 0.35f;
-    int candidateCount = 24;
+    int candidateCount = 48;
+    BoomBapSubstyle substyle = BoomBapSubstyle::Classic;
 };
 
 struct BoomBapClassicAlgebraNote
@@ -68,7 +71,7 @@ struct BoomBapClassicAlgebraNote
     int tick64 = 0;
     int length = 1;
     int velocity = 100;
-    int microTimingTicks = 0;
+    int microTimingTicks = 0; // PPQ subtick offset, not a whole 1/64-grid move.
     BoomBapClassicRole role = BoomBapClassicRole::Support;
     juce::String roleString = "support";
 };
@@ -78,9 +81,17 @@ struct BoomBapClassicScoreBreakdown
     float backbeatScore = 0.0f;
     float kickAnchorScore = 0.0f;
     float grooveScore = 0.0f;
+    float breakResemblanceScore = 0.0f;
+    float microPlausibilityScore = 0.0f;
+    float negativeSpaceScore = 0.0f;
+    float lowEndDisciplineScore = 0.0f;
     float variationScore = 0.0f;
     float densityBalanceScore = 0.0f;
     float velocityHumanityScore = 0.0f;
+    float trapLeakPenalty = 0.0f;
+    float earlySnarePenalty = 0.0f;
+    float overHumanizePenalty = 0.0f;
+    float sub808OverusePenalty = 0.0f;
     float conflictPenalty = 0.0f;
     float spamPenalty = 0.0f;
     float quality = 0.0f;

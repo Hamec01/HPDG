@@ -32,6 +32,23 @@ int countLane(const BoomBapClassicAlgebraPattern& pattern, int lane)
     return static_cast<int>(pattern.notesByLane[static_cast<size_t>(lane)].size());
 }
 
+int activeLaneCountAtTick(const BoomBapClassicAlgebraPattern& pattern, int tick64)
+{
+    int count = 0;
+    for (int lane = 0; lane < BoomBapClassicLanes::Count; ++lane)
+    {
+        const auto& notes = pattern.notesByLane[static_cast<size_t>(lane)];
+        if (std::any_of(notes.begin(), notes.end(), [tick64](const auto& note)
+        {
+            return note.tick64 <= tick64 && tick64 < note.tick64 + std::max(1, note.length);
+        }))
+        {
+            ++count;
+        }
+    }
+    return count;
+}
+
 float closenessScore(int value, int ideal, int tolerance)
 {
     if (tolerance <= 0)
@@ -106,6 +123,12 @@ BoomBapClassicScoreBreakdown BoomBapClassicPatternScorer::score(const BoomBapCla
     out.grooveScore = 0.45f * closenessScore(kickCount, idealKicks, bars * 2)
         + 0.35f * closenessScore(hats, bars * 8 + static_cast<int>(params.density * bars * 3.0f), bars * 4)
         + 0.20f * closenessScore(ghosts, static_cast<int>(params.density * bars * 1.5f), bars * 2);
+    out.breakResemblanceScore = std::clamp(0.50f * out.backbeatScore
+                                               + 0.25f * out.kickAnchorScore
+                                               + 0.15f * closenessScore(ghosts, static_cast<int>(params.density * bars * 1.2f), bars * 2)
+                                               + 0.10f * closenessScore(hats, bars * 8, bars * 3),
+                                           0.0f,
+                                           1.0f);
 
     std::vector<std::set<int>> signatures;
     for (int bar = 0; bar < bars; ++bar)
@@ -131,6 +154,36 @@ BoomBapClassicScoreBreakdown BoomBapClassicPatternScorer::score(const BoomBapCla
     out.velocityHumanityScore = 0.65f * velocityVarianceScore(pattern.notesByLane[BoomBapClassicLanes::HiHat])
         + 0.35f * velocityVarianceScore(pattern.allNotes());
 
+    int plausibleMicro = 0;
+    int earlyMainSnare = 0;
+    int overMicro = 0;
+    for (const auto& note : pattern.allNotes())
+    {
+        if (std::abs(note.microTimingTicks) <= 48)
+            ++plausibleMicro;
+        else
+            ++overMicro;
+
+        if (note.laneIndex == BoomBapClassicLanes::Snare && note.role == BoomBapClassicRole::Anchor && note.microTimingTicks < 0)
+            ++earlyMainSnare;
+    }
+    out.microPlausibilityScore = totalNotes > 0 ? static_cast<float>(plausibleMicro) / static_cast<float>(totalNotes) : 1.0f;
+    out.earlySnarePenalty = std::clamp(earlyMainSnare / static_cast<float>(bars * 2), 0.0f, 1.0f);
+    out.overHumanizePenalty = std::clamp(overMicro / static_cast<float>(std::max(1, totalNotes)), 0.0f, 1.0f);
+
+    int overloadedMoments = 0;
+    for (int tick = 0; tick < bars * 64; ++tick)
+    {
+        const int active = activeLaneCountAtTick(pattern, tick);
+        if (active > 4)
+            overloadedMoments += (active - 4) * (active - 4);
+    }
+    out.negativeSpaceScore = std::clamp(1.0f - overloadedMoments / static_cast<float>(bars * 18), 0.0f, 1.0f);
+
+    const int sub808 = countLane(pattern, BoomBapClassicLanes::Sub808);
+    out.lowEndDisciplineScore = sub808 == 0 ? 1.0f : std::clamp(1.0f - std::max(0, sub808 - std::max(1, bars / 4)) * 0.5f, 0.0f, 1.0f);
+    out.sub808OverusePenalty = std::clamp(std::max(0, sub808 - std::max(1, bars / 4)) * 0.35f, 0.0f, 1.0f);
+
     int collisions = 0;
     for (int bar = 0; bar < bars; ++bar)
     {
@@ -141,19 +194,48 @@ BoomBapClassicScoreBreakdown BoomBapClassicPatternScorer::score(const BoomBapCla
     const int openHats = countLane(pattern, BoomBapClassicLanes::OpenHat);
     const int cymbals = countLane(pattern, BoomBapClassicLanes::Cymbal);
     const int perc = countLane(pattern, BoomBapClassicLanes::Perc);
+    int hatMachineGunRuns = 0;
+    for (int lane : { BoomBapClassicLanes::HiHat, BoomBapClassicLanes::HatAccent })
+    {
+        std::array<bool, 256> active {};
+        for (const auto& note : pattern.notesByLane[static_cast<size_t>(lane)])
+            if (note.tick64 >= 0 && note.tick64 < static_cast<int>(active.size()))
+                active[static_cast<size_t>(note.tick64)] = true;
+
+        int run = 0;
+        for (int tick = 0; tick < bars * 64 && tick < static_cast<int>(active.size()); ++tick)
+        {
+            run = active[static_cast<size_t>(tick)] ? run + 1 : 0;
+            if (run >= 4)
+                ++hatMachineGunRuns;
+        }
+    }
     out.conflictPenalty = std::clamp(collisions / static_cast<float>(bars) + std::max(0, openHats - 2) * 0.4f + std::max(0, cymbals - 2) * 0.4f, 0.0f, 2.0f);
     out.spamPenalty = std::clamp(std::max(0, kickCount - bars * 4) * 0.25f
                                      + std::max(0, hats - bars * 13) * 0.08f
                                      + std::max(0, perc - 5) * 0.25f,
                                  0.0f,
                                  2.0f);
+    out.trapLeakPenalty = std::clamp(hatMachineGunRuns * 0.20f
+                                         + std::max(0, hats - bars * 14) * 0.06f
+                                         + (sub808 > 0 && params.substyle == BoomBapSubstyle::Classic ? 0.6f : 0.0f),
+                                     0.0f,
+                                     2.0f);
 
     out.quality = 1.4f * out.backbeatScore
         + 1.2f * out.kickAnchorScore
         + 1.3f * out.grooveScore
+        + 1.0f * out.breakResemblanceScore
+        + 0.8f * out.microPlausibilityScore
+        + 0.9f * out.negativeSpaceScore
+        + 0.8f * out.lowEndDisciplineScore
         + 0.9f * out.variationScore
         + 0.8f * out.densityBalanceScore
         + 0.7f * out.velocityHumanityScore
+        - 1.2f * out.trapLeakPenalty
+        - 1.0f * out.earlySnarePenalty
+        - 0.8f * out.overHumanizePenalty
+        - 0.9f * out.sub808OverusePenalty
         - 1.2f * out.conflictPenalty
         - 1.0f * out.spamPenalty;
     return out;

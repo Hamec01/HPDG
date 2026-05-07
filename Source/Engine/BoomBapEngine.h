@@ -8,6 +8,7 @@
 
 #include "GenreEngine.h"
 #include "BoomBap/BoomBapGhostGenerator.h"
+#include "BoomBap/BoomBapClassicAlgebraGenerator.h"
 #include "BoomBap/BoomBapGrooveBlueprint.h"
 #include "BoomBap/BoomBapHatGenerator.h"
 #include "BoomBap/BoomBapKickGenerator.h"
@@ -78,6 +79,7 @@ private:
                          const BoomBapGrooveBlueprint& blueprint,
                          const BoomBapLaneActivationPlan& lanePlan,
                          const std::unordered_set<TrackType>& mutableTracks) const;
+    bool generateWithAlgebra(PatternProject& project, const BoomBapStyleProfile& style) const;
     static juce::String phraseSummaryString(const std::vector<PhraseRole>& roles);
     static bool isKickAnchorStep(int stepInBar);
     static bool isSnareAnchorStep(int stepInBar);

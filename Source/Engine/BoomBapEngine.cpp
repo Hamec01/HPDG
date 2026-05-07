@@ -8,6 +8,7 @@
 
 #include "../Core/TrackSemantics.h"
 #include "GrooveEngine.h"
+#include "HiResTiming.h"
 #include "HumanizeEngine.h"
 #include "PatternPerformanceTransformEngine.h"
 #include "StyleInfluence.h"
@@ -3004,10 +3005,108 @@ void applyLofiRapPocketRules(PatternProject& project,
 
 BoomBapEngine::BoomBapEngine() = default;
 
+bool BoomBapEngine::generateWithAlgebra(PatternProject& project, const BoomBapStyleProfile& style) const
+{
+    BoomBapClassicAlgebraParams algebraParams;
+    algebraParams.seed = project.params.seed;
+    algebraParams.bars = std::clamp(project.params.bars, 1, 16);
+    algebraParams.bpm = project.params.bpm;
+    algebraParams.density = std::clamp(project.params.densityAmount, 0.0f, 1.0f);
+    algebraParams.swing = std::clamp(project.params.swingPercent / 100.0f, 0.50f, 0.75f);
+    algebraParams.humanize = std::clamp(project.params.humanizeAmount * (0.65f + project.params.timingAmount * 0.55f), 0.0f, 1.0f);
+    algebraParams.variation = std::clamp(style.barVariationAmount + project.params.densityAmount * 0.24f, 0.0f, 1.0f);
+    algebraParams.candidateCount = 64;
+    algebraParams.substyle = style.substyle;
+
+    BoomBapClassicAlgebraGenerator generator;
+    const auto pattern = generator.generate(algebraParams);
+
+    const auto laneToTrack = [](int lane) -> TrackType
+    {
+        switch (lane)
+        {
+            case BoomBapClassicLanes::HiHat: return TrackType::HiHat;
+            case BoomBapClassicLanes::HatAccent: return TrackType::HatFX;
+            case BoomBapClassicLanes::OpenHat: return TrackType::OpenHat;
+            case BoomBapClassicLanes::Snare: return TrackType::Snare;
+            case BoomBapClassicLanes::ClapGhost: return TrackType::ClapGhostSnare;
+            case BoomBapClassicLanes::Kick: return TrackType::Kick;
+            case BoomBapClassicLanes::KickGhost: return TrackType::GhostKick;
+            case BoomBapClassicLanes::Ride: return TrackType::Ride;
+            case BoomBapClassicLanes::Cymbal: return TrackType::Cymbal;
+            case BoomBapClassicLanes::Perc: return TrackType::Perc;
+            case BoomBapClassicLanes::Sub808: return TrackType::Sub808;
+            default: return TrackType::Perc;
+        }
+    };
+
+    std::unordered_set<TrackType> mutableTracks;
+    for (auto& track : project.tracks)
+    {
+        if (track.locked)
+            continue;
+
+        track.notes.clear();
+        track.sub808Notes.clear();
+        track.templateId = static_cast<int>(style.substyle) * 100 + static_cast<int>(track.type) * 7;
+        track.variationId = 0;
+        track.mutationDepth = 0.0f;
+        track.subProfile = style.name;
+        track.laneRole = roleForTrack(track.type);
+        mutableTracks.insert(track.type);
+    }
+
+    for (int lane = 0; lane < BoomBapClassicLanes::Count; ++lane)
+    {
+        auto* track = findTrack(project, laneToTrack(lane));
+        if (track == nullptr || track->locked || !track->enabled)
+            continue;
+
+        const auto* info = TrackRegistry::find(track->type);
+        const int fallbackPitch = track->type == TrackType::Kick ? 36
+            : track->type == TrackType::Snare ? 38
+            : track->type == TrackType::OpenHat ? 46
+            : track->type == TrackType::Cymbal ? 49
+            : track->type == TrackType::Ride ? 51
+            : track->type == TrackType::Perc ? 39
+            : 42;
+        const int pitch = info != nullptr ? info->defaultMidiNote : fallbackPitch;
+
+        for (const auto& algebraNote : pattern.notesByLane[static_cast<size_t>(lane)])
+        {
+            const int ppqTick = algebraNote.tick64 * HiResTiming::kTicks1_64 + algebraNote.microTimingTicks;
+            const int lengthSteps = std::max(1, static_cast<int>(std::ceil(algebraNote.length / 4.0f)));
+            const bool isGhost = algebraNote.role == BoomBapClassicRole::Ghost
+                || lane == BoomBapClassicLanes::ClapGhost
+                || lane == BoomBapClassicLanes::KickGhost;
+            HiResTiming::addNoteAtTick(*track,
+                                       pitch,
+                                       ppqTick,
+                                       algebraNote.velocity,
+                                       isGhost,
+                                       algebraParams.bars,
+                                       lengthSteps);
+            if (!track->notes.empty())
+                track->notes.back().semanticRole = algebraNote.roleString;
+        }
+
+        dedupeAndSortNotes(track->notes);
+    }
+
+    project.phraseLengthBars = algebraParams.bars;
+    project.phraseRoleSummary = "statement | repeat_or_small_variation | answer | ending_or_fill";
+    project.generationDebugReport = pattern.debugSummary;
+    PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
+    return true;
+}
+
 void BoomBapEngine::generate(PatternProject& project)
 {
     applyBoomBapStyleInfluence(project);
     const auto& style = getBoomBapProfile(project.params.boombapSubstyle);
+    if (generateWithAlgebra(project, style))
+        return;
+
     std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed));
     const auto grooveContext = buildGrooveContext(project, style, rng);
     const auto phrasePlan = BoomBapPhrasePlanner::createPlan(std::max(1, project.params.bars),
