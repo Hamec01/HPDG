@@ -22,6 +22,9 @@
 #include "../UI/EditorCommandController.h"
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
+#include "../UI/SketchDrawing.h"
+#include "../UI/SketchLookAndFeel.h"
+#include "../UI/SketchTheme.h"
 #include "../UI/SoundModuleController.h"
 #include "../UI/TrackListComponent.h"
 #include "../UI/Vst3GridLiteComponent.h"
@@ -207,8 +210,8 @@ public:
 };
 
 // Standalone keeps the full authoring editor. VST3 uses this DAW-safe shell:
-// same generator, rack, analysis, sound module and export actions, but a
-// passive grid surface without note move/edit gestures.
+// generator + rack + passive grid only. Analysis and sound shaping remain in
+// the codebase for their later redesign, but are intentionally hidden here.
 class Vst3SafeHeaderEditor final : public juce::AudioProcessorEditor,
                                    private juce::Timer
 {
@@ -223,10 +226,11 @@ public:
         , commandController(processor)
         , soundModuleController(processor, soundModule)
     {
+        setLookAndFeel(&sketchLookAndFeel);
         addAndMakeVisible(header);
         addAndMakeVisible(trackListViewport);
-        addAndMakeVisible(analysisPanel);
-        addAndMakeVisible(soundModule);
+        analysisPanel.setVisible(false);
+        soundModule.setVisible(false);
 
         laneGridWorkspace.addAndMakeVisible(trackList);
         laneGridWorkspace.addAndMakeVisible(gridLite);
@@ -241,7 +245,7 @@ public:
                 updateColumnWidthFromScreenX(static_cast<int>(event.getEventRelativeTo(this).position.x));
         };
         verticalSplitterHandle.reset(verticalSplitter);
-        addAndMakeVisible(*verticalSplitterHandle);
+        verticalSplitterHandle->setVisible(false);
 
         auto* horizontalSplitter = new ProcessorSplitterHandleComponent(juce::MouseCursor::UpDownResizeCursor);
         horizontalSplitter->onDragMove = [this](const juce::MouseEvent& event)
@@ -250,7 +254,7 @@ public:
                 updateTopSectionHeightFromScreenY(static_cast<int>(event.getEventRelativeTo(this).position.y));
         };
         horizontalSplitterHandle.reset(horizontalSplitter);
-        addAndMakeVisible(*horizontalSplitterHandle);
+        horizontalSplitterHandle->setVisible(false);
 
         setSize(1460, 860);
         setResizable(true, true);
@@ -259,8 +263,12 @@ public:
         header.setStandaloneWindowButtonVisible(false);
         header.setHeaderControlsMode(MainHeaderComponent::HeaderControlsMode::Compact);
         header.setGridModeIndicatorText("VST3 GRID");
-        header.zoomSlider.setEnabled(false);
-        header.laneHeightSlider.setEnabled(false);
+        header.zoomSlider.setEnabled(true);
+        header.zoomSlider.setInterceptsMouseClicks(false, false);
+        header.zoomSlider.setAlpha(1.0f);
+        header.laneHeightSlider.setEnabled(true);
+        header.laneHeightSlider.setInterceptsMouseClicks(false, false);
+        header.laneHeightSlider.setAlpha(1.0f);
         header.gridResolutionCombo.setEnabled(false);
 
         trackList.setShowAnalysisPanel(false);
@@ -287,24 +295,16 @@ public:
     ~Vst3SafeHeaderEditor() override
     {
         stopTimer();
+        setLookAndFeel(nullptr);
     }
 
     void paint(juce::Graphics& g) override
     {
-        juce::ColourGradient bg(juce::Colour::fromRGB(18, 17, 17), 0.0f, 0.0f,
-                                juce::Colour::fromRGB(9, 10, 12), 0.0f, static_cast<float>(getHeight()), false);
-        bg.addColour(0.20, juce::Colour::fromRGB(31, 24, 20));
-        bg.addColour(0.70, juce::Colour::fromRGB(13, 14, 17));
-        g.setGradientFill(bg);
-        g.fillAll();
+        if (!paperTexture.isValid() || paperTexture.getWidth() != getWidth() || paperTexture.getHeight() != getHeight())
+            paperTexture = sketch::makePaperTexture(getWidth(), getHeight());
+        g.drawImageAt(paperTexture, 0, 0);
 
         drawPanelShell(g, trackListViewport.getBounds(), "PATTERN RACK", true);
-        drawPanelShell(g, analysisPanel.getBounds(), "ANALYSIS", false);
-        drawPanelShell(g, soundModule.getBounds(), juce::String(), false);
-
-        g.setColour(juce::Colour::fromRGBA(214, 171, 98, 58));
-        g.fillRect(verticalSplitterVisualBounds);
-        g.fillRect(horizontalSplitterVisualBounds);
     }
 
     void resized() override
@@ -313,65 +313,14 @@ public:
         header.setBounds(area.removeFromTop(header.getPreferredHeight()));
         area.removeFromTop(10);
 
-        constexpr int splitterHitWidth = 10;
-        constexpr int splitterVisualWidth = 2;
-        constexpr int splitterHitHeight = 10;
-        constexpr int splitterVisualHeight = 2;
-        constexpr int paneGap = 8;
-        constexpr int minLeftWidth = 520;
-        constexpr int minRightWidth = 360;
-        constexpr int minTopHeight = 250;
-        constexpr int minBottomHeight = 230;
-
-        const int maxLeftWidth = juce::jmax(minLeftWidth, area.getWidth() - splitterHitWidth - paneGap - minRightWidth);
-        leftColumnWidth = juce::jlimit(minLeftWidth, maxLeftWidth, leftColumnWidth);
-
-        const int maxTopHeight = juce::jmax(minTopHeight, area.getHeight() - splitterHitHeight - paneGap - minBottomHeight);
-        topSectionHeight = juce::jlimit(minTopHeight, maxTopHeight, topSectionHeight);
-
-        auto topArea = area.removeFromTop(topSectionHeight);
-        auto horizontalHit = area.removeFromTop(splitterHitHeight);
-        area.removeFromTop(paneGap);
-        auto bottomArea = area;
-
-        auto topLeft = topArea.removeFromLeft(leftColumnWidth);
-        auto verticalHitTop = topArea.removeFromLeft(splitterHitWidth);
-        topArea.removeFromLeft(paneGap);
-        auto topRight = topArea;
-
-        auto bottomLeft = bottomArea.removeFromLeft(leftColumnWidth);
-        auto verticalHitBottom = bottomArea.removeFromLeft(splitterHitWidth);
-        bottomArea.removeFromLeft(paneGap);
-        auto bottomRight = bottomArea;
-
-        juce::ignoreUnused(verticalHitBottom);
-
-        const int verticalHitX = verticalHitTop.getX();
-        verticalSplitterHandle->setBounds(verticalHitX,
-                                          topLeft.getY(),
-                                          splitterHitWidth,
-                                          bottomRight.getBottom() - topLeft.getY());
-        verticalSplitterVisualBounds = juce::Rectangle<int>(verticalHitX + (splitterHitWidth - splitterVisualWidth) / 2,
-                                                            topLeft.getY(),
-                                                            splitterVisualWidth,
-                                                            bottomRight.getBottom() - topLeft.getY());
-
-        horizontalSplitterHandle->setBounds(topLeft.getX(),
-                                            horizontalHit.getY(),
-                                            topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
-                                            splitterHitHeight);
-        horizontalSplitterVisualBounds = juce::Rectangle<int>(topLeft.getX(),
-                                                              horizontalHit.getY() + (splitterHitHeight - splitterVisualHeight) / 2,
-                                                              topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
-                                                              splitterVisualHeight);
-
-        trackListViewport.setBounds(juce::Rectangle<int>(topLeft.getX(),
-                                                         topLeft.getY(),
-                                                         topLeft.getWidth() + splitterHitWidth + paneGap + topRight.getWidth(),
-                                                         topLeft.getHeight()));
+        trackListViewport.setBounds(area);
         syncRackViewportContentSize();
-        analysisPanel.setBounds(bottomLeft);
-        soundModule.setBounds(bottomRight);
+        analysisPanel.setBounds({});
+        soundModule.setBounds({});
+        verticalSplitterHandle->setBounds({});
+        horizontalSplitterHandle->setBounds({});
+        verticalSplitterVisualBounds = {};
+        horizontalSplitterVisualBounds = {};
     }
 
 private:
@@ -393,13 +342,36 @@ private:
         return mode == PreviewPlaybackMode::LoopRange ? 2 : 1;
     }
 
+    static float playheadStepFromTransport(const TransportSnapshot& transport, int totalSteps)
+    {
+        if (!transport.hasPpq || totalSteps <= 0)
+            return -1.0f;
+
+        const double stepsPerQuarter = 4.0; // 16th grid: 4 steps per quarter note.
+        const double rawStep = transport.ppqPosition * stepsPerQuarter;
+        const double length = static_cast<double>(totalSteps);
+        const double wrapped = std::fmod(rawStep, length);
+        const double positive = wrapped < 0.0 ? wrapped + length : wrapped;
+        return static_cast<float>(positive);
+    }
+
     void timerCallback() override
     {
         const bool previewPlaying = audioProcessor.isPreviewPlaying();
         const auto transport = audioProcessor.getLastTransportSnapshot();
-        if (previewPlaying || transport.isPlaying)
+        header.setPreviewPlaying(previewPlaying);
+
+        if (previewPlaying)
         {
-            header.setPreviewPlaying(previewPlaying);
+            gridLite.setPlayheadStep(audioProcessor.getPreviewPlayheadStep());
+            return;
+        }
+
+        if (transport.isPlaying)
+        {
+            const auto project = audioProcessor.getProjectSnapshot();
+            const int totalSteps = juce::jmax(1, project.params.bars * 16);
+            gridLite.setPlayheadStep(playheadStepFromTransport(transport, totalSteps));
             return;
         }
 
@@ -1043,24 +1015,17 @@ private:
 
         auto shell = childBounds.expanded(5);
         const auto shellF = shell.toFloat();
-        juce::ColourGradient fill(juce::Colour::fromRGB(32, 25, 20), shellF.getTopLeft(),
-                                  juce::Colour::fromRGB(13, 14, 17), shellF.getBottomLeft(), false);
-        fill.addColour(0.24, juce::Colour::fromRGB(48, 33, 22));
-        fill.addColour(0.66, juce::Colour::fromRGB(20, 20, 22));
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(shellF, 8.0f);
-
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 12));
-        g.drawRoundedRectangle(shellF, 8.0f, 1.0f);
-        g.setColour(juce::Colour::fromRGBA(214, 171, 98, emphasise ? 132 : 78));
-        g.drawRoundedRectangle(shellF.reduced(0.5f), 8.0f, 1.0f);
+        g.setColour(sketch::Theme::paperLight().withAlpha(0.62f));
+        g.fillRoundedRectangle(shellF, 4.0f);
+        sketch::drawFrame(g, shellF, emphasise ? sketch::Theme::ochre() : sketch::Theme::graphiteSoft(),
+                          emphasise ? 1.7f : 1.2f, title.hashCode() + shell.getX(), 4.0f);
 
         if (title.isEmpty())
             return;
 
         auto titleBounds = shell.removeFromTop(22).reduced(12, 2);
-        g.setColour(juce::Colour::fromRGB(239, 202, 132));
-        g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+        g.setColour(sketch::Theme::graphite());
+        g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
         g.drawText(title, titleBounds, juce::Justification::centredLeft, true);
     }
 
@@ -1096,6 +1061,8 @@ private:
         juce::Logger::writeToLog("[HPDG_VST3_UI] " + message);
     };
 
+    SketchLookAndFeel sketchLookAndFeel;
+    juce::Image paperTexture;
     MainHeaderComponent header;
     juce::Viewport trackListViewport;
     juce::Component laneGridWorkspace;

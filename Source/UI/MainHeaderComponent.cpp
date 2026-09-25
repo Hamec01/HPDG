@@ -1,5 +1,8 @@
 #include "MainHeaderComponent.h"
 
+#include "SketchDrawing.h"
+#include "SketchTheme.h"
+
 namespace bbg
 {
 namespace
@@ -16,23 +19,24 @@ MainHeaderComponent::MainHeaderComponent()
 {
     const auto styleSecondaryLabel = [](juce::Label& label)
     {
-        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(170, 176, 186));
+        label.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
     };
 
     titleLabel.setText("HPDG", juce::dontSendNotification);
     titleLabel.setJustificationType(juce::Justification::centredLeft);
-    titleLabel.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+    titleLabel.setFont(juce::Font(juce::FontOptions(31.0f, juce::Font::bold)));
+    titleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     addAndMakeVisible(titleLabel);
 
     subtitleLabel.setText("HamloProdDrumGenerator " + juce::String(kUiBuildVersion), juce::dontSendNotification);
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
-    subtitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(170, 176, 186));
-    subtitleLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    subtitleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
+    subtitleLabel.setFont(juce::Font(juce::FontOptions(10.5f)));
     addAndMakeVisible(subtitleLabel);
 
     diagnosticsLabel.setText({}, juce::dontSendNotification);
     diagnosticsLabel.setJustificationType(juce::Justification::centredLeft);
-    diagnosticsLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(162, 208, 255));
+    diagnosticsLabel.setColour(juce::Label::textColourId, sketch::Theme::blue().darker(0.25f));
     diagnosticsLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(diagnosticsLabel);
 
@@ -161,7 +165,7 @@ MainHeaderComponent::MainHeaderComponent()
     gridResolutionCombo.addItem("1/64T", 19);
     gridResolutionCombo.setSelectedId(14, juce::dontSendNotification);
     gridModeIndicatorLabel.setText("Snap: 1/16", juce::dontSendNotification);
-    gridModeIndicatorLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(170, 176, 186));
+    gridModeIndicatorLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
     addAndMakeVisible(gridModeIndicatorLabel);
     gridResolutionCombo.onChange = [this]
     {
@@ -229,7 +233,7 @@ MainHeaderComponent::MainHeaderComponent()
 
     masterSectionLabel.setText("OUTPUT", juce::dontSendNotification);
     masterSectionLabel.setJustificationType(juce::Justification::centredLeft);
-    masterSectionLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(200, 206, 214));
+    masterSectionLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     addAndMakeVisible(masterSectionLabel);
 
     masterVolumeLabel.setText("Vol", juce::dontSendNotification);
@@ -266,18 +270,19 @@ MainHeaderComponent::MainHeaderComponent()
             onStartPlayWithDawToggled(startPlayWithDawToggle.getToggleState());
     };
 
-    generateButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(232, 153, 66));
-    generateButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(18, 19, 22));
-    playButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(74, 122, 186));
-    transportToStartButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
-    transportStepBackButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
-    transportStepForwardButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
-    transportToEndButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
-    mutateButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(156, 124, 58));
-    clearAllButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(122, 68, 68));
-    exportFullButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
-    exportLoopWavButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(58, 86, 104));
-    dragFullButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(54, 59, 70));
+    generateButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::ochre());
+    generateButton.setColour(juce::TextButton::textColourOffId, sketch::Theme::graphite());
+    playButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::graphite());
+    playButton.setColour(juce::TextButton::textColourOffId, sketch::Theme::paperLight());
+    transportToStartButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    transportStepBackButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    transportStepForwardButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    transportToEndButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    mutateButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::ochreWash());
+    clearAllButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(205, 173, 164));
+    exportFullButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    exportLoopWavButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
+    dragFullButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
 
     transportStepBackButton.setRepeatSpeed(300, 75, 50);
     transportStepForwardButton.setRepeatSpeed(300, 75, 50);
@@ -368,15 +373,21 @@ MainHeaderComponent::MainHeaderComponent()
 void MainHeaderComponent::paint(juce::Graphics& g)
 {
     auto area = getLocalBounds().toFloat();
-    g.setGradientFill(juce::ColourGradient(juce::Colour::fromRGB(30, 33, 38), area.getTopLeft(),
-                                           juce::Colour::fromRGB(20, 22, 26), area.getBottomLeft(), false));
-    g.fillRoundedRectangle(area.reduced(0.5f), 10.0f);
+    g.setColour(sketch::Theme::paperLight().withAlpha(0.96f));
+    g.fillRoundedRectangle(area.reduced(0.5f), 5.0f);
+    sketch::drawFrame(g, area.reduced(0.5f), sketch::Theme::graphiteSoft(), 1.2f, 1101, 5.0f);
 
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
-    g.drawRoundedRectangle(area.reduced(0.5f), 10.0f, 1.0f);
-
-    g.setColour(juce::Colour::fromRGBA(232, 153, 66, 40));
-    g.fillRect(0, 0, getWidth(), 2);
+    g.setColour(sketch::Theme::ochreWash().withAlpha(0.50f));
+    g.fillRect(10.0f, 8.0f, 112.0f, 28.0f);
+    juce::Path crown;
+    crown.startNewSubPath(126.0f, 28.0f);
+    crown.lineTo(132.0f, 18.0f);
+    crown.lineTo(137.0f, 26.0f);
+    crown.lineTo(143.0f, 15.0f);
+    crown.lineTo(148.0f, 29.0f);
+    crown.closeSubPath();
+    g.setColour(sketch::Theme::graphite());
+    g.strokePath(crown, juce::PathStrokeType(1.4f));
 }
 
 void MainHeaderComponent::setGridModeIndicatorText(const juce::String& text)
@@ -412,8 +423,8 @@ void MainHeaderComponent::resized()
     fixedRow.removeFromRight(6);
 
     auto titleArea = fixedRow.removeFromLeft(380).reduced(2);
-    titleLabel.setBounds(titleArea.removeFromTop(22));
-    subtitleLabel.setBounds(titleArea.removeFromTop(16));
+    titleLabel.setBounds(titleArea.removeFromTop(28));
+    subtitleLabel.setBounds(titleArea.removeFromTop(10));
     diagnosticsLabel.setBounds(titleArea.removeFromTop(14));
 
     auto bpmArea = fixedRow.removeFromLeft(196);
@@ -535,16 +546,17 @@ void MainHeaderComponent::resized()
 
 void MainHeaderComponent::setBpmLocked(bool locked)
 {
-    bpmSlider.setEnabled(!locked);
-    bpmSlider.setAlpha(locked ? 0.55f : 1.0f);
+    bpmSlider.setEnabled(true);
+    bpmSlider.setInterceptsMouseClicks(!locked, !locked);
+    bpmSlider.setAlpha(1.0f);
 }
 
 void MainHeaderComponent::setPreviewPlaying(bool isPlaying)
 {
     playButton.setButtonText(isPlaying ? "Stop" : "Play");
     playButton.setColour(juce::TextButton::buttonColourId,
-                         isPlaying ? juce::Colour::fromRGB(98, 54, 54)
-                                   : juce::Colour::fromRGB(74, 122, 186));
+                         isPlaying ? juce::Colour::fromRGB(176, 104, 88)
+                                   : sketch::Theme::graphite());
 }
 
 void MainHeaderComponent::setStandaloneWindowMaximized(bool isMaximized)
@@ -654,6 +666,9 @@ void MainHeaderComponent::setupSlider(juce::Slider& slider, double min, double m
     slider.setSliderStyle(juce::Slider::LinearHorizontal);
     slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 54, 18);
     slider.setRange(min, max, step);
+    slider.setColour(juce::Slider::textBoxTextColourId, sketch::Theme::graphite());
+    slider.setColour(juce::Slider::textBoxBackgroundColourId, sketch::Theme::paperLight());
+    slider.setColour(juce::Slider::textBoxOutlineColourId, sketch::Theme::graphiteSoft());
     if (suffix.isNotEmpty())
         slider.setTextValueSuffix(suffix);
     addAndMakeVisible(slider);
@@ -670,7 +685,7 @@ void MainHeaderComponent::setupKnob(RotaryKnobSlider& slider,
 {
     valueLabel.setJustificationType(juce::Justification::centred);
     valueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-    valueLabel.setColour(juce::Label::textColourId, hardware_knob::amberBright());
+    valueLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     addAndMakeVisible(valueLabel);
 
     slider.setPopupTitle(popupTitle);

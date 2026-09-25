@@ -4,6 +4,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "SketchDrawing.h"
+#include "SketchTheme.h"
+
 namespace bbg
 {
 namespace hardware_knob
@@ -32,72 +35,50 @@ struct LookAndFeel final : juce::LookAndFeel_V4
                           float rotaryEndAngle,
                           juce::Slider& slider) override
     {
-        auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y), static_cast<float>(width), static_cast<float>(height)).reduced(6.0f);
+        auto bounds = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y), static_cast<float>(width), static_cast<float>(height)).reduced(2.0f);
         const float diameter = std::min(bounds.getWidth(), bounds.getHeight());
         bounds.setSize(diameter, diameter);
         bounds.setCentre(static_cast<float>(x) + static_cast<float>(width) * 0.5f,
                          static_cast<float>(y) + static_cast<float>(height) * 0.5f);
 
-        const auto outline = slider.findColour(juce::Slider::rotarySliderOutlineColourId);
         const auto fill = slider.findColour(juce::Slider::rotarySliderFillColourId);
-        const auto thumb = slider.findColour(juce::Slider::thumbColourId);
-        const auto track = slider.findColour(juce::Slider::trackColourId);
         const float angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
         const auto centre = bounds.getCentre();
 
-        g.setColour(juce::Colours::black.withAlpha(0.34f));
-        g.fillEllipse(bounds.translated(0.0f, 3.0f));
-
-        juce::ColourGradient rim(shellRaised().brighter(0.20f), bounds.getX(), bounds.getY(), shellBase(), bounds.getX(), bounds.getBottom(), false);
-        g.setGradientFill(rim);
+        g.setColour(sketch::Theme::paperShadow());
         g.fillEllipse(bounds);
-        g.setColour(outline);
+        g.setColour(sketch::Theme::graphite());
         g.drawEllipse(bounds, 1.2f);
-
-        auto inner = bounds.reduced(diameter * 0.10f);
-        juce::ColourGradient body(panelRaised().brighter(0.18f), inner.getX(), inner.getY(), panelInset(), inner.getX(), inner.getBottom(), false);
-        body.addColour(0.42, panelBase());
-        g.setGradientFill(body);
-        g.fillEllipse(inner);
-
-        auto highlight = inner.reduced(inner.getWidth() * 0.14f);
-        highlight.setHeight(highlight.getHeight() * 0.44f);
-        g.setColour(juce::Colours::white.withAlpha(0.08f));
-        g.fillEllipse(highlight);
 
         juce::Path trackPath;
         trackPath.addCentredArc(centre.x,
                                 centre.y,
-                                inner.getWidth() * 0.52f,
-                                inner.getHeight() * 0.52f,
+                                bounds.getWidth() * 0.45f,
+                                bounds.getHeight() * 0.45f,
                                 0.0f,
                                 rotaryStartAngle,
                                 rotaryEndAngle,
                                 true);
-        g.setColour(track.withAlpha(0.20f));
-        g.strokePath(trackPath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(sketch::Theme::graphiteSoft().withAlpha(0.24f));
+        g.strokePath(trackPath, juce::PathStrokeType(2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         juce::Path valuePath;
         valuePath.addCentredArc(centre.x,
                                 centre.y,
-                                inner.getWidth() * 0.52f,
-                                inner.getHeight() * 0.52f,
+                                bounds.getWidth() * 0.45f,
+                                bounds.getHeight() * 0.45f,
                                 0.0f,
                                 rotaryStartAngle,
                                 angle,
                                 true);
-        g.setColour(fill.withAlpha(0.96f));
-        g.strokePath(valuePath, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(fill.isTransparent() ? sketch::Theme::ochre() : fill);
+        g.strokePath(valuePath, juce::PathStrokeType(2.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        juce::Path pointer;
-        pointer.addRoundedRectangle(-1.7f, -inner.getHeight() * 0.31f, 3.4f, inner.getHeight() * 0.23f, 1.4f);
-        g.setColour(thumb);
-        g.fillPath(pointer, juce::AffineTransform::rotation(angle).translated(centre.x, centre.y));
-
-        g.setColour(juce::Colours::black.withAlpha(0.34f));
-        g.fillEllipse(centre.x - 4.0f, centre.y - 4.0f, 8.0f, 8.0f);
-        g.setColour(thumb.withAlpha(0.92f));
-        g.fillEllipse(centre.x - 2.7f, centre.y - 2.7f, 5.4f, 5.4f);
+        const auto pointerEnd = centre + juce::Point<float>(std::sin(angle), -std::cos(angle)) * (diameter * 0.34f);
+        sketch::drawLine(g, centre, pointerEnd, sketch::Theme::graphite(), 1.5f,
+                         x * 31 + y * 17 + width);
+        g.setColour(sketch::Theme::graphite());
+        g.fillEllipse(centre.x - 1.7f, centre.y - 1.7f, 3.4f, 3.4f);
     }
 };
 

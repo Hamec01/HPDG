@@ -3094,8 +3094,8 @@ bool BoomBapEngine::generateWithAlgebra(PatternProject& project, const BoomBapSt
     }
 
     project.phraseLengthBars = algebraParams.bars;
-    project.phraseRoleSummary = "statement | repeat_or_small_variation | answer | ending_or_fill";
-    project.generationDebugReport = pattern.debugSummary;
+    project.phraseRoleSummary = "statement | confirmation | development | turnaround";
+    project.generationDebugReport = "ALGEBRA\n" + pattern.debugSummary;
     PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
     return true;
 }
@@ -3104,6 +3104,8 @@ void BoomBapEngine::generate(PatternProject& project)
 {
     applyBoomBapStyleInfluence(project);
     const auto& style = getBoomBapProfile(project.params.boombapSubstyle);
+    // Production BoomBap has one deterministic statistical population. Legacy remains
+    // in this translation unit for explicit developer comparison, never seed routing.
     if (generateWithAlgebra(project, style))
         return;
 
@@ -3146,6 +3148,7 @@ void BoomBapEngine::generate(PatternProject& project)
     applyPhraseEndingAccents(project, style, rng, phrasePlan, mutableTracks);
     postProcess(project, style, blueprint, lanePlan, rng, mutableTracks);
     validatePattern(project, blueprint, lanePlan, mutableTracks);
+    project.generationDebugReport = "PROCEDURAL\nphrase=" + project.phraseRoleSummary;
     PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 

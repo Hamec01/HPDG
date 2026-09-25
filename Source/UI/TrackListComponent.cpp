@@ -3,6 +3,9 @@
 #include <algorithm>
 
 #include "../Core/TrackRegistry.h"
+#include "SketchDrawing.h"
+#include "SketchFonts.h"
+#include "SketchTheme.h"
 
 namespace bbg
 {
@@ -63,7 +66,7 @@ int displayRankForLane(const RuntimeLaneRowState& lane, const std::vector<Runtim
 
 TrackListComponent::TrackListComponent()
 {
-    addLaneButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(58, 84, 116));
+    addLaneButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
     addLaneButton.onClick = [this]
     {
         if (onAddLaneRequested)
@@ -190,42 +193,41 @@ void TrackListComponent::setHatFxDragUiState(float density, bool locked)
 
 void TrackListComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour::fromRGB(17, 19, 23));
+    g.fillAll(sketch::Theme::paper());
 
-    g.setColour(juce::Colour::fromRGB(30, 34, 40));
+    g.setColour(sketch::Theme::ochreWash());
     g.fillRect(0, 0, getWidth(), rulerHeight);
-    g.setColour(juce::Colour::fromRGB(210, 216, 224));
-    g.setFont(juce::Font(12.5f, juce::Font::bold));
-    g.drawText("INSTRUMENT RACK", 10, 0, juce::jmax(120, getWidth() - 260), rulerHeight, juce::Justification::centredLeft);
+    g.setColour(sketch::Theme::graphite());
+    g.setFont(sketch::notebookFont(18.5f, true));
+    g.drawText("Instrument Rack", 12, 0, 158, rulerHeight, juce::Justification::centredLeft);
 
-    g.setColour(juce::Colour::fromRGB(154, 164, 178));
-    g.setFont(juce::Font(9.5f));
-    g.drawText("RG: regenerate lane | S: solo | M: mute | < / >: samples | Drag: export/drag | ...: lane actions",
-               170,
+    g.setColour(sketch::Theme::graphiteSoft());
+    g.setFont(sketch::notebookFont(10.5f));
+    g.drawText("RG: regenerate | S: solo | M: mute | C: clear | < / >: samples | Drag: render",
+               176,
                0,
-               getWidth() - 178,
+               juce::jmax(0, getWidth() - 266),
                rulerHeight,
                juce::Justification::centredLeft,
                false);
 
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
-    g.drawLine(0.0f, static_cast<float>(rulerHeight), static_cast<float>(getWidth()), static_cast<float>(rulerHeight));
+    sketch::drawLine(g, { 0.0f, static_cast<float>(rulerHeight) },
+                     { static_cast<float>(getWidth()), static_cast<float>(rulerHeight) },
+                     sketch::Theme::graphiteSoft(), 1.0f, 61);
 
     const int rowsBottom = rulerHeight + rowHeight * static_cast<int>(rows.size());
     if (rowsBottom < getHeight())
     {
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 22));
-        g.drawLine(0.0f,
-                   static_cast<float>(rowsBottom),
-                   static_cast<float>(getWidth()),
-                   static_cast<float>(rowsBottom));
+        sketch::drawLine(g, { 0.0f, static_cast<float>(rowsBottom) },
+                         { static_cast<float>(getWidth()), static_cast<float>(rowsBottom) },
+                         sketch::Theme::graphiteSoft().withAlpha(0.5f), 0.8f, 67);
     }
 
     if (showAnalysisPanel && analysisFileDropHighlight)
     {
-        g.setColour(juce::Colour::fromRGBA(130, 188, 255, 58));
+        g.setColour(sketch::Theme::blueWash());
         g.fillRoundedRectangle(chooseFileButton.getBounds().toFloat().reduced(-2.0f), 6.0f);
-        g.setColour(juce::Colour::fromRGBA(178, 218, 255, 190));
+        g.setColour(sketch::Theme::blue());
         g.drawRoundedRectangle(chooseFileButton.getBounds().toFloat().reduced(-2.0f), 6.0f, 1.5f);
     }
 }

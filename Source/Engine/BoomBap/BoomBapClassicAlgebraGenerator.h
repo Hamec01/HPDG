@@ -44,9 +44,17 @@ constexpr std::array<const char*, Count> Names {
 enum class BoomBapClassicRole
 {
     Anchor,
+    Backbeat,
+    Syncopated,
+    Pickup,
+    Response,
     Support,
     Ghost,
     Accent,
+    WeakPulse,
+    StrongPulse,
+    Turnaround,
+    Ornament,
     Fill,
     Ending
 };
@@ -60,7 +68,7 @@ struct BoomBapClassicAlgebraParams
     float swing = 0.58f;
     float humanize = 0.35f;
     float variation = 0.35f;
-    int candidateCount = 48;
+    int candidateCount = 64;
     BoomBapSubstyle substyle = BoomBapSubstyle::Classic;
 };
 
@@ -72,6 +80,7 @@ struct BoomBapClassicAlgebraNote
     int length = 1;
     int velocity = 100;
     int microTimingTicks = 0; // PPQ subtick offset, not a whole 1/64-grid move.
+    BoomBapTiming::TimingBreakdown timing;
     BoomBapClassicRole role = BoomBapClassicRole::Support;
     juce::String roleString = "support";
 };
@@ -89,12 +98,17 @@ struct BoomBapClassicScoreBreakdown
     float densityBalanceScore = 0.0f;
     float velocityHumanityScore = 0.0f;
     float trapLeakPenalty = 0.0f;
+    float trapLeakConfidence = 0.0f;
+    bool hardTrapLeak = false;
     float earlySnarePenalty = 0.0f;
     float overHumanizePenalty = 0.0f;
     float sub808OverusePenalty = 0.0f;
     float conflictPenalty = 0.0f;
     float spamPenalty = 0.0f;
     float quality = 0.0f;
+    float similarity12 = 0.0f;
+    float similarity13 = 0.0f;
+    float similarity14 = 0.0f;
 };
 
 struct BoomBapClassicAlgebraPattern
@@ -102,9 +116,9 @@ struct BoomBapClassicAlgebraPattern
     std::array<std::vector<BoomBapClassicAlgebraNote>, BoomBapClassicLanes::Count> notesByLane;
     std::array<juce::String, 4> phraseRoles {
         "statement",
-        "repeat_or_small_variation",
-        "answer",
-        "ending_or_fill"
+        "confirmation",
+        "development",
+        "turnaround"
     };
     juce::StringArray repairsApplied;
     int selectedCandidateIndex = 0;
@@ -118,7 +132,8 @@ class BoomBapClassicPatternScorer
 {
 public:
     BoomBapClassicScoreBreakdown score(const BoomBapClassicAlgebraPattern& pattern,
-                                       const BoomBapClassicAlgebraParams& params) const;
+                                       const BoomBapClassicAlgebraParams& params,
+                                       const BoomBapStyleProfile& profile) const;
 };
 
 class BoomBapClassicAlgebraGenerator
@@ -143,6 +158,10 @@ private:
     void cloneBarWithSmallMutation(BoomBapClassicAlgebraPattern& pattern,
                                    const BoomBapClassicAlgebraParams& params,
                                    std::mt19937& rng) const;
+    void deriveBarFromStatement(BoomBapClassicAlgebraPattern& pattern,
+                                const BoomBapClassicAlgebraParams& params,
+                                std::mt19937& rng,
+                                int targetBar) const;
     void validateAndRepair(BoomBapClassicAlgebraPattern& pattern,
                            const BoomBapClassicAlgebraParams& params) const;
     juce::String buildDebugSummary(const BoomBapClassicAlgebraPattern& pattern,

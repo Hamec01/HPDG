@@ -5,29 +5,50 @@
 
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/TrackRegistry.h"
+#include "SketchDrawing.h"
+#include "SketchFonts.h"
+#include "SketchTheme.h"
 #include "../Utils/TimingHelpers.h"
 
 namespace bbg
 {
 namespace
 {
-constexpr int kRulerHeight = 24;
+constexpr int kRulerHeight = 28;
 constexpr int kMinStepPixelWidth = 4;
 constexpr int kOuterPadding = 6;
+constexpr int kLaneLabelWidth = 96;
 
 juce::Colour roleColour(const juce::String& role, bool selectedLane)
 {
     const auto normalized = role.trim().toLowerCase();
     if (normalized == "support")
-        return selectedLane ? juce::Colour::fromRGB(126, 194, 255) : juce::Colour::fromRGB(88, 158, 226);
+        return selectedLane ? sketch::Theme::ochre() : sketch::Theme::blue();
     if (normalized == "accent")
-        return selectedLane ? juce::Colour::fromRGB(205, 166, 255) : juce::Colour::fromRGB(160, 130, 220);
+        return selectedLane ? sketch::Theme::ochre() : sketch::Theme::blue();
     if (normalized == "fill")
-        return selectedLane ? juce::Colour::fromRGB(255, 184, 104) : juce::Colour::fromRGB(226, 145, 78);
+        return sketch::Theme::ochre();
     if (normalized == "anchor")
-        return selectedLane ? juce::Colour::fromRGB(255, 212, 132) : juce::Colour::fromRGB(226, 164, 88);
+        return sketch::Theme::ochre();
 
-    return selectedLane ? juce::Colour::fromRGB(242, 168, 96) : juce::Colour::fromRGB(204, 132, 72);
+    return selectedLane ? sketch::Theme::ochre() : sketch::Theme::graphite();
+}
+
+void drawHatchedNote(juce::Graphics& g, juce::Rectangle<float> rect, juce::Colour colour,
+                     bool ghost, int seed)
+{
+    g.setColour(colour.withAlpha(ghost ? 0.22f : 0.72f));
+    g.fillRect(rect);
+    sketch::drawFrame(g, rect, sketch::Theme::graphite().withAlpha(ghost ? 0.58f : 0.86f),
+                      1.05f, seed, 0.8f);
+
+    const float spacing = ghost ? 5.0f : 3.5f;
+    g.saveState();
+    g.reduceClipRegion(rect.getSmallestIntegerContainer());
+    g.setColour(sketch::Theme::graphite().withAlpha(ghost ? 0.34f : 0.56f));
+    for (float x = rect.getX() - rect.getHeight(); x < rect.getRight(); x += spacing)
+        g.drawLine(x, rect.getBottom(), x + rect.getHeight(), rect.getY(), ghost ? 0.65f : 0.9f);
+    g.restoreState();
 }
 } // namespace
 
@@ -177,7 +198,7 @@ std::optional<int> Vst3GridLiteComponent::laneIndexAtY(int yInGrid, int effectiv
 
 void Vst3GridLiteComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour::fromRGB(12, 13, 16));
+    g.fillAll(sketch::Theme::paper());
 
     const auto lanes = orderedVisibleLanes();
     const int laneCount = static_cast<int>(lanes.size());
@@ -185,31 +206,32 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
     const int totalSteps = juce::jmax(1, bars * 16);
 
     auto bounds = getLocalBounds().reduced(kOuterPadding);
-    if (bounds.getWidth() <= 24 || bounds.getHeight() <= kRulerHeight || laneCount <= 0)
+    if (bounds.getWidth() <= kLaneLabelWidth + 24 || bounds.getHeight() <= kRulerHeight || laneCount <= 0)
         return;
 
     const auto frame = bounds.toFloat();
-    juce::ColourGradient fill(juce::Colour::fromRGB(27, 23, 20), frame.getTopLeft(),
-                              juce::Colour::fromRGB(12, 13, 16), frame.getBottomLeft(), false);
-    fill.addColour(0.32, juce::Colour::fromRGB(32, 27, 24));
-    fill.addColour(0.70, juce::Colour::fromRGB(17, 18, 21));
-    g.setGradientFill(fill);
-    g.fillRoundedRectangle(frame, 7.0f);
+    g.setColour(sketch::Theme::paperLight().withAlpha(0.78f));
+    g.fillRoundedRectangle(frame, 3.0f);
+    sketch::drawFrame(g, frame, sketch::Theme::graphiteSoft(), 1.2f, getWidth() + getHeight(), 3.0f);
 
     auto rulerArea = bounds.removeFromTop(kRulerHeight);
+    auto labelArea = bounds.removeFromLeft(kLaneLabelWidth);
     auto gridArea = bounds;
     const int resolvedRowHeight = juce::jmax(22, rowHeight);
     const float stepWidth = juce::jmax(static_cast<float>(kMinStepPixelWidth),
                                        static_cast<float>(gridArea.getWidth()) / static_cast<float>(totalSteps));
 
-    g.setColour(juce::Colour::fromRGB(44, 34, 25));
+    g.setColour(sketch::Theme::ochreWash());
     g.fillRect(rulerArea);
-    g.setColour(juce::Colour::fromRGBA(246, 190, 108, 66));
-    g.drawLine(static_cast<float>(rulerArea.getX()),
-               static_cast<float>(rulerArea.getBottom()),
-               static_cast<float>(rulerArea.getRight()),
-               static_cast<float>(rulerArea.getBottom()),
-               1.0f);
+    g.setColour(sketch::Theme::paperLight());
+    g.fillRect(rulerArea.withTrimmedLeft(kLaneLabelWidth));
+    g.setColour(sketch::Theme::graphite());
+    g.setFont(sketch::notebookFont(19.0f, true));
+    g.drawText("Pattern", rulerArea.removeFromLeft(kLaneLabelWidth).reduced(9, 1), juce::Justification::centredLeft);
+    sketch::drawLine(g, { frame.getX(), static_cast<float>(gridArea.getY()) },
+                     { frame.getRight(), static_cast<float>(gridArea.getY()) }, sketch::Theme::graphiteSoft(), 1.0f, 41);
+    sketch::drawLine(g, { static_cast<float>(gridArea.getX()), static_cast<float>(gridArea.getY()) },
+                     { static_cast<float>(gridArea.getX()), static_cast<float>(gridArea.getBottom()) }, sketch::Theme::ochre(), 1.5f, 43);
 
     for (int laneIndex = 0; laneIndex < laneCount; ++laneIndex)
     {
@@ -218,15 +240,16 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
         const auto row = juce::Rectangle<int>(gridArea.getX(), y, gridArea.getWidth(), resolvedRowHeight);
         const bool selectedLane = lane.laneId == selectedTrack;
 
-        g.setColour(selectedLane ? juce::Colour::fromRGBA(52, 67, 92, 112)
-                                 : juce::Colour::fromRGBA(26, 28, 32, 82));
+        g.setColour(selectedLane ? sketch::Theme::blueWash().withAlpha(0.34f)
+                                 : sketch::Theme::paperLight().withAlpha((laneIndex % 2) == 0 ? 0.32f : 0.12f));
         g.fillRect(row);
-
-        g.setColour(laneAccentColour(lane).withAlpha(selectedLane ? 0.95f : 0.58f));
-        g.fillRect(row.withWidth(4).reduced(0, 3));
-
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, 12));
-        g.drawHorizontalLine(row.getBottom() - 1, static_cast<float>(row.getX()), static_cast<float>(row.getRight()));
+        g.setColour(sketch::Theme::graphite());
+        g.setFont(sketch::notebookFont(selectedLane ? 14.0f : 13.5f, selectedLane));
+        g.drawFittedText(lane.laneName, labelArea.withY(y).withHeight(resolvedRowHeight).reduced(9, 1),
+                         juce::Justification::centredLeft, 1);
+        sketch::drawLine(g, { static_cast<float>(labelArea.getX()), static_cast<float>(row.getBottom()) },
+                         { static_cast<float>(row.getRight()), static_cast<float>(row.getBottom()) },
+                         sketch::Theme::gridLine(), 0.75f, 100 + laneIndex);
     }
 
     for (int step = 0; step <= totalSteps; ++step)
@@ -234,16 +257,16 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
         const float x = static_cast<float>(gridArea.getX()) + static_cast<float>(step) * stepWidth;
         const bool barLine = step % 16 == 0;
         const bool beatLine = step % 4 == 0;
-        g.setColour(barLine ? juce::Colour::fromRGBA(255, 210, 142, 58)
-                            : (beatLine ? juce::Colour::fromRGBA(255, 255, 255, 24)
-                                        : juce::Colour::fromRGBA(255, 255, 255, 10)));
+        g.setColour(barLine ? sketch::Theme::graphiteSoft().withAlpha(0.54f)
+                            : (beatLine ? sketch::Theme::gridLine().withAlpha(0.62f)
+                                        : sketch::Theme::gridLine().withAlpha(0.34f)));
         g.drawVerticalLine(static_cast<int>(std::round(x)),
                            static_cast<float>(rulerArea.getY()),
                            static_cast<float>(gridArea.getBottom()));
     }
 
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
-    g.setColour(juce::Colour::fromRGB(220, 190, 136));
+    g.setFont(sketch::notebookFont(12.0f));
+    g.setColour(sketch::Theme::graphiteSoft());
     for (int beat = 0; beat < bars * 4; ++beat)
     {
         const int step = beat * 4;
@@ -267,9 +290,9 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
                                                      static_cast<float>(gridArea.getY()),
                                                      width,
                                                      static_cast<float>(gridArea.getHeight()));
-        g.setColour(juce::Colour::fromRGBA(92, 198, 255, 20));
+        g.setColour(sketch::Theme::blueWash().withAlpha(0.22f));
         g.fillRect(loopRect);
-        g.setColour(juce::Colour::fromRGBA(110, 208, 255, 72));
+        g.setColour(sketch::Theme::blue().withAlpha(0.68f));
         g.drawRect(loopRect, 1.0f);
     }
 
@@ -303,28 +326,27 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
                                                      static_cast<float>(resolvedRowHeight - 8));
             const auto colour = noteColour(note, selectedLane);
 
-            g.setColour(colour.withAlpha(0.16f));
-            g.fillRoundedRectangle(rect.expanded(2.0f, 1.0f), 4.0f);
-            g.setColour(colour);
-            g.fillRoundedRectangle(rect, 3.0f);
-            g.setColour(juce::Colours::white.withAlpha(selectedLane ? 0.34f : 0.18f));
-            g.drawRoundedRectangle(rect, 3.0f, 1.0f);
+            drawHatchedNote(g, rect, colour, note.isGhost,
+                            note.step * 97 + laneIndex * 19 + note.velocity);
         }
     }
 
     const float previewX = static_cast<float>(gridArea.getX()) + static_cast<float>(previewStartStep) * stepWidth;
-    g.setColour(juce::Colour::fromRGBA(255, 196, 116, 118));
-    g.drawLine(previewX, static_cast<float>(rulerArea.getY()), previewX, static_cast<float>(gridArea.getBottom()), 1.5f);
+    sketch::drawLine(g, { previewX, static_cast<float>(gridArea.getY() - kRulerHeight) },
+                     { previewX, static_cast<float>(gridArea.getBottom()) }, sketch::Theme::ochre().withAlpha(0.82f), 1.45f, previewStartStep + 211);
 
     if (playheadStep >= 0.0f)
     {
         const float playheadX = static_cast<float>(gridArea.getX()) + playheadStep * stepWidth;
-        g.setColour(juce::Colour::fromRGB(102, 210, 255));
-        g.drawLine(playheadX, static_cast<float>(rulerArea.getY()), playheadX, static_cast<float>(gridArea.getBottom()), 2.0f);
+        sketch::drawLine(g, { playheadX, static_cast<float>(gridArea.getY() - kRulerHeight) },
+                         { playheadX, static_cast<float>(gridArea.getBottom()) }, sketch::Theme::blue(), 2.1f, 313);
+        juce::Path nib;
+        nib.addTriangle(playheadX - 4.0f, static_cast<float>(gridArea.getY() - kRulerHeight),
+                        playheadX + 4.0f, static_cast<float>(gridArea.getY() - kRulerHeight),
+                        playheadX, static_cast<float>(gridArea.getY() - kRulerHeight + 7));
+        g.setColour(sketch::Theme::blue());
+        g.fillPath(nib);
     }
-
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 22));
-    g.drawRoundedRectangle(frame, 7.0f, 1.0f);
 }
 
 void Vst3GridLiteComponent::mouseDown(const juce::MouseEvent& event)
@@ -335,7 +357,7 @@ void Vst3GridLiteComponent::mouseDown(const juce::MouseEvent& event)
     const int totalSteps = juce::jmax(1, bars * 16);
 
     auto bounds = getLocalBounds().reduced(kOuterPadding);
-    if (laneCount <= 0 || bounds.getWidth() <= 24 || bounds.getHeight() <= kRulerHeight)
+    if (laneCount <= 0 || bounds.getWidth() <= kLaneLabelWidth + 24 || bounds.getHeight() <= kRulerHeight)
         return;
 
     bounds.removeFromTop(kRulerHeight);
@@ -348,9 +370,13 @@ void Vst3GridLiteComponent::mouseDown(const juce::MouseEvent& event)
     if (onLaneClicked)
         onLaneClicked(lane.laneId);
 
+    auto gridBounds = bounds.withTrimmedLeft(kLaneLabelWidth);
+    if (event.x < gridBounds.getX())
+        return;
+
     const float stepWidth = juce::jmax(static_cast<float>(kMinStepPixelWidth),
-                                       static_cast<float>(bounds.getWidth()) / static_cast<float>(totalSteps));
-    const float stepFloat = (static_cast<float>(event.x) - static_cast<float>(bounds.getX())) / stepWidth;
+                                       static_cast<float>(gridBounds.getWidth()) / static_cast<float>(totalSteps));
+    const float stepFloat = (static_cast<float>(event.x) - static_cast<float>(gridBounds.getX())) / stepWidth;
     const int step = juce::jlimit(0, totalSteps - 1, static_cast<int>(std::floor(stepFloat)));
 
     if (onStepClicked)

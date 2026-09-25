@@ -3,6 +3,10 @@
 #include <array>
 #include <cmath>
 
+#include "SketchDrawing.h"
+#include "SketchFonts.h"
+#include "SketchTheme.h"
+
 namespace bbg
 {
 namespace
@@ -252,9 +256,9 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     addAndMakeVisible(exportButton);
     addAndMakeVisible(overflowMenuButton);
 
-    rgButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(96, 120, 154));
-    clearButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(74, 82, 98));
-    dragButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(84, 112, 168));
+    rgButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
+    clearButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    dragButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
     dragDensityLabel.setText("HFX", juce::dontSendNotification);
     dragDensityLabel.setJustificationType(juce::Justification::centredLeft);
     dragDensityLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(188, 196, 210));
@@ -262,13 +266,13 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     dragDensityValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(172, 210, 255));
     dragDensityLockButton.setColour(juce::ToggleButton::textColourId, juce::Colour::fromRGB(188, 196, 210));
     exportButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(86, 106, 146));
-    prevSampleButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(58, 64, 76));
-    nextSampleButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(58, 64, 76));
+    prevSampleButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    nextSampleButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
 
     sampleNameLabel.setJustificationType(juce::Justification::centred);
-    sampleNameLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(214, 221, 232));
-    sampleNameLabel.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    sampleNameLabel.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGBA(255, 255, 255, 8));
+    sampleNameLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
+    sampleNameLabel.setColour(juce::Label::outlineColourId, sketch::Theme::graphiteSoft().withAlpha(0.5f));
+    sampleNameLabel.setColour(juce::Label::backgroundColourId, sketch::Theme::paperLight().withAlpha(0.72f));
     sampleNameLabel.setText("(none)", juce::dontSendNotification);
     sampleNameLabel.setInterceptsMouseClicks(true, false);
     sampleNameLabel.setMouseCursor(juce::MouseCursor::PointingHandCursor);
@@ -310,9 +314,9 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
 
     volumeLabel.setText("Vol", juce::dontSendNotification);
     volumeLabel.setJustificationType(juce::Justification::centredLeft);
-    volumeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 168, 182));
+    volumeLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
     volumeValueLabel.setJustificationType(juce::Justification::centred);
-    volumeValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(238, 214, 186));
+    volumeValueLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     volumeValueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
     configureRackKnob(volumeSlider,
                       "Volume",
@@ -329,9 +333,9 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
 
     panLabel.setText("Pan", juce::dontSendNotification);
     panLabel.setJustificationType(juce::Justification::centredLeft);
-    panLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 168, 182));
+    panLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
     panValueLabel.setJustificationType(juce::Justification::centred);
-    panValueLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(190, 224, 255));
+    panValueLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     panValueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
     configureRackKnob(panSlider,
                       "Pan",
@@ -498,15 +502,14 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
 void TrackRowComponent::paint(juce::Graphics& g)
 {
     const auto rowBounds = getLocalBounds().toFloat().reduced(1.0f, 1.0f);
-    const auto rowBackground = helperLaneUi ? juce::Colour::fromRGB(27, 31, 37)
-                                            : juce::Colour::fromRGB(29, 33, 39);
+    const auto rowBackground = helperLaneUi ? sketch::Theme::paperShadow().interpolatedWith(sketch::Theme::paperLight(), 0.70f)
+                                            : sketch::Theme::paperLight();
     g.setColour(rowBackground);
-    g.fillRoundedRectangle(rowBounds, 6.0f);
+    g.fillRoundedRectangle(rowBounds, 2.0f);
 
     const auto accent = helperLaneUi
-        ? (explicitDependencyUi ? juce::Colour::fromRGB(98, 132, 166) : juce::Colour::fromRGB(84, 104, 128))
-        : (isGhostTrack ? juce::Colour::fromRGB(90, 126, 170)
-                        : juce::Colour::fromRGB(230, 150, 67));
+        ? sketch::Theme::blue()
+        : (isGhostTrack ? sketch::Theme::blue() : sketch::Theme::ochre());
     const float accentWidth = helperLaneUi ? 2.0f : 3.0f;
     g.setColour(accent.withAlpha(helperLaneUi ? 0.34f : 0.4f));
     g.fillRoundedRectangle(juce::Rectangle<float>(rowBounds.getX(), rowBounds.getY(), accentWidth, rowBounds.getHeight()), 2.0f);
@@ -516,38 +519,40 @@ void TrackRowComponent::paint(juce::Graphics& g)
         const float branchX = rowBounds.getX() + 10.0f;
         const float branchTop = rowBounds.getY() + 8.0f;
         const float branchMidY = rowBounds.getY() + (displayMode == LaneRackDisplayMode::Full ? 19.0f : rowBounds.getCentreY());
-        g.setColour(juce::Colour::fromRGBA(184, 198, 216, explicitDependencyUi ? 86 : 58));
-        g.drawLine(branchX, branchTop, branchX, branchMidY, 1.0f);
-        g.drawLine(branchX, branchMidY, branchX + 8.0f, branchMidY, 1.0f);
+        sketch::drawLine(g, { branchX, branchTop }, { branchX, branchMidY },
+                         sketch::Theme::graphiteSoft().withAlpha(explicitDependencyUi ? 0.62f : 0.42f), 1.0f, laneId.hashCode());
+        sketch::drawLine(g, { branchX, branchMidY }, { branchX + 8.0f, branchMidY },
+                         sketch::Theme::graphiteSoft().withAlpha(explicitDependencyUi ? 0.62f : 0.42f), 1.0f, laneId.hashCode() + 3);
 
         if (explicitDependencyUi)
         {
-            g.setColour(juce::Colour::fromRGBA(212, 222, 236, 92));
+            g.setColour(sketch::Theme::blue().withAlpha(0.55f));
             g.fillEllipse(branchX - 1.5f, branchTop - 1.0f, 3.0f, 3.0f);
         }
     }
 
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, helperLaneUi ? 12 : 18));
-    g.drawRoundedRectangle(rowBounds, 6.0f, 1.0f);
+    sketch::drawLine(g, { rowBounds.getX(), rowBounds.getBottom() },
+                     { rowBounds.getRight(), rowBounds.getBottom() },
+                     sketch::Theme::gridLine(), 0.8f, laneId.hashCode() + 11);
 
     if (displayMode != LaneRackDisplayMode::Minimal && helperBadgeText.isNotEmpty())
     {
-        g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+        g.setFont(sketch::notebookFont(10.0f, true));
         const auto badgeWidth = juce::jlimit(50.0f, 112.0f, textWidthForFont(g.getCurrentFont(), helperBadgeText) + 18.0f);
         const auto badgeBounds = juce::Rectangle<float>(rowBounds.getRight() - badgeWidth - 6.0f, rowBounds.getY() + 5.0f, badgeWidth, 14.0f);
-        g.setColour(juce::Colour::fromRGBA(94, 126, 162, helperLaneUi ? 44 : 32));
+        g.setColour(sketch::Theme::blueWash().withAlpha(helperLaneUi ? 0.42f : 0.28f));
         g.fillRoundedRectangle(badgeBounds, 4.0f);
-        g.setColour(juce::Colour::fromRGBA(202, 214, 228, helperLaneUi ? 182 : 160));
+        g.setColour(sketch::Theme::graphiteSoft());
         g.drawText(helperBadgeText, badgeBounds.toNearestInt(), juce::Justification::centred, false);
     }
 
     if (displayMode == LaneRackDisplayMode::Full && generationPriority > 0)
     {
         const auto priorityBounds = juce::Rectangle<float>(rowBounds.getRight() - 48.0f, rowBounds.getBottom() - 17.0f, 42.0f, 12.0f);
-        g.setColour(juce::Colour::fromRGBA(255, 210, 138, 44));
+        g.setColour(sketch::Theme::ochreWash());
         g.fillRoundedRectangle(priorityBounds, 4.0f);
-        g.setColour(juce::Colour::fromRGBA(255, 230, 190, 190));
-        g.setFont(juce::Font(juce::FontOptions(8.0f, juce::Font::bold)));
+        g.setColour(sketch::Theme::graphiteSoft());
+        g.setFont(sketch::notebookFont(9.5f, true));
         g.drawText("P" + juce::String(generationPriority), priorityBounds.toNearestInt(), juce::Justification::centred, false);
     }
 }
@@ -829,13 +834,13 @@ void TrackRowComponent::applyIdentityVisualStyle()
         : juce::Font(juce::FontOptions(13.0f, juce::Font::bold));
     nameLabel.setFont(nameFont);
     nameLabel.setColour(juce::Label::textColourId,
-                        helperLaneUi ? juce::Colour::fromRGB(204, 212, 224)
-                                     : juce::Colour::fromRGB(232, 236, 242));
+                        helperLaneUi ? sketch::Theme::graphiteSoft()
+                                     : sketch::Theme::graphite());
 
     roleLabel.setFont(juce::Font(juce::FontOptions(helperLaneUi ? 9.5f : 10.0f)));
     roleLabel.setColour(juce::Label::textColourId,
-                        helperLaneUi ? juce::Colour::fromRGB(126, 136, 148)
-                                     : juce::Colour::fromRGB(144, 152, 164));
+                        helperLaneUi ? sketch::Theme::graphiteSoft().withAlpha(0.72f)
+                                     : sketch::Theme::graphiteSoft());
 }
 
 void TrackRowComponent::setBassControls(int keyRootChoice, int scaleModeChoice)

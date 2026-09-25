@@ -2,6 +2,9 @@
 
 #include <algorithm>
 
+#include "SketchDrawing.h"
+#include "SketchTheme.h"
+
 namespace bbg
 {
 namespace
@@ -21,16 +24,32 @@ SampleAnalysisPanelComponent::SampleAnalysisPanelComponent()
 void SampleAnalysisPanelComponent::paint(juce::Graphics& g)
 {
     auto panel = getLocalBounds().toFloat().reduced(1.0f);
-    g.setColour(juce::Colour::fromRGB(17, 19, 23));
-    g.fillRoundedRectangle(panel, 8.0f);
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 20));
-    g.drawRoundedRectangle(panel, 8.0f, 1.0f);
+    g.setColour(sketch::Theme::paperLight().withAlpha(0.90f));
+    g.fillRoundedRectangle(panel, 4.0f);
+    sketch::drawFrame(g, panel, sketch::Theme::graphiteSoft(), 1.15f, 701, 4.0f);
+
+    auto titleWash = juce::Rectangle<float>(12.0f, 9.0f, 205.0f, 21.0f);
+    g.setColour(sketch::Theme::ochreWash());
+    g.fillRect(titleWash.translated(sketch::wobbleFor(12, 1.0f), 0.0f));
+
+    const float waveLeft = 235.0f;
+    const float waveRight = juce::jmin(panel.getRight() - 12.0f, waveLeft + 76.0f);
+    juce::Path wave;
+    wave.startNewSubPath(waveLeft, 19.0f);
+    for (float px = waveLeft + 3.0f; px <= waveRight; px += 3.0f)
+    {
+        const int index = static_cast<int>((px - waveLeft) / 3.0f);
+        const float amplitude = 2.0f + static_cast<float>((index * 7) % 7);
+        wave.lineTo(px, 19.0f + ((index % 2 == 0) ? -amplitude : amplitude));
+    }
+    g.setColour(sketch::Theme::graphiteSoft().withAlpha(0.72f));
+    g.strokePath(wave, juce::PathStrokeType(1.0f));
 
     if (analysisFileDropHighlight)
     {
-        g.setColour(juce::Colour::fromRGBA(130, 188, 255, 58));
+        g.setColour(sketch::Theme::blueWash());
         g.fillRoundedRectangle(chooseFileButton.getBounds().toFloat().reduced(-2.0f), 6.0f);
-        g.setColour(juce::Colour::fromRGBA(178, 218, 255, 190));
+        g.setColour(sketch::Theme::blue());
         g.drawRoundedRectangle(chooseFileButton.getBounds().toFloat().reduced(-2.0f), 6.0f, 1.5f);
     }
 }
@@ -203,9 +222,9 @@ void SampleAnalysisPanelComponent::setPanelState(SampleAnalysisRequest::SourceTy
 
 void SampleAnalysisPanelComponent::setupUi()
 {
-    analysisTitleLabel.setText("SAMPLE ANALYSIS", juce::dontSendNotification);
-    analysisTitleLabel.setFont(juce::Font(12.5f, juce::Font::bold));
-    analysisTitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(222, 228, 236));
+    analysisTitleLabel.setText("Sample Analysis", juce::dontSendNotification);
+    analysisTitleLabel.setFont(juce::Font(juce::FontOptions(17.0f, juce::Font::bold)));
+    analysisTitleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     analysisTitleLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(analysisTitleLabel);
 
@@ -224,8 +243,8 @@ void SampleAnalysisPanelComponent::setupUi()
     auto styleLabel = [](juce::Label& label)
     {
         label.setJustificationType(juce::Justification::centredLeft);
-        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(166, 176, 192));
-        label.setFont(juce::Font(11.0f));
+        label.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
+        label.setFont(juce::Font(juce::FontOptions(11.0f)));
     };
 
     styleLabel(sourceLabel);
@@ -239,9 +258,9 @@ void SampleAnalysisPanelComponent::setupUi()
     styleLabel(statusLabel);
     styleLabel(detailsLabel);
     styleLabel(debugLabel);
-    statusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(152, 200, 255));
-    detailsLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(174, 188, 208));
-    debugLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(192, 198, 210));
+    statusLabel.setColour(juce::Label::textColourId, sketch::Theme::blue().darker(0.35f));
+    detailsLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
+    debugLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
 
     debugTextBox.setMultiLine(true);
     debugTextBox.setReadOnly(true);
@@ -249,10 +268,10 @@ void SampleAnalysisPanelComponent::setupUi()
     debugTextBox.setScrollbarsShown(true);
     debugTextBox.setPopupMenuEnabled(false);
     debugTextBox.setText("No generator debug details yet.", juce::dontSendNotification);
-    debugTextBox.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(22, 25, 30));
-    debugTextBox.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(178, 194, 214));
-    debugTextBox.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(44, 52, 66));
-    debugTextBox.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colour::fromRGB(76, 120, 182));
+    debugTextBox.setColour(juce::TextEditor::backgroundColourId, sketch::Theme::paper());
+    debugTextBox.setColour(juce::TextEditor::textColourId, sketch::Theme::graphite());
+    debugTextBox.setColour(juce::TextEditor::outlineColourId, sketch::Theme::graphiteSoft().withAlpha(0.58f));
+    debugTextBox.setColour(juce::TextEditor::focusedOutlineColourId, sketch::Theme::blue());
 
     sourceCombo.addItem("None", 1);
     sourceCombo.addItem("Live Input", 2);
@@ -287,18 +306,16 @@ void SampleAnalysisPanelComponent::setupUi()
     reactivitySlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     reactivitySlider.setRange(0.0, 1.0, 0.01);
     reactivitySlider.setValue(0.7, juce::dontSendNotification);
-    reactivitySlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(98, 170, 242));
-    reactivitySlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(192, 220, 255));
+    reactivitySlider.setColour(juce::Slider::trackColourId, sketch::Theme::blue());
 
     supportSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     supportSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     supportSlider.setRange(0.0, 1.0, 0.01);
     supportSlider.setValue(0.5, juce::dontSendNotification);
-    supportSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(234, 150, 88));
-    supportSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(248, 210, 168));
+    supportSlider.setColour(juce::Slider::trackColourId, sketch::Theme::ochre());
 
-    chooseFileButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(74, 88, 118));
-    analyzeButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(96, 132, 176));
+    chooseFileButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    analyzeButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
 
     addAndMakeVisible(sourceLabel);
     addAndMakeVisible(modeLabel);

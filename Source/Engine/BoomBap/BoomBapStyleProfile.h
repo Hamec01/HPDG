@@ -3,6 +3,7 @@
 #include <array>
 
 #include <juce_core/juce_core.h>
+#include "BoomBapTiming.h"
 
 namespace bbg
 {
@@ -83,10 +84,47 @@ struct BoomBapStyleProfile
     float laneRideActivity = 0.26f;
     float laneClapActivity = 0.92f;
     float laneCymbalActivity = 0.24f;
+
+    struct Pocket
+    {
+        BoomBapTiming::TimingDistribution kickAnchor { 0.0f, 1.5f, -3.0f, 3.0f };
+        BoomBapTiming::TimingDistribution kickSyncopated { 0.0f, 2.5f, -6.0f, 6.0f };
+        BoomBapTiming::TimingDistribution kickPickup { -1.0f, 3.0f, -8.0f, 6.0f };
+        BoomBapTiming::TimingDistribution snareBeat2 { 10.0f, 2.5f, 4.0f, 16.0f };
+        BoomBapTiming::TimingDistribution snareBeat4 { 8.0f, 2.5f, 3.0f, 14.0f };
+        BoomBapTiming::TimingDistribution ghostBeforeSnare { -3.0f, 4.0f, -12.0f, 7.0f };
+        BoomBapTiming::TimingDistribution ghostAfterSnare { 3.0f, 4.0f, -7.0f, 12.0f };
+        BoomBapTiming::TimingDistribution hatStrong { 0.0f, 1.5f, -4.0f, 4.0f };
+        BoomBapTiming::TimingDistribution hatWeak { 1.0f, 1.5f, -3.0f, 5.0f };
+        BoomBapTiming::TimingDistribution openHat { 1.0f, 2.5f, -5.0f, 7.0f };
+        BoomBapTiming::TimingDistribution ride { 0.0f, 2.0f, -5.0f, 5.0f };
+        BoomBapTiming::TimingDistribution percussion { 0.0f, 3.0f, -8.0f, 8.0f };
+        float humanJitterSigmaPPQ = 1.25f;
+        float humanJitterLimitPPQ = 4.0f;
+    } pocket;
+
+    struct SimilarityTargets
+    {
+        float confirmationLow = 0.75f, confirmationHigh = 0.95f;
+        float developmentLow = 0.60f, developmentHigh = 0.85f;
+        float turnaroundLow = 0.50f, turnaroundHigh = 0.80f;
+        float tolerance = 0.16f;
+        std::array<float, 5> familyWeights { 1.30f, 2.0f, 0.65f, 0.30f, 0.25f }; // kick/snare/hats/ghost/perc
+    } similarity;
+
+    struct ScoreWeights
+    {
+        float backbeat = 1.4f, metricSupport = 1.2f, groove = 1.3f, breakResemblance = 1.0f;
+        float microPlausibility = 0.8f, negativeSpace = 0.9f, lowEnd = 0.8f;
+        float variation = 0.9f, density = 0.8f, velocity = 0.7f;
+        float trapLeak = 1.2f, earlySnare = 1.0f, overHumanize = 0.8f;
+        float sub808 = 0.9f, conflict = 1.2f, spam = 1.0f;
+    } scorer;
 };
 
 const std::array<BoomBapStyleProfile, 6>& getBoomBapProfiles();
 const BoomBapStyleProfile& getBoomBapProfile(int index);
+const BoomBapStyleProfile& getBoomBapProfile(BoomBapSubstyle substyle);
 int getSubstyleMask(BoomBapSubstyle substyle);
 float interpretedReferenceTempo(const BoomBapStyleProfile& style);
 } // namespace bbg

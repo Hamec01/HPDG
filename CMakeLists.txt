@@ -13,6 +13,12 @@ include(CTest)
 
 add_subdirectory(JUCE)
 
+juce_add_binary_data(HPDG_FontAssets
+    SOURCES
+        Assets/Fonts/Neucha.ttf
+        Assets/Fonts/OFL.txt
+)
+
 juce_add_plugin(HPDG
     COMPANY_NAME "BoomBap Labs"
     BUNDLE_ID com.boombaplabs.boombapgenerator
@@ -103,6 +109,9 @@ target_sources(HPDG
     Source/Services/MidiImportService.cpp
     Source/Services/TemporaryMidiExportService.cpp
         Source/UI/MainHeaderComponent.cpp
+        Source/UI/SketchDrawing.cpp
+        Source/UI/SketchFonts.cpp
+        Source/UI/SketchLookAndFeel.cpp
         Source/UI/SampleAnalysisPanelComponent.cpp
         Source/UI/StyleLabInlineComponent.cpp
         Source/UI/StyleLabComponent.cpp
@@ -123,6 +132,7 @@ target_include_directories(HPDG
 
 target_link_libraries(HPDG
     PRIVATE
+        HPDG_FontAssets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -211,6 +221,15 @@ target_link_libraries(HPDG_CoreTests
 )
 
 add_test(NAME HPDG_CoreTests COMMAND HPDG_CoreTests)
+
+add_executable(HPDG_BoomBapBatchAudit
+    Tests/BoomBapBatchAudit.cpp
+    Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
+    Source/Engine/BoomBap/BoomBapStyleProfile.cpp
+)
+target_include_directories(HPDG_BoomBapBatchAudit PRIVATE Source)
+target_link_libraries(HPDG_BoomBapBatchAudit PRIVATE juce::juce_core PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
 
 add_executable(HPDG_LaneBoundaryTests
     Tests/LaneBoundaryRegressionTests.cpp

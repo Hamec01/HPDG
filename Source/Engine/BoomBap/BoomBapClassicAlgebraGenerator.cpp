@@ -118,23 +118,79 @@ int microMsToPpq(float ms, float bpm)
     return static_cast<int>(std::lround(ms * 960.0f * safeBpm / 60000.0f));
 }
 
-int randomMicroMs(std::mt19937& rng, float bpm, int minMs, int maxMs, float humanize)
+BoomBapTiming::TimingBreakdown makeTiming(std::mt19937& rng,
+                                         const BoomBapClassicAlgebraParams& params,
+                                         const BoomBapStyleProfile& style,
+                                         int lane,
+                                         BoomBapClassicRole role,
+                                         int tick64)
 {
-    if (humanize <= 0.01f)
-        return 0;
+    BoomBapTiming::TimingBreakdown out;
+    const int localTick = ((tick64 % kTicksPerBar) + kTicksPerBar) % kTicksPerBar;
+    const bool weakSixteenth = localTick % 8 == 4;
+    float swingMultiplier = 0.0f;
+    if (weakSixteenth)
+    {
+        if (lane == BoomBapClassicLanes::HiHat || lane == BoomBapClassicLanes::HatAccent) swingMultiplier = 0.90f;
+        else if (lane == BoomBapClassicLanes::Ride) swingMultiplier = 1.0f;
+        else if (lane == BoomBapClassicLanes::OpenHat) swingMultiplier = 0.90f;
+        else if (lane == BoomBapClassicLanes::ClapGhost) swingMultiplier = 0.65f;
+        else if (lane == BoomBapClassicLanes::Perc) swingMultiplier = 0.70f;
+        else if (lane == BoomBapClassicLanes::Kick && role != BoomBapClassicRole::Anchor) swingMultiplier = 0.22f;
+    }
+    out.structuralSwingPPQ = static_cast<int>(std::lround(BoomBapTiming::getSixteenthSwingOffsetPPQ(params.swing) * swingMultiplier));
 
-    const float scale = std::clamp(0.35f + humanize * 0.75f, 0.0f, 1.0f);
-    const int ms = randomInt(rng, static_cast<int>(std::lround(minMs * scale)), static_cast<int>(std::lround(maxMs * scale)));
-    return microMsToPpq(static_cast<float>(ms), bpm);
+    BoomBapTiming::TimingDistribution stylePocket = style.pocket.percussion;
+    if (lane == BoomBapClassicLanes::Snare)
+    {
+        stylePocket = localTick == 16 ? style.pocket.snareBeat2 : style.pocket.snareBeat4;
+        stylePocket.meanPPQ = static_cast<float>(localTick == 16 ? style.snareLateBeat2Ticks : style.snareLateBeat4Ticks);
+        stylePocket.minPPQ = std::max(0.0f, stylePocket.meanPPQ - 7.0f);
+        stylePocket.maxPPQ = stylePocket.meanPPQ + 7.0f;
+    }
+    else if (lane == BoomBapClassicLanes::Kick)
+        stylePocket = role == BoomBapClassicRole::Anchor ? style.pocket.kickAnchor : style.pocket.kickSyncopated;
+    else if (lane == BoomBapClassicLanes::KickGhost)
+        stylePocket = style.pocket.kickPickup;
+    else if (lane == BoomBapClassicLanes::ClapGhost)
+        stylePocket = localTick < 16 || (localTick > 16 && localTick < 48)
+            ? style.pocket.ghostBeforeSnare : style.pocket.ghostAfterSnare;
+    else if (lane == BoomBapClassicLanes::HiHat || lane == BoomBapClassicLanes::HatAccent)
+        stylePocket = weakSixteenth ? style.pocket.hatWeak : style.pocket.hatStrong;
+    else if (lane == BoomBapClassicLanes::OpenHat)
+        stylePocket = style.pocket.openHat;
+    else if (lane == BoomBapClassicLanes::Ride)
+        stylePocket = style.pocket.ride;
+
+    auto pocketDistribution = stylePocket;
+    pocketDistribution.sigmaPPQ *= std::clamp(params.humanize, 0.0f, 1.0f);
+    out.pocketPPQ = BoomBapTiming::sampleTruncatedGaussianPPQ(rng, pocketDistribution);
+    BoomBapTiming::TimingDistribution jitter { 0.0f,
+        style.pocket.humanJitterSigmaPPQ * params.humanize,
+        -style.pocket.humanJitterLimitPPQ,
+        style.pocket.humanJitterLimitPPQ };
+    out.humanJitterPPQ = BoomBapTiming::sampleTruncatedGaussianPPQ(rng, jitter);
+    return out;
 }
 
-int swungHatMicro(std::mt19937& rng, const BoomBapClassicAlgebraParams& params, const BoomBapAlgebraProfile& profile, bool offbeat)
+int randomMicroMs(std::mt19937& rng, float bpm, int minMs, int maxMs, float humanize)
 {
-    const float swing = profiledSwing(params.swing, profile);
-    const int structuralMs = offbeat ? static_cast<int>(std::lround((swing - 0.5f) * 85.0f)) : 0;
-    const int humanMs = offbeat ? randomInt(rng, profile.hatLateMsMin, profile.hatLateMsMax)
-                                : randomInt(rng, 0, std::max(1, profile.hatLateMsMin / 2));
-    return microMsToPpq(static_cast<float>(structuralMs + static_cast<int>(humanMs * params.humanize)), params.bpm);
+    const float ticksPerMs = 960.0f * std::clamp(bpm, 40.0f, 220.0f) / 60000.0f;
+    BoomBapTiming::TimingDistribution d {
+        0.5f * (minMs + maxMs) * ticksPerMs,
+        std::max(0.5f, (maxMs - minMs) * ticksPerMs / 6.0f) * humanize,
+        minMs * ticksPerMs,
+        maxMs * ticksPerMs
+    };
+    return BoomBapTiming::sampleTruncatedGaussianPPQ(rng, d);
+}
+
+int swungHatMicro(std::mt19937& rng, const BoomBapClassicAlgebraParams& params, const BoomBapAlgebraProfile&, bool offbeat)
+{
+    const auto timing = makeTiming(rng, params, getBoomBapProfile(params.substyle), BoomBapClassicLanes::HiHat,
+                                   offbeat ? BoomBapClassicRole::WeakPulse : BoomBapClassicRole::StrongPulse,
+                                   offbeat ? 4 : 0);
+    return timing.total();
 }
 
 int barStart(int bar)
@@ -204,9 +260,23 @@ void addNote(BoomBapClassicAlgebraPattern& pattern,
     note.length = std::max(1, length);
     note.velocity = std::clamp(velocity, 1, 127);
     note.microTimingTicks = microTimingTicks;
+    note.timing.pocketPPQ = microTimingTicks;
     note.role = role;
     note.roleString = BoomBapClassicAlgebraGenerator::roleToString(role);
     pattern.notesByLane[static_cast<size_t>(lane)].push_back(note);
+}
+
+void addTimedNote(BoomBapClassicAlgebraPattern& pattern,
+                  const BoomBapClassicAlgebraParams& params,
+                  const BoomBapStyleProfile& style,
+                  std::mt19937& rng,
+                  int lane, int bar, int tickInBar, int velocity,
+                  BoomBapClassicRole role, int length = 1)
+{
+    const auto timing = makeTiming(rng, params, style, lane, role, tickInBar);
+    addNote(pattern, lane, bar, tickInBar, velocity, timing.total(), role, length);
+    auto& note = pattern.notesByLane[static_cast<size_t>(lane)].back();
+    note.timing = timing;
 }
 
 int countLane(const BoomBapClassicAlgebraPattern& pattern, int lane)
@@ -278,9 +348,17 @@ const char* BoomBapClassicAlgebraGenerator::roleToString(BoomBapClassicRole role
     switch (role)
     {
         case BoomBapClassicRole::Anchor: return "anchor";
+        case BoomBapClassicRole::Backbeat: return "backbeat";
+        case BoomBapClassicRole::Syncopated: return "syncopated";
+        case BoomBapClassicRole::Pickup: return "pickup";
+        case BoomBapClassicRole::Response: return "response";
         case BoomBapClassicRole::Support: return "support";
         case BoomBapClassicRole::Ghost: return "ghost";
         case BoomBapClassicRole::Accent: return "accent";
+        case BoomBapClassicRole::WeakPulse: return "weak_pulse";
+        case BoomBapClassicRole::StrongPulse: return "strong_pulse";
+        case BoomBapClassicRole::Turnaround: return "turnaround";
+        case BoomBapClassicRole::Ornament: return "ornament";
         case BoomBapClassicRole::Fill: return "fill";
         case BoomBapClassicRole::Ending: return "ending";
         default: return "support";
@@ -310,7 +388,7 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const Boom
     {
         auto pattern = generateCandidate(params, candidate);
         validateAndRepair(pattern, params);
-        pattern.score = scorer.score(pattern, params);
+        pattern.score = scorer.score(pattern, params, getBoomBapProfile(params.substyle));
 
         if (candidate == 0 || pattern.score.quality > bestScore)
         {
@@ -321,7 +399,6 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const Boom
     }
 
     best.debugSummary = buildDebugSummary(best, params);
-    juce::Logger::writeToLog(best.debugSummary);
     return best;
 }
 
@@ -338,7 +415,7 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generateCandidate(c
     oneBar.notesByLane[BoomBapClassicLanes::Sub808].clear();
     auto oneBarParams = params;
     oneBarParams.bars = 1;
-    const bool cloneGoodBar = scorer.score(oneBar, oneBarParams).quality > 2.6f && chance(rng, 0.68f);
+    const bool cloneGoodBar = scorer.score(oneBar, oneBarParams, getBoomBapProfile(params.substyle)).quality > 2.6f && chance(rng, 0.82f);
     if (params.bars > 1)
     {
         if (cloneGoodBar)
@@ -347,13 +424,12 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generateCandidate(c
             generateBar(pattern, params, candidateIndex, 1, rng);
     }
 
-    const auto barOneKickSkeleton = laneTicksInBar(pattern, BoomBapClassicLanes::Kick, 0);
     if (params.bars > 2)
-        generateBar(pattern, params, candidateIndex, 2, rng, &barOneKickSkeleton);
+        deriveBarFromStatement(pattern, params, rng, 2);
     if (params.bars > 3)
-        generateBar(pattern, params, candidateIndex, 3, rng, &barOneKickSkeleton);
+        deriveBarFromStatement(pattern, params, rng, 3);
     for (int bar = 4; bar < params.bars; ++bar)
-        generateBar(pattern, params, candidateIndex, bar, rng, &barOneKickSkeleton);
+        deriveBarFromStatement(pattern, params, rng, bar);
 
     for (auto& lane : pattern.notesByLane)
         dedupeLane(lane);
@@ -369,14 +445,15 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
 {
     const bool ending = (barIndex % 4) == 3;
     const auto& profile = algebraProfile(params.substyle);
+    const auto& style = getBoomBapProfile(params.substyle);
     const float den = params.density;
     const float hum = params.humanize;
     const float var = params.variation;
 
     for (const int snareTick : { 16, 48 })
     {
-        const int delay = randomMicroMs(rng, params.bpm, profile.snareLateMsMin, profile.snareLateMsMax, hum);
-        addNote(pattern, BoomBapClassicLanes::Snare, barIndex, snareTick, randomInt(rng, 100, 120), delay, BoomBapClassicRole::Anchor);
+        addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::Snare, barIndex, snareTick,
+                     randomInt(rng, 100, 120), BoomBapClassicRole::Backbeat);
 
         for (const int offset : { -4, -2, 2, 4 })
         {
@@ -388,12 +465,11 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
             if (chance(rng, ghostProbability))
             {
                 const int velocity = randomInt(rng, 35, std::min(75, 88));
-                addNote(pattern,
+                addTimedNote(pattern, params, style, rng,
                         BoomBapClassicLanes::ClapGhost,
                         barIndex,
                         snareTick + offset,
                         velocity,
-                        randomMicroMs(rng, params.bpm, profile.ghostMsMin, profile.ghostMsMax, hum),
                         BoomBapClassicRole::Ghost);
             }
         }
@@ -425,7 +501,7 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
         if (barIndex == 0 && candidate.tick == 0)
             probability = 0.98f;
         else if (candidate.tick == 0)
-            probability = std::max(probability, 0.62f);
+            probability = std::max(probability, 0.32f);
         if (ending && candidate.tick >= 52)
             probability += 0.18f;
         if (answerTick && barIndex % 4 == 2)
@@ -460,25 +536,22 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
     std::sort(selectedKickTicks.begin(), selectedKickTicks.end());
 
     for (const int tick : selectedKickTicks)
-        addNote(pattern,
+        addTimedNote(pattern, params, style, rng,
                 BoomBapClassicLanes::Kick,
                 barIndex,
                 tick,
                 randomInt(rng, 85, 118),
-                randomMicroMs(rng, params.bpm, profile.kickMsMin, profile.kickMsMax, hum),
-                BoomBapClassicRole::Anchor);
+                (tick == 0 || tick == 32) ? BoomBapClassicRole::Anchor : BoomBapClassicRole::Syncopated);
 
     for (const int tick : { 4, 28, 36, 60 })
     {
         const bool tooClose = std::any_of(selectedKickTicks.begin(), selectedKickTicks.end(), [tick](int mainTick) { return std::abs(mainTick - tick) < 4; });
         if (!tooClose && chance(rng, 0.02f + profile.kickClusterRate * 0.10f + den * 0.05f + var * 0.05f + (ending ? 0.05f : 0.0f)))
-            addNote(pattern,
+            addTimedNote(pattern, params, style, rng,
                     BoomBapClassicLanes::KickGhost,
                     barIndex,
                     tick,
-                    randomInt(rng, 35, 70),
-                    randomMicroMs(rng, params.bpm, profile.kickMsMin, std::max(profile.kickMsMax, profile.kickMsMin + 3), hum),
-                    BoomBapClassicRole::Ghost);
+                    randomInt(rng, 35, 70), BoomBapClassicRole::Pickup);
     }
 
     for (const int tick : { 0, 8, 16, 24, 32, 40, 48, 56 })
@@ -488,8 +561,8 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
 
         const bool offbeat = (tick % 16) == 8;
         const int baseVelocity = (tick % 16) == 0 ? randomInt(rng, 72, 88) : randomInt(rng, 48, 68);
-        const int micro = swungHatMicro(rng, params, profile, offbeat);
-        addNote(pattern, BoomBapClassicLanes::HiHat, barIndex, tick, baseVelocity, micro, BoomBapClassicRole::Support);
+        addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::HiHat, barIndex, tick, baseVelocity,
+                     offbeat ? BoomBapClassicRole::WeakPulse : BoomBapClassicRole::StrongPulse);
     }
 
     for (const int tick : { 4, 12, 20, 28, 36, 44, 52, 60 })
@@ -499,12 +572,11 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
         if (chance(rng, probability))
         {
             const bool accent = chance(rng, profile.hatAccentRate + den * 0.08f + (beforeSnare ? 0.12f : 0.0f));
-            addNote(pattern,
+            addTimedNote(pattern, params, style, rng,
                     accent ? BoomBapClassicLanes::HatAccent : BoomBapClassicLanes::HiHat,
                     barIndex,
                     tick,
                     accent ? randomInt(rng, 85, 105) : randomInt(rng, 48, 68),
-                    swungHatMicro(rng, params, profile, true),
                     accent ? BoomBapClassicRole::Accent : BoomBapClassicRole::Support);
         }
     }
@@ -584,6 +656,56 @@ void BoomBapClassicAlgebraGenerator::cloneBarWithSmallMutation(BoomBapClassicAlg
                 BoomBapClassicRole::Accent);
 }
 
+void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebraPattern& pattern,
+                                                             const BoomBapClassicAlgebraParams& params,
+                                                             std::mt19937& rng,
+                                                             int targetBar) const
+{
+    const bool development = targetBar % 4 == 2;
+    const bool turnaround = targetBar % 4 == 3;
+    const auto& style = getBoomBapProfile(params.substyle);
+    for (int lane = 0; lane < BoomBapClassicLanes::Count; ++lane)
+    {
+        const auto source = pattern.notesByLane[static_cast<size_t>(lane)];
+        for (const auto& original : source)
+        {
+            if (original.barIndex != 0 || lane == BoomBapClassicLanes::Sub808)
+                continue;
+            auto copy = original;
+            const bool protectedBackbeat = lane == BoomBapClassicLanes::Snare
+                && (normalizeTickInBar(copy.tick64) == 16 || normalizeTickInBar(copy.tick64) == 48);
+            const float removeChance = protectedBackbeat ? 0.0f
+                : (development ? 0.10f + params.variation * 0.08f : turnaround ? 0.16f + params.variation * 0.10f : 0.05f);
+            if (chance(rng, removeChance))
+                continue; // HatDropout / RemovePickup / RemoveGhost
+            copy.barIndex = targetBar;
+            int local = normalizeTickInBar(copy.tick64);
+            if (lane == BoomBapClassicLanes::Kick && local % 16 != 0 && chance(rng, development ? 0.28f : 0.16f))
+            {
+                local = std::clamp(local + (chance(rng, 0.5f) ? 4 : -4), 0, 63); // ShiftSyncopatedKick
+                copy.role = turnaround ? BoomBapClassicRole::Turnaround : BoomBapClassicRole::Response;
+                copy.roleString = roleToString(copy.role);
+                copy.timing = makeTiming(rng, params, style, lane, copy.role, local);
+                copy.microTimingTicks = copy.timing.total();
+            }
+            copy.tick64 = targetBar * kTicksPerBar + local;
+            pattern.notesByLane[static_cast<size_t>(lane)].push_back(copy);
+        }
+    }
+    if (development && chance(rng, 0.45f + params.variation * 0.2f))
+        addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::ClapGhost, targetBar,
+                     chance(rng, .5f) ? 12 : 44, randomInt(rng, 36, 62), BoomBapClassicRole::Ghost);
+    if (turnaround)
+    {
+        if (chance(rng, 0.62f))
+            addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::HatAccent, targetBar, 60,
+                         randomInt(rng, 84, 104), BoomBapClassicRole::Turnaround);
+        if (chance(rng, 0.38f + params.variation * .2f))
+            addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::Kick, targetBar, 56,
+                         randomInt(rng, 82, 108), BoomBapClassicRole::Turnaround);
+    }
+}
+
 void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPattern& pattern,
                                                        const BoomBapClassicAlgebraParams& params) const
 {
@@ -606,6 +728,21 @@ void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPatt
                         microMsToPpq(static_cast<float>((profile.snareLateMsMin + profile.snareLateMsMax) / 2), params.bpm),
                         BoomBapClassicRole::Anchor);
                 pattern.repairsApplied.add("add_missing_snare");
+            }
+        }
+
+        int carrierCount = 0;
+        for (const auto& note : pattern.notesByLane[BoomBapClassicLanes::HiHat])
+            carrierCount += note.barIndex == bar;
+        for (const int carrierTick : { 0, 16, 32, 48 })
+        {
+            if (carrierCount >= 4)
+                break;
+            if (!laneHasAt(pattern, BoomBapClassicLanes::HiHat, bar, carrierTick))
+            {
+                addNote(pattern, BoomBapClassicLanes::HiHat, bar, carrierTick, 72, 0, BoomBapClassicRole::StrongPulse);
+                ++carrierCount;
+                pattern.repairsApplied.add("restore_readable_hat_carrier");
             }
         }
     }
@@ -687,7 +824,7 @@ void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPatt
 
     for (auto& note : pattern.notesByLane[BoomBapClassicLanes::Snare])
     {
-        if (note.role == BoomBapClassicRole::Anchor && note.microTimingTicks < 0)
+        if ((note.role == BoomBapClassicRole::Anchor || note.role == BoomBapClassicRole::Backbeat) && note.microTimingTicks < 0)
         {
             note.microTimingTicks = 0;
             pattern.repairsApplied.add("prevent_early_main_snare");
@@ -742,9 +879,9 @@ juce::String BoomBapClassicAlgebraGenerator::buildDebugSummary(const BoomBapClas
     lines.add("repairs applied: " + (pattern.repairsApplied.isEmpty() ? juce::String("none") : pattern.repairsApplied.joinIntoString(",")));
     lines.add("phrase roles:");
     lines.add("  bar 1 statement");
-    lines.add("  bar 2 repeat_or_small_variation");
-    lines.add("  bar 3 answer");
-    lines.add("  bar 4 ending_or_fill");
+    lines.add("  bar 2 confirmation");
+    lines.add("  bar 3 development");
+    lines.add("  bar 4 turnaround");
     return lines.joinIntoString("\n");
 }
 } // namespace bbg

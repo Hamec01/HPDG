@@ -7,6 +7,9 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include "../Core/TrackRegistry.h"
+#include "SketchDrawing.h"
+#include "SketchFonts.h"
+#include "SketchTheme.h"
 
 namespace bbg
 {
@@ -167,32 +170,37 @@ float reverbNormalized(double percentValue)
     return juce::jlimit(0.0f, 1.0f, static_cast<float>(percentValue / 100.0));
 }
 
-juce::Colour shellBase() { return juce::Colour::fromRGB(8, 8, 8); }
-juce::Colour shellRaised() { return juce::Colour::fromRGB(16, 14, 12); }
-juce::Colour panelBase() { return juce::Colour::fromRGB(24, 21, 18); }
-juce::Colour panelRaised() { return juce::Colour::fromRGB(34, 29, 25); }
-juce::Colour panelInset() { return juce::Colour::fromRGB(12, 11, 10); }
-juce::Colour copper() { return juce::Colour::fromRGB(185, 118, 61); }
-juce::Colour amber() { return juce::Colour::fromRGB(232, 176, 96); }
-juce::Colour amberBright() { return juce::Colour::fromRGB(252, 214, 143); }
-juce::Colour steel() { return juce::Colour::fromRGB(179, 184, 190); }
-juce::Colour textMain() { return juce::Colour::fromRGB(233, 226, 214); }
-juce::Colour textMuted() { return juce::Colour::fromRGB(145, 136, 124); }
-juce::Colour danger() { return juce::Colour::fromRGB(197, 102, 86); }
-juce::Colour success() { return juce::Colour::fromRGB(150, 191, 133); }
+juce::Colour shellBase() { return sketch::Theme::paper(); }
+juce::Colour shellRaised() { return sketch::Theme::paperLight(); }
+juce::Colour panelBase() { return sketch::Theme::paper(); }
+juce::Colour panelRaised() { return sketch::Theme::paperLight(); }
+juce::Colour panelInset() { return sketch::Theme::paperShadow(); }
+juce::Colour copper() { return sketch::Theme::ochre().darker(0.16f); }
+juce::Colour amber() { return sketch::Theme::ochre(); }
+juce::Colour amberBright() { return sketch::Theme::ochre().brighter(0.16f); }
+juce::Colour steel() { return sketch::Theme::graphiteSoft(); }
+juce::Colour textMain() { return sketch::Theme::graphite(); }
+juce::Colour textMuted() { return sketch::Theme::graphiteSoft(); }
+juce::Colour danger() { return juce::Colour::fromRGB(176, 92, 76); }
+juce::Colour success() { return juce::Colour::fromRGB(92, 133, 91); }
 
 struct HardwareLookAndFeel : juce::LookAndFeel_V4
 {
+    juce::Font getLabelFont(juce::Label& label) override
+    {
+        return sketch::notebookFont(label.getFont().getHeight(), label.getFont().isBold());
+    }
+
     juce::Font getComboBoxFont(juce::ComboBox&) override
     {
-        return juce::Font(juce::FontOptions(10.5f, juce::Font::bold));
+        return sketch::notebookFont(12.0f, true);
     }
 
     juce::Font getTextButtonFont(juce::TextButton& button, int buttonHeight) override
     {
         const auto role = button.getProperties().getWithDefault("soundRole", juce::String()).toString();
         const float size = role == "strip" ? 10.0f : juce::jlimit(10.0f, 11.5f, static_cast<float>(buttonHeight) * 0.38f);
-        return juce::Font(juce::FontOptions(size, juce::Font::bold));
+        return sketch::notebookFont(size + 1.5f, true);
     }
 
     void drawComboBox(juce::Graphics& g,
@@ -282,7 +290,7 @@ struct HardwareLookAndFeel : juce::LookAndFeel_V4
         juce::Colour colour = button.findColour(button.getToggleState() ? juce::TextButton::textColourOnId
                                                                         : juce::TextButton::textColourOffId);
         if (role == "strip")
-            colour = selected ? panelInset().brighter(0.9f) : textMain();
+            colour = selected ? sketch::Theme::graphite() : textMain();
 
         g.setColour(colour);
         g.setFont(getTextButtonFont(button, button.getHeight()));
@@ -768,11 +776,11 @@ void drawCardSummaryText(juce::Graphics& g,
     auto summaryBounds = area.removeFromTop(18);
 
     g.setColour(textMuted().withAlpha(0.92f));
-    g.setFont(juce::Font(juce::FontOptions(8.4f, juce::Font::bold)));
+    g.setFont(sketch::notebookFont(9.8f, true));
     g.drawFittedText(character.toUpperCase(), characterBounds, juce::Justification::centredLeft, 1);
 
     g.setColour(accent.withAlpha(0.96f));
-    g.setFont(juce::Font(juce::FontOptions(10.2f, juce::Font::bold)));
+    g.setFont(sketch::notebookFont(11.8f, true));
     g.drawFittedText(summary, summaryBounds, juce::Justification::centredLeft, 1);
 
     auto underline = juce::Rectangle<float>(static_cast<float>(summaryBounds.getX()),
@@ -848,7 +856,7 @@ void drawCompressorPreviewBars(juce::Graphics& g, const juce::Rectangle<int>& bo
         auto slot = juce::Rectangle<float>(slots.getX() + static_cast<float>(index) * (slotWidth + gap), slots.getY(), slotWidth, slots.getHeight());
         auto meter = slot.removeFromBottom(10.0f);
         g.setColour(textMuted().withAlpha(0.88f));
-        g.setFont(juce::Font(juce::FontOptions(7.8f, juce::Font::bold)));
+        g.setFont(sketch::notebookFont(9.2f, true));
         g.drawText(labels[index], slot.toNearestInt(), juce::Justification::centredLeft, false);
         g.setColour(amber().withAlpha(0.16f));
         g.fillRoundedRectangle(meter, 4.0f);
@@ -890,7 +898,7 @@ void drawEqResponseDisplay(juce::Graphics& g,
         g.drawHorizontalLine(static_cast<int>(std::round(y)), responseArea.getX(), responseArea.getRight());
 
         g.setColour(db == 0.0f ? amberBright().withAlpha(0.82f) : textMuted().withAlpha(0.75f));
-        g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        g.setFont(sketch::notebookFont(10.5f, true));
         g.drawText(db > 0.0f ? "+" + juce::String(db, 0) : juce::String(db, 0),
                    juce::Rectangle<float>(display.getX() + 4.0f, y - 7.0f, 18.0f, 14.0f).toNearestInt(),
                    juce::Justification::centredRight,
@@ -914,7 +922,7 @@ void drawEqResponseDisplay(juce::Graphics& g,
         std::pair<double, juce::String> { 20000.0, "20k" }
     };
     g.setColour(textMuted());
-    g.setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+    g.setFont(sketch::notebookFont(10.5f, true));
     for (const auto& [frequencyHz, label] : frequencyLabels)
     {
         const float x = responseArea.getX() + static_cast<float>(normalizeEqDisplayFrequency(frequencyHz)) * responseArea.getWidth();
@@ -1034,7 +1042,7 @@ void drawEqResponseDisplay(juce::Graphics& g,
         const auto markerPosition = getEqBandMarkerPosition(responseArea, eq, focusBandIndex);
         const auto badgeText = formatEqBandBadgeText(focusBandIndex, focusBand);
         const auto badgeColour = focusBandIndex == selectedBandIndex ? amberBright() : amber();
-        const auto badgeFont = juce::Font(juce::FontOptions(9.2f, juce::Font::bold));
+        const auto badgeFont = sketch::notebookFont(10.6f, true);
         juce::GlyphArrangement badgeGlyphs;
         badgeGlyphs.addLineOfText(badgeFont, badgeText, 0.0f, 0.0f);
         const float badgeWidth = badgeGlyphs.getBoundingBox(0, badgeText.length(), true).getWidth() + 16.0f;
@@ -1063,7 +1071,7 @@ void drawEqResponseDisplay(juce::Graphics& g,
     }
 
     g.setColour(textMuted().withAlpha(0.82f));
-    g.setFont(juce::Font(juce::FontOptions(8.8f, juce::Font::bold)));
+    g.setFont(sketch::notebookFont(10.2f, true));
     g.drawText("CLICK DOT TO FOCUS BAND", juce::Rectangle<float>(display.getRight() - 152.0f, display.getY() + 6.0f, 144.0f, 12.0f).toNearestInt(), juce::Justification::centredRight, false);
 }
 } // namespace
@@ -1108,6 +1116,7 @@ bool SoundModuleComponent::RotaryDial::isPointOverKnob(juce::Point<float> positi
 SoundModuleComponent::SoundModuleComponent()
 {
     currentTarget = SoundTargetDescriptor::makeGlobal();
+    hardwareLookAndFeel.setDefaultSansSerifTypeface(sketch::notebookTypeface());
     setLookAndFeel(&hardwareLookAndFeel);
     verticalScrollBar.addListener(this);
     verticalScrollBar.setSingleStepSize(44.0);
@@ -1118,10 +1127,10 @@ SoundModuleComponent::SoundModuleComponent()
     addAndMakeVisible(contentViewport);
     contentViewport.addAndMakeVisible(contentCanvas);
 
-    styleHeaderLabel(titleLabel, "HPDG SOUND", 16.0f);
+    styleHeaderLabel(titleLabel, "Sound Rack", 16.0f);
     addAndMakeVisible(titleLabel);
 
-    styleMicroLabel(brandLabel, "MODULE RACK", 10.5f);
+    styleMicroLabel(brandLabel, "HPDG SOUND", 10.5f);
     brandLabel.setColour(juce::Label::textColourId, amber());
     addAndMakeVisible(brandLabel);
 
@@ -1133,7 +1142,7 @@ SoundModuleComponent::SoundModuleComponent()
 
     targetModeLabel.setText("GLOBAL", juce::dontSendNotification);
     targetModeLabel.setJustificationType(juce::Justification::centred);
-    targetModeLabel.setColour(juce::Label::textColourId, panelInset().brighter(0.8f));
+    targetModeLabel.setColour(juce::Label::textColourId, textMain());
     targetModeLabel.setColour(juce::Label::backgroundColourId, amberBright());
     targetModeLabel.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     targetModeLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
@@ -1741,16 +1750,9 @@ SoundModuleComponent::~SoundModuleComponent()
 void SoundModuleComponent::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    juce::ColourGradient shell(shellBase(), 0.0f, 0.0f, shellRaised(), 0.0f, bounds.getBottom(), false);
-    shell.addColour(0.45, panelInset());
-    shell.addColour(0.78, shellBase().brighter(0.06f));
-    g.setGradientFill(shell);
-    g.fillRoundedRectangle(bounds.reduced(1.0f), 20.0f);
-
-    g.setColour(juce::Colour::fromRGBA(255, 255, 255, 16));
-    g.drawRoundedRectangle(bounds.reduced(1.5f), 20.0f, 1.0f);
-    g.setColour(juce::Colour::fromRGBA(0, 0, 0, 90));
-    g.drawRoundedRectangle(bounds.reduced(3.0f), 18.0f, 1.0f);
+    g.setColour(sketch::Theme::paperLight().withAlpha(0.94f));
+    g.fillRoundedRectangle(bounds.reduced(1.0f), 5.0f);
+    sketch::drawFrame(g, bounds.reduced(1.0f), sketch::Theme::graphiteSoft(), 1.2f, 901, 5.0f);
 
     auto drawModule = [&](const juce::Rectangle<int>& rect, juce::Colour accent, bool strong)
     {
@@ -1758,27 +1760,12 @@ void SoundModuleComponent::paint(juce::Graphics& g)
             return;
 
         auto r = rect.toFloat();
-        g.setColour(juce::Colours::black.withAlpha(strong ? 0.34f : 0.24f));
-        g.fillRoundedRectangle(r.translated(0.0f, 3.0f), strong ? 18.0f : 14.0f);
-
-        juce::ColourGradient fill(panelRaised().brighter(strong ? 0.24f : 0.14f), r.getX(), r.getY(), panelInset(), r.getX(), r.getBottom(), false);
-        fill.addColour(0.50, panelBase());
-        fill.addColour(0.82, shellBase());
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(r, strong ? 18.0f : 14.0f);
-
-        auto topStrip = r.removeFromTop(strong ? 12.0f : 9.0f);
-        juce::ColourGradient accentGlow(accent.withAlpha(strong ? 0.55f : 0.34f), topStrip.getX(), topStrip.getY(), juce::Colours::transparentBlack, topStrip.getX(), topStrip.getBottom(), false);
-        g.setGradientFill(accentGlow);
-        g.fillRoundedRectangle(topStrip, 10.0f);
-
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, strong ? 24 : 14));
-        g.drawRoundedRectangle(rect.toFloat(), strong ? 18.0f : 14.0f, 1.0f);
-
-        drawScrew(g, rect.getTopLeft().toFloat() + juce::Point<float>(12.0f, 12.0f));
-        drawScrew(g, juce::Point<float>(static_cast<float>(rect.getRight() - 12), static_cast<float>(rect.getY() + 12)));
-        drawScrew(g, juce::Point<float>(static_cast<float>(rect.getX() + 12), static_cast<float>(rect.getBottom() - 12)));
-        drawScrew(g, juce::Point<float>(static_cast<float>(rect.getRight() - 12), static_cast<float>(rect.getBottom() - 12)));
+        g.setColour(sketch::Theme::paper().withAlpha(strong ? 0.96f : 0.82f));
+        g.fillRoundedRectangle(r, 4.0f);
+        g.setColour(accent.withAlpha(strong ? 0.28f : 0.18f));
+        g.fillRect(r.removeFromTop(strong ? 8.0f : 6.0f));
+        sketch::drawFrame(g, rect.toFloat(), strong ? accent : sketch::Theme::graphiteSoft(),
+                          strong ? 1.5f : 1.0f, rect.getX() * 17 + rect.getY(), 4.0f);
     };
 
     const bool overviewMode = layoutMode == LayoutMode::Overview;
@@ -1793,32 +1780,15 @@ void SoundModuleComponent::paint(juce::Graphics& g)
         const auto boundsRect = toDisplaySpace(layout.bounds).toFloat();
         auto headerRect = toDisplaySpace(layout.headerBounds).toFloat();
         const auto contentRect = toDisplaySpace(layout.contentBounds).toFloat();
-        const float radius = strong ? 16.0f : 14.0f;
-
-        g.setColour(juce::Colours::black.withAlpha(strong ? 0.30f : 0.22f));
-        g.fillRoundedRectangle(boundsRect.translated(0.0f, 3.0f), radius);
-
-        juce::ColourGradient fill(panelRaised().brighter(strong ? 0.18f : 0.12f), boundsRect.getX(), boundsRect.getY(), panelInset(), boundsRect.getX(), boundsRect.getBottom(), false);
-        fill.addColour(0.52, panelBase());
-        fill.addColour(0.84, shellBase());
-        g.setGradientFill(fill);
-        g.fillRoundedRectangle(boundsRect, radius);
-
-        g.setColour(accent.withAlpha(strong ? 0.22f : 0.16f));
-        g.fillRoundedRectangle(headerRect, 10.0f);
-
-        g.setColour(accent.withAlpha(strong ? 0.58f : 0.40f));
-        g.fillRoundedRectangle(headerRect.removeFromTop(3.0f), 3.0f);
-
-        g.setColour(juce::Colour::fromRGBA(255, 255, 255, strong ? 22 : 14));
-        g.drawRoundedRectangle(boundsRect, radius, 1.0f);
-        g.setColour(accent.withAlpha(0.24f));
-        g.drawLine(contentRect.getX(), contentRect.getY() - 6.0f, contentRect.getRight(), contentRect.getY() - 6.0f, 1.0f);
-
-        drawScrew(g, boundsRect.getTopLeft() + juce::Point<float>(12.0f, 12.0f));
-        drawScrew(g, juce::Point<float>(boundsRect.getRight() - 12.0f, boundsRect.getY() + 12.0f));
-        drawScrew(g, juce::Point<float>(boundsRect.getX() + 12.0f, boundsRect.getBottom() - 12.0f));
-        drawScrew(g, juce::Point<float>(boundsRect.getRight() - 12.0f, boundsRect.getBottom() - 12.0f));
+        g.setColour(sketch::Theme::paperLight());
+        g.fillRoundedRectangle(boundsRect, 4.0f);
+        g.setColour(accent.withAlpha(strong ? 0.32f : 0.20f));
+        g.fillRect(headerRect);
+        sketch::drawFrame(g, boundsRect, strong ? accent : sketch::Theme::graphiteSoft(),
+                          strong ? 1.6f : 1.0f, layout.bounds.getX() * 13 + layout.bounds.getY(), 4.0f);
+        sketch::drawLine(g, { contentRect.getX(), contentRect.getY() - 6.0f },
+                         { contentRect.getRight(), contentRect.getY() - 6.0f },
+                         sketch::Theme::graphiteSoft().withAlpha(0.38f), 0.8f, layout.bounds.getY() + 29);
     };
 
     const bool eqExpanded = layoutMode == LayoutMode::FocusEq || isOverviewCardExpanded(OverviewCard::Eq);

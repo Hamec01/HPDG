@@ -47,6 +47,8 @@ Type: filesandordirs; Name: "{commoncf64}\VST3\{#MyPluginBundleName}"
 
 [Files]
 Source: "{#SourceVst3Dir}\*"; DestDir: "{commoncf64}\VST3\{#MyPluginBundleName}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Bundle samples next to the plugin binary so SampleLibraryManager can resolve them via currentExecutableFile/../Samples.
+Source: "..\Samples\*"; DestDir: "{commoncf64}\VST3\{#MyPluginBundleName}\Contents\x86_64-win\Samples"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Run]
 Filename: "{commoncf64}\VST3"; Description: "Open VST3 folder"; Flags: postinstall shellexec skipifsilent unchecked
