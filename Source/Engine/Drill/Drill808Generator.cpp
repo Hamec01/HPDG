@@ -5,11 +5,14 @@
 #include <optional>
 
 #include "../../Core/Sub808Types.h"
+#include "../../Core/TimingGrid.h"
 
 namespace bbg
 {
 namespace
 {
+int stepIndexOf(const NoteEvent& note) { return note.gridTick / TimingGrid::Sixteenth; }
+
 struct ReferenceDrillKickFeel
 {
     bool available = false;
@@ -170,8 +173,9 @@ std::vector<int> collectKickStarts(const TrackState& kickTrack, int barIndex)
     std::vector<int> starts;
     for (const auto& note : kickTrack.notes)
     {
-        if ((note.step / 16) == barIndex)
-            starts.push_back(note.step % 16);
+        const int step = stepIndexOf(note);
+        if ((step / 16) == barIndex)
+            starts.push_back(step % 16);
     }
 
     std::sort(starts.begin(), starts.end());
@@ -475,17 +479,17 @@ void Drill808Generator::generate(TrackState& subTrack,
             const int stepInBar = starts[index];
             const int nextStep = index + 1 < starts.size() ? starts[index + 1] : -1;
             Sub808NoteEvent note;
-            note.step = barStart + stepInBar;
-            note.length = computeLengthForStart(stepInBar,
+            note.gridTick = (barStart + stepInBar) * TimingGrid::Sixteenth;
+            note.lengthTicks = computeLengthForStart(stepInBar,
                                                 nextStep,
                                                 snareAnchor,
                                                 bar.lowEnd,
                                                 bar.role,
-                                                referenceFeel.available ? &referenceFeel : nullptr);
+                                                referenceFeel.available ? &referenceFeel : nullptr) * TimingGrid::Sixteenth;
             note.velocity = velocity(rng);
             if (referenceFeel.available)
                 note.velocity = std::clamp(note.velocity + static_cast<int>(std::round(referenceFeel.presence[static_cast<size_t>(stepInBar)] * 6.0f)), 80, 118);
-            note.microOffset = 0;
+            note.timingOffsetTicks = 0;
             note.pitch = choosePitch(previousPitch, project.params.keyRoot, project.params.scaleMode, bar.lowEnd, bar.role, rng);
             note.semanticRole = bar.lowEnd == DrillLowEndIntent::Move ? "drill_sub_move"
                 : (bar.lowEnd == DrillLowEndIntent::Hold ? "drill_sub_hold"
@@ -501,17 +505,19 @@ void Drill808Generator::generate(TrackState& subTrack,
     {
         auto& current = subTrack.sub808Notes[index];
         auto& next = subTrack.sub808Notes[index + 1];
-        const int gap = next.step - current.step;
+        const int currentStep = current.gridTick / TimingGrid::Sixteenth;
+        const int nextStep = next.gridTick / TimingGrid::Sixteenth;
+        const int gap = nextStep - currentStep;
         const int interval = std::abs(next.pitch - current.pitch);
-        const bool sameBar = (current.step / 16) == (next.step / 16);
+        const bool sameBar = (currentStep / 16) == (nextStep / 16);
         const bool phraseSlide = current.semanticRole == "drill_sub_release"
-            || (current.semanticRole == "drill_sub_move" && current.length <= 3);
+            || (current.semanticRole == "drill_sub_move" && current.lengthTicks <= 3 * TimingGrid::Sixteenth);
         if (slideBudget > 0 && sameBar && phraseSlide && gap >= 2 && gap <= 3 && interval >= 2 && interval <= 5)
         {
             current.glideToNext = true;
             current.isLegato = true;
             next.isSlide = true;
-            current.length = std::max(current.length, gap + 1);
+            current.lengthTicks = std::max(current.lengthTicks, (gap + 1) * TimingGrid::Sixteenth);
             --slideBudget;
         }
     }

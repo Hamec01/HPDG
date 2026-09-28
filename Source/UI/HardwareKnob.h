@@ -44,41 +44,74 @@ struct LookAndFeel final : juce::LookAndFeel_V4
         const auto fill = slider.findColour(juce::Slider::rotarySliderFillColourId);
         const float angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
         const auto centre = bounds.getCentre();
+        const float radius = diameter * 0.5f;
+        const auto knobFill = fill.isTransparent() ? amber() : fill;
 
-        g.setColour(sketch::Theme::paperShadow());
+        sketch::dropShadow(g, bounds, radius, 2.6f, 0.95f);
+
+        // Recessed collar the cap sits in, then a small metal-cap knob with a specular sheen.
+        g.setColour(panelInset());
         g.fillEllipse(bounds);
-        g.setColour(sketch::Theme::graphite());
-        g.drawEllipse(bounds, 1.2f);
+        g.setColour(sketch::Theme::shadowStrong().withAlpha(0.5f));
+        g.drawEllipse(bounds.reduced(0.5f), 1.0f);
+
+        auto cap = bounds.reduced(diameter * 0.14f);
+        juce::ColourGradient capGradient(panelRaised().brighter(0.35f), cap.getX(), cap.getY(),
+                                         shellBase(), cap.getRight(), cap.getBottom(), false);
+        capGradient.addColour(0.5, panelRaised());
+        g.setGradientFill(capGradient);
+        g.fillEllipse(cap);
+        g.setColour(shellBase().brighter(0.05f));
+        g.drawEllipse(cap, 1.0f);
 
         juce::Path trackPath;
         trackPath.addCentredArc(centre.x,
                                 centre.y,
-                                bounds.getWidth() * 0.45f,
-                                bounds.getHeight() * 0.45f,
+                                bounds.getWidth() * 0.5f,
+                                bounds.getHeight() * 0.5f,
                                 0.0f,
                                 rotaryStartAngle,
                                 rotaryEndAngle,
                                 true);
-        g.setColour(sketch::Theme::graphiteSoft().withAlpha(0.24f));
-        g.strokePath(trackPath, juce::PathStrokeType(2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(steel().withAlpha(0.28f));
+        g.strokePath(trackPath, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        for (float t : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f })
+        {
+            const float tickAngle = rotaryStartAngle + t * (rotaryEndAngle - rotaryStartAngle);
+            const auto dir = juce::Point<float>(std::sin(tickAngle), -std::cos(tickAngle));
+            g.setColour(steel().withAlpha(0.4f));
+            g.drawLine({ (centre + dir * (radius * 1.02f)).x, (centre + dir * (radius * 1.02f)).y,
+                        (centre + dir * (radius * 1.14f)).x, (centre + dir * (radius * 1.14f)).y }, 1.1f);
+        }
 
         juce::Path valuePath;
         valuePath.addCentredArc(centre.x,
                                 centre.y,
-                                bounds.getWidth() * 0.45f,
-                                bounds.getHeight() * 0.45f,
+                                bounds.getWidth() * 0.5f,
+                                bounds.getHeight() * 0.5f,
                                 0.0f,
                                 rotaryStartAngle,
                                 angle,
                                 true);
-        g.setColour(fill.isTransparent() ? sketch::Theme::ochre() : fill);
-        g.strokePath(valuePath, juce::PathStrokeType(2.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(knobFill);
+        g.strokePath(valuePath, juce::PathStrokeType(2.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour(knobFill.withAlpha(0.35f));
+        g.strokePath(valuePath, juce::PathStrokeType(5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-        const auto pointerEnd = centre + juce::Point<float>(std::sin(angle), -std::cos(angle)) * (diameter * 0.34f);
-        sketch::drawLine(g, centre, pointerEnd, sketch::Theme::graphite(), 1.5f,
-                         x * 31 + y * 17 + width);
-        g.setColour(sketch::Theme::graphite());
-        g.fillEllipse(centre.x - 1.7f, centre.y - 1.7f, 3.4f, 3.4f);
+        // Specular highlight arcing across the top-left of the cap.
+        g.setColour(juce::Colours::white.withAlpha(0.16f));
+        juce::Path sheen;
+        sheen.addCentredArc(centre.x, centre.y, radius * 0.62f, radius * 0.62f, 0.0f,
+                            rotaryStartAngle - 0.3f, rotaryStartAngle + 1.0f, true);
+        g.strokePath(sheen, juce::PathStrokeType(radius * 0.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+        const auto pointerBase = centre + juce::Point<float>(std::sin(angle), -std::cos(angle)) * (radius * 0.2f);
+        const auto pointerEnd = centre + juce::Point<float>(std::sin(angle), -std::cos(angle)) * (radius * 0.82f);
+        g.setColour(knobFill.brighter(0.3f));
+        g.drawLine({ pointerBase.x, pointerBase.y, pointerEnd.x, pointerEnd.y }, 2.0f);
+        g.setColour(textMain());
+        g.fillEllipse(centre.x - 1.6f, centre.y - 1.6f, 3.2f, 3.2f);
     }
 };
 

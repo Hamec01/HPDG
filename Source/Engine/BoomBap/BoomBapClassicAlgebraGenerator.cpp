@@ -1,4 +1,5 @@
 #include "BoomBapClassicAlgebraGenerator.h"
+#include "../GenerationModel/CandidateSelectionEngine.h"
 
 #include <algorithm>
 #include <array>
@@ -15,6 +16,88 @@ constexpr int kTicksPerBar = 64;
 constexpr int kTicksPerBeat = 16;
 constexpr int kTicksPerSixteenth = 4;
 constexpr int kTicksPerEighth = 8;
+
+GenerationLaneFamily featureFamilyForBoomBapLane(int lane)
+{
+    if (lane == BoomBapClassicLanes::Kick || lane == BoomBapClassicLanes::KickGhost) return GenerationLaneFamily::Kick;
+    if (lane == BoomBapClassicLanes::Snare || lane == BoomBapClassicLanes::ClapGhost) return GenerationLaneFamily::Snare;
+    if (lane == BoomBapClassicLanes::HiHat || lane == BoomBapClassicLanes::HatAccent || lane == BoomBapClassicLanes::OpenHat) return GenerationLaneFamily::Hat;
+    if (lane == BoomBapClassicLanes::Sub808) return GenerationLaneFamily::Bass;
+    return GenerationLaneFamily::Ornament;
+}
+
+MusicalRole featureRoleForBoomBap(BoomBapClassicRole role)
+{
+    switch (role)
+    {
+        case BoomBapClassicRole::Anchor: return MusicalRole::Anchor;
+        case BoomBapClassicRole::Backbeat: return MusicalRole::Backbeat;
+        case BoomBapClassicRole::StrongPulse:
+        case BoomBapClassicRole::WeakPulse: return MusicalRole::Pulse;
+        case BoomBapClassicRole::Pickup:
+        case BoomBapClassicRole::PickupToKick: return MusicalRole::Pickup;
+        case BoomBapClassicRole::Response:
+        case BoomBapClassicRole::ResponseFromKick: return MusicalRole::Response;
+        case BoomBapClassicRole::Ghost:
+        case BoomBapClassicRole::GhostBeforeSnare:
+        case BoomBapClassicRole::GhostAfterSnare: return MusicalRole::Ghost;
+        case BoomBapClassicRole::Accent: return MusicalRole::Accent;
+        case BoomBapClassicRole::Fill:
+        case BoomBapClassicRole::FillKick:
+        case BoomBapClassicRole::FillSupport: return MusicalRole::Fill;
+        case BoomBapClassicRole::Turnaround:
+        case BoomBapClassicRole::Ending: return MusicalRole::Transition;
+        case BoomBapClassicRole::Ornament: return MusicalRole::Ornament;
+        default: return MusicalRole::Unknown;
+    }
+}
+
+PatternFeatureVector extractBoomBapFeatures(const BoomBapClassicAlgebraPattern& pattern, int bars)
+{
+    PatternFeatureInput input;
+    input.bars = bars;
+    input.ticksPerBar = kTicksPerBar;
+    for (const auto& note : pattern.allNotes())
+        input.events.push_back({ featureFamilyForBoomBapLane(note.laneIndex), featureRoleForBoomBap(note.role), note.tick64,
+                                 note.velocity, note.microTimingTicks });
+    return PatternFeatureExtractor::extract(input);
+}
+
+StyleTargetProfile boomBapStyleTarget(BoomBapSubstyle substyle)
+{
+    PatternFeatureVector target { 0.50f, 0.42f, 0.52f, 0.34f, 0.48f, 0.72f, 0.56f, 0.92f };
+    switch (substyle)
+    {
+        case BoomBapSubstyle::Dusty:
+            target = { 0.44f, 0.48f, 0.60f, 0.48f, 0.56f, 0.64f, 0.52f, 0.90f };
+            break;
+        case BoomBapSubstyle::Jazzy:
+            target = { 0.52f, 0.58f, 0.66f, 0.52f, 0.44f, 0.54f, 0.68f, 0.90f };
+            break;
+        case BoomBapSubstyle::Aggressive:
+            target = { 0.64f, 0.52f, 0.58f, 0.38f, 0.34f, 0.62f, 0.72f, 0.94f };
+            break;
+        case BoomBapSubstyle::LaidBack:
+            target = { 0.42f, 0.44f, 0.55f, 0.50f, 0.58f, 0.72f, 0.52f, 0.92f };
+            break;
+        case BoomBapSubstyle::BoomBapGold:
+            target = { 0.50f, 0.45f, 0.54f, 0.36f, 0.48f, 0.70f, 0.62f, 0.94f };
+            break;
+        case BoomBapSubstyle::RussianUnderground:
+            target = { 0.45f, 0.56f, 0.62f, 0.50f, 0.56f, 0.58f, 0.64f, 0.90f };
+            break;
+        case BoomBapSubstyle::LofiRap:
+            target = { 0.38f, 0.40f, 0.50f, 0.46f, 0.64f, 0.78f, 0.46f, 0.90f };
+            break;
+        case BoomBapSubstyle::Classic:
+        default:
+            break;
+    }
+
+    const PatternFeatureVector tolerance { 0.20f, 0.22f, 0.24f, 0.24f, 0.20f, 0.22f, 0.24f, 0.12f };
+    const PatternFeatureVector weight { 1.20f, 1.05f, 0.70f, 0.85f, 1.15f, 1.00f, 1.10f, 0.80f };
+    return { target, tolerance, weight };
+}
 
 struct WeightedKick
 {
@@ -354,6 +437,13 @@ const char* BoomBapClassicAlgebraGenerator::roleToString(BoomBapClassicRole role
         case BoomBapClassicRole::Response: return "response";
         case BoomBapClassicRole::Support: return "support";
         case BoomBapClassicRole::Ghost: return "ghost";
+        case BoomBapClassicRole::GhostBeforeSnare: return "ghost_before_snare";
+        case BoomBapClassicRole::GhostAfterSnare: return "ghost_after_snare";
+        case BoomBapClassicRole::ClapLayer: return "clap_layer";
+        case BoomBapClassicRole::FillSupport: return "fill_support";
+        case BoomBapClassicRole::PickupToKick: return "pickup_to_kick";
+        case BoomBapClassicRole::ResponseFromKick: return "response_from_kick";
+        case BoomBapClassicRole::FillKick: return "fill_kick";
         case BoomBapClassicRole::Accent: return "accent";
         case BoomBapClassicRole::WeakPulse: return "weak_pulse";
         case BoomBapClassicRole::StrongPulse: return "strong_pulse";
@@ -380,35 +470,54 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const Boom
     params.variation = clamp01(params.variation);
     params.candidateCount = std::clamp(params.candidateCount, 24, 64);
 
+    const auto& style = getBoomBapProfile(params.substyle);
+    const auto styleTarget = StyleTargetModel::withPerformanceIntent(boomBapStyleTarget(params.substyle),
+                                                                     params.density, params.swing,
+                                                                     params.humanize, params.variation);
+    auto context = makeBoomBapGenerationContext(params.seed, params.bars, style);
+    if (params.forcedArchetype) context.archetype=*params.forcedArchetype;
+    if (params.forcedRareEvent) context.requestedEvent=*params.forcedRareEvent;
     BoomBapClassicPatternScorer scorer;
-    BoomBapClassicAlgebraPattern best;
-    float bestScore = -100000.0f;
+    std::vector<BoomBapClassicAlgebraPattern> candidates;
+    candidates.reserve(static_cast<size_t>(params.candidateCount));
 
     for (int candidate = 0; candidate < params.candidateCount; ++candidate)
     {
-        auto pattern = generateCandidate(params, candidate);
+        auto pattern = generateCandidate(params, context, candidate);
         validateAndRepair(pattern, params);
-        pattern.score = scorer.score(pattern, params, getBoomBapProfile(params.substyle));
-
-        if (candidate == 0 || pattern.score.quality > bestScore)
-        {
-            bestScore = pattern.score.quality;
-            best = std::move(pattern);
-            best.selectedCandidateIndex = candidate;
-        }
+        pattern.score = scorer.score(pattern, params, style);
+        pattern.features = extractBoomBapFeatures(pattern, params.bars);
+        pattern.styleMatch = StyleTargetModel::evaluate(pattern.features, styleTarget);
+        pattern.selectionQuality = pattern.score.quality + 0.16f * (pattern.styleMatch.fit - 0.5f);
+        pattern.selectedCandidateIndex=candidate;
+        candidates.push_back(std::move(pattern));
     }
-
+    std::vector<CandidateSelectionEntry> selectionEntries;
+    selectionEntries.reserve(candidates.size());
+    for (const auto& candidate : candidates)
+        selectionEntries.push_back({ candidate.selectionQuality,
+                                     0.72f * candidate.score.novelty + 0.28f * candidate.features.surfaceNovelty(),
+                                     !candidate.score.hardTrapLeak });
+    const auto selection = CandidateSelectionEngine::select(selectionEntries,
+        { style.qualityFloor, style.nearBestTolerance, style.selectionTemperature, style.noveltyWeight,
+          static_cast<std::uint32_t>(context.selectionSeed) });
+    auto best=std::move(candidates[static_cast<size_t>(selection.selectedIndex)]);
+    best.nearBestPoolSize=selection.nearBestPoolSize;
+    best.bestCandidateQuality=selection.bestQuality;
+    best.selectedCandidateQuality=selection.selectedQuality;
     best.debugSummary = buildDebugSummary(best, params);
     return best;
 }
 
 BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generateCandidate(const BoomBapClassicAlgebraParams& params,
+                                                                               const BoomBapGenerationContext& context,
                                                                                int candidateIndex) const
 {
     BoomBapClassicAlgebraPattern pattern;
+    pattern.context=context;
     std::mt19937 rng(static_cast<std::mt19937::result_type>(params.seed * 1103515245u + candidateIndex * 2654435761u));
 
-    generateBar(pattern, params, candidateIndex, 0, rng);
+    generateBar(pattern, params, candidateIndex, 0, rng, context);
 
     BoomBapClassicPatternScorer scorer;
     auto oneBar = pattern;
@@ -419,17 +528,31 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generateCandidate(c
     if (params.bars > 1)
     {
         if (cloneGoodBar)
-            cloneBarWithSmallMutation(pattern, params, rng);
+            cloneBarWithSmallMutation(pattern, params, rng, context);
         else
-            generateBar(pattern, params, candidateIndex, 1, rng);
+            generateBar(pattern, params, candidateIndex, 1, rng, context);
     }
 
     if (params.bars > 2)
-        deriveBarFromStatement(pattern, params, rng, 2);
+        deriveBarFromStatement(pattern, params, rng, 2, context);
     if (params.bars > 3)
-        deriveBarFromStatement(pattern, params, rng, 3);
+        deriveBarFromStatement(pattern, params, rng, 3, context);
     for (int bar = 4; bar < params.bars; ++bar)
-        deriveBarFromStatement(pattern, params, rng, bar);
+        deriveBarFromStatement(pattern, params, rng, bar, context);
+
+    applyRarePhraseEvent(pattern, params, rng);
+
+    // Product decision: Ghost Snare/Clap and Perc are retired lanes. Keep their
+    // stable numeric slots for project compatibility, but never emit events.
+    pattern.notesByLane[BoomBapClassicLanes::ClapGhost].clear();
+    pattern.notesByLane[BoomBapClassicLanes::Perc].clear();
+    if (pattern.realizedEvent == RarePhraseEvent::SnareFill
+        || pattern.realizedEvent == RarePhraseEvent::GhostPickup
+        || pattern.realizedEvent == RarePhraseEvent::PercEnding)
+    {
+        pattern.realizedEvent = RarePhraseEvent::None;
+        pattern.fillType = BoomBapFillType::None;
+    }
 
     for (auto& lane : pattern.notesByLane)
         dedupeLane(lane);
@@ -441,42 +564,51 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
                                                  int candidateIndex,
                                                  int barIndex,
                                                  std::mt19937& rng,
+                                                 const BoomBapGenerationContext& context,
                                                  const std::vector<int>* kickSkeletonToAnswer) const
 {
     const bool ending = (barIndex % 4) == 3;
     const auto& profile = algebraProfile(params.substyle);
     const auto& style = getBoomBapProfile(params.substyle);
-    const float den = params.density;
+    const std::array<float,5> densityScale{{1.0f,1.08f,.72f,.98f,1.02f}};
+    const float den = std::clamp(params.density*densityScale[static_cast<size_t>(context.archetype)],0.0f,1.0f);
     const float hum = params.humanize;
     const float var = params.variation;
 
     for (const int snareTick : { 16, 48 })
     {
+        const int mainSnareVelocity = randomInt(rng, 100, 120);
         addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::Snare, barIndex, snareTick,
-                     randomInt(rng, 100, 120), BoomBapClassicRole::Backbeat);
+                     mainSnareVelocity, BoomBapClassicRole::Backbeat);
+        auto& mainSnare=pattern.notesByLane[BoomBapClassicLanes::Snare].back(); mainSnare.priority=100;
 
-        for (const int offset : { -4, -2, 2, 4 })
+        const float archetypeGhost = context.archetype==BoomBapGrooveArchetype::BreakHeavy?1.35f
+            : context.archetype==BoomBapGrooveArchetype::Sparse?.45f:1.0f;
+        const float roleBoost = (barIndex % 4 == 1 || ending) ? 0.32f : 0.0f;
+        const float ghostProbability = std::clamp(profile.ghostRate * archetypeGhost
+            * (0.75f + den * 0.50f + var * 0.30f + roleBoost), 0.0f, 0.28f);
+        if (chance(rng, ghostProbability))
         {
-            const float roleBoost = (barIndex % 4 == 1 || ending) ? 0.45f : 0.0f;
-            const float nearBoost = (std::abs(offset) == 2) ? 0.28f : 0.0f;
-            const float ghostProbability = std::clamp(profile.ghostRate * (0.65f + den * 0.55f + hum * 0.45f + var * 0.35f + roleBoost + nearBoost),
-                                                      0.0f,
-                                                      0.34f);
-            if (chance(rng, ghostProbability))
-            {
-                const int velocity = randomInt(rng, 35, std::min(75, 88));
-                addTimedNote(pattern, params, style, rng,
-                        BoomBapClassicLanes::ClapGhost,
-                        barIndex,
-                        snareTick + offset,
-                        velocity,
-                        BoomBapClassicRole::Ghost);
-            }
+            static constexpr std::array<int,6> offsets{{-8,-4,-2,2,4,8}};
+            static constexpr std::array<float,6> weights{{.08f,.30f,.12f,.12f,.30f,.08f}};
+            float draw=random01(rng),acc=0;int offset=-4;
+            for(size_t i=0;i<offsets.size();++i){acc+=weights[i];if(draw<=acc){offset=offsets[i];break;}}
+            const float ratio=std::uniform_real_distribution<float>(style.clapGhostVelocityMinRatio,style.clapGhostVelocityMaxRatio)(rng);
+            const int velocity=std::clamp(static_cast<int>(std::lround(mainSnareVelocity*ratio)),1,mainSnareVelocity-1);
+            const auto role=offset<0?BoomBapClassicRole::GhostBeforeSnare:BoomBapClassicRole::GhostAfterSnare;
+            addTimedNote(pattern,params,style,rng,BoomBapClassicLanes::ClapGhost,barIndex,snareTick+offset,velocity,role);
+            auto& ghost=pattern.notesByLane[BoomBapClassicLanes::ClapGhost].back();
+            ghost.anchorLane=BoomBapClassicLanes::Snare; ghost.anchorTick64=barStart(barIndex)+snareTick; ghost.priority=50;
         }
     }
 
     std::vector<int> selectedKickTicks;
     selectedKickTicks.reserve(4);
+    // Select a relational motif first; per-position probabilities only articulate that motif.
+    static const std::array<std::array<int,4>,5> kickMotifs{{
+        {{0,24,40,-1}}, {{0,12,32,56}}, {{0,28,-1,-1}}, {{0,8,40,56}}, {{0,24,52,60}}
+    }};
+    const auto& motif=kickMotifs[(static_cast<size_t>(context.archetype)+static_cast<size_t>(candidateIndex))%kickMotifs.size()];
     for (const auto& candidate : kKickWeights)
     {
         const bool downbeat = candidate.tick == 0 || candidate.tick == 32;
@@ -497,6 +629,8 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
             - 1.2f * (crowded ? 1.0f : 0.0f)
             - 0.9f * (collision ? 1.0f : 0.0f);
         float probability = sigmoid(score - 1.72f) * candidate.weight * (0.64f + den * 0.52f + var * 0.14f + profile.kickClusterRate * 0.18f);
+        const bool motifMember=std::find(motif.begin(),motif.end(),candidate.tick)!=motif.end();
+        probability=motifMember?std::max(probability,0.74f+den*.12f):probability*.28f;
 
         if (barIndex == 0 && candidate.tick == 0)
             probability = 0.98f;
@@ -541,17 +675,26 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
                 barIndex,
                 tick,
                 randomInt(rng, 85, 118),
-                (tick == 0 || tick == 32) ? BoomBapClassicRole::Anchor : BoomBapClassicRole::Syncopated);
+                (tick == 0 || tick == 32) ? BoomBapClassicRole::Anchor
+                                          : (tick >= 40 ? BoomBapClassicRole::Response : BoomBapClassicRole::Syncopated));
 
     for (const int tick : { 4, 28, 36, 60 })
     {
         const bool tooClose = std::any_of(selectedKickTicks.begin(), selectedKickTicks.end(), [tick](int mainTick) { return std::abs(mainTick - tick) < 4; });
         if (!tooClose && chance(rng, 0.02f + profile.kickClusterRate * 0.10f + den * 0.05f + var * 0.05f + (ending ? 0.05f : 0.0f)))
+        {
+            const auto nearest=std::min_element(selectedKickTicks.begin(),selectedKickTicks.end(),[tick](int a,int b){return std::abs(a-tick)<std::abs(b-tick);});
+            if(nearest==selectedKickTicks.end() || std::abs(*nearest-tick)>12) continue;
+            const auto mainIt=std::find_if(pattern.notesByLane[BoomBapClassicLanes::Kick].begin(),pattern.notesByLane[BoomBapClassicLanes::Kick].end(),[&](const auto&n){return n.barIndex==barIndex&&normalizeTickInBar(n.tick64)==*nearest;});
+            const int anchorVelocity=mainIt!=pattern.notesByLane[BoomBapClassicLanes::Kick].end()?mainIt->velocity:96;
+            const float ratio=std::uniform_real_distribution<float>(style.ghostKickVelocityMinRatio,style.ghostKickVelocityMaxRatio)(rng);
             addTimedNote(pattern, params, style, rng,
                     BoomBapClassicLanes::KickGhost,
                     barIndex,
                     tick,
-                    randomInt(rng, 35, 70), BoomBapClassicRole::Pickup);
+                    static_cast<int>(std::lround(anchorVelocity*ratio)), tick<*nearest?BoomBapClassicRole::PickupToKick:BoomBapClassicRole::ResponseFromKick);
+            auto& ghost=pattern.notesByLane[BoomBapClassicLanes::KickGhost].back();ghost.anchorLane=BoomBapClassicLanes::Kick;ghost.anchorTick64=barStart(barIndex)+*nearest;ghost.priority=45;
+        }
     }
 
     for (const int tick : { 0, 8, 16, 24, 32, 40, 48, 56 })
@@ -615,8 +758,10 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
 
 void BoomBapClassicAlgebraGenerator::cloneBarWithSmallMutation(BoomBapClassicAlgebraPattern& pattern,
                                                                const BoomBapClassicAlgebraParams& params,
-                                                               std::mt19937& rng) const
+                                                               std::mt19937& rng,
+                                                               const BoomBapGenerationContext& context) const
 {
+    juce::ignoreUnused(context);
     const auto& profile = algebraProfile(params.substyle);
 
     for (int lane = 0; lane < BoomBapClassicLanes::Count; ++lane)
@@ -659,7 +804,8 @@ void BoomBapClassicAlgebraGenerator::cloneBarWithSmallMutation(BoomBapClassicAlg
 void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebraPattern& pattern,
                                                              const BoomBapClassicAlgebraParams& params,
                                                              std::mt19937& rng,
-                                                             int targetBar) const
+                                                             int targetBar,
+                                                             const BoomBapGenerationContext& context) const
 {
     const bool development = targetBar % 4 == 2;
     const bool turnaround = targetBar % 4 == 3;
@@ -674,8 +820,9 @@ void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebr
             auto copy = original;
             const bool protectedBackbeat = lane == BoomBapClassicLanes::Snare
                 && (normalizeTickInBar(copy.tick64) == 16 || normalizeTickInBar(copy.tick64) == 48);
+            const float archetypeRemoval = context.archetype==BoomBapGrooveArchetype::Sparse?.10f:context.archetype==BoomBapGrooveArchetype::BreakHeavy?.02f:0.0f;
             const float removeChance = protectedBackbeat ? 0.0f
-                : (development ? 0.10f + params.variation * 0.08f : turnaround ? 0.16f + params.variation * 0.10f : 0.05f);
+                : archetypeRemoval+(development ? 0.10f + params.variation * 0.08f : turnaround ? 0.16f + params.variation * 0.10f : 0.05f);
             if (chance(rng, removeChance))
                 continue; // HatDropout / RemovePickup / RemoveGhost
             copy.barIndex = targetBar;
@@ -706,10 +853,68 @@ void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebr
     }
 }
 
+void BoomBapClassicAlgebraGenerator::applyRarePhraseEvent(BoomBapClassicAlgebraPattern& pattern,
+                                                           const BoomBapClassicAlgebraParams& params,
+                                                           std::mt19937& rng) const
+{
+    if (params.bars < 2 || pattern.context.requestedEvent == RarePhraseEvent::None)
+        return;
+    const auto& style=getBoomBapProfile(params.substyle); const int bar=params.bars-1, start=barStart(bar), zone=start+44;
+    const auto eraseZone=[&](int lane,int from)
+    {
+        auto& notes=pattern.notesByLane[lane];
+        notes.erase(std::remove_if(notes.begin(),notes.end(),[&](const auto&n){return n.tick64>=start+from && !(lane==BoomBapClassicLanes::Snare&&normalizeTickInBar(n.tick64)==48);}),notes.end());
+    };
+    auto addRelated=[&](int lane,int local,int velocity,BoomBapClassicRole role,int anchorLane,int anchorLocal,int priority)
+    {
+        addTimedNote(pattern,params,style,rng,lane,bar,local,velocity,role);
+        auto& n=pattern.notesByLane[lane].back();n.anchorLane=anchorLane;n.anchorTick64=start+anchorLocal;n.priority=priority;
+    };
+    switch(pattern.context.requestedEvent)
+    {
+        case RarePhraseEvent::SnareFill:
+        {
+            eraseZone(BoomBapClassicLanes::HiHat,48); eraseZone(BoomBapClassicLanes::HatAccent,48);
+            const auto forced=params.forcedFillType.value_or(BoomBapFillType::None);
+            pattern.fillType=forced!=BoomBapFillType::None?forced:static_cast<BoomBapFillType>(1+(boomBapHash(pattern.context.motifSeed,0x46494c4cULL)%5));
+            const std::array<int,3> ticks{{52,56,60}}; const std::array<float,3> contour{{.38f,.48f,.62f}};
+            const auto main=std::find_if(pattern.notesByLane[BoomBapClassicLanes::Snare].begin(),pattern.notesByLane[BoomBapClassicLanes::Snare].end(),[&](const auto&n){return n.barIndex==bar&&normalizeTickInBar(n.tick64)==48;});
+            const int mainVel=main==pattern.notesByLane[BoomBapClassicLanes::Snare].end()?108:main->velocity;
+            int count=pattern.fillType==BoomBapFillType::SnareAcceleration?3:2;
+            for(int i=0;i<count;++i)addRelated(BoomBapClassicLanes::ClapGhost,ticks[i],std::min(mainVel-1,(int)std::lround(mainVel*contour[i])),BoomBapClassicRole::FillSupport,BoomBapClassicLanes::Snare,48,70+i);
+            pattern.realizedEvent=RarePhraseEvent::SnareFill; break;
+        }
+        case RarePhraseEvent::KickTurnaround:
+            eraseZone(BoomBapClassicLanes::HiHat,56); addRelated(BoomBapClassicLanes::Kick,56,102,BoomBapClassicRole::Turnaround,BoomBapClassicLanes::Snare,48,80); pattern.realizedEvent=RarePhraseEvent::KickTurnaround; break;
+        case RarePhraseEvent::HatDropout:
+            eraseZone(BoomBapClassicLanes::HiHat,48);eraseZone(BoomBapClassicLanes::HatAccent,48);eraseZone(BoomBapClassicLanes::OpenHat,48);pattern.realizedEvent=RarePhraseEvent::HatDropout;break;
+        case RarePhraseEvent::GhostPickup:
+            addRelated(BoomBapClassicLanes::ClapGhost,44,48,BoomBapClassicRole::GhostBeforeSnare,BoomBapClassicLanes::Snare,48,50);pattern.realizedEvent=RarePhraseEvent::GhostPickup;break;
+        case RarePhraseEvent::OpenHatLift:
+            eraseZone(BoomBapClassicLanes::HiHat,60);addRelated(BoomBapClassicLanes::OpenHat,60,88,BoomBapClassicRole::Turnaround,BoomBapClassicLanes::Snare,48,62);pattern.realizedEvent=RarePhraseEvent::OpenHatLift;break;
+        case RarePhraseEvent::PercEnding:
+            addRelated(BoomBapClassicLanes::Perc,60,76,BoomBapClassicRole::Turnaround,BoomBapClassicLanes::Snare,48,55);pattern.realizedEvent=RarePhraseEvent::PercEnding;break;
+        case RarePhraseEvent::BreakStop:
+            for(int lane=0;lane<BoomBapClassicLanes::Count;++lane)if(lane!=BoomBapClassicLanes::Snare)eraseZone(lane,52);pattern.realizedEvent=RarePhraseEvent::BreakStop;break;
+        default: break;
+    }
+    // Local density budget: preserve anchors/fill gesture and remove weakest decoration first.
+    std::vector<std::pair<int,size_t>> local;
+    for(int lane=0;lane<BoomBapClassicLanes::Count;++lane)for(size_t i=0;i<pattern.notesByLane[lane].size();++i)if(pattern.notesByLane[lane][i].tick64>=zone)local.emplace_back(lane,i);
+    while((int)local.size()>style.maxFillEvents+2)
+    {
+        auto weakest=std::min_element(local.begin(),local.end(),[&](auto a,auto b){return pattern.notesByLane[a.first][a.second].priority<pattern.notesByLane[b.first][b.second].priority;});
+        if(weakest==local.end()||pattern.notesByLane[weakest->first][weakest->second].priority>=95)break;
+        pattern.notesByLane[weakest->first].erase(pattern.notesByLane[weakest->first].begin()+static_cast<std::ptrdiff_t>(weakest->second));
+        local.clear();for(int lane=0;lane<BoomBapClassicLanes::Count;++lane)for(size_t i=0;i<pattern.notesByLane[lane].size();++i)if(pattern.notesByLane[lane][i].tick64>=zone)local.emplace_back(lane,i);
+    }
+}
+
 void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPattern& pattern,
                                                        const BoomBapClassicAlgebraParams& params) const
 {
     const auto& profile = algebraProfile(params.substyle);
+    const auto& style = getBoomBapProfile(params.substyle);
 
     for (auto& lane : pattern.notesByLane)
         dedupeLane(lane);
@@ -731,7 +936,9 @@ void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPatt
             }
         }
 
-        int carrierCount = 0;
+        const bool intentionalHatSilence = bar == params.bars - 1
+            && (pattern.realizedEvent == RarePhraseEvent::HatDropout || pattern.realizedEvent == RarePhraseEvent::BreakStop);
+        int carrierCount = intentionalHatSilence ? 4 : 0;
         for (const auto& note : pattern.notesByLane[BoomBapClassicLanes::HiHat])
             carrierCount += note.barIndex == bar;
         for (const int carrierTick : { 0, 16, 32, 48 })
@@ -745,13 +952,47 @@ void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPatt
                 pattern.repairsApplied.add("restore_readable_hat_carrier");
             }
         }
+
+        // deriveBarFromStatement's per-note removeChance (development/turnaround bars) applies
+        // uniformly across lanes with no anchor protection for Kick, unlike Snare's backbeat.
+        // At low density that can roll every kick out of a derived bar. Every bar needs at
+        // least one kick to stay a usable foundation track, so restore a plain anchor if the
+        // whole bar was stripped (not just tick 0), mirroring the bar-0 fallback this replaces.
+        const bool barHasKick = std::any_of(pattern.notesByLane[BoomBapClassicLanes::Kick].begin(),
+                                            pattern.notesByLane[BoomBapClassicLanes::Kick].end(),
+                                            [bar](const auto& note) { return note.barIndex == bar; });
+        if (!barHasKick)
+        {
+            addNote(pattern, BoomBapClassicLanes::Kick, bar, 0, 108, 0, BoomBapClassicRole::Anchor);
+            pattern.repairsApplied.add("add_missing_kick_anchor");
+        }
     }
 
-    if (!laneHasAt(pattern, BoomBapClassicLanes::Kick, 0, 0))
+    auto& supportSnares=pattern.notesByLane[BoomBapClassicLanes::ClapGhost];
+    supportSnares.erase(std::remove_if(supportSnares.begin(),supportSnares.end(),[&](auto& ghost)
     {
-        addNote(pattern, BoomBapClassicLanes::Kick, 0, 0, 108, 0, BoomBapClassicRole::Anchor);
-        pattern.repairsApplied.add("add_missing_first_bar_kick_anchor");
-    }
+        if(ghost.role==BoomBapClassicRole::FillSupport || ghost.role==BoomBapClassicRole::ClapLayer) return false;
+        auto& mains=pattern.notesByLane[BoomBapClassicLanes::Snare];
+        auto nearest=mains.end();int distance=999;
+        for(auto it=mains.begin();it!=mains.end();++it)if(it->barIndex==ghost.barIndex&&std::abs(it->tick64-ghost.tick64)<distance){nearest=it;distance=std::abs(it->tick64-ghost.tick64);}
+        if(nearest==mains.end()||distance>static_cast<int>(style.ghostAnchorWindow64)){++pattern.orphanGhostCount;++pattern.repairedGhostCount;pattern.repairsApplied.add("remove_orphan_snare_ghost");return true;}
+        ghost.anchorLane=BoomBapClassicLanes::Snare;ghost.anchorTick64=nearest->tick64;
+        ghost.role=ghost.tick64<nearest->tick64?BoomBapClassicRole::GhostBeforeSnare:BoomBapClassicRole::GhostAfterSnare;ghost.roleString=roleToString(ghost.role);
+        const int maxVelocity=std::max(1,static_cast<int>(std::floor(nearest->velocity*style.clapGhostVelocityMaxRatio)));
+        if(ghost.velocity>maxVelocity){ghost.velocity=maxVelocity;++pattern.repairedGhostCount;pattern.repairsApplied.add("reduce_clap_ghost_relative_velocity");}
+        pattern.maxGhostVelocityRatio=std::max(pattern.maxGhostVelocityRatio,ghost.velocity/static_cast<float>(std::max(1,nearest->velocity)));return false;
+    }),supportSnares.end());
+
+    auto& kickGhosts=pattern.notesByLane[BoomBapClassicLanes::KickGhost];
+    kickGhosts.erase(std::remove_if(kickGhosts.begin(),kickGhosts.end(),[&](auto& ghost)
+    {
+        if(ghost.role==BoomBapClassicRole::FillKick) return false;
+        auto& mains=pattern.notesByLane[BoomBapClassicLanes::Kick];auto nearest=mains.end();int distance=999;
+        for(auto it=mains.begin();it!=mains.end();++it)if(it->barIndex==ghost.barIndex&&std::abs(it->tick64-ghost.tick64)<distance){nearest=it;distance=std::abs(it->tick64-ghost.tick64);}
+        if(nearest==mains.end()||distance>12){++pattern.orphanKickGhostCount;pattern.repairsApplied.add("remove_orphan_kick_ghost");return true;}
+        ghost.anchorLane=BoomBapClassicLanes::Kick;ghost.anchorTick64=nearest->tick64;ghost.role=ghost.tick64<nearest->tick64?BoomBapClassicRole::PickupToKick:BoomBapClassicRole::ResponseFromKick;ghost.roleString=roleToString(ghost.role);
+        ghost.velocity=std::min(ghost.velocity,std::max(1,static_cast<int>(std::floor(nearest->velocity*style.ghostKickVelocityMaxRatio))));return false;
+    }),kickGhosts.end());
 
     auto& hats = pattern.notesByLane[BoomBapClassicLanes::HiHat];
     const bool flatHats = hats.size() > 1 && std::all_of(hats.begin() + 1, hats.end(), [&](const auto& note) { return note.velocity == hats.front().velocity; });
@@ -859,7 +1100,19 @@ juce::String BoomBapClassicAlgebraGenerator::buildDebugSummary(const BoomBapClas
     lines.add("bars: " + juce::String(params.bars));
     lines.add("swing: " + juce::String(profiledSwing(params.swing, profile), 3));
     lines.add("density: " + juce::String(params.density, 3));
-    lines.add("selected candidate index: " + juce::String(pattern.selectedCandidateIndex));
+    lines.add("groove archetype: " + juce::String(toString(pattern.context.archetype)));
+    lines.add("rare phrase event requested/realized: " + juce::String(toString(pattern.context.requestedEvent)) + "/" + juce::String(toString(pattern.realizedEvent)));
+    lines.add("fill type: " + juce::String(toString(pattern.fillType)));
+    lines.add("selected candidate index: " + juce::String(pattern.selectedCandidateIndex) + "/" + juce::String(params.candidateCount));
+    lines.add("near-best pool/best/selected/tolerance: " + juce::String(pattern.nearBestPoolSize) + "/" + juce::String(pattern.bestCandidateQuality,3) + "/" + juce::String(pattern.selectedCandidateQuality,3) + "/" + juce::String(getBoomBapProfile(params.substyle).nearBestTolerance,3));
+    lines.add("shared features density/sync/velocity/timing/space/repeat/interlock/roles: "
+              + juce::String(pattern.features.density, 3) + "/" + juce::String(pattern.features.syncopation, 3) + "/"
+              + juce::String(pattern.features.velocityLife, 3) + "/" + juce::String(pattern.features.timingActivity, 3) + "/"
+              + juce::String(pattern.features.negativeSpace, 3) + "/" + juce::String(pattern.features.repetition, 3) + "/"
+              + juce::String(pattern.features.interlock, 3) + "/" + juce::String(pattern.features.roleClarity, 3));
+    lines.add("style target fit/distance/selection score: " + juce::String(pattern.styleMatch.fit, 3) + "/"
+              + juce::String(pattern.styleMatch.weightedDistance, 3) + "/"
+              + juce::String(pattern.selectionQuality, 3));
     lines.add("final score: " + juce::String(pattern.score.quality, 3));
     lines.add("core scores backbeat/kick/break/micro/space: "
               + juce::String(pattern.score.backbeatScore, 3) + "/"
@@ -876,6 +1129,12 @@ juce::String BoomBapClassicAlgebraGenerator::buildDebugSummary(const BoomBapClas
     lines.add("snare count: " + juce::String(countLane(pattern, BoomBapClassicLanes::Snare)));
     lines.add("hat count: " + juce::String(countLane(pattern, BoomBapClassicLanes::HiHat) + countLane(pattern, BoomBapClassicLanes::HatAccent)));
     lines.add("ghost count: " + juce::String(countRole(pattern, BoomBapClassicRole::Ghost)));
+    lines.add("new scores ghostContext/ghostVelocity/kickConversation/hatMotif/rare/novelty: "
+              +juce::String(pattern.score.ghostContextQuality,3)+"/"+juce::String(pattern.score.ghostVelocityQuality,3)+"/"
+              +juce::String(pattern.score.kickConversationQuality,3)+"/"+juce::String(pattern.score.hatMotifCoherence,3)+"/"
+              +juce::String(pattern.score.rareEventQuality,3)+"/"+juce::String(pattern.score.novelty,3));
+    lines.add("ghost diagnostics orphan/repaired/maxRatio: "+juce::String(pattern.orphanGhostCount)+"/"+juce::String(pattern.repairedGhostCount)+"/"+juce::String(pattern.maxGhostVelocityRatio,3));
+    lines.add("kick ghost orphan count: "+juce::String(pattern.orphanKickGhostCount));
     lines.add("repairs applied: " + (pattern.repairsApplied.isEmpty() ? juce::String("none") : pattern.repairsApplied.joinIntoString(",")));
     lines.add("phrase roles:");
     lines.add("  bar 1 statement");

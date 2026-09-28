@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "../Core/TimingGrid.h"
+
 namespace bbg
 {
 void VelocityEngine::applyVelocityShape(PatternProject& project,
@@ -17,7 +19,7 @@ void VelocityEngine::applyVelocityShape(PatternProject& project,
 
         for (auto& note : track.notes)
         {
-            const int stepInBar = note.step % 16;
+            const int stepInBar = (note.gridTick / TimingGrid::Sixteenth) % 16;
             int minVel = note.isGhost ? style.ghostVelocityMin : style.snareVelocityMin;
             int maxVel = note.isGhost ? style.ghostVelocityMax : style.snareVelocityMax;
 
@@ -53,7 +55,7 @@ void VelocityEngine::applyVelocityShape(PatternProject& project,
             }
 
             int target = (minVel + maxVel) / 2;
-            if ((note.step % 16) >= 12 && !note.isGhost)
+            if (stepInBar >= 12 && !note.isGhost)
                 target = std::min(maxVel, target + 4);
 
             if (track.type == TrackType::Kick)

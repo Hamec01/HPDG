@@ -25,14 +25,17 @@ enum class Sub808ScaleSnapPolicy
 struct Sub808NoteEvent
 {
     int pitch = 36;
-    int step = 0;
-    int length = 1;
+    int gridTick = 0;
+    int timingOffsetTicks = 0;
+    int lengthTicks = TimingGrid::Sixteenth;
     int velocity = 100;
-    int microOffset = 0;
     juce::String semanticRole;
     bool isSlide = false;
     bool isLegato = false;
     bool glideToNext = false;
+
+    int startTick() const noexcept { return gridTick + timingOffsetTicks; }
+    int endTick() const noexcept { return startTick() + juce::jmax(1, lengthTicks); }
 };
 
 struct Sub808LaneSettings
@@ -48,10 +51,10 @@ inline Sub808NoteEvent toSub808NoteEvent(const NoteEvent& note)
 {
     Sub808NoteEvent result;
     result.pitch = note.pitch;
-    result.step = note.step;
-    result.length = note.length;
+    result.gridTick = note.gridTick;
+    result.timingOffsetTicks = note.timingOffsetTicks;
+    result.lengthTicks = note.lengthTicks;
     result.velocity = note.velocity;
-    result.microOffset = note.microOffset;
     result.semanticRole = note.semanticRole;
     result.isSlide = note.isSlide;
     result.isLegato = note.isLegato;
@@ -63,10 +66,10 @@ inline NoteEvent toLegacyNoteEvent(const Sub808NoteEvent& note)
 {
     NoteEvent result;
     result.pitch = note.pitch;
-    result.step = note.step;
-    result.length = note.length;
+    result.gridTick = note.gridTick;
+    result.timingOffsetTicks = note.timingOffsetTicks;
+    result.lengthTicks = note.lengthTicks;
     result.velocity = note.velocity;
-    result.microOffset = note.microOffset;
     result.semanticRole = note.semanticRole;
     result.isSlide = note.isSlide;
     result.isLegato = note.isLegato;

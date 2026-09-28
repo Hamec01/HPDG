@@ -5,9 +5,14 @@
 #include <vector>
 
 #include "../Core/PatternProject.h"
+#include "../Core/TimingGrid.h"
 
 namespace bbg
 {
+// Sample-analysis hints (kickStepWeights etc.) are still expressed per-1/16-step — that data
+// model belongs to SampleAnalyze and is explicitly out of scope here (see TIMING GRID V2 task,
+// SampleAnalyze section). noteSixteenthIndex() is the one place this class converts a note's
+// real gridTick down to "which 1/16 slot is it in" to look those hints up.
 class StepHintWeighter
 {
 public:
@@ -19,6 +24,11 @@ public:
 
         const size_t index = static_cast<size_t>(std::max(0, step)) % weights->size();
         return (*weights)[index];
+    }
+
+    static int noteSixteenthIndex(const NoteEvent& note)
+    {
+        return note.gridTick / TimingGrid::Sixteenth;
     }
 
     static void applyToProject(PatternProject& project, const std::unordered_set<TrackType>& mutableTracks)
@@ -42,9 +52,10 @@ public:
 
             auto noteShouldDrop = [&](const NoteEvent& note)
             {
-                const float hintWeight = weightForLaneStep(context, track.type, note.step);
-                const float eventConfidence = transcriptionConfidenceForLaneStep(context.transcription, track.type, note.step);
-                const bool anchor = isAnchorStep(track.type, note.step);
+                const int stepIndex = noteSixteenthIndex(note);
+                const float hintWeight = weightForLaneStep(context, track.type, stepIndex);
+                const float eventConfidence = transcriptionConfidenceForLaneStep(context.transcription, track.type, stepIndex);
+                const bool anchor = isAnchorStep(track.type, stepIndex);
 
                 if (anchor)
                     return false;
@@ -60,15 +71,16 @@ public:
 
             for (auto& note : track.notes)
             {
-                const float hintWeight = std::max(weightForLaneStep(context, track.type, note.step),
-                                                  transcriptionConfidenceForLaneStep(context.transcription, track.type, note.step));
+                const int stepIndex = noteSixteenthIndex(note);
+                const float hintWeight = std::max(weightForLaneStep(context, track.type, stepIndex),
+                                                  transcriptionConfidenceForLaneStep(context.transcription, track.type, stepIndex));
                 const float gain = std::clamp(0.82f + 0.44f * hintWeight, 0.70f, 1.34f);
                 note.velocity = std::clamp(static_cast<int>(std::round(static_cast<float>(note.velocity) * gain)), 1, 127);
 
                 if (context.preferCopyDrums && hintWeight > 0.74f)
-                    note.microOffset = static_cast<int>(std::round(static_cast<float>(note.microOffset) * 0.35f));
+                    note.timingOffsetTicks = static_cast<int>(std::round(static_cast<float>(note.timingOffsetTicks) * 0.35f));
                 if (context.preferCopyBass && track.type == TrackType::Sub808 && hintWeight > 0.72f)
-                    note.microOffset = static_cast<int>(std::round(static_cast<float>(note.microOffset) * 0.25f));
+                    note.timingOffsetTicks = static_cast<int>(std::round(static_cast<float>(note.timingOffsetTicks) * 0.25f));
             }
 
             const auto appendMissingEvents = [&](const std::vector<TranscribedEvent>& events, bool preferCopy)
@@ -86,8 +98,8 @@ public:
 
                     NoteEvent note;
                     note.pitch = event.pitch;
-                    note.step = event.step;
-                    note.length = std::max(1, event.lengthSteps);
+                    note.gridTick = event.step * TimingGrid::Sixteenth;
+                    note.lengthTicks = std::max(1, event.lengthSteps) * TimingGrid::Sixteenth;
                     note.velocity = std::clamp(event.velocity, 1, 127);
                     note.isGhost = event.ghost;
                     note.semanticRole = preferCopy ? "sample_copy" : "sample_hint";
@@ -178,11 +190,13 @@ private:
         return false;
     }
 
+    // `step` is a TranscribedEvent-style 1/16 index (see appendMissingEvents' caller).
     static bool containsStep(const std::vector<NoteEvent>& notes, int step, int pitch)
     {
+        const int tick = step * TimingGrid::Sixteenth;
         return std::any_of(notes.begin(), notes.end(), [&](const NoteEvent& note)
         {
-            return note.step == step && note.pitch == pitch;
+            return note.gridTick == tick && note.pitch == pitch;
         });
     }
 
@@ -190,8 +204,8 @@ private:
     {
         std::sort(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
         {
-            if (left.step != right.step)
-                return left.step < right.step;
+            if (left.gridTick != right.gridTick)
+                return left.gridTick < right.gridTick;
             if (left.pitch != right.pitch)
                 return left.pitch < right.pitch;
             return left.velocity > right.velocity;
@@ -199,7 +213,7 @@ private:
 
         notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
         {
-            return left.step == right.step && left.pitch == right.pitch;
+            return left.gridTick == right.gridTick && left.pitch == right.pitch;
         }), notes.end());
     }
 };

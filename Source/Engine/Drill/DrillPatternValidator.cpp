@@ -4,6 +4,7 @@
 #include <array>
 
 #include "../../Core/Sub808Types.h"
+#include "../../Core/TimingGrid.h"
 #include "../../Core/TrackRegistry.h"
 #include "../HiResTiming.h"
 
@@ -11,6 +12,20 @@ namespace bbg
 {
 namespace
 {
+// This validator's anchor maps (DrillPhraseBarPlan) are expressed as 1/16 step-in-bar indices —
+// that template representation is fine to keep (TIMING GRID V2, Sub-Drill section). These two
+// helpers are the only bridge between that and the now tick-native NoteEvent/Sub808NoteEvent.
+template <typename Note>
+int stepIndexOf(const Note& note)
+{
+    return note.gridTick / TimingGrid::Sixteenth;
+}
+
+int tickForStep(int step)
+{
+    return step * TimingGrid::Sixteenth;
+}
+
 TrackState* findTrack(PatternProject& project, TrackType type)
 {
     for (auto& track : project.tracks)
@@ -106,7 +121,7 @@ bool isSnareAnchorStep(const DrillPhraseBarPlan& bar, int stepInBar)
 
 bool isClapLayerCandidate(const DrillPhraseBarPlan& bar, const NoteEvent& note)
 {
-    return note.semanticRole == "drill_clap_layer" && isSnareAnchorStep(bar, note.step % 16);
+    return note.semanticRole == "drill_clap_layer" && isSnareAnchorStep(bar, stepIndexOf(note) % 16);
 }
 
 bool isGhostCandidate(const DrillPhraseBarPlan& bar, const NoteEvent& note)
@@ -118,7 +133,7 @@ bool isGhostCandidate(const DrillPhraseBarPlan& bar, const NoteEvent& note)
     if (primarySnare < 0)
         return false;
 
-    const int stepInBar = note.step % 16;
+    const int stepInBar = stepIndexOf(note) % 16;
     const int distance = std::abs(stepInBar - primarySnare);
     if (distance < 1 || distance > 2)
         return false;
@@ -133,11 +148,11 @@ bool isGhostCandidate(const DrillPhraseBarPlan& bar, const NoteEvent& note)
 int ghostCandidateScore(const DrillPhraseBarPlan& bar, const NoteEvent& note)
 {
     const int primarySnare = primarySnareStep(bar);
-    const int stepInBar = note.step % 16;
+    const int stepInBar = stepIndexOf(note) % 16;
     const int distanceScore = std::abs(stepInBar - primarySnare) == 1 ? 160 : 120;
     const int offsetScore = bar.supportAccent == DrillSupportAccentIntent::Push
-        ? std::max(0, -note.microOffset)
-        : std::max(0, note.microOffset);
+        ? std::max(0, -note.timingOffsetTicks)
+        : std::max(0, note.timingOffsetTicks);
     return distanceScore + offsetScore + note.velocity;
 }
 
@@ -153,7 +168,7 @@ void sanitizeClapGhostTrack(TrackState& clapGhost, const DrillPhrasePlan& phrase
 
         for (const auto& note : clapGhost.notes)
         {
-            if ((note.step / 16) != bar.barIndex)
+            if ((stepIndexOf(note) / 16) != bar.barIndex)
                 continue;
 
             if (isClapLayerCandidate(bar, note))
@@ -166,18 +181,18 @@ void sanitizeClapGhostTrack(TrackState& clapGhost, const DrillPhrasePlan& phrase
         {
             std::sort(layerCandidates.begin(), layerCandidates.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
             {
-                if (lhs.step != rhs.step)
-                    return lhs.step < rhs.step;
+                if (lhs.gridTick != rhs.gridTick)
+                    return lhs.gridTick < rhs.gridTick;
                 return lhs.velocity > rhs.velocity;
             });
 
             int lastKeptStep = -1;
             for (const auto& note : layerCandidates)
             {
-                if (note.step == lastKeptStep)
+                if (stepIndexOf(note) == lastKeptStep)
                     continue;
                 filtered.push_back(note);
-                lastKeptStep = note.step;
+                lastKeptStep = stepIndexOf(note);
             }
 
             continue;
@@ -202,10 +217,10 @@ void sortAndDedupeNotes(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        if (lhs.step != rhs.step)
-            return lhs.step < rhs.step;
-        if (lhs.microOffset != rhs.microOffset)
-            return lhs.microOffset < rhs.microOffset;
+        if (lhs.gridTick != rhs.gridTick)
+            return lhs.gridTick < rhs.gridTick;
+        if (lhs.timingOffsetTicks != rhs.timingOffsetTicks)
+            return lhs.timingOffsetTicks < rhs.timingOffsetTicks;
         if (lhs.pitch != rhs.pitch)
             return lhs.pitch < rhs.pitch;
         const int lhsPriority = semanticPriority(lhs.semanticRole);
@@ -217,7 +232,7 @@ void sortAndDedupeNotes(std::vector<NoteEvent>& notes)
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        return lhs.step == rhs.step && lhs.microOffset == rhs.microOffset && lhs.pitch == rhs.pitch;
+        return lhs.gridTick == rhs.gridTick && lhs.timingOffsetTicks == rhs.timingOffsetTicks && lhs.pitch == rhs.pitch;
     }), notes.end());
 }
 
@@ -236,14 +251,22 @@ void ensureHatBackbone(TrackState& hat, const DrillPhraseBarPlan& bar)
         const int tick = (bar.barIndex * HiResTiming::kTicksPerBar4_4) + carrier * HiResTiming::kTicks1_16;
         const auto found = std::find_if(hat.notes.begin(), hat.notes.end(), [&](const NoteEvent& note)
         {
-            if (note.semanticRole == "drill_hat_backbone" && note.step == step && note.microOffset == 0)
+            if (note.semanticRole == "drill_hat_backbone" && note.gridTick == tickForStep(step) && note.timingOffsetTicks == 0)
                 return true;
             return isReferenceHatSemantic(note.semanticRole)
                 && std::abs(HiResTiming::noteTick(note) - tick) <= HiResTiming::kTicks1_32;
         });
 
         if (found == hat.notes.end())
-            hat.notes.push_back({ pitch, step, 1, 86, 0, false, "drill_hat_backbone", false, false, false });
+        {
+            NoteEvent note;
+            note.pitch = pitch;
+            note.gridTick = tickForStep(step);
+            note.lengthTicks = TimingGrid::Sixteenth;
+            note.velocity = 86;
+            note.semanticRole = "drill_hat_backbone";
+            hat.notes.push_back(note);
+        }
     }
 }
 
@@ -252,7 +275,7 @@ int copiedReferenceHatsForBar(const TrackState& hat, int barIndex)
     int count = 0;
     for (const auto& note : hat.notes)
     {
-        if ((note.step / 16) == barIndex && isReferenceHatSemantic(note.semanticRole))
+        if ((stepIndexOf(note) / 16) == barIndex && isReferenceHatSemantic(note.semanticRole))
             ++count;
     }
 
@@ -280,7 +303,7 @@ void sanitizeHatProximity(TrackState& hat, const DrillPhrasePlan& phrasePlan)
         std::vector<NoteEvent> barNotes;
         for (const auto& note : hat.notes)
         {
-            if ((note.step / 16) == bar.barIndex)
+            if ((stepIndexOf(note) / 16) == bar.barIndex)
                 barNotes.push_back(note);
         }
 
@@ -340,7 +363,7 @@ void trimNotesPerBar(std::vector<NoteEvent>& notes, int barIndex, int maxNotes)
 {
     std::vector<size_t> indices;
     for (size_t index = 0; index < notes.size(); ++index)
-        if ((notes[index].step / 16) == barIndex)
+        if ((stepIndexOf(notes[index]) / 16) == barIndex)
             indices.push_back(index);
 
     if (static_cast<int>(indices.size()) <= maxNotes)
@@ -361,7 +384,7 @@ void trimNotesPerBar(std::vector<NoteEvent>& notes, int barIndex, int maxNotes)
 
     for (size_t index = 0; index < notes.size(); ++index)
     {
-        if ((notes[index].step / 16) != barIndex)
+        if ((stepIndexOf(notes[index]) / 16) != barIndex)
             keep[index] = true;
     }
 
@@ -410,22 +433,24 @@ void cleanMonophonicSub(std::vector<Sub808NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const Sub808NoteEvent& lhs, const Sub808NoteEvent& rhs)
     {
-        if (lhs.step != rhs.step)
-            return lhs.step < rhs.step;
+        if (lhs.gridTick != rhs.gridTick)
+            return lhs.gridTick < rhs.gridTick;
         return lhs.velocity > rhs.velocity;
     });
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const Sub808NoteEvent& lhs, const Sub808NoteEvent& rhs)
     {
-        return lhs.step == rhs.step;
+        return lhs.gridTick == rhs.gridTick;
     }), notes.end());
 
     for (size_t index = 0; index + 1 < notes.size(); ++index)
     {
         auto& current = notes[index];
         const auto& next = notes[index + 1];
-        const int allowedOverlap = (current.glideToNext || current.isLegato) ? 1 : 0;
-        current.length = std::max(1, std::min(current.length, next.step - current.step + allowedOverlap));
+        const int allowedOverlapSteps = (current.glideToNext || current.isLegato) ? 1 : 0;
+        const int gapSteps = stepIndexOf(next) - stepIndexOf(current);
+        const int currentLengthSteps = current.lengthTicks / TimingGrid::Sixteenth;
+        current.lengthTicks = std::max(1, std::min(currentLengthSteps, gapSteps + allowedOverlapSteps)) * TimingGrid::Sixteenth;
     }
 }
 
@@ -460,7 +485,7 @@ bool isPickupLikeSubStep(int stepInBar)
 
 int subNoteScore(const DrillPhraseBarPlan& bar, const Sub808NoteEvent& note)
 {
-    const int stepInBar = note.step % 16;
+    const int stepInBar = stepIndexOf(note) % 16;
     int score = subSemanticPriority(note.semanticRole) * 100 + note.velocity;
     if (stepInBar == 0)
         score += 40;
@@ -483,7 +508,7 @@ void sanitizeSubStarts(std::vector<Sub808NoteEvent>& notes, const DrillPhrasePla
         std::vector<Sub808NoteEvent> barNotes;
         for (const auto& note : notes)
         {
-            if ((note.step / 16) == bar.barIndex)
+            if ((stepIndexOf(note) / 16) == bar.barIndex)
                 barNotes.push_back(note);
         }
 
@@ -493,7 +518,7 @@ void sanitizeSubStarts(std::vector<Sub808NoteEvent>& notes, const DrillPhrasePla
             const int rhsScore = subNoteScore(bar, rhs);
             if (lhsScore != rhsScore)
                 return lhsScore > rhsScore;
-            return lhs.step < rhs.step;
+            return lhs.gridTick < rhs.gridTick;
         });
 
         std::vector<Sub808NoteEvent> keptBar;
@@ -503,10 +528,10 @@ void sanitizeSubStarts(std::vector<Sub808NoteEvent>& notes, const DrillPhrasePla
             if (static_cast<int>(keptBar.size()) >= maxSubStartsForBar(bar))
                 break;
 
-            const int stepInBar = note.step % 16;
+            const int stepInBar = stepIndexOf(note) % 16;
             const bool tooClose = std::any_of(keptBar.begin(), keptBar.end(), [&](const Sub808NoteEvent& existing)
             {
-                return std::abs((existing.step % 16) - stepInBar) < 4;
+                return std::abs((stepIndexOf(existing) % 16) - stepInBar) < 4;
             });
 
             if (!tooClose)
@@ -518,7 +543,7 @@ void sanitizeSubStarts(std::vector<Sub808NoteEvent>& notes, const DrillPhrasePla
 
         std::sort(keptBar.begin(), keptBar.end(), [](const Sub808NoteEvent& lhs, const Sub808NoteEvent& rhs)
         {
-            return lhs.step < rhs.step;
+            return lhs.gridTick < rhs.gridTick;
         });
 
         filtered.insert(filtered.end(), keptBar.begin(), keptBar.end());
@@ -541,18 +566,18 @@ void sanitizeSubSlides(std::vector<Sub808NoteEvent>& notes, const DrillPhrasePla
     {
         auto& current = notes[index];
         auto& next = notes[index + 1];
-        const int gap = next.step - current.step;
+        const int gap = stepIndexOf(next) - stepIndexOf(current);
         const int interval = std::abs(next.pitch - current.pitch);
-        const bool sameBar = (current.step / 16) == (next.step / 16);
+        const bool sameBar = (stepIndexOf(current) / 16) == (stepIndexOf(next) / 16);
         const bool phraseSlide = current.semanticRole == "drill_sub_release"
-            || (current.semanticRole == "drill_sub_move" && current.length <= 3);
+            || (current.semanticRole == "drill_sub_move" && current.lengthTicks <= 3 * TimingGrid::Sixteenth);
 
         if (slideBudget > 0 && sameBar && phraseSlide && gap >= 2 && gap <= 3 && interval >= 2 && interval <= 5)
         {
             current.glideToNext = true;
             current.isLegato = true;
             next.isSlide = true;
-            current.length = std::max(current.length, gap + 1);
+            current.lengthTicks = std::max(current.lengthTicks, (gap + 1) * TimingGrid::Sixteenth);
             --slideBudget;
         }
     }
@@ -579,11 +604,11 @@ void DrillPatternValidator::validate(PatternProject& project,
         for (auto& note : hat->notes)
         {
             if (note.semanticRole == "drill_hat_backbone")
-                note.microOffset = 0;
+                note.timingOffsetTicks = 0;
             else if (isReferenceHatSemantic(note.semanticRole))
-                note.microOffset = std::clamp(note.microOffset, -120, 120);
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -120, 120);
             else
-                note.microOffset = std::clamp(note.microOffset, -60, 90);
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -60, 90);
             note.velocity = std::clamp(note.velocity,
                                        isReferenceHatSemantic(note.semanticRole) ? 36 : 44,
                                        isReferenceHatSemantic(note.semanticRole) ? 118 : 108);
@@ -614,7 +639,7 @@ void DrillPatternValidator::validate(PatternProject& project,
 
         for (auto& note : hatFx->notes)
         {
-            note.microOffset = std::clamp(note.microOffset, -120, 120);
+            note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -120, 120);
             note.velocity = std::clamp(note.velocity, 40, 96);
         }
     }
@@ -638,10 +663,18 @@ void DrillPatternValidator::validate(PatternProject& project,
                 const int absoluteStep = bar.barIndex * 16 + snareStep;
                 const auto found = std::find_if(snare->notes.begin(), snare->notes.end(), [&](const NoteEvent& note)
                 {
-                    return note.step == absoluteStep && note.semanticRole == "drill_snare_backbone";
+                    return note.gridTick == tickForStep(absoluteStep) && note.semanticRole == "drill_snare_backbone";
                 });
                 if (found == snare->notes.end())
-                    snare->notes.push_back({ pitch, absoluteStep, 1, 104, 0, false, "drill_snare_backbone", false, false, false });
+                {
+                    NoteEvent note;
+                    note.pitch = pitch;
+                    note.gridTick = tickForStep(absoluteStep);
+                    note.lengthTicks = TimingGrid::Sixteenth;
+                    note.velocity = 104;
+                    note.semanticRole = "drill_snare_backbone";
+                    snare->notes.push_back(note);
+                }
             }
         }
 
@@ -658,12 +691,12 @@ void DrillPatternValidator::validate(PatternProject& project,
         {
             if (note.semanticRole == "drill_clap_layer")
             {
-                note.microOffset = std::clamp(note.microOffset, 0, 24);
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, 0, 24);
                 note.velocity = std::clamp(note.velocity, 56, 92);
             }
             else
             {
-                note.microOffset = std::clamp(note.microOffset, -18, 40);
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -18, 40);
                 note.velocity = std::clamp(note.velocity, 34, 76);
                 note.isGhost = true;
             }
@@ -675,8 +708,8 @@ void DrillPatternValidator::validate(PatternProject& project,
         sortAndDedupeNotes(kick->notes);
         kick->notes.erase(std::remove_if(kick->notes.begin(), kick->notes.end(), [&](const NoteEvent& note)
         {
-            const int barIndex = note.step / 16;
-            const int stepInBar = note.step % 16;
+            const int barIndex = stepIndexOf(note) / 16;
+            const int stepInBar = stepIndexOf(note) % 16;
             if (barIndex < 0 || barIndex >= static_cast<int>(phrasePlan.bars.size()))
                 return false;
             return collidesWithSnare(phrasePlan.bars[static_cast<size_t>(barIndex)], stepInBar);
@@ -689,10 +722,18 @@ void DrillPatternValidator::validate(PatternProject& project,
             const int absoluteAnchor = bar.barIndex * 16 + (bar.anchorMap.kickAnchorSteps[0] >= 0 ? bar.anchorMap.kickAnchorSteps[0] : 0);
             const auto found = std::find_if(kick->notes.begin(), kick->notes.end(), [&](const NoteEvent& note)
             {
-                return note.step / 16 == bar.barIndex;
+                return stepIndexOf(note) / 16 == bar.barIndex;
             });
             if (found == kick->notes.end())
-                kick->notes.push_back({ pitch, absoluteAnchor, 1, 108, 0, false, "drill_kick_anchor", false, false, false });
+            {
+                NoteEvent note;
+                note.pitch = pitch;
+                note.gridTick = tickForStep(absoluteAnchor);
+                note.lengthTicks = TimingGrid::Sixteenth;
+                note.velocity = 108;
+                note.semanticRole = "drill_kick_anchor";
+                kick->notes.push_back(note);
+            }
 
             trimNotesPerBar(kick->notes, bar.barIndex, maxKickNotesForBar(bar));
         }
@@ -704,7 +745,7 @@ void DrillPatternValidator::validate(PatternProject& project,
         {
             note.pitch = snapToScale(note.pitch, project.params.keyRoot, project.params.scaleMode);
             note.velocity = std::clamp(note.velocity, 72, 118);
-            note.microOffset = std::clamp(note.microOffset, -24, 24);
+            note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -24, 24);
         }
 
         sanitizeSubStarts(sub->sub808Notes, phrasePlan);
@@ -716,19 +757,26 @@ void DrillPatternValidator::validate(PatternProject& project,
             const int primarySnare = bar.anchorMap.snareAnchorSteps[0];
             for (auto& note : sub->sub808Notes)
             {
-                if ((note.step / 16) != bar.barIndex || primarySnare <= 0)
+                if ((stepIndexOf(note) / 16) != bar.barIndex || primarySnare <= 0)
                     continue;
 
-                const int stepInBar = note.step % 16;
-                if (stepInBar < primarySnare && stepInBar + note.length > primarySnare)
-                    note.length = std::max(1, primarySnare - stepInBar);
+                const int stepInBar = stepIndexOf(note) % 16;
+                const int lengthSteps = note.lengthTicks / TimingGrid::Sixteenth;
+                if (stepInBar < primarySnare && stepInBar + lengthSteps > primarySnare)
+                    note.lengthTicks = std::max(1, primarySnare - stepInBar) * TimingGrid::Sixteenth;
             }
         }
 
         if (sub->sub808Notes.empty())
         {
             const int step = phrasePlan.bars.empty() ? 0 : std::max(0, phrasePlan.bars.front().anchorMap.lowEndAnchorSteps[0]);
-            sub->sub808Notes.push_back({ 24 + project.params.keyRoot, step, 4, 96, 0, "drill_sub_anchor", false, false, false });
+            Sub808NoteEvent note;
+            note.pitch = 24 + project.params.keyRoot;
+            note.gridTick = tickForStep(step);
+            note.lengthTicks = 4 * TimingGrid::Sixteenth;
+            note.velocity = 96;
+            note.semanticRole = "drill_sub_anchor";
+            sub->sub808Notes.push_back(note);
         }
 
         sub->sub808Settings.mono = true;

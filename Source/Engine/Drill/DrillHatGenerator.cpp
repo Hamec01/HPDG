@@ -786,10 +786,10 @@ void sortAndDedupeRenderedNotes(std::vector<NoteEvent>& notes)
 
     std::sort(notes.begin(), notes.end(), [&](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        if (lhs.step != rhs.step)
-            return lhs.step < rhs.step;
-        if (lhs.microOffset != rhs.microOffset)
-            return lhs.microOffset < rhs.microOffset;
+        if (lhs.gridTick != rhs.gridTick)
+            return lhs.gridTick < rhs.gridTick;
+        if (lhs.timingOffsetTicks != rhs.timingOffsetTicks)
+            return lhs.timingOffsetTicks < rhs.timingOffsetTicks;
         if (lhs.pitch != rhs.pitch)
             return lhs.pitch < rhs.pitch;
         const int lhsPriority = semanticPriority(lhs.semanticRole);
@@ -801,7 +801,7 @@ void sortAndDedupeRenderedNotes(std::vector<NoteEvent>& notes)
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        return lhs.step == rhs.step && lhs.microOffset == rhs.microOffset && lhs.pitch == rhs.pitch;
+        return lhs.gridTick == rhs.gridTick && lhs.timingOffsetTicks == rhs.timingOffsetTicks && lhs.pitch == rhs.pitch;
     }), notes.end());
 }
 } // namespace

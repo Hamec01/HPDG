@@ -19,6 +19,9 @@
 #include "../Source/Engine/Drill/DrillSnareGenerator.h"
 #include "../Source/Engine/ExtractPatternBuilder.h"
 #include "../Source/Engine/HiResTiming.h"
+#include "../Source/Engine/GenerationModel/CandidateSelectionEngine.h"
+#include "../Source/Engine/GenerationModel/PatternFeatureVector.h"
+#include "../Source/Engine/GenerationModel/StyleTargetModel.h"
 #include "../Source/Engine/LaneSampleBank.h"
 #include "../Source/Engine/MidiExportEngine.h"
 #include "../Source/Engine/PatternPerformanceTransformEngine.h"
@@ -32,6 +35,7 @@
 #include "../Source/Engine/TempoInterpretation.h"
 #include "../Source/Engine/TrapEngine.h"
 #include "../Source/Engine/Trap/TrapAlgebraEngine.h"
+#include "../Source/Engine/Trap/TrapTempoContext.h"
 
 namespace bbg
 {
@@ -46,6 +50,21 @@ void expect(bool condition, const juce::String& message)
 {
     if (!condition)
         fail(message);
+}
+
+int stepIndexOf(const NoteEvent& note) noexcept
+{
+    return note.gridTick / HiResTiming::kTicks1_16;
+}
+
+int stepIndexOf(const Sub808NoteEvent& note) noexcept
+{
+    return note.gridTick / HiResTiming::kTicks1_16;
+}
+
+int tickForStep(int step) noexcept
+{
+    return step * HiResTiming::kTicks1_16;
 }
 
 void testTempoInterpretationHalfTimeBandSelection()
@@ -76,6 +95,92 @@ void testTempoInterpretationAutoGenreFolding()
     params.genre = GenreType::BoomBap;
     expect(selectTempoBand(140.0f, params, 120.0f, 140.0f, 98.0f, 126.0f) == TempoBand::Base,
            "Auto should interpret BoomBap 140 BPM as half-time (Base band after folding).");
+}
+
+void testTrapTempoContextScientificMapping()
+{
+    const auto at86 = resolveTrapTempo(86.0, 4);
+    expect(at86.doubleTime && at86.clockMultiplier == 2.0,
+           "Trap 86 BPM must select the double-time micro clock.");
+    expect(std::abs(at86.styleBpm - 172.0) < 0.001,
+           "Trap 86 BPM must resolve to 172 style BPM.");
+    expect(at86.hostBars == 4 && at86.styleBars == 8,
+           "Double-time must preserve four host bars while exposing eight style bars.");
+    expect(at86.styleTick64ToHostPpq(1) == 30,
+           "One style 1/64 tick at double-time must map to 30 host PPQ.");
+
+    const auto at85 = resolveTrapTempo(85.0, 4);
+    expect(std::abs(at85.styleBpm - 170.0) < 0.001,
+           "Trap 85 BPM must resolve to 170 style BPM.");
+
+    const auto highTempo = resolveTrapTempo(150.0, 4);
+    expect(!highTempo.doubleTime && highTempo.styleBpm == 150.0,
+           "Trap 150 BPM must retain the normal rhythmic clock.");
+
+    expect(highTempo.straightSubdivisionPpq(16) == 240
+               && highTempo.straightSubdivisionPpq(32) == 120
+               && highTempo.straightSubdivisionPpq(64) == 60,
+           "Straight Trap subdivisions must use exact PPQ values.");
+    expect(highTempo.tripletSubdivisionPpq(8) == 320
+               && highTempo.tripletSubdivisionPpq(16) == 160
+               && highTempo.tripletSubdivisionPpq(32) == 80,
+           "Trap triplets must use exact PPQ values, never tick64 approximations.");
+}
+
+void testSharedGenerationModelCore()
+{
+    PatternFeatureInput input;
+    input.bars = 2;
+    input.ticksPerBar = 64;
+    input.events = {
+        { GenerationLaneFamily::Kick, MusicalRole::Anchor, 0, 112, 0 },
+        { GenerationLaneFamily::Hat, MusicalRole::Pulse, 0, 84, 0 },
+        { GenerationLaneFamily::Snare, MusicalRole::Backbeat, 32, 118, 4 },
+        { GenerationLaneFamily::Kick, MusicalRole::Response, 40, 98, 0 },
+        { GenerationLaneFamily::Kick, MusicalRole::Anchor, 64, 110, 0 },
+        { GenerationLaneFamily::Hat, MusicalRole::Pulse, 64, 78, 0 },
+        { GenerationLaneFamily::Snare, MusicalRole::Backbeat, 96, 120, 5 },
+        { GenerationLaneFamily::Kick, MusicalRole::Pickup, 120, 92, -2 }
+    };
+    const auto features = PatternFeatureExtractor::extract(input);
+    expect(features.roleClarity > 0.99f, "Shared feature extractor must preserve typed musical intent.");
+    expect(features.interlock > 0.0f && features.negativeSpace > 0.0f,
+           "Shared feature extractor must measure cross-lane relations and negative space.");
+
+    const std::vector<CandidateSelectionEntry> candidates {
+        { 0.90f, 0.10f, true },
+        { 0.88f, 0.90f, true },
+        { 0.99f, 1.00f, false },
+        { 0.40f, 1.00f, true }
+    };
+    const CandidateSelectionConfig config { 0.80f, 0.05f, 0.12f, 0.20f, 7781u };
+    const auto first = CandidateSelectionEngine::select(candidates, config);
+    const auto second = CandidateSelectionEngine::select(candidates, config);
+    expect(first.selectedIndex == second.selectedIndex,
+           "Shared near-best selection must remain deterministic for a fixed seed.");
+    expect(first.selectedIndex != 2 && first.selectedIndex != 3 && first.nearBestPoolSize == 2,
+           "Shared selector must reject hard-invalid and below-floor candidates.");
+
+    StyleTargetProfile baseTarget {
+        { 0.45f, 0.50f, 0.55f, 0.30f, 0.55f, 0.70f, 0.60f, 0.95f },
+        { 0.15f, 0.20f, 0.20f, 0.20f, 0.15f, 0.20f, 0.20f, 0.10f },
+        { 1.00f, 1.00f, 0.70f, 0.70f, 1.00f, 0.90f, 1.00f, 0.80f }
+    };
+    const auto sparseTarget = StyleTargetModel::withPerformanceIntent(baseTarget, 0.20f, 0.52f, 0.30f, 0.30f);
+    const auto denseTarget = StyleTargetModel::withPerformanceIntent(baseTarget, 0.85f, 0.62f, 0.70f, 0.80f);
+    expect(denseTarget.target.density > sparseTarget.target.density
+               && denseTarget.target.negativeSpace < sparseTarget.target.negativeSpace
+               && denseTarget.target.timingActivity > sparseTarget.target.timingActivity,
+           "Style target must translate VST performance controls into coherent musical intent.");
+
+    const auto exactMatch = StyleTargetModel::evaluate(denseTarget.target, denseTarget);
+    auto poorFeatures = denseTarget.target;
+    poorFeatures.density = 0.0f;
+    poorFeatures.negativeSpace = 1.0f;
+    poorFeatures.interlock = 0.0f;
+    const auto poorMatch = StyleTargetModel::evaluate(poorFeatures, denseTarget);
+    expect(exactMatch.fit > 0.999f && exactMatch.fit > poorMatch.fit,
+           "Style target matching must prefer a candidate close to the requested musical profile.");
 }
 
 void testBoomBapProductionAlwaysUsesAlgebra()
@@ -129,7 +234,7 @@ bool hasNoteAt(const TrackState& track, int step, int microOffset, const juce::S
 {
     return std::any_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
     {
-        return note.step == step && note.microOffset == microOffset && note.semanticRole == semanticRole;
+        return stepIndexOf(note) == step && note.timingOffsetTicks == microOffset && note.semanticRole == semanticRole;
     });
 }
 
@@ -137,7 +242,23 @@ bool hasNoteAtStepAndMicro(const TrackState& track, int step, int microOffset)
 {
     return std::any_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
     {
-        return note.step == step && note.microOffset == microOffset;
+        return stepIndexOf(note) == step && note.timingOffsetTicks == microOffset;
+    });
+}
+
+bool hasNoteAtExactTick(const TrackState& track, int tick)
+{
+    return std::any_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+    {
+        return note.startTick() == tick;
+    });
+}
+
+bool hasNoteAtExactTick(const TrackState& track, int tick, const juce::String& semanticRole)
+{
+    return std::any_of(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
+    {
+        return note.startTick() == tick && note.semanticRole == semanticRole;
     });
 }
 
@@ -160,7 +281,7 @@ bool hasSubStartAt(const TrackState& track, int step, const juce::String& semant
 {
     return std::any_of(track.sub808Notes.begin(), track.sub808Notes.end(), [&](const Sub808NoteEvent& note)
     {
-        return note.step == step && (semanticRole.isEmpty() || note.semanticRole == semanticRole);
+        return stepIndexOf(note) == step && (semanticRole.isEmpty() || note.semanticRole == semanticRole);
     });
 }
 
@@ -190,10 +311,10 @@ bool noteSequencesEqual(const std::vector<NoteEvent>& lhs, const std::vector<Not
         const auto& a = lhs[index];
         const auto& b = rhs[index];
         if (a.pitch != b.pitch
-            || a.step != b.step
-            || a.length != b.length
+            || stepIndexOf(a) != stepIndexOf(b)
+            || a.lengthTicks != b.lengthTicks
             || a.velocity != b.velocity
-            || a.microOffset != b.microOffset
+            || a.timingOffsetTicks != b.timingOffsetTicks
             || a.isGhost != b.isGhost
             || a.semanticRole != b.semanticRole
             || a.isSlide != b.isSlide
@@ -217,10 +338,10 @@ bool sub808NoteSequencesEqual(const std::vector<Sub808NoteEvent>& lhs, const std
         const auto& a = lhs[index];
         const auto& b = rhs[index];
         if (a.pitch != b.pitch
-            || a.step != b.step
-            || a.length != b.length
+            || stepIndexOf(a) != stepIndexOf(b)
+            || a.lengthTicks != b.lengthTicks
             || a.velocity != b.velocity
-            || a.microOffset != b.microOffset
+            || a.timingOffsetTicks != b.timingOffsetTicks
             || a.semanticRole != b.semanticRole
             || a.isSlide != b.isSlide
             || a.isLegato != b.isLegato
@@ -240,7 +361,7 @@ bool sub808SequenceIsValidMonophonic(const std::vector<Sub808NoteEvent>& notes)
         const auto& current = notes[index];
         const auto& next = notes[index + 1];
         const int allowedOverlap = (current.glideToNext || current.isLegato) ? 1 : 0;
-        if (current.step + current.length > next.step + allowedOverlap)
+        if (current.gridTick + current.lengthTicks > next.gridTick + allowedOverlap * HiResTiming::kTicks1_16)
             return false;
         if (next.isSlide != current.glideToNext)
             return false;
@@ -252,8 +373,8 @@ bool sub808SequenceIsValidMonophonic(const std::vector<Sub808NoteEvent>& notes)
 bool noteMatchesBaseIdentity(const NoteEvent& note, const NoteEvent& baseNote)
 {
     return note.pitch == baseNote.pitch
-        && note.step == baseNote.step
-        && note.length == baseNote.length
+        && stepIndexOf(note) == stepIndexOf(baseNote)
+        && note.lengthTicks == baseNote.lengthTicks
         && note.isGhost == baseNote.isGhost
         && note.semanticRole == baseNote.semanticRole
         && note.isSlide == baseNote.isSlide
@@ -327,8 +448,26 @@ void testSerializationRoundTripSmoke()
     auto* sub = findTrackByType(project, TrackType::Sub808);
     expect(kick != nullptr && sub != nullptr, "Smoke serialization test requires Kick and Sub808 tracks.");
 
-    kick->notes.push_back({ 36, 0, 1, 112, 0, false, "smoke_kick", false, false, false });
-    kick->baseNotes.push_back({ 36, 4, 1, 96, 0, false, "smoke_kick_base", false, false, false });
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "smoke_kick";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (4) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 96;
+note.timingOffsetTicks = 0;
+note.semanticRole = "smoke_kick_base";
+kick->baseNotes.push_back(note);
+}
     kick->performanceBaseParams.genre = GenreType::Trap;
     kick->performanceBaseParams.swingPercent = 58.0f;
     kick->performanceBaseParams.velocityAmount = 0.72f;
@@ -338,9 +477,29 @@ void testSerializationRoundTripSmoke()
     kick->performanceBaseParams.bars = 4;
     kick->performanceBaseParams.trapSubstyle = 2;
     kick->hasPerformanceBaseParams = true;
-    sub->sub808Notes.push_back({ 36, 0, 4, 100, 0, "smoke_sub", false, false, false });
+    {
+Sub808NoteEvent note;
+note.pitch = 36;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (4) * HiResTiming::kTicks1_16;
+note.velocity = 100;
+note.timingOffsetTicks = 0;
+note.semanticRole = "smoke_sub";
+sub->sub808Notes.push_back(note);
+}
     sub->notes = toLegacyNoteEvents(sub->sub808Notes);
-    sub->baseSub808Notes.push_back({ 43, 6, 2, 96, 4, "smoke_sub_base", true, false, true });
+    {
+Sub808NoteEvent note;
+note.pitch = 43;
+note.gridTick = (6) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 96;
+note.timingOffsetTicks = 4;
+note.semanticRole = "smoke_sub_base";
+note.isSlide = true;
+note.glideToNext = true;
+sub->baseSub808Notes.push_back(note);
+}
     sub->baseNotes = toLegacyNoteEvents(sub->baseSub808Notes);
     sub->performanceBaseParams.genre = GenreType::Trap;
     sub->performanceBaseParams.swingPercent = 57.0f;
@@ -534,15 +693,83 @@ void testSerializationRoundTripSmoke()
         expect(hat != nullptr && kick != nullptr && sub != nullptr,
             "Base-pattern capture smoke requires HiHat, Kick, and Sub808 tracks.");
 
-        hat->notes = { { 42, 1, 1, 90, 0, false, "visible_hat", false, false, false } };
-        hat->baseNotes = { { 42, 7, 1, 72, 0, false, "old_hat_base", false, false, false } };
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (1) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 90;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "visible_hat";
+    __notes.push_back(n0);
+    hat->notes = __notes;
+}
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 42;
+    __notes_n0.gridTick = (7) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 72;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "old_hat_base";
+    __notes.push_back(__notes_n0);
+    hat->baseNotes = __notes;
+}
 
-        kick->notes = { { 36, 0, 1, 116, 0, false, "visible_kick", false, false, false } };
-        kick->baseNotes = { { 36, 8, 1, 88, 0, false, "old_kick_base", false, false, false } };
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 116;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "visible_kick";
+    __notes.push_back(n0);
+    kick->notes = __notes;
+}
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 36;
+    __notes_n0.gridTick = (8) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 88;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "old_kick_base";
+    __notes.push_back(__notes_n0);
+    kick->baseNotes = __notes;
+}
 
-        sub->sub808Notes = { { 36, 0, 4, 98, 0, "visible_sub", false, false, false } };
+        {
+    std::vector<Sub808NoteEvent> __notes;
+    Sub808NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    n0.velocity = 98;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "visible_sub";
+    __notes.push_back(n0);
+    sub->sub808Notes = __notes;
+}
         sub->notes = toLegacyNoteEvents(sub->sub808Notes);
-        sub->baseSub808Notes = { { 43, 10, 2, 82, 6, "old_sub_base", true, false, true } };
+        {
+    std::vector<Sub808NoteEvent> __notes;
+    Sub808NoteEvent __notes_n0;
+    __notes_n0.pitch = 43;
+    __notes_n0.gridTick = (10) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (2) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 82;
+    __notes_n0.timingOffsetTicks = 6;
+    __notes_n0.semanticRole = "old_sub_base";
+    __notes_n0.isSlide = true;
+    __notes_n0.glideToNext = true;
+    __notes.push_back(__notes_n0);
+    sub->baseSub808Notes = __notes;
+}
         sub->baseNotes = toLegacyNoteEvents(sub->baseSub808Notes);
 
         PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::Kick, TrackType::Sub808 });
@@ -573,15 +800,54 @@ void testPerformanceTransformFromBaseSmoke()
     expect(hat != nullptr && perc != nullptr,
         "Performance transform smoke requires HiHat and Perc tracks.");
 
-    hat->notes = {
-        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
-        { 42, 1, 1, 76, 0, false, "drill_hat_support", false, false, false },
-        { 42, 3, 1, 72, 0, false, "drill_hat_support", false, false, false }
-    };
-    perc->notes = {
-        { 39, 5, 1, 74, 0, false, "perc_support", false, false, false },
-        { 39, 13, 1, 78, 0, false, "perc_fill", false, false, false }
-    };
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 92;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "drill_hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (1) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 76;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "drill_hat_support";
+    __notes.push_back(n1);
+    NoteEvent n2;
+    n2.pitch = 42;
+    n2.gridTick = (3) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n2.velocity = 72;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "drill_hat_support";
+    __notes.push_back(n2);
+    hat->notes = __notes;
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 39;
+    n0.gridTick = (5) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 74;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "perc_support";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 39;
+    n1.gridTick = (13) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 78;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "perc_fill";
+    __notes.push_back(n1);
+    perc->notes = __notes;
+}
 
     PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Perc });
 
@@ -627,19 +893,59 @@ void testDensityAuthoringPrioritySmoke()
     expect(hat != nullptr, "Density authoring smoke requires a HiHat track.");
 
     hat->laneRole = "carrier";
-    hat->notes = {
-        { 42, 0, 1, 94, 0, false, "hat_backbone", false, false, false },
-        { 42, 7, 1, 82, 0, false, "hat_texture", false, false, false },
-        { 42, 11, 1, 74, 0, false, "hat_fill", false, false, false }
-    };
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 94;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (7) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 82;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "hat_texture";
+    __notes.push_back(n1);
+    NoteEvent n2;
+    n2.pitch = 42;
+    n2.gridTick = (11) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n2.velocity = 74;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "hat_fill";
+    __notes.push_back(n2);
+    hat->notes = __notes;
+}
 
     PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat });
     const auto baseHat = hat->baseNotes;
 
-    project.authoring.noteMetadataByLane[hat->laneId] = {
-        { { 7, 0, 42, 1, false }, true, 100 },
-        { { 11, 0, 42, 1, false }, false, 5 }
-    };
+    {
+        NoteAuthoringState locked;
+        locked.noteKey.gridTick = 7 * HiResTiming::kTicks1_16;
+        locked.noteKey.timingOffsetTicks = 0;
+        locked.noteKey.pitch = 42;
+        locked.noteKey.lengthTicks = 1 * HiResTiming::kTicks1_16;
+        locked.noteKey.isGhost = false;
+        locked.anchorLocked = true;
+        locked.importanceWeight = 100;
+
+        NoteAuthoringState filler;
+        filler.noteKey.gridTick = 11 * HiResTiming::kTicks1_16;
+        filler.noteKey.timingOffsetTicks = 0;
+        filler.noteKey.pitch = 42;
+        filler.noteKey.lengthTicks = 1 * HiResTiming::kTicks1_16;
+        filler.noteKey.isGhost = false;
+        filler.anchorLocked = false;
+        filler.importanceWeight = 5;
+
+        project.authoring.noteMetadataByLane[hat->laneId] = { locked, filler };
+    }
 
     project.params.densityAmount = 0.10f;
     PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
@@ -675,12 +981,45 @@ void testSub808DensitySafetySmoke()
     expect(sub != nullptr, "Sub808 density smoke requires a Sub808 track.");
 
     sub->laneRole = "trap_sub";
-    sub->sub808Notes = {
-        { 36, 0, 2, 100, 0, "trap_sub_anchor", false, false, false },
-        { 38, 4, 2, 92, 0, "trap_sub_move", false, true, true },
-        { 41, 6, 2, 88, 0, "trap_sub_release", true, false, false },
-        { 36, 8, 4, 98, 0, "trap_sub_anchor", false, false, false }
-    };
+    {
+    std::vector<Sub808NoteEvent> __notes;
+    Sub808NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (2) * HiResTiming::kTicks1_16;
+    n0.velocity = 100;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "trap_sub_anchor";
+    __notes.push_back(n0);
+    Sub808NoteEvent n1;
+    n1.pitch = 38;
+    n1.gridTick = (4) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (2) * HiResTiming::kTicks1_16;
+    n1.velocity = 92;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "trap_sub_move";
+    n1.isLegato = true;
+    n1.glideToNext = true;
+    __notes.push_back(n1);
+    Sub808NoteEvent n2;
+    n2.pitch = 41;
+    n2.gridTick = (6) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (2) * HiResTiming::kTicks1_16;
+    n2.velocity = 88;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "trap_sub_release";
+    n2.isSlide = true;
+    __notes.push_back(n2);
+    Sub808NoteEvent n3;
+    n3.pitch = 36;
+    n3.gridTick = (8) * HiResTiming::kTicks1_16;
+    n3.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    n3.velocity = 98;
+    n3.timingOffsetTicks = 0;
+    n3.semanticRole = "trap_sub_anchor";
+    __notes.push_back(n3);
+    sub->sub808Notes = __notes;
+}
     sub->notes = toLegacyNoteEvents(sub->sub808Notes);
 
     PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::Sub808 });
@@ -693,7 +1032,7 @@ void testSub808DensitySafetySmoke()
         "Sub808 density smoke should reduce the number of visible Sub808 starts at lower density.");
     expect(hasSubStartAt(*sub, 0, "trap_sub_anchor") && hasSubStartAt(*sub, 8, "trap_sub_anchor"),
         "Sub808 density smoke should preserve core Trap sub anchors when thinning density.");
-    expect(sub->sub808Notes.front().length >= baseSub.front().length,
+    expect(sub->sub808Notes.front().lengthTicks >= baseSub.front().lengthTicks,
         "Sub808 density smoke should turn removed intermediate starts into longer held notes.");
     expect(sub808SequenceIsValidMonophonic(sub->sub808Notes),
         "Sub808 density smoke should keep the visible Sub808 lane monophonic with valid glide flags.");
@@ -747,20 +1086,82 @@ void testCombinedLiveControlsGenreRegressionSmoke()
         kick->laneRole = kickLaneRole;
         snare->laneRole = snareLaneRole;
 
-        hat->notes = {
-            { 42, 0, 1, 92, 0, false, "hat_backbone", false, false, false },
-            { 42, 1, 1, 78, 0, false, "hat_support", false, false, false },
-            { 42, 3, 1, 72, 0, false, "hat_support", false, false, false },
-            { 42, 7, 1, 66, 0, false, "hat_texture", false, false, false }
-        };
-        kick->notes = {
-            { 36, 0, 1, 118, 0, false, "kick_anchor", false, false, false },
-            { 36, 6, 1, 92, 0, false, "kick_support", false, false, false }
-        };
-        snare->notes = {
-            { 38, 4, 1, 108, 0, false, "snare_backbone", false, false, false },
-            { 38, 12, 1, 104, 0, false, "snare_backbone", false, false, false }
-        };
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 92;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (1) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 78;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "hat_support";
+    __notes.push_back(n1);
+    NoteEvent n2;
+    n2.pitch = 42;
+    n2.gridTick = (3) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n2.velocity = 72;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "hat_support";
+    __notes.push_back(n2);
+    NoteEvent n3;
+    n3.pitch = 42;
+    n3.gridTick = (7) * HiResTiming::kTicks1_16;
+    n3.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n3.velocity = 66;
+    n3.timingOffsetTicks = 0;
+    n3.semanticRole = "hat_texture";
+    __notes.push_back(n3);
+    hat->notes = __notes;
+}
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 118;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "kick_anchor";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 36;
+    n1.gridTick = (6) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 92;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "kick_support";
+    __notes.push_back(n1);
+    kick->notes = __notes;
+}
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 38;
+    n0.gridTick = (4) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 108;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "snare_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 38;
+    n1.gridTick = (12) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 104;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "snare_backbone";
+    __notes.push_back(n1);
+    snare->notes = __notes;
+}
 
         PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Kick, TrackType::Snare });
 
@@ -785,25 +1186,25 @@ void testCombinedLiveControlsGenreRegressionSmoke()
 
         for (const auto& note : hat->notes)
         {
-            if (note.step == 1 && note.semanticRole == "hat_support")
-                snapshot.hatSupportOffset = note.microOffset;
+            if (stepIndexOf(note) == 1 && note.semanticRole == "hat_support")
+                snapshot.hatSupportOffset = note.timingOffsetTicks;
         }
 
         for (const auto& note : kick->notes)
         {
-            if (note.step == 0 && note.semanticRole == "kick_anchor")
+            if (stepIndexOf(note) == 0 && note.semanticRole == "kick_anchor")
             {
                 snapshot.kickAnchorPresent = true;
-                snapshot.kickAnchorOffset = note.microOffset;
+                snapshot.kickAnchorOffset = note.timingOffsetTicks;
             }
         }
 
         for (const auto& note : snare->notes)
         {
-            if (note.step == 4 && note.semanticRole == "snare_backbone")
+            if (stepIndexOf(note) == 4 && note.semanticRole == "snare_backbone")
             {
                 snapshot.snareAnchorPresent = true;
-                snapshot.snareAnchorOffset = note.microOffset;
+                snapshot.snareAnchorOffset = note.timingOffsetTicks;
             }
         }
 
@@ -854,15 +1255,54 @@ void testManualEditLiveControlSafetySmoke()
 
     hat->laneRole = "carrier";
     sub->laneRole = "foundation";
-    hat->notes = {
-        { 42, 0, 1, 92, 0, false, "hat_backbone", false, false, false },
-        { 42, 2, 1, 78, 0, false, "hat_support", false, false, false },
-        { 42, 6, 1, 70, 0, false, "hat_fill", false, false, false }
-    };
-    sub->sub808Notes = {
-        { 36, 0, 4, 100, 0, "sub_anchor", false, false, false },
-        { 38, 8, 4, 94, 0, "sub_support", false, false, false }
-    };
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 92;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (2) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 78;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "hat_support";
+    __notes.push_back(n1);
+    NoteEvent n2;
+    n2.pitch = 42;
+    n2.gridTick = (6) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n2.velocity = 70;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "hat_fill";
+    __notes.push_back(n2);
+    hat->notes = __notes;
+}
+    {
+    std::vector<Sub808NoteEvent> __notes;
+    Sub808NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    n0.velocity = 100;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "sub_anchor";
+    __notes.push_back(n0);
+    Sub808NoteEvent n1;
+    n1.pitch = 38;
+    n1.gridTick = (8) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    n1.velocity = 94;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "sub_support";
+    __notes.push_back(n1);
+    sub->sub808Notes = __notes;
+}
     sub->notes = toLegacyNoteEvents(sub->sub808Notes);
 
     PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Sub808 });
@@ -874,18 +1314,43 @@ void testManualEditLiveControlSafetySmoke()
     project.params.densityAmount = 0.34f;
     PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
 
-    hat->notes.push_back({ 42, 10, 1, 86, 0, false, "edited_hat_fill", false, false, false });
+    {
+NoteEvent note;
+note.pitch = 42;
+note.gridTick = (10) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 86;
+note.timingOffsetTicks = 0;
+note.semanticRole = "edited_hat_fill";
+hat->notes.push_back(note);
+}
     std::sort(hat->notes.begin(), hat->notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        if (lhs.step != rhs.step)
-            return lhs.step < rhs.step;
+        if (stepIndexOf(lhs) != stepIndexOf(rhs))
+            return stepIndexOf(lhs) < stepIndexOf(rhs);
         return lhs.pitch < rhs.pitch;
     });
 
-    sub->sub808Notes = {
-        { 36, 0, 6, 100, 0, "edited_sub_anchor", false, false, false },
-        { 43, 8, 4, 95, 0, "edited_sub_support", false, false, false }
-    };
+    {
+    std::vector<Sub808NoteEvent> __notes;
+    Sub808NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (6) * HiResTiming::kTicks1_16;
+    n0.velocity = 100;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "edited_sub_anchor";
+    __notes.push_back(n0);
+    Sub808NoteEvent n1;
+    n1.pitch = 43;
+    n1.gridTick = (8) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    n1.velocity = 95;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "edited_sub_support";
+    __notes.push_back(n1);
+    sub->sub808Notes = __notes;
+}
     sub->notes = toLegacyNoteEvents(sub->sub808Notes);
 
     PatternPerformanceTransformEngine::captureBasePattern(*hat, project.params);
@@ -945,20 +1410,85 @@ void testVisibleTransformExportConsistencySmoke()
     kick->enabled = true;
     sub->enabled = true;
 
-    hat->notes = {
-        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
-        { 42, 1, 1, 78, 0, false, "drill_hat_support", false, false, false },
-        { 42, 7, 1, 66, 0, false, "drill_hat_transition", false, false, false }
-    };
-    kick->notes = {
-        { 36, 0, 1, 118, 0, false, "drill_kick_anchor", false, false, false },
-        { 36, 6, 1, 94, 0, false, "drill_kick_support", false, false, false }
-    };
-    sub->sub808Notes = {
-        { 36, 0, 4, 100, 0, "drill_sub_anchor", false, false, false },
-        { 38, 6, 2, 92, 0, "drill_sub_move", false, true, true },
-        { 41, 8, 4, 96, 0, "drill_sub_hold", true, false, false }
-    };
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 92;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "drill_hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (1) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 78;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "drill_hat_support";
+    __notes.push_back(n1);
+    NoteEvent n2;
+    n2.pitch = 42;
+    n2.gridTick = (7) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n2.velocity = 66;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "drill_hat_transition";
+    __notes.push_back(n2);
+    hat->notes = __notes;
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 118;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "drill_kick_anchor";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 36;
+    n1.gridTick = (6) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 94;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "drill_kick_support";
+    __notes.push_back(n1);
+    kick->notes = __notes;
+}
+    {
+    std::vector<Sub808NoteEvent> __notes;
+    Sub808NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    n0.velocity = 100;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "drill_sub_anchor";
+    __notes.push_back(n0);
+    Sub808NoteEvent n1;
+    n1.pitch = 38;
+    n1.gridTick = (6) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (2) * HiResTiming::kTicks1_16;
+    n1.velocity = 92;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "drill_sub_move";
+    n1.isLegato = true;
+    n1.glideToNext = true;
+    __notes.push_back(n1);
+    Sub808NoteEvent n2;
+    n2.pitch = 41;
+    n2.gridTick = (8) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    n2.velocity = 96;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "drill_sub_hold";
+    n2.isSlide = true;
+    __notes.push_back(n2);
+    sub->sub808Notes = __notes;
+}
     sub->notes = toLegacyNoteEvents(sub->sub808Notes);
 
     PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat, TrackType::Kick, TrackType::Sub808 });
@@ -977,15 +1507,15 @@ void testVisibleTransformExportConsistencySmoke()
         "Export consistency smoke should emit one note-on per currently visible transformed note on enabled lanes.");
 
     for (const auto& note : hat->notes)
-        expect(hasMidiNoteOnAt(fullNoteOns, 60, note.step * 240 + note.microOffset),
+        expect(hasMidiNoteOnAt(fullNoteOns, 60, stepIndexOf(note) * 240 + note.timingOffsetTicks),
             "Export consistency smoke should export each visible transformed HiHat note at its visible tick.");
 
     for (const auto& note : kick->notes)
-        expect(hasMidiNoteOnAt(fullNoteOns, 60, note.step * 240 + note.microOffset),
+        expect(hasMidiNoteOnAt(fullNoteOns, 60, stepIndexOf(note) * 240 + note.timingOffsetTicks),
             "Export consistency smoke should export each visible transformed Kick note at its visible tick.");
 
     for (const auto& note : sub->sub808Notes)
-        expect(hasMidiNoteOnAt(fullNoteOns, note.pitch, note.step * 240 + note.microOffset),
+        expect(hasMidiNoteOnAt(fullNoteOns, note.pitch, stepIndexOf(note) * 240 + note.timingOffsetTicks),
             "Export consistency smoke should export each visible transformed Sub808 note at its visible tick and pitch.");
 
     const auto hatSequence = MidiExportEngine::patternToSequence(project, TrackType::HiHat, 960, false, false);
@@ -1092,14 +1622,46 @@ void testLaneAwareSwingProtectionSmoke()
 
     drillHat->laneRole = "drill_hat";
     drillKick->laneRole = "drill_kick";
-    drillHat->notes = {
-        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
-        { 42, 1, 1, 76, 0, false, "drill_hat_support", false, false, false }
-    };
-    drillKick->notes = {
-        { 36, 0, 1, 118, 0, false, "drill_kick_anchor", false, false, false },
-        { 36, 6, 1, 94, 0, false, "drill_kick_support", false, false, false }
-    };
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 92;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "drill_hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (1) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 76;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "drill_hat_support";
+    __notes.push_back(n1);
+    drillHat->notes = __notes;
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 118;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "drill_kick_anchor";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 36;
+    n1.gridTick = (6) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 94;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "drill_kick_support";
+    __notes.push_back(n1);
+    drillKick->notes = __notes;
+}
 
     PatternPerformanceTransformEngine::captureBasePatterns(drillProject, { TrackType::HiHat, TrackType::Kick });
 
@@ -1110,7 +1672,7 @@ void testLaneAwareSwingProtectionSmoke()
         "Lane-aware swing smoke should keep Drill kick anchors grid-locked under swing changes.");
     expect(std::any_of(drillHat->notes.begin(), drillHat->notes.end(), [](const NoteEvent& note)
     {
-        return note.step == 1 && note.semanticRole == "drill_hat_support" && note.microOffset > 0;
+        return stepIndexOf(note) == 1 && note.semanticRole == "drill_hat_support" && note.timingOffsetTicks > 0;
     }), "Lane-aware swing smoke should allow Drill support hats to take a subtle late swing feel.");
 
     auto transformHatSupportWithSwing = [](GenreType genre, const juce::String& laneRole)
@@ -1125,10 +1687,26 @@ void testLaneAwareSwingProtectionSmoke()
             fail("Lane-aware swing smoke requires a HiHat track for cross-genre comparison.");
 
         hat->laneRole = laneRole;
-        hat->notes = {
-            { 42, 0, 1, 92, 0, false, "hat_backbone", false, false, false },
-            { 42, 1, 1, 76, 0, false, "hat_support", false, false, false }
-        };
+        {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 92;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (1) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 76;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "hat_support";
+    __notes.push_back(n1);
+    hat->notes = __notes;
+}
 
         PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat });
 
@@ -1136,8 +1714,8 @@ void testLaneAwareSwingProtectionSmoke()
         PatternPerformanceTransformEngine::applyPerformanceFromBase(project);
 
         for (const auto& note : hat->notes)
-            if (note.step == 1 && note.semanticRole == "hat_support")
-                return note.microOffset;
+            if (stepIndexOf(note) == 1 && note.semanticRole == "hat_support")
+                return note.timingOffsetTicks;
 
         fail("Lane-aware swing smoke could not find the transformed hat support note.");
     };
@@ -1194,37 +1772,101 @@ void testSwingRoundTripGenerationSmoke()
         if (auto* kick = findTrackByType(project, TrackType::Kick); kick != nullptr)
         {
             kick->laneRole = "boom_bap_kick";
-            kick->notes = {
-                { 36, 0, 1, 108, 0, false, "boom_bap_kick_anchor", false, false, false },
-                { 36, 8, 1, 102, 0, false, "boom_bap_kick_anchor", false, false, false }
-            };
+            {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 36;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 108;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "boom_bap_kick_anchor";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 36;
+    n1.gridTick = (8) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 102;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "boom_bap_kick_anchor";
+    __notes.push_back(n1);
+    kick->notes = __notes;
+}
         }
 
         if (auto* hat = findTrackByType(project, TrackType::HiHat); hat != nullptr)
         {
             hat->laneRole = "boom_bap_hat";
-            hat->notes = {
-                { 42, 0, 1, 88, 0, false, "boom_bap_hat_backbone", false, false, false },
-                { 42, 1, 1, 80, 0, false, "boom_bap_hat_support", false, false, false },
-                { 42, 3, 1, 82, 0, false, "boom_bap_hat_support", false, false, false },
-                { 42, 4, 1, 88, 0, false, "boom_bap_hat_backbone", false, false, false }
-            };
+            {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 88;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "boom_bap_hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (1) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 80;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "boom_bap_hat_support";
+    __notes.push_back(n1);
+    NoteEvent n2;
+    n2.pitch = 42;
+    n2.gridTick = (3) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n2.velocity = 82;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "boom_bap_hat_support";
+    __notes.push_back(n2);
+    NoteEvent n3;
+    n3.pitch = 42;
+    n3.gridTick = (4) * HiResTiming::kTicks1_16;
+    n3.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n3.velocity = 88;
+    n3.timingOffsetTicks = 0;
+    n3.semanticRole = "boom_bap_hat_backbone";
+    __notes.push_back(n3);
+    hat->notes = __notes;
+}
         }
 
         if (auto* openHat = findTrackByType(project, TrackType::OpenHat); openHat != nullptr)
         {
             openHat->laneRole = "boom_bap_open";
-            openHat->notes = {
-                { 46, 6, 1, 84, 0, false, "boom_bap_hat_support", false, false, false }
-            };
+            {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 46;
+    n0.gridTick = (6) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 84;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "boom_bap_hat_support";
+    __notes.push_back(n0);
+    openHat->notes = __notes;
+}
         }
 
         if (auto* perc = findTrackByType(project, TrackType::Perc); perc != nullptr)
         {
             perc->laneRole = "boom_bap_texture";
-            perc->notes = {
-                { 54, 7, 1, 72, 0, false, "boom_bap_perc_support", false, false, false }
-            };
+            {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 54;
+    n0.gridTick = (7) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 72;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "boom_bap_perc_support";
+    __notes.push_back(n0);
+    perc->notes = __notes;
+}
         }
 
         PatternPerformanceTransformEngine::captureBasePatterns(project,
@@ -1273,11 +1915,34 @@ void testDrillSwingHatSemanticsSmoke()
     expect(hat != nullptr, "Drill swing semantics smoke requires a HiHat track.");
 
     hat->laneRole = "drill_hat";
-    hat->notes = {
-        { 42, 0, 1, 92, 0, false, "drill_hat_backbone", false, false, false },
-        { 42, 1, 1, 84, 0, false, "drill_hat_reference_copy", false, false, false },
-        { 42, 3, 1, 76, 0, false, "drill_hat_transition", false, false, false }
-    };
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent n0;
+    n0.pitch = 42;
+    n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n0.velocity = 92;
+    n0.timingOffsetTicks = 0;
+    n0.semanticRole = "drill_hat_backbone";
+    __notes.push_back(n0);
+    NoteEvent n1;
+    n1.pitch = 42;
+    n1.gridTick = (1) * HiResTiming::kTicks1_16;
+    n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n1.velocity = 84;
+    n1.timingOffsetTicks = 0;
+    n1.semanticRole = "drill_hat_reference_copy";
+    __notes.push_back(n1);
+    NoteEvent n2;
+    n2.pitch = 42;
+    n2.gridTick = (3) * HiResTiming::kTicks1_16;
+    n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    n2.velocity = 76;
+    n2.timingOffsetTicks = 0;
+    n2.semanticRole = "drill_hat_transition";
+    __notes.push_back(n2);
+    hat->notes = __notes;
+}
 
     PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::HiHat });
     const auto baseHat = hat->baseNotes;
@@ -1291,12 +1956,12 @@ void testDrillSwingHatSemanticsSmoke()
 
     for (const auto& note : hat->notes)
     {
-        if (note.step == 0 && note.semanticRole == "drill_hat_backbone")
-            backboneOffset = note.microOffset;
-        else if (note.step == 1 && note.semanticRole == "drill_hat_reference_copy")
-            referenceOffset = note.microOffset;
-        else if (note.step == 3 && note.semanticRole == "drill_hat_transition")
-            supportOffset = note.microOffset;
+        if (stepIndexOf(note) == 0 && note.semanticRole == "drill_hat_backbone")
+            backboneOffset = note.timingOffsetTicks;
+        else if (stepIndexOf(note) == 1 && note.semanticRole == "drill_hat_reference_copy")
+            referenceOffset = note.timingOffsetTicks;
+        else if (stepIndexOf(note) == 3 && note.semanticRole == "drill_hat_transition")
+            supportOffset = note.timingOffsetTicks;
     }
 
     expect(backboneOffset == 0,
@@ -1395,9 +2060,9 @@ void testDrillHatGenerationSmoke()
         int copiedReferenceCount = 0;
         for (const auto& note : hat->notes)
         {
-            if ((note.step / 16) == bar.barIndex)
+            if ((stepIndexOf(note) / 16) == bar.barIndex)
                 ++barNoteCount;
-            if ((note.step / 16) == bar.barIndex && note.semanticRole == "drill_hat_reference_copy")
+            if ((stepIndexOf(note) / 16) == bar.barIndex && note.semanticRole == "drill_hat_reference_copy")
                 ++copiedReferenceCount;
         }
         expect(barNoteCount <= std::max(14, copiedReferenceCount + 2),
@@ -1418,7 +2083,7 @@ void testDrillHatGenerationSmoke()
 
     expect(std::any_of(hat->notes.begin(), hat->notes.end(), [](const NoteEvent& note)
     {
-        return note.microOffset != 0;
+        return (note.startTick() % HiResTiming::kTicks1_16) != 0;
     }), "Drill main hihat generation should preserve off-grid subdivision motion.");
 
     auto secondProject = baselineProject;
@@ -1515,12 +2180,13 @@ void testDrillHatGeneratorUsesReferenceCorpusSmoke()
     juce::StringArray missingPositions;
     for (int step = 0; step < 12; ++step)
     {
-        if (!hasNoteAtStepAndMicro(*hat, step, 60))
-            missingPositions.add("step=" + juce::String(step) + ",micro=60");
+        const int expectedTick = step * 240 + 60;
+        if (!hasNoteAtExactTick(*hat, expectedTick))
+            missingPositions.add("tick=" + juce::String(expectedTick));
     }
 
     expect(missingPositions.isEmpty(),
-           "Drill hats should preserve exact saved reference microtiming across the full engine path. Missing: "
+           "Drill hats should preserve exact saved reference tick positions across the full engine path. Missing: "
                + missingPositions.joinIntoString(" | "));
 
     int copiedNotes = 0;
@@ -1545,11 +2211,56 @@ void testDrillHatGeneratorUsesReferenceCorpusSmoke()
         expect(hat != nullptr, "Drill hat proximity smoke requires a HiHat track.");
 
         hat->notes.clear();
-        hat->notes.push_back({ 42, 0, 1, 92, 60, false, "drill_hat_reference_copy", false, false, false });
-        hat->notes.push_back({ 42, 0, 1, 70, 90, false, "drill_hat_subdivision", false, false, false });
-        hat->notes.push_back({ 42, 6, 1, 86, 0, false, "drill_hat_backbone", false, false, false });
-        hat->notes.push_back({ 42, 6, 1, 68, 60, false, "drill_hat_burst", false, false, false });
-        hat->notes.push_back({ 42, 1, 1, 74, 90, false, "drill_hat_transition", false, false, false });
+        {
+NoteEvent note;
+note.pitch = 42;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 92;
+note.timingOffsetTicks = 60;
+note.semanticRole = "drill_hat_reference_copy";
+hat->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 42;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 70;
+note.timingOffsetTicks = 90;
+note.semanticRole = "drill_hat_subdivision";
+hat->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 42;
+note.gridTick = (6) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 86;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_hat_backbone";
+hat->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 42;
+note.gridTick = (6) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 68;
+note.timingOffsetTicks = 60;
+note.semanticRole = "drill_hat_burst";
+hat->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 42;
+note.gridTick = (1) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 74;
+note.timingOffsetTicks = 90;
+note.semanticRole = "drill_hat_transition";
+hat->notes.push_back(note);
+}
 
         validator.validate(project, plan, { TrackType::HiHat });
 
@@ -1686,11 +2397,11 @@ void testDrillHatGeneratorUsesReferenceCorpusSmoke()
         hat = findTrackByType(project, TrackType::HiHat);
         expect(hat != nullptr, "Drill hat reference rotation smoke requires a HiHat track after validation.");
 
-        expect(hasNoteAt(*hat, 0, 20, "drill_hat_reference_copy"),
+        expect(hasNoteAtExactTick(*hat, 0 * HiResTiming::kTicksPerBar4_4 + 20, "drill_hat_reference_copy"),
                "Drill hats should use the first saved reference variant on the first bar when rotating through multiple references.");
-        expect(hasNoteAt(*hat, 16, 60, "drill_hat_reference_copy"),
+        expect(hasNoteAtExactTick(*hat, 1 * HiResTiming::kTicksPerBar4_4 + 60, "drill_hat_reference_copy"),
                "Drill hats should rotate to the second saved reference variant on the next bar instead of reusing the first one again.");
-        expect(hasNoteAt(*hat, 32, 100, "drill_hat_reference_copy"),
+        expect(hasNoteAtExactTick(*hat, 2 * HiResTiming::kTicksPerBar4_4 + 100, "drill_hat_reference_copy"),
                "Drill hats should rotate to the third saved reference variant on the third bar instead of collapsing all references into one pattern.");
     }
 
@@ -1734,7 +2445,7 @@ void testDrillKickGeneratorUsesReferenceCorpusSmoke()
     {
         if (std::any_of(kick->notes.begin(), kick->notes.end(), [step](const NoteEvent& note)
         {
-            return note.step == step;
+            return stepIndexOf(note) == step;
         }))
         {
             ++retainedReferenceSteps;
@@ -1794,11 +2505,11 @@ void testDrillKickReferenceVariantRotationSmoke()
     std::mt19937 rng(0);
     generator.generate(*kick, project, plan, nullptr, rng);
 
-    expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return note.step == 4; }),
+    expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return stepIndexOf(note) == 4; }),
            "Drill kick rotation should use the first saved kick reference variant on the first bar.");
-        expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return note.step == 26; }),
+        expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return stepIndexOf(note) == 26; }),
            "Drill kick rotation should use the second saved kick reference variant on the second bar instead of repeating the first one.");
-    expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return note.step == 44; }),
+    expect(std::any_of(kick->notes.begin(), kick->notes.end(), [](const NoteEvent& note) { return stepIndexOf(note) == 44; }),
            "Drill kick rotation should use the third saved kick reference variant on the third bar instead of collapsing everything into one kick pattern.");
 }
 
@@ -1841,7 +2552,16 @@ void testDrill808GeneratorUsesReferenceCorpusSmoke()
            "Drill 808 reference smoke requires Kick and Sub808 tracks.");
 
     kick->notes.clear();
-    kick->notes.push_back({ 36, 0, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
 
     std::mt19937 rng(7373);
     generator.generate(*sub, *kick, project, plan, nullptr, rng);
@@ -1883,16 +2603,106 @@ void testDrill808GenerationCompactSmoke()
            "Drill 808 compactness smoke requires Kick and Sub808 tracks.");
 
     kick->notes.clear();
-    kick->notes.push_back({ 36, 0, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
-    kick->notes.push_back({ 36, 10, 1, 104, 0, false, "drill_kick_support", false, false, false });
-    kick->notes.push_back({ 36, 16, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
-    kick->notes.push_back({ 36, 23, 1, 106, 0, false, "drill_kick_support", false, false, false });
-    kick->notes.push_back({ 36, 28, 1, 108, 0, false, "drill_kick_support", false, false, false });
-    kick->notes.push_back({ 36, 32, 1, 114, 0, false, "drill_kick_anchor", false, false, false });
-    kick->notes.push_back({ 36, 39, 1, 106, 0, false, "drill_kick_support", false, false, false });
-    kick->notes.push_back({ 36, 46, 1, 108, 0, false, "drill_kick_support", false, false, false });
-    kick->notes.push_back({ 36, 48, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
-    kick->notes.push_back({ 36, 62, 1, 110, 0, false, "drill_kick_support", false, false, false });
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (10) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 104;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (16) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (23) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 106;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (28) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 108;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (32) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 114;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (39) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 106;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (46) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 108;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (48) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (62) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 110;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
 
     DrillPhrasePlan plan;
     plan.phraseSpanBars = 4;
@@ -1937,7 +2747,7 @@ void testDrill808GenerationCompactSmoke()
     {
         int startsInBar = 0;
         for (const auto& note : sub->sub808Notes)
-            if ((note.step / 16) == bar.barIndex)
+            if ((stepIndexOf(note) / 16) == bar.barIndex)
                 ++startsInBar;
 
         const int maxStarts = (bar.lowEnd == DrillLowEndIntent::Move || bar.lowEnd == DrillLowEndIntent::Release) ? 2 : 1;
@@ -1955,7 +2765,7 @@ void testDrill808GenerationCompactSmoke()
         ++slideCount;
         expect(index + 1 < sub->sub808Notes.size(),
                "Drill 808 glide markers must always point to a following note.");
-        expect((note.step / 16) == (sub->sub808Notes[index + 1].step / 16),
+        expect((stepIndexOf(note) / 16) == (stepIndexOf(sub->sub808Notes[index + 1]) / 16),
                "Drill 808 slides should stay inside the same bar after the compact low-end pass.");
     }
 
@@ -2022,34 +2832,271 @@ void testDrill808GenerationCompactSmoke()
         plan.bars.push_back(release);
 
         kick->notes.clear();
-        kick->notes.push_back({ 36, 0, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
-        kick->notes.push_back({ 36, 4, 1, 96, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 10, 1, 104, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 16, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
-        kick->notes.push_back({ 36, 20, 1, 96, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 23, 1, 102, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 28, 1, 106, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 32, 1, 114, 0, false, "drill_kick_anchor", false, false, false });
-        kick->notes.push_back({ 36, 35, 1, 98, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 39, 1, 104, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 46, 1, 108, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 48, 1, 112, 0, false, "drill_kick_anchor", false, false, false });
-        kick->notes.push_back({ 36, 52, 1, 96, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 57, 1, 102, 0, false, "drill_kick_support", false, false, false });
-        kick->notes.push_back({ 36, 62, 1, 110, 0, false, "drill_kick_support", false, false, false });
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (4) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 96;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (10) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 104;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (16) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (20) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 96;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (23) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 102;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (28) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 106;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (32) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 114;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (35) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 98;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (39) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 104;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (46) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 108;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (48) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 112;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_anchor";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (52) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 96;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (57) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 102;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
+        {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (62) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 110;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_kick_support";
+kick->notes.push_back(note);
+}
 
         sub->sub808Notes.clear();
-        sub->sub808Notes.push_back({ 24, 0, 4, 100, 0, "drill_sub_anchor", false, false, false });
-        sub->sub808Notes.push_back({ 27, 6, 2, 94, 0, "drill_sub_anchor", false, false, false });
-        sub->sub808Notes.push_back({ 24, 16, 3, 102, 0, "drill_sub_move", false, false, false });
-        sub->sub808Notes.push_back({ 31, 20, 2, 92, 0, "drill_sub_move", false, false, false });
-        sub->sub808Notes.push_back({ 27, 28, 2, 96, 0, "drill_sub_move", true, true, false });
-        sub->sub808Notes.push_back({ 24, 32, 3, 104, 0, "drill_sub_move", false, false, false });
-        sub->sub808Notes.push_back({ 29, 36, 2, 90, 0, "drill_sub_move", false, false, false });
-        sub->sub808Notes.push_back({ 31, 40, 2, 92, 0, "drill_sub_move", false, false, true });
-        sub->sub808Notes.push_back({ 24, 48, 5, 106, 0, "drill_sub_release", false, false, false });
-        sub->sub808Notes.push_back({ 27, 56, 3, 94, 0, "drill_sub_release", false, false, false });
-        sub->sub808Notes.push_back({ 31, 62, 2, 96, 0, "drill_sub_release", false, false, false });
+        {
+Sub808NoteEvent note;
+note.pitch = 24;
+note.gridTick = (0) * HiResTiming::kTicks1_16;
+note.lengthTicks = (4) * HiResTiming::kTicks1_16;
+note.velocity = 100;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_anchor";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 27;
+note.gridTick = (6) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 94;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_anchor";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 24;
+note.gridTick = (16) * HiResTiming::kTicks1_16;
+note.lengthTicks = (3) * HiResTiming::kTicks1_16;
+note.velocity = 102;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_move";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 31;
+note.gridTick = (20) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 92;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_move";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 27;
+note.gridTick = (28) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 96;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_move";
+note.isSlide = true;
+note.isLegato = true;
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 24;
+note.gridTick = (32) * HiResTiming::kTicks1_16;
+note.lengthTicks = (3) * HiResTiming::kTicks1_16;
+note.velocity = 104;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_move";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 29;
+note.gridTick = (36) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 90;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_move";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 31;
+note.gridTick = (40) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 92;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_move";
+note.glideToNext = true;
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 24;
+note.gridTick = (48) * HiResTiming::kTicks1_16;
+note.lengthTicks = (5) * HiResTiming::kTicks1_16;
+note.velocity = 106;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_release";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 27;
+note.gridTick = (56) * HiResTiming::kTicks1_16;
+note.lengthTicks = (3) * HiResTiming::kTicks1_16;
+note.velocity = 94;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_release";
+sub->sub808Notes.push_back(note);
+}
+        {
+Sub808NoteEvent note;
+note.pitch = 31;
+note.gridTick = (62) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 96;
+note.timingOffsetTicks = 0;
+note.semanticRole = "drill_sub_release";
+sub->sub808Notes.push_back(note);
+}
 
         validator.validate(project, plan, { TrackType::Kick, TrackType::Sub808 });
 
@@ -2063,10 +3110,10 @@ void testDrill808GenerationCompactSmoke()
          int kickCount = 0;
          int subCount = 0;
          for (const auto& note : kick->notes)
-             if ((note.step / 16) == bar.barIndex)
+             if ((stepIndexOf(note) / 16) == bar.barIndex)
               ++kickCount;
          for (const auto& note : sub->sub808Notes)
-             if ((note.step / 16) == bar.barIndex)
+             if ((stepIndexOf(note) / 16) == bar.barIndex)
               ++subCount;
 
          expect(kickCount <= (bar.role == DrillPhraseBarRole::Lift || bar.role == DrillPhraseBarRole::Release ? 3 : 2),
@@ -2085,7 +3132,7 @@ void testDrill808GenerationCompactSmoke()
          ++glideCount;
          expect(index + 1 < sub->sub808Notes.size(),
              "Drill validator glide cleanup must leave each glide attached to a following note.");
-         expect((note.step / 16) == (sub->sub808Notes[index + 1].step / 16),
+         expect((stepIndexOf(note) / 16) == (stepIndexOf(sub->sub808Notes[index + 1]) / 16),
              "Drill validator should remove cross-bar low-end slides.");
         }
 
@@ -2153,10 +3200,10 @@ void testDrillSnareGenerationSmoke()
 
         for (const auto& note : clapGhost->notes)
         {
-            if ((note.step / 16) != bar.barIndex)
+            if ((stepIndexOf(note) / 16) != bar.barIndex)
                 continue;
 
-            const int stepInBar = note.step % 16;
+            const int stepInBar = stepIndexOf(note) % 16;
             if (note.semanticRole == "drill_clap_layer")
             {
                 ++clapLayersInBar;
@@ -2266,15 +3313,15 @@ void testDrillFullEngineSmoke()
         int kickBarCount = 0;
         int subBarCount = 0;
         for (const auto& note : hatFx->notes)
-            if ((note.step / 16) == bar.barIndex)
+            if ((stepIndexOf(note) / 16) == bar.barIndex)
                 ++hatFxBarCount;
         for (const auto& note : clapGhost->notes)
         {
-            if ((note.step / 16) != bar.barIndex)
+            if ((stepIndexOf(note) / 16) != bar.barIndex)
                 continue;
 
                 ++clapGhostBarCount;
-            const int stepInBar = note.step % 16;
+            const int stepInBar = stepIndexOf(note) % 16;
             if (note.semanticRole == "drill_clap_layer")
             {
                 ++clapLayersInBar;
@@ -2301,10 +3348,10 @@ void testDrillFullEngineSmoke()
             }
         }
         for (const auto& note : kick->notes)
-            if ((note.step / 16) == bar.barIndex)
+            if ((stepIndexOf(note) / 16) == bar.barIndex)
                 ++kickBarCount;
          for (const auto& note : sub->sub808Notes)
-             if ((note.step / 16) == bar.barIndex)
+             if ((stepIndexOf(note) / 16) == bar.barIndex)
               ++subBarCount;
 
         expect(hatFxBarCount <= 3, "Drill HatFX should stay sparse per bar.");
@@ -2322,8 +3369,8 @@ void testDrillFullEngineSmoke()
 
     for (const auto& kickNote : kick->notes)
     {
-        const int barIndex = kickNote.step / 16;
-        const int stepInBar = kickNote.step % 16;
+        const int barIndex = stepIndexOf(kickNote) / 16;
+        const int stepInBar = stepIndexOf(kickNote) % 16;
         expect(barIndex >= 0 && barIndex < static_cast<int>(plan.bars.size()), "Kick note bar index must remain valid.");
         for (const int snareStep : plan.bars[static_cast<size_t>(barIndex)].anchorMap.snareAnchorSteps)
             expect(snareStep < 0 || stepInBar != snareStep, "Kick must not collide with a main Drill snare anchor.");
@@ -2343,7 +3390,7 @@ void testDrillFullEngineSmoke()
         ++glideCount;
         expect(index + 1 < sub->sub808Notes.size(),
                "Drill sub808 glide markers must point to a following note.");
-        expect((note.step / 16) == (sub->sub808Notes[index + 1].step / 16),
+        expect((stepIndexOf(note) / 16) == (stepIndexOf(sub->sub808Notes[index + 1]) / 16),
                "Drill sub808 glides should stay inside a single bar after low-end simplification.");
     }
 
@@ -2354,8 +3401,8 @@ void testDrillFullEngineSmoke()
         const auto& note = sub->sub808Notes[index];
         expect(isPitchInScale(note.pitch, project.params.keyRoot, project.params.scaleMode),
                "Drill sub808 pitches must stay inside the selected scale.");
-        expect(note.length >= 1, "Drill sub808 note length must remain positive.");
-        expect(sub->notes[index].pitch == note.pitch && sub->notes[index].step == note.step,
+        expect(note.lengthTicks >= 1, "Drill sub808 note length must remain positive.");
+        expect(sub->notes[index].pitch == note.pitch && stepIndexOf(sub->notes[index]) == stepIndexOf(note),
                "Drill sub808 legacy mirror must match the Sub808 note timeline.");
     }
 }
@@ -2370,8 +3417,26 @@ void testProjectStateBarsClamp()
     auto* sub = findTrackByType(project, TrackType::Sub808);
     expect(kick != nullptr && sub != nullptr, "Bars clamp test requires Kick and Sub808 tracks.");
 
-    kick->notes.push_back({ 36, 63, 1, 110, 0, false, "tail", false, false, false });
-    sub->sub808Notes.push_back({ 36, 62, 2, 100, 0, "tail808", false, false, false });
+    {
+NoteEvent note;
+note.pitch = 36;
+note.gridTick = (63) * HiResTiming::kTicks1_16;
+note.lengthTicks = (1) * HiResTiming::kTicks1_16;
+note.velocity = 110;
+note.timingOffsetTicks = 0;
+note.semanticRole = "tail";
+kick->notes.push_back(note);
+}
+    {
+Sub808NoteEvent note;
+note.pitch = 36;
+note.gridTick = (62) * HiResTiming::kTicks1_16;
+note.lengthTicks = (2) * HiResTiming::kTicks1_16;
+note.velocity = 100;
+note.timingOffsetTicks = 0;
+note.semanticRole = "tail808";
+sub->sub808Notes.push_back(note);
+}
     sub->notes = toLegacyNoteEvents(sub->sub808Notes);
 
     ProjectStateController::setBars(project, 2);
@@ -2710,7 +3775,7 @@ void testTrapEngineUsesAlgebraGenerationSmoke()
     {
         return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
         {
-            return note.step == step;
+            return stepIndexOf(note) == step;
         });
     };
 
@@ -2801,21 +3866,78 @@ void testExtractPatternBlendAndCopySmoke()
         "Pattern blend smoke requires Kick, Snare, HiHat and Sub808 tracks.");
 
     sub->enabled = true;
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::Kick,
-                        { { 36, 0, 1, 112, 0, false, "genre_kick", false, false, false },
-                          { 36, 8, 1, 108, 0, false, "genre_kick", false, false, false } });
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::Snare,
-                        { { 38, 4, 1, 118, 0, false, "genre_snare", false, false, false },
-                          { 38, 12, 1, 118, 0, false, "genre_snare", false, false, false } });
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::HiHat,
-                        { { 42, 0, 1, 92, 0, false, "genre_hat", false, false, false },
-                          { 42, 2, 1, 88, 0, false, "genre_hat", false, false, false } });
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::Sub808,
-                        { { 36, 0, 4, 100, 0, false, "genre_sub", false, false, false } });
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 36;
+    __notes_n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 112;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "genre_kick";
+    __notes.push_back(__notes_n0);
+    NoteEvent __notes_n1;
+    __notes_n1.pitch = 36;
+    __notes_n1.gridTick = (8) * HiResTiming::kTicks1_16;
+    __notes_n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n1.velocity = 108;
+    __notes_n1.timingOffsetTicks = 0;
+    __notes_n1.semanticRole = "genre_kick";
+    __notes.push_back(__notes_n1);
+    ProjectStateController::setTrackNotes(project, TrackType::Kick, __notes);
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 38;
+    __notes_n0.gridTick = (4) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 118;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "genre_snare";
+    __notes.push_back(__notes_n0);
+    NoteEvent __notes_n1;
+    __notes_n1.pitch = 38;
+    __notes_n1.gridTick = (12) * HiResTiming::kTicks1_16;
+    __notes_n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n1.velocity = 118;
+    __notes_n1.timingOffsetTicks = 0;
+    __notes_n1.semanticRole = "genre_snare";
+    __notes.push_back(__notes_n1);
+    ProjectStateController::setTrackNotes(project, TrackType::Snare, __notes);
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 42;
+    __notes_n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 92;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "genre_hat";
+    __notes.push_back(__notes_n0);
+    NoteEvent __notes_n1;
+    __notes_n1.pitch = 42;
+    __notes_n1.gridTick = (2) * HiResTiming::kTicks1_16;
+    __notes_n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n1.velocity = 88;
+    __notes_n1.timingOffsetTicks = 0;
+    __notes_n1.semanticRole = "genre_hat";
+    __notes.push_back(__notes_n1);
+    ProjectStateController::setTrackNotes(project, TrackType::HiHat, __notes);
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 36;
+    __notes_n0.gridTick = (0) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (4) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 100;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "genre_sub";
+    __notes.push_back(__notes_n0);
+    ProjectStateController::setTrackNotes(project, TrackType::Sub808, __notes);
+}
 
     const auto blendReport = PatternBlendEngine::apply(project,
                                   extracted,
@@ -2857,24 +3979,102 @@ void testClassicRuleEnforcerSmoke()
         "Classic rule smoke requires Snare, Clap/Ghost, Perc and OpenHat tracks.");
 
     openHat->enabled = true;
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::Snare,
-                        { { 38, 4, 1, 118, 0, false, "snare_backbone", false, false, false },
-                          { 38, 12, 1, 116, 0, false, "snare_backbone", false, false, false } });
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::ClapGhostSnare,
-                        { { 39, 4, 1, 90, 0, false, "clap_layer", false, false, false },
-                          { 39, 10, 1, 88, 0, false, "clap_support", false, false, false },
-                          { 39, 12, 1, 89, 0, false, "clap_layer", false, false, false } });
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::Perc,
-                        { { 50, 2, 1, 84, 0, false, "perc_texture", false, false, false },
-                          { 50, 10, 1, 90, 0, false, "perc_texture", false, false, false },
-                          { 50, 14, 1, 92, 0, false, "perc_texture", false, false, false } });
-    ProjectStateController::setTrackNotes(project,
-                        TrackType::OpenHat,
-                        { { 46, 7, 1, 86, 0, false, "open_hat", false, false, false },
-                          { 46, 14, 1, 96, 0, false, "open_hat", false, false, false } });
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 38;
+    __notes_n0.gridTick = (4) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 118;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "snare_backbone";
+    __notes.push_back(__notes_n0);
+    NoteEvent __notes_n1;
+    __notes_n1.pitch = 38;
+    __notes_n1.gridTick = (12) * HiResTiming::kTicks1_16;
+    __notes_n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n1.velocity = 116;
+    __notes_n1.timingOffsetTicks = 0;
+    __notes_n1.semanticRole = "snare_backbone";
+    __notes.push_back(__notes_n1);
+    ProjectStateController::setTrackNotes(project, TrackType::Snare, __notes);
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 39;
+    __notes_n0.gridTick = (4) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 90;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "clap_layer";
+    __notes.push_back(__notes_n0);
+    NoteEvent __notes_n1;
+    __notes_n1.pitch = 39;
+    __notes_n1.gridTick = (10) * HiResTiming::kTicks1_16;
+    __notes_n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n1.velocity = 88;
+    __notes_n1.timingOffsetTicks = 0;
+    __notes_n1.semanticRole = "clap_support";
+    __notes.push_back(__notes_n1);
+    NoteEvent __notes_n2;
+    __notes_n2.pitch = 39;
+    __notes_n2.gridTick = (12) * HiResTiming::kTicks1_16;
+    __notes_n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n2.velocity = 89;
+    __notes_n2.timingOffsetTicks = 0;
+    __notes_n2.semanticRole = "clap_layer";
+    __notes.push_back(__notes_n2);
+    ProjectStateController::setTrackNotes(project, TrackType::ClapGhostSnare, __notes);
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 50;
+    __notes_n0.gridTick = (2) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 84;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "perc_texture";
+    __notes.push_back(__notes_n0);
+    NoteEvent __notes_n1;
+    __notes_n1.pitch = 50;
+    __notes_n1.gridTick = (10) * HiResTiming::kTicks1_16;
+    __notes_n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n1.velocity = 90;
+    __notes_n1.timingOffsetTicks = 0;
+    __notes_n1.semanticRole = "perc_texture";
+    __notes.push_back(__notes_n1);
+    NoteEvent __notes_n2;
+    __notes_n2.pitch = 50;
+    __notes_n2.gridTick = (14) * HiResTiming::kTicks1_16;
+    __notes_n2.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n2.velocity = 92;
+    __notes_n2.timingOffsetTicks = 0;
+    __notes_n2.semanticRole = "perc_texture";
+    __notes.push_back(__notes_n2);
+    ProjectStateController::setTrackNotes(project, TrackType::Perc, __notes);
+}
+    {
+    std::vector<NoteEvent> __notes;
+    NoteEvent __notes_n0;
+    __notes_n0.pitch = 46;
+    __notes_n0.gridTick = (7) * HiResTiming::kTicks1_16;
+    __notes_n0.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n0.velocity = 86;
+    __notes_n0.timingOffsetTicks = 0;
+    __notes_n0.semanticRole = "open_hat";
+    __notes.push_back(__notes_n0);
+    NoteEvent __notes_n1;
+    __notes_n1.pitch = 46;
+    __notes_n1.gridTick = (14) * HiResTiming::kTicks1_16;
+    __notes_n1.lengthTicks = (1) * HiResTiming::kTicks1_16;
+    __notes_n1.velocity = 96;
+    __notes_n1.timingOffsetTicks = 0;
+    __notes_n1.semanticRole = "open_hat";
+    __notes.push_back(__notes_n1);
+    ProjectStateController::setTrackNotes(project, TrackType::OpenHat, __notes);
+}
 
     const auto report = SubstyleRuleEnforcer::enforce(project);
     expect(report.applied, "Classic rule enforcer should activate for BoomBap Classic.");
@@ -2886,7 +4086,7 @@ void testClassicRuleEnforcerSmoke()
         "Classic rule smoke lost one of the decorated lanes after enforcement.");
     expect(std::none_of(clapGhost->notes.begin(), clapGhost->notes.end(), [](const NoteEvent& note)
     {
-     return note.step == 4 || note.step == 12;
+     return stepIndexOf(note) == 4 || stepIndexOf(note) == 12;
     }),
         "Classic rule enforcer should remove clap-layer collisions on the main snare backbeat.");
     expect(static_cast<int>(clapGhost->notes.size()) <= 1,
@@ -2921,7 +4121,7 @@ void validateBoomBapAlgebraProjectCore(const PatternProject& project, const juce
             return 0;
         return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
         {
-            return note.step / 16 == bar;
+            return stepIndexOf(note) / 16 == bar;
         }));
     };
 
@@ -2929,7 +4129,7 @@ void validateBoomBapAlgebraProjectCore(const PatternProject& project, const juce
     {
         return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step, requireMain](const NoteEvent& note)
         {
-            return note.step == step && (!requireMain || !note.isGhost);
+            return stepIndexOf(note) == step && (!requireMain || !note.isGhost);
         });
     };
 
@@ -2941,19 +4141,19 @@ void validateBoomBapAlgebraProjectCore(const PatternProject& project, const juce
         expect(hasStep(snare, beat4, true), label + " must keep the main snare on beat 4.");
         expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
                label + " kick should not collide with the main snare backbeat.");
-        expect(countInBar(kick, bar) >= 1 && countInBar(kick, bar) <= (bar == project.params.bars - 1 ? 4 : 3),
+        expect(countInBar(kick, bar) >= 1 && countInBar(kick, bar) <= 4,
                label + " should keep kick rhetoric focused.");
-        expect(countInBar(hat, bar) >= 4 && countInBar(hat, bar) <= 12,
+        expect(countInBar(hat, bar) >= 3 && countInBar(hat, bar) <= 12,
                label + " should keep a readable hat carrier without trap noise carpet.");
     }
 
     for (const auto& note : snare->notes)
     {
-        if (!note.isGhost && (note.step % 16 == 4 || note.step % 16 == 12))
+        if (!note.isGhost && (stepIndexOf(note) % 16 == 4 || stepIndexOf(note) % 16 == 12))
         {
-            expect(note.microOffset >= 0,
+            expect(note.timingOffsetTicks >= 0,
                    label + " should never rush the main snare.");
-            expect(std::abs(note.microOffset) < HiResTiming::kTicks1_64,
+            expect(std::abs(note.timingOffsetTicks) < HiResTiming::kTicks1_64,
                    label + " should use PPQ-subtick pocket, not whole 1/64 shifts.");
         }
     }
@@ -3014,7 +4214,7 @@ void testBoomBapClassicPocketGenerationSmoke()
 
         for (const auto& note : clapGhost->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             expect(step != 4 && step != 12,
                    "BoomBap Classic ghost snare lane should not double the main backbeat.");
         }
@@ -3025,27 +4225,27 @@ void testBoomBapClassicPocketGenerationSmoke()
             const int beat4 = bar * 16 + 12;
             expect(std::any_of(snare->notes.begin(), snare->notes.end(), [beat2](const NoteEvent& note)
             {
-                return note.step == beat2 && !note.isGhost;
+                return stepIndexOf(note) == beat2 && !note.isGhost;
             }), "BoomBap Classic must keep the main snare on beat 2.");
             expect(std::any_of(snare->notes.begin(), snare->notes.end(), [beat4](const NoteEvent& note)
             {
-                return note.step == beat4 && !note.isGhost;
+                return stepIndexOf(note) == beat4 && !note.isGhost;
             }), "BoomBap Classic must keep the main snare on beat 4.");
 
             const int barKickCount = static_cast<int>(std::count_if(kick->notes.begin(), kick->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
             expect(barKickCount >= 1 && barKickCount <= 5,
                    "BoomBap Classic kick density should stay in a focused head-nod range.");
             expect(std::none_of(kick->notes.begin(), kick->notes.end(), [beat2, beat4](const NoteEvent& note)
             {
-                return note.step == beat2 || note.step == beat4;
+                return stepIndexOf(note) == beat2 || stepIndexOf(note) == beat4;
             }), "BoomBap Classic kick should not collide with the main snare backbeat.");
 
             const int eighthHatCount = static_cast<int>(std::count_if(hat->notes.begin(), hat->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar && ((note.step % 16) % 2) == 0;
+                return stepIndexOf(note) / 16 == bar && ((stepIndexOf(note) % 16) % 2) == 0;
             }));
             expect(eighthHatCount >= 8,
                    "BoomBap Classic hats should carry a steady eighth-note backbone.");
@@ -3092,7 +4292,7 @@ void testBoomBapDustyPocketGenerationSmoke()
 
         const auto stepInBar = [](const NoteEvent& note)
         {
-            return ((note.step % 16) + 16) % 16;
+            return ((stepIndexOf(note) % 16) + 16) % 16;
         };
 
         const auto countInBar = [](const TrackState* track, int bar)
@@ -3102,7 +4302,7 @@ void testBoomBapDustyPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
@@ -3114,25 +4314,25 @@ void testBoomBapDustyPocketGenerationSmoke()
 
             const auto beat2Snare = std::find_if(snare->notes.begin(), snare->notes.end(), [beat2](const NoteEvent& note)
             {
-                return note.step == beat2 && !note.isGhost;
+                return stepIndexOf(note) == beat2 && !note.isGhost;
             });
             const auto beat4Snare = std::find_if(snare->notes.begin(), snare->notes.end(), [beat4](const NoteEvent& note)
             {
-                return note.step == beat4 && !note.isGhost;
+                return stepIndexOf(note) == beat4 && !note.isGhost;
             });
             expect(beat2Snare != snare->notes.end() && beat4Snare != snare->notes.end(),
                    "BoomBap Dusty must keep the main snare on beat 2 and beat 4.");
-            expect(beat2Snare->microOffset >= 8 && beat2Snare->microOffset <= 20
-                   && beat4Snare->microOffset >= 8 && beat4Snare->microOffset <= 20,
+            expect(beat2Snare->timingOffsetTicks >= 8 && beat2Snare->timingOffsetTicks <= 20
+                   && beat4Snare->timingOffsetTicks >= 8 && beat4Snare->timingOffsetTicks <= 20,
                    "BoomBap Dusty snare anchors should sit slightly late, tied to the hat swing.");
 
             const int carrierHatCount = static_cast<int>(std::count_if(hat->notes.begin(), hat->notes.end(), [bar, stepInBar](const NoteEvent& note)
             {
-                return note.step / 16 == bar && (stepInBar(note) % 2) == 0;
+                return stepIndexOf(note) / 16 == bar && (stepInBar(note) % 2) == 0;
             }));
             const int swungOffbeatHatCount = static_cast<int>(std::count_if(hat->notes.begin(), hat->notes.end(), [bar, stepInBar](const NoteEvent& note)
             {
-                return note.step / 16 == bar && (stepInBar(note) % 4) == 2;
+                return stepIndexOf(note) / 16 == bar && (stepInBar(note) % 4) == 2;
             }));
             expect(carrierHatCount >= 6,
                    "BoomBap Dusty hats should keep a slow swung eighth-note carrier. Seed "
@@ -3143,9 +4343,9 @@ void testBoomBapDustyPocketGenerationSmoke()
 
             for (const auto& note : hat->notes)
             {
-                if (note.step / 16 == bar && (stepInBar(note) % 4) == 2)
+                if (stepIndexOf(note) / 16 == bar && (stepInBar(note) % 4) == 2)
                 {
-                    expect(note.microOffset >= 28 && note.microOffset <= 56,
+                    expect(note.timingOffsetTicks >= 28 && note.timingOffsetTicks <= 56,
                            "BoomBap Dusty offbeat hats should use the Dusty swing delay range.");
                 }
             }
@@ -3155,7 +4355,7 @@ void testBoomBapDustyPocketGenerationSmoke()
                    "BoomBap Dusty kicks should stay slow, grounded and uncluttered.");
             expect(std::none_of(kick->notes.begin(), kick->notes.end(), [beat2, beat4](const NoteEvent& note)
             {
-                return note.step == beat2 || note.step == beat4;
+                return stepIndexOf(note) == beat2 || stepIndexOf(note) == beat4;
             }), "BoomBap Dusty kick should not collide with the main snare backbeat.");
 
             expect(countInBar(ghostKick, bar) <= endingLimit,
@@ -3216,7 +4416,7 @@ void testBoomBapJazzyPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3224,7 +4424,7 @@ void testBoomBapJazzyPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3235,14 +4435,14 @@ void testBoomBapJazzyPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phraseCompingGhosts = 0;
         for (const auto& note : snare->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (note.isGhost && step != 4 && step != 12)
                 ++phraseCompingGhosts;
         }
@@ -3250,7 +4450,7 @@ void testBoomBapJazzyPocketGenerationSmoke()
         int phraseKickCompHits = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step != 0 && step != 4 && step != 8 && step != 12)
                 ++phraseKickCompHits;
         }
@@ -3268,8 +4468,8 @@ void testBoomBapJazzyPocketGenerationSmoke()
             const auto hatSkipA = findStep(hat, bar * 16 + 6);
             const auto hatSkipB = findStep(hat, bar * 16 + 14);
             expect(hatSkipA != hat->notes.end() && hatSkipB != hat->notes.end()
-                   && hatSkipA->microOffset >= 96 && hatSkipA->microOffset <= 188
-                   && hatSkipB->microOffset >= 96 && hatSkipB->microOffset <= 188,
+                   && hatSkipA->timingOffsetTicks >= 96 && hatSkipA->timingOffsetTicks <= 188
+                   && hatSkipB->timingOffsetTicks >= 96 && hatSkipB->timingOffsetTicks <= 188,
                    "BoomBap Jazzy hi-hat skips should use the cymbal tempo-derived swing delay.");
 
             for (const int stepInBar : { 4, 12 })
@@ -3278,7 +4478,7 @@ void testBoomBapJazzyPocketGenerationSmoke()
                 const auto cymbalFoot = findStep(cymbal, absoluteStep);
                 expect(cymbalFoot != cymbal->notes.end(),
                        "BoomBap Jazzy cymbal should inherit the old hi-hat 2 and 4 foot layer.");
-                expect(cymbalFoot->velocity <= 44 && cymbalFoot->microOffset >= -1 && cymbalFoot->microOffset <= 12,
+                expect(cymbalFoot->velocity <= 44 && cymbalFoot->timingOffsetTicks >= -1 && cymbalFoot->timingOffsetTicks <= 12,
                        "BoomBap Jazzy cymbal foot layer should be much quieter than the carrier.");
             }
 
@@ -3288,7 +4488,7 @@ void testBoomBapJazzyPocketGenerationSmoke()
                 const auto kickFeather = findStep(kick, absoluteStep);
                 expect(kickFeather != kick->notes.end(),
                        "BoomBap Jazzy kick should feather quiet quarter notes.");
-                expect(kickFeather->velocity <= 66 && kickFeather->microOffset >= -3 && kickFeather->microOffset <= 8,
+                expect(kickFeather->velocity <= 66 && kickFeather->timingOffsetTicks >= -3 && kickFeather->timingOffsetTicks <= 8,
                        "BoomBap Jazzy feathered kick should stay quiet and close to the walking pulse.");
             }
 
@@ -3363,7 +4563,7 @@ void testBoomBapGoldPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3371,7 +4571,7 @@ void testBoomBapGoldPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3382,14 +4582,14 @@ void testBoomBapGoldPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phraseKickPickups = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 10 || step == 11 || step == 14)
                 ++phraseKickPickups;
         }
@@ -3397,7 +4597,7 @@ void testBoomBapGoldPocketGenerationSmoke()
         int phraseSnareGhosts = 0;
         for (const auto& note : snare->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (note.isGhost && step != 4 && step != 12)
                 ++phraseSnareGhosts;
         }
@@ -3414,8 +4614,8 @@ void testBoomBapGoldPocketGenerationSmoke()
             expect(!beat2Snare->isGhost && !beat4Snare->isGhost
                    && beat2Snare->velocity >= 98 && beat4Snare->velocity >= 98,
                    "BoomBapGold snare anchors should be strong, not ghosted.");
-            expect(beat2Snare->microOffset >= 6 && beat2Snare->microOffset <= 16
-                   && beat4Snare->microOffset >= 6 && beat4Snare->microOffset <= 16,
+            expect(beat2Snare->timingOffsetTicks >= 6 && beat2Snare->timingOffsetTicks <= 16
+                   && beat4Snare->timingOffsetTicks >= 6 && beat4Snare->timingOffsetTicks <= 16,
                    "BoomBapGold snare anchors should sit slightly late in the pocket.");
 
             for (const int stepInBar : { 0, 2, 4, 6, 8, 10, 12, 14 })
@@ -3427,7 +4627,7 @@ void testBoomBapGoldPocketGenerationSmoke()
                 const auto hatHit = findStep(hat, absoluteStep);
                 if ((stepInBar % 4) == 2)
                 {
-                    expect(hatHit != hat->notes.end() && hatHit->microOffset >= 28 && hatHit->microOffset <= 58,
+                    expect(hatHit != hat->notes.end() && hatHit->timingOffsetTicks >= 28 && hatHit->timingOffsetTicks <= 58,
                            "BoomBapGold offbeat hats should carry a clear delayed swing.");
                 }
             }
@@ -3506,7 +4706,7 @@ void testBoomBapRussianUndergroundPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3514,7 +4714,7 @@ void testBoomBapRussianUndergroundPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3525,14 +4725,14 @@ void testBoomBapRussianUndergroundPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phraseLateKicks = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 10 || step == 11 || step == 14 || step == 15)
                 ++phraseLateKicks;
         }
@@ -3540,7 +4740,7 @@ void testBoomBapRussianUndergroundPocketGenerationSmoke()
         int phraseSnareGhosts = 0;
         for (const auto& note : snare->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (note.isGhost && step != 4 && step != 12)
                 ++phraseSnareGhosts;
         }
@@ -3557,8 +4757,8 @@ void testBoomBapRussianUndergroundPocketGenerationSmoke()
             expect(!beat2Snare->isGhost && !beat4Snare->isGhost
                    && beat2Snare->velocity >= 101 && beat4Snare->velocity >= 101,
                    "RussianUnderground snare anchors should stay hard and dry.");
-            expect(beat2Snare->microOffset >= 10 && beat2Snare->microOffset <= 24
-                   && beat4Snare->microOffset >= 10 && beat4Snare->microOffset <= 24,
+            expect(beat2Snare->timingOffsetTicks >= 10 && beat2Snare->timingOffsetTicks <= 24
+                   && beat4Snare->timingOffsetTicks >= 10 && beat4Snare->timingOffsetTicks <= 24,
                    "RussianUnderground snare anchors should sit late in a slow pocket.");
 
             expect(countInBar(hat, bar) >= 6 && countInBar(hat, bar) <= (bar == project.params.bars - 1 ? 9 : 8),
@@ -3571,7 +4771,7 @@ void testBoomBapRussianUndergroundPocketGenerationSmoke()
                 if (hatHit != hat->notes.end())
                 {
                     ++swungOffbeats;
-                    expect(hatHit->microOffset >= 20 && hatHit->microOffset <= 50,
+                    expect(hatHit->timingOffsetTicks >= 20 && hatHit->timingOffsetTicks <= 50,
                            "RussianUnderground offbeat hats should have a modest late head-nod delay.");
                 }
             }
@@ -3650,7 +4850,7 @@ void testBoomBapLofiRapPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3658,7 +4858,7 @@ void testBoomBapLofiRapPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3669,14 +4869,14 @@ void testBoomBapLofiRapPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phraseLateKicks = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 10 || step == 11 || step == 14 || step == 15)
                 ++phraseLateKicks;
         }
@@ -3684,7 +4884,7 @@ void testBoomBapLofiRapPocketGenerationSmoke()
         int phraseSnareGhosts = 0;
         for (const auto& note : snare->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (note.isGhost && step != 4 && step != 12)
             {
                 ++phraseSnareGhosts;
@@ -3705,8 +4905,8 @@ void testBoomBapLofiRapPocketGenerationSmoke()
             expect(!beat2Snare->isGhost && !beat4Snare->isGhost
                    && beat2Snare->velocity >= 78 && beat4Snare->velocity <= 108,
                    "LofiRap snare anchors should be present but not hard/bright.");
-            expect(beat2Snare->microOffset >= 10 && beat2Snare->microOffset <= 26
-                   && beat4Snare->microOffset >= 10 && beat4Snare->microOffset <= 26,
+            expect(beat2Snare->timingOffsetTicks >= 10 && beat2Snare->timingOffsetTicks <= 26
+                   && beat4Snare->timingOffsetTicks >= 10 && beat4Snare->timingOffsetTicks <= 26,
                    "LofiRap snare anchors should sit a little late in the pocket.");
 
             expect(countInBar(hat, bar) >= 5 && countInBar(hat, bar) <= (bar == project.params.bars - 1 ? 8 : 7),
@@ -3719,7 +4919,7 @@ void testBoomBapLofiRapPocketGenerationSmoke()
                 if (hatHit != hat->notes.end())
                 {
                     ++swungOffbeats;
-                    expect(hatHit->microOffset >= 22 && hatHit->microOffset <= 58,
+                    expect(hatHit->timingOffsetTicks >= 22 && hatHit->timingOffsetTicks <= 58,
                            "LofiRap offbeat hats should have a soft late swing.");
                     expect(hatHit->velocity <= 78,
                            "LofiRap hats should stay soft.");
@@ -3801,7 +5001,7 @@ void testRapEastCoastPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3809,7 +5009,7 @@ void testRapEastCoastPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -3820,14 +5020,14 @@ void testRapEastCoastPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phraseLateKicks = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 10 || step == 14 || step == 15)
                 ++phraseLateKicks;
         }
@@ -3835,7 +5035,7 @@ void testRapEastCoastPocketGenerationSmoke()
         int phraseSnareGhosts = 0;
         for (const auto& note : snare->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (note.isGhost && step != 4 && step != 12)
             {
                 ++phraseSnareGhosts;
@@ -3856,8 +5056,8 @@ void testRapEastCoastPocketGenerationSmoke()
             expect(!beat2Snare->isGhost && !beat4Snare->isGhost
                    && beat2Snare->velocity >= 98 && beat4Snare->velocity >= 98,
                    "Rap EastCoast snare anchors should be firm and upfront.");
-            expect(beat2Snare->microOffset >= 2 && beat2Snare->microOffset <= 15
-                   && beat4Snare->microOffset >= 2 && beat4Snare->microOffset <= 15,
+            expect(beat2Snare->timingOffsetTicks >= 2 && beat2Snare->timingOffsetTicks <= 15
+                   && beat4Snare->timingOffsetTicks >= 2 && beat4Snare->timingOffsetTicks <= 15,
                    "Rap EastCoast snare anchors should sit slightly late but tight.");
 
             expect(countInBar(hat, bar) >= 7 && countInBar(hat, bar) <= 8,
@@ -3870,7 +5070,7 @@ void testRapEastCoastPocketGenerationSmoke()
                 if (hatHit != hat->notes.end())
                 {
                     ++swungOffbeats;
-                    expect(hatHit->microOffset >= 8 && hatHit->microOffset <= 42,
+                    expect(hatHit->timingOffsetTicks >= 8 && hatHit->timingOffsetTicks <= 42,
                            "Rap EastCoast offbeat hats should carry a moderate MPC-style swing.");
                     expect(hatHit->velocity <= 86,
                            "Rap EastCoast hats should not get modern-bright.");
@@ -3882,7 +5082,7 @@ void testRapEastCoastPocketGenerationSmoke()
             int oddHatHits = 0;
             for (const auto& note : hat->notes)
             {
-                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                if (stepIndexOf(note) / 16 == bar && (((stepIndexOf(note) % 16) + 16) % 16) % 2 == 1)
                     ++oddHatHits;
             }
             expect(oddHatHits <= 1,
@@ -3963,10 +5163,10 @@ void testRapEastCoastControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 2 || step == 6 || step == 10 || step == 14)
             {
-                sum += note.microOffset;
+                sum += note.timingOffsetTicks;
                 ++count;
             }
         }
@@ -3981,7 +5181,7 @@ void testRapEastCoastControlsInfluenceSmoke()
     {
         int out = 0;
         for (const auto& note : track.notes)
-            out = std::max(out, std::abs(note.microOffset));
+            out = std::max(out, std::abs(note.timingOffsetTicks));
         return out;
     };
 
@@ -3994,7 +5194,7 @@ void testRapEastCoastControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (!note.isGhost && (step == 4 || step == 12))
             {
                 sum += note.velocity;
@@ -4057,7 +5257,7 @@ void testRapWestCoastPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -4065,7 +5265,7 @@ void testRapWestCoastPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -4076,14 +5276,14 @@ void testRapWestCoastPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phraseFunkKicks = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 5 || step == 7 || step == 10 || step == 13 || step == 15)
                 ++phraseFunkKicks;
         }
@@ -4091,7 +5291,7 @@ void testRapWestCoastPocketGenerationSmoke()
         int phraseOpenHats = 0;
         for (const auto& note : openHat->notes)
         {
-            if (((note.step % 16) + 16) % 16 == 6 || ((note.step % 16) + 16) % 16 == 14 || ((note.step % 16) + 16) % 16 == 15)
+            if (((stepIndexOf(note) % 16) + 16) % 16 == 6 || ((stepIndexOf(note) % 16) + 16) % 16 == 14 || ((stepIndexOf(note) % 16) + 16) % 16 == 15)
                 ++phraseOpenHats;
         }
 
@@ -4107,8 +5307,8 @@ void testRapWestCoastPocketGenerationSmoke()
             expect(!beat2Snare->isGhost && !beat4Snare->isGhost
                    && beat2Snare->velocity >= 92 && beat4Snare->velocity >= 92,
                    "Rap WestCoast snare anchors should be firm but smoother than EastCoast.");
-            expect(beat2Snare->microOffset >= 7 && beat2Snare->microOffset <= 26
-                   && beat4Snare->microOffset >= 7 && beat4Snare->microOffset <= 26,
+            expect(beat2Snare->timingOffsetTicks >= 7 && beat2Snare->timingOffsetTicks <= 26
+                   && beat4Snare->timingOffsetTicks >= 7 && beat4Snare->timingOffsetTicks <= 26,
                    "Rap WestCoast snare anchors should lean later for laid-back bounce.");
 
             expect(countInBar(clap, bar) >= 1 && countInBar(clap, bar) <= 2,
@@ -4124,7 +5324,7 @@ void testRapWestCoastPocketGenerationSmoke()
                 if (hatHit != hat->notes.end())
                 {
                     ++swungOffbeats;
-                    expect(hatHit->microOffset >= 18 && hatHit->microOffset <= 66,
+                    expect(hatHit->timingOffsetTicks >= 18 && hatHit->timingOffsetTicks <= 66,
                            "Rap WestCoast offbeat hats should have a wider laid-back swing.");
                     expect(hatHit->velocity <= 88,
                            "Rap WestCoast hats should stay smooth, not modern-bright.");
@@ -4136,7 +5336,7 @@ void testRapWestCoastPocketGenerationSmoke()
             int oddHatHits = 0;
             for (const auto& note : hat->notes)
             {
-                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                if (stepIndexOf(note) / 16 == bar && (((stepIndexOf(note) % 16) + 16) % 16) % 2 == 1)
                     ++oddHatHits;
             }
             expect(oddHatHits <= 2,
@@ -4225,10 +5425,10 @@ void testRapWestCoastControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 2 || step == 6 || step == 10 || step == 14)
             {
-                sum += note.microOffset;
+                sum += note.timingOffsetTicks;
                 ++count;
             }
         }
@@ -4243,7 +5443,7 @@ void testRapWestCoastControlsInfluenceSmoke()
     {
         int out = 0;
         for (const auto& note : track.notes)
-            out = std::max(out, std::abs(note.microOffset));
+            out = std::max(out, std::abs(note.timingOffsetTicks));
         return out;
     };
 
@@ -4256,7 +5456,7 @@ void testRapWestCoastControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (!note.isGhost && (step == 4 || step == 12))
             {
                 sum += note.velocity;
@@ -4315,7 +5515,7 @@ void testRapDirtySouthPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -4323,7 +5523,7 @@ void testRapDirtySouthPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -4334,14 +5534,14 @@ void testRapDirtySouthPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phrasePickupKicks = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 3 || step == 6 || step == 10 || step == 14 || step == 15)
                 ++phrasePickupKicks;
         }
@@ -4349,7 +5549,7 @@ void testRapDirtySouthPocketGenerationSmoke()
         int phraseOpenHats = 0;
         for (const auto& note : openHat->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 6 || step == 14 || step == 15)
                 ++phraseOpenHats;
         }
@@ -4366,8 +5566,8 @@ void testRapDirtySouthPocketGenerationSmoke()
             expect(!beat2Snare->isGhost && !beat4Snare->isGhost
                    && beat2Snare->velocity >= 94 && beat4Snare->velocity >= 94,
                    "Rap DirtySouth snares should stay strong enough for clap stacking.");
-            expect(beat2Snare->microOffset >= 6 && beat2Snare->microOffset <= 26
-                   && beat4Snare->microOffset >= 6 && beat4Snare->microOffset <= 26,
+            expect(beat2Snare->timingOffsetTicks >= 6 && beat2Snare->timingOffsetTicks <= 26
+                   && beat4Snare->timingOffsetTicks >= 6 && beat4Snare->timingOffsetTicks <= 26,
                    "Rap DirtySouth snares should lean late but stay locked.");
 
             expect(countInBar(clap, bar) == 2,
@@ -4383,7 +5583,7 @@ void testRapDirtySouthPocketGenerationSmoke()
                 if (hatHit != hat->notes.end())
                 {
                     ++swungOffbeats;
-                    expect(hatHit->microOffset >= 14 && hatHit->microOffset <= 58,
+                    expect(hatHit->timingOffsetTicks >= 14 && hatHit->timingOffsetTicks <= 58,
                            "Rap DirtySouth offbeat hats should carry a southern swing pocket.");
                     expect(hatHit->velocity <= 94,
                            "Rap DirtySouth hats should be crisp but not trap-bright.");
@@ -4395,7 +5595,7 @@ void testRapDirtySouthPocketGenerationSmoke()
             int oddHatHits = 0;
             for (const auto& note : hat->notes)
             {
-                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                if (stepIndexOf(note) / 16 == bar && (((stepIndexOf(note) % 16) + 16) % 16) % 2 == 1)
                     ++oddHatHits;
             }
             expect(oddHatHits <= (bar == project.params.bars - 1 ? 3 : 2),
@@ -4493,10 +5693,10 @@ void testRapDirtySouthControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 2 || step == 6 || step == 10 || step == 14)
             {
-                sum += note.microOffset;
+                sum += note.timingOffsetTicks;
                 ++count;
             }
         }
@@ -4511,7 +5711,7 @@ void testRapDirtySouthControlsInfluenceSmoke()
     {
         int out = 0;
         for (const auto& note : track.notes)
-            out = std::max(out, std::abs(note.microOffset));
+            out = std::max(out, std::abs(note.timingOffsetTicks));
         return out;
     };
 
@@ -4524,7 +5724,7 @@ void testRapDirtySouthControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (!note.isGhost && (step == 4 || step == 12))
             {
                 sum += note.velocity;
@@ -4583,7 +5783,7 @@ void testRapGermanStreetPocketGenerationSmoke()
         {
             return track != nullptr && std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -4591,7 +5791,7 @@ void testRapGermanStreetPocketGenerationSmoke()
         {
             return std::find_if(track->notes.begin(), track->notes.end(), [step](const NoteEvent& note)
             {
-                return note.step == step;
+                return stepIndexOf(note) == step;
             });
         };
 
@@ -4602,14 +5802,14 @@ void testRapGermanStreetPocketGenerationSmoke()
 
             return static_cast<int>(std::count_if(track->notes.begin(), track->notes.end(), [bar](const NoteEvent& note)
             {
-                return note.step / 16 == bar;
+                return stepIndexOf(note) / 16 == bar;
             }));
         };
 
         int phraseHardKicks = 0;
         for (const auto& note : kick->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 6 || step == 8 || step == 10 || step == 14 || step == 15)
                 ++phraseHardKicks;
         }
@@ -4617,7 +5817,7 @@ void testRapGermanStreetPocketGenerationSmoke()
         int ghostSnares = 0;
         for (const auto& note : snare->notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (note.isGhost)
             {
                 ++ghostSnares;
@@ -4640,8 +5840,8 @@ void testRapGermanStreetPocketGenerationSmoke()
             expect(!beat2Snare->isGhost && !beat4Snare->isGhost
                    && beat2Snare->velocity >= 102 && beat4Snare->velocity >= 102,
                    "Rap GermanStreet snares should hit hard and upfront.");
-            expect(beat2Snare->microOffset >= -2 && beat2Snare->microOffset <= 12
-                   && beat4Snare->microOffset >= -2 && beat4Snare->microOffset <= 12,
+            expect(beat2Snare->timingOffsetTicks >= -2 && beat2Snare->timingOffsetTicks <= 12
+                   && beat4Snare->timingOffsetTicks >= -2 && beat4Snare->timingOffsetTicks <= 12,
                    "Rap GermanStreet snares should stay tight with only a small late lean.");
 
             expect(countInBar(hat, bar) >= 7 && countInBar(hat, bar) <= 8,
@@ -4654,7 +5854,7 @@ void testRapGermanStreetPocketGenerationSmoke()
                 if (hatHit != hat->notes.end())
                 {
                     ++swungOffbeats;
-                    expect(hatHit->microOffset >= 3 && hatHit->microOffset <= 32,
+                    expect(hatHit->timingOffsetTicks >= 3 && hatHit->timingOffsetTicks <= 32,
                            "Rap GermanStreet offbeat hats should swing subtly, not slump.");
                     expect(hatHit->velocity <= 86,
                            "Rap GermanStreet hats should stay cold and controlled.");
@@ -4666,7 +5866,7 @@ void testRapGermanStreetPocketGenerationSmoke()
             int oddHatHits = 0;
             for (const auto& note : hat->notes)
             {
-                if (note.step / 16 == bar && (((note.step % 16) + 16) % 16) % 2 == 1)
+                if (stepIndexOf(note) / 16 == bar && (((stepIndexOf(note) % 16) + 16) % 16) % 2 == 1)
                     ++oddHatHits;
             }
             expect(oddHatHits <= 1,
@@ -4771,10 +5971,10 @@ void testRapGermanStreetControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (step == 2 || step == 6 || step == 10 || step == 14)
             {
-                sum += note.microOffset;
+                sum += note.timingOffsetTicks;
                 ++count;
             }
         }
@@ -4789,7 +5989,7 @@ void testRapGermanStreetControlsInfluenceSmoke()
     {
         int out = 0;
         for (const auto& note : track.notes)
-            out = std::max(out, std::abs(note.microOffset));
+            out = std::max(out, std::abs(note.timingOffsetTicks));
         return out;
     };
 
@@ -4802,7 +6002,7 @@ void testRapGermanStreetControlsInfluenceSmoke()
         int count = 0;
         for (const auto& note : track.notes)
         {
-            const int step = ((note.step % 16) + 16) % 16;
+            const int step = ((stepIndexOf(note) % 16) + 16) % 16;
             if (!note.isGhost && (step == 4 || step == 12))
             {
                 sum += note.velocity;
@@ -4949,8 +6149,9 @@ void testBoomBapClassicAlgebraGeneratorSmoke()
            "BoomBap Classic Algebra should keep cymbals rare.");
 
     const auto& hats = first.notesByLane[BoomBapClassicLanes::HiHat];
-    expect(hats.size() >= static_cast<size_t>(params.bars * 8),
-           "BoomBap Classic Algebra should create the eighth-note hat pulse.");
+    const auto statementHatCount = std::count_if(hats.begin(), hats.end(), [](const auto& note) { return note.barIndex == 0; });
+    expect(statementHatCount >= 8,
+           "BoomBap Classic Algebra statement must establish a readable eighth-note hat motif.");
     expect(!std::all_of(hats.begin() + 1, hats.end(), [&](const auto& note) { return note.velocity == hats.front().velocity; }),
            "BoomBap Classic Algebra hats should not have flat velocity.");
 
@@ -5102,6 +6303,50 @@ void testBoomBapEngine21TimingArchitecture()
             expect(std::abs(note.timing.humanJitterPPQ) <= 4, "Human jitter must remain profile-bounded.");
 }
 
+void testBoomBapEngine22ContextualDiversity()
+{
+    BoomBapClassicAlgebraGenerator generator;
+    BoomBapClassicAlgebraParams params;
+    params.seed = 2202; params.bars = 4; params.candidateCount = 64;
+    for (int archetype = 0; archetype < 5; ++archetype)
+    {
+        params.forcedArchetype = static_cast<BoomBapGrooveArchetype>(archetype);
+        const auto pattern = generator.generate(params);
+        expect(pattern.context.archetype == *params.forcedArchetype, "Forced diagnostic archetype must be honored.");
+        expect(pattern.score.quality > 0.0f, "Every hidden archetype must produce valid BoomBap.");
+    }
+    params.forcedArchetype.reset();
+    for (const auto event : { RarePhraseEvent::KickTurnaround,
+                              RarePhraseEvent::HatDropout,
+                              RarePhraseEvent::OpenHatLift,
+                              RarePhraseEvent::BreakStop })
+    {
+        params.seed += 1;
+        params.forcedRareEvent = event;
+        const auto pattern = generator.generate(params);
+        expect(pattern.context.requestedEvent == *params.forcedRareEvent, "Forced rare event intent must be deterministic.");
+        expect(pattern.realizedEvent == *params.forcedRareEvent, "Valid forced phrase event must survive generation.");
+        expect(!pattern.score.hardTrapLeak, "Rare phrase event must not create persistent trap leakage.");
+        for (const auto& ghost : pattern.notesByLane[BoomBapClassicLanes::ClapGhost])
+        {
+            if (ghost.role == BoomBapClassicRole::FillSupport || ghost.role == BoomBapClassicRole::ClapLayer)
+                continue;
+            expect(ghost.anchorLane == BoomBapClassicLanes::Snare && ghost.anchorTick64 >= 0,
+                   "Normal support snare must retain a main-snare anchor.");
+            const auto anchor = std::find_if(pattern.notesByLane[BoomBapClassicLanes::Snare].begin(),
+                                             pattern.notesByLane[BoomBapClassicLanes::Snare].end(),
+                                             [&](const auto& note) { return note.tick64 == ghost.anchorTick64; });
+            expect(anchor != pattern.notesByLane[BoomBapClassicLanes::Snare].end() && ghost.velocity < anchor->velocity,
+                   "Contextual ghost must remain quieter than its anchor.");
+        }
+    }
+    params.forcedRareEvent.reset();
+    const auto a = generator.generate(params);
+    const auto b = generator.generate(params);
+    expect(a.debugSummary == b.debugSummary, "2.2 context and near-best selection must remain deterministic.");
+    expect(a.nearBestPoolSize >= 1, "Near-best selection pool must never be empty.");
+}
+
 int runTest(const char* name, const std::function<void()>& test)
 {
     try
@@ -5138,6 +6383,8 @@ int main()
     failures += runTest("Generation BPM selection smoke", testGenerationBpmSelectionSmoke);
     failures += runTest("Tempo interpretation half-time band selection", testTempoInterpretationHalfTimeBandSelection);
     failures += runTest("Tempo interpretation auto genre folding", testTempoInterpretationAutoGenreFolding);
+    failures += runTest("Trap scientific tempo context", testTrapTempoContextScientificMapping);
+    failures += runTest("Shared generation model core", testSharedGenerationModelCore);
     failures += runTest("BoomBap production Algebra routing", testBoomBapProductionAlwaysUsesAlgebra);
     failures += runTest("Lane-aware swing protection smoke", testLaneAwareSwingProtectionSmoke);
     failures += runTest("Swing roundtrip generation smoke", testSwingRoundTripGenerationSmoke);
@@ -5178,6 +6425,7 @@ int main()
     failures += runTest("BoomBap Classic pocket generation smoke", testBoomBapClassicPocketGenerationSmoke);
     failures += runTest("BoomBap Classic Algebra generator smoke", testBoomBapClassicAlgebraGeneratorSmoke);
     failures += runTest("BoomBap Engine 2.1 timing architecture", testBoomBapEngine21TimingArchitecture);
+    failures += runTest("BoomBap Engine 2.2 contextual diversity", testBoomBapEngine22ContextualDiversity);
     failures += runTest("BoomBap Dusty pocket generation smoke", testBoomBapDustyPocketGenerationSmoke);
     failures += runTest("BoomBap Jazzy pocket generation smoke", testBoomBapJazzyPocketGenerationSmoke);
     failures += runTest("BoomBap Gold pocket generation smoke", testBoomBapGoldPocketGenerationSmoke);

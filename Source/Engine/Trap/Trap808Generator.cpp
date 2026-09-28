@@ -7,12 +7,18 @@
 #include <vector>
 
 #include "../../Core/PatternProject.h"
+#include "../../Core/TimingGrid.h"
 #include "TrapLowEndRoles.h"
 
 namespace bbg
 {
 namespace
 {
+// This file's own helper API (hasStartNear, isNoteActiveAtStep, lengthForEventType, ...) stays
+// step-indexed throughout — these two are the only bridge to the now tick-native NoteEvent.
+int stepIndexOf(const NoteEvent& note) { return note.gridTick / TimingGrid::Sixteenth; }
+int tickForStep(int step) { return step * TimingGrid::Sixteenth; }
+
 enum class TrapBassEventType
 {
     Reject = 0,
@@ -227,7 +233,7 @@ int countLocalKickDensity(const std::vector<NoteEvent>& kicks, int step)
 {
     int count = 0;
     for (const auto& k : kicks)
-        if (std::abs(k.step - step) <= 1)
+        if (std::abs(stepIndexOf(k) - step) <= 1)
             ++count;
     return count;
 }
@@ -239,7 +245,7 @@ int countEventsNear(const TrackState* track, int step, int radius)
 
     int count = 0;
     for (const auto& n : track->notes)
-        if (std::abs(n.step - step) <= radius)
+        if (std::abs(stepIndexOf(n) - step) <= radius)
             ++count;
     return count;
 }
@@ -256,7 +262,7 @@ bool hasAccentNear(const TrackState* track, int step, int radius, int minVelocit
         return false;
 
     for (const auto& n : track->notes)
-        if (std::abs(n.step - step) <= radius && n.velocity >= minVelocity)
+        if (std::abs(stepIndexOf(n) - step) <= radius && n.velocity >= minVelocity)
             return true;
     return false;
 }
@@ -269,9 +275,9 @@ bool hasLongFxNear(const TrackState* track, int step, int radius)
     int count = 0;
     for (const auto& n : track->notes)
     {
-        if (std::abs(n.step - step) <= radius)
+        if (std::abs(stepIndexOf(n) - step) <= radius)
         {
-            if (n.length >= 2)
+            if (n.lengthTicks >= 2 * TimingGrid::Sixteenth)
                 return true;
             ++count;
         }
@@ -285,8 +291,8 @@ TrapKickRole classifyKickRole(const std::vector<NoteEvent>& kicks,
                               TrapPhraseRole phraseRole)
 {
     const auto& k = kicks[index];
-    const int prevGap = index > 0 ? (k.step - kicks[index - 1].step) : 99;
-    const int nextGap = index + 1 < kicks.size() ? (kicks[index + 1].step - k.step) : 99;
+    const int prevGap = index > 0 ? (stepIndexOf(k) - stepIndexOf(kicks[index - 1])) : 99;
+    const int nextGap = index + 1 < kicks.size() ? (stepIndexOf(kicks[index + 1]) - stepIndexOf(k)) : 99;
 
     auto role = classifyKickRoleFromNote(k, phraseRole);
     if ((nextGap > 0 && nextGap <= 2) || (prevGap > 0 && prevGap <= 2))
@@ -310,8 +316,8 @@ void sortByTime(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
         return a.velocity > b.velocity;
     });
 }
@@ -327,7 +333,7 @@ void cleanRhythmMonophonic(std::vector<NoteEvent>& notes)
     filtered.reserve(notes.size());
     for (const auto& n : notes)
     {
-        if (!filtered.empty() && filtered.back().step == n.step)
+        if (!filtered.empty() && filtered.back().gridTick == n.gridTick)
         {
             if (n.velocity > filtered.back().velocity)
                 filtered.back() = n;
@@ -340,8 +346,8 @@ void cleanRhythmMonophonic(std::vector<NoteEvent>& notes)
     {
         auto& prev = filtered[i - 1];
         const auto& cur = filtered[i];
-        const int stepGap = std::max(1, cur.step - prev.step);
-        prev.length = std::min(prev.length, stepGap);
+        const int stepGap = std::max(1, stepIndexOf(cur) - stepIndexOf(prev));
+        prev.lengthTicks = std::min(prev.lengthTicks, stepGap * TimingGrid::Sixteenth);
     }
 
     notes = std::move(filtered);
@@ -350,7 +356,7 @@ void cleanRhythmMonophonic(std::vector<NoteEvent>& notes)
 bool hasStartNear(const std::vector<NoteEvent>& notes, int step, int maxDistance)
 {
     for (const auto& n : notes)
-        if (std::abs(n.step - step) <= maxDistance)
+        if (std::abs(stepIndexOf(n) - step) <= maxDistance)
             return true;
     return false;
 }
@@ -363,16 +369,23 @@ int twoBarWindowIndex(int step)
 bool isNoteActiveAtStep(const std::vector<NoteEvent>& notes, int step)
 {
     for (const auto& n : notes)
-        if (step >= n.step && step < (n.step + n.length))
+    {
+        const int nStep = stepIndexOf(n);
+        if (step >= nStep && step < (nStep + n.lengthTicks / TimingGrid::Sixteenth))
             return true;
+    }
     return false;
 }
 
 bool isPhraseHoldActiveAtStep(const std::vector<NoteEvent>& notes, int step)
 {
     for (const auto& n : notes)
-        if (n.length >= 6 && step >= n.step && step < (n.step + n.length))
+    {
+        const int nStep = stepIndexOf(n);
+        const int nLengthSteps = n.lengthTicks / TimingGrid::Sixteenth;
+        if (nLengthSteps >= 6 && step >= nStep && step < (nStep + nLengthSteps))
             return true;
+    }
     return false;
 }
 
@@ -657,7 +670,7 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
     std::vector<NoteEvent> kicks;
     kicks.reserve(kickTrack.notes.size());
     for (const auto& k : kickTrack.notes)
-        if (k.step >= 0 && k.step < totalSteps)
+        if (stepIndexOf(k) >= 0 && stepIndexOf(k) < totalSteps)
             kicks.push_back(k);
     sortByTime(kicks);
 
@@ -688,10 +701,11 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
     for (size_t i = 0; i < kicks.size(); ++i)
     {
         const auto& k = kicks[i];
-        const int bar = std::clamp(k.step / 16, 0, bars - 1);
+        const int kStep = stepIndexOf(k);
+        const int bar = std::clamp(kStep / 16, 0, bars - 1);
         const auto phraseRole = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : TrapPhraseRole::Base;
         const auto role = classifyKickRole(kicks, i, phraseRole);
-        addCandidate(candidates, k.step, role);
+        addCandidate(candidates, kStep, role);
     }
 
     // Phrase-edge candidates and silence-recovery anchors.
@@ -703,9 +717,9 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
 
     for (size_t i = 1; i < kicks.size(); ++i)
     {
-        const int gap = kicks[i].step - kicks[i - 1].step;
+        const int gap = stepIndexOf(kicks[i]) - stepIndexOf(kicks[i - 1]);
         if (gap >= 6)
-            addCandidate(candidates, kicks[i - 1].step + gap / 2, TrapKickRole::Pickup);
+            addCandidate(candidates, stepIndexOf(kicks[i - 1]) + gap / 2, TrapKickRole::Pickup);
     }
 
     std::sort(candidates.begin(), candidates.end(), [](const TrapBassCandidate& a, const TrapBassCandidate& b)
@@ -807,8 +821,10 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
         {
             for (auto& existing : subTrack.notes)
             {
-                if (candidate.step > existing.step && candidate.step < (existing.step + existing.length))
-                    existing.length = std::max(1, candidate.step - existing.step);
+                const int existingStep = stepIndexOf(existing);
+                const int existingLengthSteps = existing.lengthTicks / TimingGrid::Sixteenth;
+                if (candidate.step > existingStep && candidate.step < (existingStep + existingLengthSteps))
+                    existing.lengthTicks = std::max(1, candidate.step - existingStep) * TimingGrid::Sixteenth;
             }
         }
 
@@ -827,7 +843,12 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
         if (candidate.role == TrapKickRole::GhostLike) velocityBonus -= 18;
         if (isRestart) velocityBonus += 3;
         const int velocity = std::clamp(vel(rng) + velocityBonus, style.sub808VelocityMin, style.sub808VelocityMax);
-        subTrack.notes.push_back({ 36, candidate.step, length, velocity, 0, false });
+        NoteEvent bassNote;
+        bassNote.pitch = 36;
+        bassNote.gridTick = tickForStep(candidate.step);
+        bassNote.lengthTicks = length * TimingGrid::Sixteenth;
+        bassNote.velocity = velocity;
+        subTrack.notes.push_back(bassNote);
 
         startsPerBar[static_cast<size_t>(bar)] += 1;
         startsPerWindow[static_cast<size_t>(window)] += 1;
@@ -874,7 +895,12 @@ void Trap808Generator::generateRhythm(TrackState& subTrack,
             const int bar = std::clamp(chosen.step / 16, 0, bars - 1);
             const int length = std::clamp(lengthForEventType(TrapBassEventType::StartMedium, chosen.step, spec, style, rng), 2, 4);
             const int velocity = std::clamp(vel(rng) + (chosen.role == TrapKickRole::Anchor ? 5 : 0), style.sub808VelocityMin, style.sub808VelocityMax);
-            subTrack.notes.push_back({ 36, chosen.step, length, velocity, 0, false });
+            NoteEvent bassNote;
+            bassNote.pitch = 36;
+            bassNote.gridTick = tickForStep(chosen.step);
+            bassNote.lengthTicks = length * TimingGrid::Sixteenth;
+            bassNote.velocity = velocity;
+            subTrack.notes.push_back(bassNote);
             startsPerBar[static_cast<size_t>(bar)] += 1;
             startsPerWindow[static_cast<size_t>(window)] += 1;
             chosen.selected = true;
@@ -915,10 +941,11 @@ void Trap808Generator::assignPitches(TrackState& subTrack,
 
     for (auto& note : subTrack.notes)
     {
-        const int bar = std::max(0, note.step / 16);
+        const int noteStep = stepIndexOf(note);
+        const int bar = std::max(0, noteStep / 16);
         const auto phraseRole = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : TrapPhraseRole::Base;
-        const auto role = classifySubRole(note.step, phraseRole);
-        const int window = std::clamp(twoBarWindowIndex(note.step), 0, twoBarWindows - 1);
+        const auto role = classifySubRole(noteStep, phraseRole);
+        const int window = std::clamp(twoBarWindowIndex(noteStep), 0, twoBarWindows - 1);
 
         std::array<float, static_cast<size_t>(PitchClass::Count)> weights {
             budgets.rootTarget,
@@ -1019,7 +1046,7 @@ void Trap808Generator::applySlides(TrackState& subTrack,
     else if (spec.slideMode == TrapSlideMode::Aggressive)
         slideProbability *= 1.35f;
 
-    const int totalSteps = std::max(1, (subTrack.notes.back().step / 16) + 1) * 16;
+    const int totalSteps = std::max(1, (stepIndexOf(subTrack.notes.back()) / 16) + 1) * 16;
     const int twoBarWindows = std::max(1, (totalSteps + 31) / 32);
     std::vector<int> slidesPerWindow(static_cast<size_t>(twoBarWindows), 0);
 
@@ -1027,33 +1054,36 @@ void Trap808Generator::applySlides(TrackState& subTrack,
     {
         auto& current = subTrack.notes[i];
         auto& next = subTrack.notes[i + 1];
-        const int gap = next.step - current.step;
+        const int currentStep = stepIndexOf(current);
+        const int nextStep = stepIndexOf(next);
+        const int currentLengthSteps = current.lengthTicks / TimingGrid::Sixteenth;
+        const int gap = nextStep - currentStep;
         if (gap <= 0 || gap > 3)
             continue;
         if (current.pitch == next.pitch)
             continue;
 
-        const int window = std::clamp(twoBarWindowIndex(current.step), 0, twoBarWindows - 1);
+        const int window = std::clamp(twoBarWindowIndex(currentStep), 0, twoBarWindows - 1);
         if (slidesPerWindow[static_cast<size_t>(window)] >= budgets.maxSlidesPerTwoBars)
             continue;
 
-        const int bar = std::max(0, current.step / 16);
-        const int nextBar = std::max(0, next.step / 16);
-        const int stepInBar = current.step % 16;
+        const int bar = std::max(0, currentStep / 16);
+        const int nextBar = std::max(0, nextStep / 16);
+        const int stepInBar = currentStep % 16;
         const auto phraseRole = bar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(bar)] : TrapPhraseRole::Base;
         const auto nextPhraseRole = nextBar < static_cast<int>(phrase.size()) ? phrase[static_cast<size_t>(nextBar)] : TrapPhraseRole::Base;
-        const auto currentRole = classifySubRole(current.step, phraseRole);
-        const auto nextRole = classifySubRole(next.step, nextPhraseRole);
+        const auto currentRole = classifySubRole(currentStep, phraseRole);
+        const auto nextRole = classifySubRole(nextStep, nextPhraseRole);
 
         const bool meaningfulPhraseMove = (nextRole == TrapKickRole::Anchor || nextRole == TrapKickRole::Tail || phraseRole == TrapPhraseRole::Ending);
         if (!meaningfulPhraseMove)
             continue;
-        if (current.length < 2 && gap < 2)
+        if (currentLengthSteps < 2 && gap < 2)
             continue;
 
         int localDensity = 0;
         for (const auto& n : subTrack.notes)
-            if (std::abs(n.step - current.step) <= 2)
+            if (std::abs(stepIndexOf(n) - currentStep) <= 2)
                 ++localDensity;
         if (localDensity > 3)
             continue;
@@ -1067,14 +1097,14 @@ void Trap808Generator::applySlides(TrackState& subTrack,
             gate *= 0.8f;
         if (currentRole == TrapKickRole::Support && nextRole == TrapKickRole::Support)
             gate *= 0.72f;
-        if (current.length >= 4 && (phraseRole == TrapPhraseRole::Ending || stepInBar >= 12))
+        if (currentLengthSteps >= 4 && (phraseRole == TrapPhraseRole::Ending || stepInBar >= 12))
             gate *= 1.08f;
-        if (current.length <= 2 && gap == 1)
+        if (currentLengthSteps <= 2 && gap == 1)
             gate *= 0.9f;
 
         if (chance(rng) < std::clamp(gate, 0.02f, 0.86f))
         {
-            current.length = std::max(current.length, gap + 1);
+            current.lengthTicks = std::max(currentLengthSteps, gap + 1) * TimingGrid::Sixteenth;
             slidesPerWindow[static_cast<size_t>(window)] += 1;
         }
     }

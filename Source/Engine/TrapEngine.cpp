@@ -25,6 +25,9 @@ TrackState* findTrack(PatternProject& project, TrackType type)
     return nullptr;
 }
 
+int stepIndexOf(const NoteEvent& note) { return note.gridTick / HiResTiming::kTicks1_16; }
+int tickForStep(int step) { return step * HiResTiming::kTicks1_16; }
+
 float laneActivityWeight(const PatternProject& project, TrackType type)
 {
     return std::clamp(laneBiasFor(project.styleInfluence, type).activityWeight, 0.55f, 1.6f);
@@ -79,7 +82,7 @@ void applySampleAwareTrapFlavor(PatternProject& project, const std::unordered_se
 
         for (auto& note : track.notes)
         {
-            const auto* f = featureAtStep(ctx.featureMap, note.step);
+            const auto* f = featureAtStep(ctx.featureMap, stepIndexOf(note));
             if (f == nullptr)
                 continue;
 
@@ -101,7 +104,7 @@ void applySampleAwareTrapFlavor(PatternProject& project, const std::unordered_se
                 && contrast > 0.12f)
             {
                 const int nudge = static_cast<int>(-2.0f - 3.0f * contrast * react);
-                note.microOffset = std::clamp(note.microOffset + nudge, -120, 120);
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks + nudge, -120, 120);
             }
         }
 
@@ -109,11 +112,11 @@ void applySampleAwareTrapFlavor(PatternProject& project, const std::unordered_se
         {
             track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
             {
-                const auto* f = featureAtStep(ctx.featureMap, note.step);
+                const auto* f = featureAtStep(ctx.featureMap, stepIndexOf(note));
                 if (f == nullptr)
                     return false;
 
-                const int phase = (note.step + note.velocity + static_cast<int>(track.type)) % 9;
+                const int phase = (stepIndexOf(note) + note.velocity + static_cast<int>(track.type)) % 9;
                 return phase == 0 && f->high > 0.84f && f->onset < 0.26f && !f->isStrongBeat;
             }), track.notes.end());
         }
@@ -145,10 +148,10 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
-        if (a.microOffset != b.microOffset)
-            return a.microOffset < b.microOffset;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
+        if (a.timingOffsetTicks != b.timingOffsetTicks)
+            return a.timingOffsetTicks < b.timingOffsetTicks;
         if (a.pitch != b.pitch)
             return a.pitch < b.pitch;
         return a.velocity > b.velocity;
@@ -156,7 +159,7 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        return a.step == b.step && a.microOffset == b.microOffset && a.pitch == b.pitch;
+        return a.gridTick == b.gridTick && a.timingOffsetTicks == b.timingOffsetTicks && a.pitch == b.pitch;
     }), notes.end());
 }
 
@@ -193,7 +196,7 @@ void clampLowEndStartsPerBar(TrackState& sub, int bars, int maxStartsPerBar)
     {
         std::vector<size_t> indices;
         for (size_t i = 0; i < sub.notes.size(); ++i)
-            if ((sub.notes[i].step / 16) == bar)
+            if ((stepIndexOf(sub.notes[i]) / 16) == bar)
                 indices.push_back(i);
 
         if (static_cast<int>(indices.size()) <= maxStartsPerBar)
@@ -201,18 +204,18 @@ void clampLowEndStartsPerBar(TrackState& sub, int bars, int maxStartsPerBar)
 
         std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b)
         {
-            const int scoreA = sub.notes[a].velocity + (sub.notes[a].step % 16 >= 12 ? 6 : 0);
-            const int scoreB = sub.notes[b].velocity + (sub.notes[b].step % 16 >= 12 ? 6 : 0);
+            const int scoreA = sub.notes[a].velocity + (stepIndexOf(sub.notes[a]) % 16 >= 12 ? 6 : 0);
+            const int scoreB = sub.notes[b].velocity + (stepIndexOf(sub.notes[b]) % 16 >= 12 ? 6 : 0);
             return scoreA > scoreB;
         });
 
         for (size_t i = static_cast<size_t>(maxStartsPerBar); i < indices.size(); ++i)
-            sub.notes[indices[i]].step = -1;
+            sub.notes[indices[i]].gridTick = -1;
     }
 
     sub.notes.erase(std::remove_if(sub.notes.begin(), sub.notes.end(), [](const NoteEvent& n)
     {
-        return n.step < 0;
+        return n.gridTick < 0;
     }), sub.notes.end());
 }
 
@@ -220,14 +223,14 @@ void clampLowEndPitchChanges(TrackState& sub, int bars, int maxPitchChangesPerTw
 {
     for (int window = 0; window < std::max(1, (bars + 1) / 2); ++window)
     {
-        const int startStep = window * 32;
-        const int endStep = std::min(bars * 16, startStep + 32);
+        const int startTick = tickForStep(window * 32);
+        const int endTick = tickForStep(std::min(bars * 16, window * 32 + 32));
         int changes = 0;
         int prevPitch = -1;
 
         for (auto& note : sub.notes)
         {
-            if (note.step < startStep || note.step >= endStep)
+            if (note.gridTick < startTick || note.gridTick >= endTick)
                 continue;
 
             if (prevPitch > 0 && note.pitch != prevPitch)
@@ -248,15 +251,21 @@ void ensureLowEndPhraseEnding(TrackState& sub, int bars)
         return;
 
     const int finalBarStart = (bars - 1) * 16;
-    const bool hasEnding = std::any_of(sub.notes.begin(), sub.notes.end(), [finalBarStart](const NoteEvent& n)
+    const int finalBarStartTick = tickForStep(finalBarStart);
+    const bool hasEnding = std::any_of(sub.notes.begin(), sub.notes.end(), [finalBarStartTick](const NoteEvent& n)
     {
-        return n.step >= finalBarStart + 12;
+        return n.gridTick >= finalBarStartTick + 12 * HiResTiming::kTicks1_16;
     });
 
     if (!hasEnding)
     {
         const int velocity = std::clamp(sub.notes.back().velocity, 84, 120);
-        sub.notes.push_back({ std::clamp(sub.notes.back().pitch, 24, 60), finalBarStart + 14, 2, velocity, 0, false });
+        NoteEvent note;
+        note.pitch = std::clamp(sub.notes.back().pitch, 24, 60);
+        note.gridTick = tickForStep(finalBarStart + 14);
+        note.lengthTicks = 2 * HiResTiming::kTicks1_16;
+        note.velocity = velocity;
+        sub.notes.push_back(note);
     }
 }
 
@@ -267,7 +276,7 @@ bool hasStrongNoteAtStep(const TrackState* track, int step)
 
     return std::any_of(track->notes.begin(), track->notes.end(), [step](const NoteEvent& n)
     {
-        return !n.isGhost && n.step == step;
+        return !n.isGhost && stepIndexOf(n) == step;
     });
 }
 
@@ -278,19 +287,20 @@ void moveSubOffBackbeat(TrackState& sub,
 {
     for (auto& note : sub.notes)
     {
-        const bool backbeatCollision = hasStrongNoteAtStep(snare, note.step) || hasStrongNoteAtStep(clap, note.step);
+        const int step = stepIndexOf(note);
+        const bool backbeatCollision = hasStrongNoteAtStep(snare, step) || hasStrongNoteAtStep(clap, step);
         if (!backbeatCollision)
             continue;
 
-        const int backStep = std::max(0, note.step - 1);
-        const int fwdStep = std::min(bars * 16 - 1, note.step + 1);
+        const int backStep = std::max(0, step - 1);
+        const int fwdStep = std::min(bars * 16 - 1, step + 1);
         const bool backFree = !hasStrongNoteAtStep(snare, backStep) && !hasStrongNoteAtStep(clap, backStep);
         const bool fwdFree = !hasStrongNoteAtStep(snare, fwdStep) && !hasStrongNoteAtStep(clap, fwdStep);
 
         if (backFree)
-            note.step = backStep;
+            note.gridTick = tickForStep(backStep);
         else if (fwdFree)
-            note.step = fwdStep;
+            note.gridTick = tickForStep(fwdStep);
         else
             note.velocity = std::max(1, note.velocity - 12);
     }
@@ -305,17 +315,17 @@ void pruneHatFxOverLowEndAnchors(TrackState& hatFx,
 
     hatFx.notes.erase(std::remove_if(hatFx.notes.begin(), hatFx.notes.end(), [&](const NoteEvent& n)
     {
-        const int stepInBar = ((n.step % 16) + 16) % 16;
+        const int stepInBar = ((stepIndexOf(n) % 16) + 16) % 16;
         if (!(stepInBar == 0 || stepInBar == 8 || stepInBar == 10 || stepInBar >= 14))
             return false;
 
         const bool kickHere = std::any_of(kick->notes.begin(), kick->notes.end(), [&](const NoteEvent& k)
         {
-            return !k.isGhost && std::abs(k.step - n.step) <= 0;
+            return !k.isGhost && k.gridTick == n.gridTick;
         });
         const bool subHere = std::any_of(sub->notes.begin(), sub->notes.end(), [&](const NoteEvent& s)
         {
-            return !s.isGhost && std::abs(s.step - n.step) <= 0;
+            return !s.isGhost && s.gridTick == n.gridTick;
         });
 
         return kickHere && subHere && n.velocity >= 86;
@@ -378,7 +388,13 @@ int phrase808PitchForTrapAlgebraNote(const TrapAlgebraNote& note, const Generato
     const int bar = note.barIndex % 4;
 
     int interval = 0;
-    if (bar == 1 && (local == 24 || local == 36))
+    if (note.role == TrapAlgebraRole::BassAnswer)
+        interval = ((note.tick64 / 8 + params.seed) % 3 == 0) ? 12 : 7;
+    else if (note.role == TrapAlgebraRole::BassPickup)
+        interval = 7;
+    else if (note.role == TrapAlgebraRole::BassAnchor)
+        interval = 0;
+    else if (bar == 1 && (local == 24 || local == 36))
         interval = 7;
     else if (bar == 2 && local >= 32)
         interval = 7;
@@ -711,11 +727,18 @@ void TrapEngine::generateTrapSupportLanes(PatternProject& project,
         for (const auto& h : hat->notes)
         {
             float gate = std::clamp(style.openHatChance * lane.noteProbability * openBias * laneActivityWeight(project, TrackType::OpenHat), 0.01f, 0.6f);
-            const int s = h.step % 16;
+            const int s = stepIndexOf(h) % 16;
             if (s == 7 || s == 15)
                 gate += 0.14f;
             if (chance(rng) < std::clamp(gate, 0.01f, 0.9f))
-                open->notes.push_back({ 46, h.step, 1, vel(rng), 0, false });
+            {
+                NoteEvent note;
+                note.pitch = 46;
+                note.gridTick = h.gridTick;
+                note.lengthTicks = HiResTiming::kTicks1_16;
+                note.velocity = vel(rng);
+                open->notes.push_back(note);
+            }
         }
     }
 
@@ -728,7 +751,15 @@ void TrapEngine::generateTrapSupportLanes(PatternProject& project,
         for (const auto& s : snare->notes)
         {
             if (chance(rng) < std::clamp(style.clapLayerChance * lane.noteProbability, 0.1f, 0.95f))
-                clap->notes.push_back({ 39, s.step, 1, std::clamp(vel(rng), 1, 127), 2, false });
+            {
+                NoteEvent note;
+                note.pitch = 39;
+                note.gridTick = s.gridTick;
+                note.lengthTicks = HiResTiming::kTicks1_16;
+                note.velocity = std::clamp(vel(rng), 1, 127);
+                note.timingOffsetTicks = 2;
+                clap->notes.push_back(note);
+            }
         }
     }
 
@@ -741,10 +772,19 @@ void TrapEngine::generateTrapSupportLanes(PatternProject& project,
         const float ghostDensity = std::clamp((spec.ghostKickDensityMin + spec.ghostKickDensityMax) * 0.5f, 0.01f, 0.3f);
         for (const auto& k : kick->notes)
         {
-            if ((k.step % 16) == 0 || (k.step % 16) == 8)
+            const int kStep = stepIndexOf(k);
+            if ((kStep % 16) == 0 || (kStep % 16) == 8)
                 continue;
             if (chance(rng) < std::clamp(style.ghostKickChance * lane.noteProbability * (ghostDensity / 0.08f), 0.01f, 0.22f))
-                ghost->notes.push_back({ 35, std::max(0, k.step - 1), 1, std::clamp(vel(rng), 1, 127), 0, true });
+            {
+                NoteEvent note;
+                note.pitch = 35;
+                note.gridTick = tickForStep(std::max(0, kStep - 1));
+                note.lengthTicks = HiResTiming::kTicks1_16;
+                note.velocity = std::clamp(vel(rng), 1, 127);
+                note.isGhost = true;
+                ghost->notes.push_back(note);
+            }
         }
     }
 
@@ -759,7 +799,14 @@ void TrapEngine::generateTrapSupportLanes(PatternProject& project,
         std::uniform_int_distribution<int> vel(style.snareVelocityMin, style.snareVelocityMax);
         const float cymBias = spec.allowCymbalTransitions ? 1.2f : 0.42f;
         if (chance(rng) < std::clamp(0.32f * lane.phraseEndingProbability * cymBias, 0.02f, 0.78f))
-            cym->notes.push_back({ 49, std::max(0, project.params.bars * 16 - 1), 2, vel(rng), 0, false });
+        {
+            NoteEvent note;
+            note.pitch = 49;
+            note.gridTick = tickForStep(std::max(0, project.params.bars * 16 - 1));
+            note.lengthTicks = 2 * HiResTiming::kTicks1_16;
+            note.velocity = vel(rng);
+            cym->notes.push_back(note);
+        }
     }
 
     if (auto* perc = findTrack(project, TrackType::Perc);
@@ -772,7 +819,14 @@ void TrapEngine::generateTrapSupportLanes(PatternProject& project,
         {
             for (int step : { 5, 13 })
                 if (chance(rng) < std::clamp(style.percChance * lane.noteProbability, 0.01f, 0.44f))
-                    perc->notes.push_back({ 50, bar * 16 + step, 1, vel(rng), 0, false });
+                {
+                    NoteEvent note;
+                    note.pitch = 50;
+                    note.gridTick = tickForStep(bar * 16 + step);
+                    note.lengthTicks = HiResTiming::kTicks1_16;
+                    note.velocity = vel(rng);
+                    perc->notes.push_back(note);
+                }
         }
     }
 }
@@ -795,8 +849,8 @@ void TrapEngine::applyTrapHumanization(PatternProject& project,
         const auto& lane = getLaneStyleDefaults(styleDefaults, track.type);
         for (auto& note : track.notes)
         {
-            if ((note.step % 2) == 1 && track.type != TrackType::Kick && track.type != TrackType::Sub808 && track.type != TrackType::Snare)
-                note.microOffset += static_cast<int>(juce::jmap(project.params.swingPercent, 50.0f, 58.0f, 0.0f, 12.0f));
+            if ((stepIndexOf(note) % 2) == 1 && track.type != TrackType::Kick && track.type != TrackType::Sub808 && track.type != TrackType::Snare)
+                note.timingOffsetTicks += static_cast<int>(juce::jmap(project.params.swingPercent, 50.0f, 58.0f, 0.0f, 12.0f));
 
             int minJitter = -std::max(1, static_cast<int>(6.0f * lane.humanizeBias));
             int maxJitter = std::max(2, static_cast<int>(6.0f * lane.humanizeBias) + 1);
@@ -829,10 +883,10 @@ void TrapEngine::applyTrapHumanization(PatternProject& project,
             }
 
             std::uniform_int_distribution<int> timing(minJitter, maxJitter);
-            if (!isAnchorStep(track.type, note.step % 16))
-                note.microOffset += timing(rng);
+            if (!isAnchorStep(track.type, stepIndexOf(note) % 16))
+                note.timingOffsetTicks += timing(rng);
 
-            note.microOffset = std::clamp(static_cast<int>(note.microOffset * lane.timingBias), -120, 120);
+            note.timingOffsetTicks = std::clamp(static_cast<int>(note.timingOffsetTicks * lane.timingBias), -120, 120);
             if (chance(rng) < 0.88f)
                 note.velocity = std::clamp(note.velocity + velJitter(rng), 1, 127);
         }
@@ -853,10 +907,10 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
         dedupeAndSort(track.notes);
         for (auto& note : track.notes)
         {
-            note.step = std::clamp(note.step, 0, bars * 16 - 1);
-            note.length = std::max(1, note.length);
+            note.gridTick = std::clamp(note.gridTick, 0, bars * 16 * HiResTiming::kTicks1_16 - 1);
+            note.lengthTicks = std::max(HiResTiming::kTicks1_16, note.lengthTicks);
             note.velocity = std::clamp(note.velocity, 1, 127);
-            note.microOffset = std::clamp(note.microOffset, -120, 120);
+            note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -120, 120);
         }
 
         int maxHits = bars * 10;
@@ -882,12 +936,12 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
         {
             const bool onSnare = snare != nullptr && std::any_of(snare->notes.begin(), snare->notes.end(), [&k](const NoteEvent& s)
             {
-                return !s.isGhost && s.step == k.step;
+                return !s.isGhost && s.gridTick == k.gridTick;
             });
 
             const bool onClap = clap != nullptr && std::any_of(clap->notes.begin(), clap->notes.end(), [&k](const NoteEvent& c)
             {
-                return !c.isGhost && c.step == k.step;
+                return !c.isGhost && c.gridTick == k.gridTick;
             });
 
             return onSnare || onClap;

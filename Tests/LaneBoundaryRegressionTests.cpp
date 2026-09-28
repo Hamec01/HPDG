@@ -122,7 +122,16 @@ void testMidiExportKeepsFirstKickWithNegativeMicrotiming()
     kick->enabled = true;
     kick->muted = false;
     kick->solo = false;
-    kick->notes.push_back({ 36, 0, 1, 120, -36, false, "negative_first_kick", false, false, false });
+    {
+        NoteEvent note;
+        note.pitch = 36;
+        note.gridTick = 0;
+        note.lengthTicks = TimingGrid::Sixteenth;
+        note.velocity = 120;
+        note.timingOffsetTicks = -36;
+        note.semanticRole = "negative_first_kick";
+        kick->notes.push_back(note);
+    }
 
     project.params.bars = 1;
     const auto sequence = MidiExportEngine::patternToSequence(project, TrackType::Kick, 960, false, false);
@@ -211,7 +220,16 @@ void testPreviewProcessBlockProducesAudio()
     kick->muted = false;
     kick->solo = false;
     kick->laneVolume = 1.0f;
-    kick->notes.push_back({ 36, 0, 1, 120, 0, false, "preview_smoke", false, false, false });
+    {
+        NoteEvent note;
+        note.pitch = 36;
+        note.gridTick = 0;
+        note.lengthTicks = TimingGrid::Sixteenth;
+        note.velocity = 120;
+        note.timingOffsetTicks = 0;
+        note.semanticRole = "preview_smoke";
+        kick->notes.push_back(note);
+    }
 
     project.params.bars = 1;
     project.previewStartStep = 0;
@@ -255,7 +273,16 @@ void testPreviewProcessBlockWithNeutralEqProducesAudio()
     kick->muted = false;
     kick->solo = false;
     kick->laneVolume = 1.0f;
-    kick->notes.push_back({ 36, 0, 1, 120, 0, false, "preview_eq_smoke", false, false, false });
+    {
+        NoteEvent note;
+        note.pitch = 36;
+        note.gridTick = 0;
+        note.lengthTicks = TimingGrid::Sixteenth;
+        note.velocity = 120;
+        note.timingOffsetTicks = 0;
+        note.semanticRole = "preview_eq_smoke";
+        kick->notes.push_back(note);
+    }
 
     project.params.bars = 1;
     project.previewStartStep = 0;
@@ -307,7 +334,16 @@ void testPreviewProcessBlockKeepsFirstKickWithNegativeMicrotiming()
     kick->muted = false;
     kick->solo = false;
     kick->laneVolume = 1.0f;
-    kick->notes.push_back({ 36, 0, 1, 120, -36, false, "negative_preview_kick", false, false, false });
+    {
+        NoteEvent note;
+        note.pitch = 36;
+        note.gridTick = 0;
+        note.lengthTicks = TimingGrid::Sixteenth;
+        note.velocity = 120;
+        note.timingOffsetTicks = -36;
+        note.semanticRole = "negative_preview_kick";
+        kick->notes.push_back(note);
+    }
 
     project.params.bars = 1;
     project.previewStartStep = 0;

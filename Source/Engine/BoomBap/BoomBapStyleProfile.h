@@ -120,6 +120,24 @@ struct BoomBapStyleProfile
         float trapLeak = 1.2f, earlySnare = 1.0f, overHumanize = 0.8f;
         float sub808 = 0.9f, conflict = 1.2f, spam = 1.0f;
     } scorer;
+
+    std::array<float, 5> archetypeWeights { 0.40f, 0.20f, 0.15f, 0.15f, 0.10f };
+    float rareEventProbability = 0.08f;
+    float shortPhraseEventProbability = 0.0f;
+    float maxRareEventProbability = 0.14f;
+    // Ghost-snare and percussion events are intentionally disabled in the current VST lane set.
+    std::array<float, 7> rareEventWeights { 0.0f, 0.30f, 0.28f, 0.0f, 0.18f, 0.0f, 0.24f };
+    float ghostAnchorWindow64 = 12.0f;
+    float clapGhostVelocityMinRatio = 0.28f;
+    float clapGhostVelocityMaxRatio = 0.48f;
+    float ghostKickVelocityMinRatio = 0.40f;
+    float ghostKickVelocityMaxRatio = 0.65f;
+    std::array<float, 7> ghostContextWeights { 1.4f, 0.9f, 0.6f, 0.4f, 1.3f, 1.1f, 0.8f };
+    int maxFillEvents = 5;
+    float qualityFloor = 9.0f;
+    float nearBestTolerance = 0.12f;
+    float selectionTemperature = 0.06f;
+    float noveltyWeight = 0.07f;
 };
 
 const std::array<BoomBapStyleProfile, 6>& getBoomBapProfiles();

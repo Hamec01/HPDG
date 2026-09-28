@@ -9,7 +9,10 @@ namespace bbg
 class PatternProjectSerialization
 {
 public:
-    static constexpr int kPatternSchemaVersion = 10;
+    // v11: NoteEvent/Sub808NoteEvent became tick-native (gridTick/timingOffsetTicks/lengthTicks).
+    // Notes saved by v10 and earlier are migrated on load: gridTick = step * 240,
+    // timingOffsetTicks = micro_offset, lengthTicks = length * 240 (see deserializeNote).
+    static constexpr int kPatternSchemaVersion = 11;
 
     static juce::ValueTree serialize(const PatternProject& project);
     static bool deserialize(const juce::ValueTree& rootState, PatternProject& projectOut);

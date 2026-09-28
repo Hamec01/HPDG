@@ -216,8 +216,6 @@ private:
     bool isVelocityEditKeyDown() const;
     bool isStretchEditKeyDown() const;
     bool isSnapEnabled() const;
-    int defaultNoteLengthSteps() const;
-    int displayedNoteLengthTicks(const NoteEvent& note) const;
     int defaultNoteLengthTicks() const;
     int effectiveSnapTicks() const;
     int adaptiveSnapTicks() const;

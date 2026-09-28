@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../Core/TimingGrid.h"
 #include "../Utils/MathHelpers.h"
 
 namespace bbg
@@ -71,48 +72,49 @@ void GrooveEngine::applySwing(PatternProject& project,
 
         for (auto& note : track.notes)
         {
-            const int stepInBar = note.step % 16;
-            if ((note.step % 2) == 1)
-                note.microOffset += static_cast<int>(maxSwingTicks * trackWeight);
+            const int sixteenthIndex = note.gridTick / TimingGrid::Sixteenth;
+            const int stepInBar = sixteenthIndex % 16;
+            if ((sixteenthIndex % 2) == 1)
+                note.timingOffsetTicks += static_cast<int>(maxSwingTicks * trackWeight);
 
             if (track.type == TrackType::Snare)
             {
                 if (stepInBar == 4)
-                    note.microOffset = std::max(4, note.microOffset + 2);
+                    note.timingOffsetTicks = std::max(4, note.timingOffsetTicks + 2);
                 else if (stepInBar == 12)
-                    note.microOffset = std::max(1, note.microOffset - 1);
+                    note.timingOffsetTicks = std::max(1, note.timingOffsetTicks - 1);
                 else
-                    note.microOffset = std::max(0, note.microOffset);
+                    note.timingOffsetTicks = std::max(0, note.timingOffsetTicks);
             }
 
             if (track.type == TrackType::ClapGhostSnare)
-                note.microOffset = std::max(note.microOffset, 8);
+                note.timingOffsetTicks = std::max(note.timingOffsetTicks, 8);
 
             if (track.type == TrackType::Kick)
             {
                 const bool anchor = stepInBar == 0 || stepInBar == 8;
                 if (anchor)
-                    note.microOffset = std::clamp(note.microOffset, -2, 3);
+                    note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -2, 3);
                 else if (stepInBar == 15)
-                    note.microOffset = std::clamp(note.microOffset + 4, -6, 18);
+                    note.timingOffsetTicks = std::clamp(note.timingOffsetTicks + 4, -6, 18);
                 else
-                    note.microOffset = std::clamp(note.microOffset, -6, 12);
+                    note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -6, 12);
             }
 
             if (track.type == TrackType::HiHat)
             {
-                if ((note.step % 2) == 1 && note.microOffset > 4)
-                    note.microOffset += static_cast<int>(maxSwingTicks * 0.18f);
+                if ((sixteenthIndex % 2) == 1 && note.timingOffsetTicks > 4)
+                    note.timingOffsetTicks += static_cast<int>(maxSwingTicks * 0.18f);
                 if (stepInBar >= 14)
-                    note.microOffset += 2;
-                note.microOffset = std::clamp(note.microOffset, -10, 14);
+                    note.timingOffsetTicks += 2;
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -10, 14);
             }
 
             if (track.type == TrackType::Ride)
-                note.microOffset = std::clamp(note.microOffset, -8, 16);
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -8, 16);
 
             if (note.isGhost)
-                note.microOffset = std::clamp(note.microOffset, -16, 20);
+                note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -16, 20);
         }
     }
 }

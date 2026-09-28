@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 
+#include "../../Core/TimingGrid.h"
 #include "../../Core/TrackRegistry.h"
 
 namespace bbg
@@ -419,7 +420,13 @@ void DrillKickGenerator::generate(TrackState& kickTrack,
                 continue;
 
             usedSteps[static_cast<size_t>(note.stepInBar)] = true;
-            kickTrack.notes.push_back({ pitch, barStart + note.stepInBar, 1, note.velocity, 0, false, note.semanticRole, false, false, false });
+            NoteEvent kickNote;
+            kickNote.pitch = pitch;
+            kickNote.gridTick = (barStart + note.stepInBar) * TimingGrid::Sixteenth;
+            kickNote.lengthTicks = TimingGrid::Sixteenth;
+            kickNote.velocity = note.velocity;
+            kickNote.semanticRole = note.semanticRole;
+            kickTrack.notes.push_back(kickNote);
             ++added;
         }
 
@@ -427,13 +434,13 @@ void DrillKickGenerator::generate(TrackState& kickTrack,
 
     std::sort(kickTrack.notes.begin(), kickTrack.notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        if (lhs.step != rhs.step)
-            return lhs.step < rhs.step;
+        if (lhs.gridTick != rhs.gridTick)
+            return lhs.gridTick < rhs.gridTick;
         return lhs.velocity > rhs.velocity;
     });
     kickTrack.notes.erase(std::unique(kickTrack.notes.begin(), kickTrack.notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        return lhs.step == rhs.step;
+        return lhs.gridTick == rhs.gridTick;
     }), kickTrack.notes.end());
 }
 } // namespace bbg

@@ -22,20 +22,17 @@ inline int patternLengthTicks(int bars, int ppq = kInternalPpq)
     return std::max(1, bars) * ticksPerStep(ppq) * 16;
 }
 
-inline int rawNoteStartTicks(int step, int microOffset, int ppq = kInternalPpq)
-{
-    return stepToTicks(step, ppq) + microOffset;
-}
-
-inline int clampedNoteStartTicks(int step, int microOffset, int bars, int ppq = kInternalPpq)
+// tick-native replacements for the old step+microOffset pair. `tick` here is always an
+// absolute, already-combined position (e.g. NoteEvent::startTick()) — never a bare grid step.
+inline int clampTickToPattern(int tick, int bars, int ppq = kInternalPpq)
 {
     const int maxTick = std::max(0, patternLengthTicks(bars, ppq) - 1);
-    return std::clamp(rawNoteStartTicks(step, microOffset, ppq), 0, maxTick);
+    return std::clamp(tick, 0, maxTick);
 }
 
-inline bool stepWithinPatternBars(int step, int bars)
+inline bool tickWithinPatternBars(int tick, int bars, int ppq = kInternalPpq)
 {
-    return step >= 0 && step < std::max(1, bars) * 16;
+    return tick >= 0 && tick < patternLengthTicks(bars, ppq);
 }
 
 inline double ticksToMs(int ticks, double bpm, int ppq = kInternalPpq)

@@ -5,6 +5,7 @@
 #include <map>
 
 #include "../Core/ProjectLaneAccess.h"
+#include "../Core/TimingGrid.h"
 
 namespace bbg::GridEditActions
 {
@@ -13,10 +14,10 @@ namespace
 struct NoteSignature
 {
     int pitch = 0;
-    int step = 0;
-    int length = 1;
+    int gridTick = 0;
+    int timingOffsetTicks = 0;
+    int lengthTicks = 1;
     int velocity = 100;
-    int microOffset = 0;
     bool isGhost = false;
     juce::String semanticRole;
 
@@ -24,14 +25,14 @@ struct NoteSignature
     {
         if (pitch != other.pitch)
             return pitch < other.pitch;
-        if (step != other.step)
-            return step < other.step;
-        if (length != other.length)
-            return length < other.length;
+        if (gridTick != other.gridTick)
+            return gridTick < other.gridTick;
+        if (timingOffsetTicks != other.timingOffsetTicks)
+            return timingOffsetTicks < other.timingOffsetTicks;
+        if (lengthTicks != other.lengthTicks)
+            return lengthTicks < other.lengthTicks;
         if (velocity != other.velocity)
             return velocity < other.velocity;
-        if (microOffset != other.microOffset)
-            return microOffset < other.microOffset;
         if (isGhost != other.isGhost)
             return isGhost < other.isGhost;
         return semanticRole < other.semanticRole;
@@ -47,10 +48,10 @@ struct PlannedMove
 NoteSignature makeSignature(const NoteEvent& note)
 {
     return { note.pitch,
-             note.step,
-             note.length,
+             note.gridTick,
+             note.timingOffsetTicks,
+             note.lengthTicks,
              note.velocity,
-             note.microOffset,
              note.isGhost,
              note.semanticRole };
 }
@@ -59,9 +60,9 @@ void sortTrackNotes(TrackState& track)
 {
     std::stable_sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
-        return a.microOffset < b.microOffset;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
+        return a.timingOffsetTicks < b.timingOffsetTicks;
     });
 }
 }
@@ -76,31 +77,26 @@ const TrackState* findTrack(const PatternProject& project, const RuntimeLaneId& 
     return ProjectLaneAccess::findTrackState(project, laneId);
 }
 
-int noteStartTick(const NoteEvent& note, int ticksPerStep)
+int noteStartTick(const NoteEvent& note, int /*ticksPerStep*/)
 {
-    return note.step * ticksPerStep + note.microOffset;
+    return note.startTick();
 }
 
-int noteEndTick(const NoteEvent& note, int ticksPerStep)
+int noteEndTick(const NoteEvent& note, int /*ticksPerStep*/)
 {
-    return noteStartTick(note, ticksPerStep) + std::max(1, note.length) * ticksPerStep;
+    return note.endTick();
 }
 
-bool setNoteStartTick(NoteEvent& note, int targetTick, int bars, int ticksPerStep)
+// Sets the note's *structural* position directly to targetTick and resets timingOffsetTicks to
+// zero: an explicit placement/drag/paste/split in the editor defines a new grid position, it is
+// not a groove/humanize nudge on top of an existing one. `ticksPerStep` is kept in the signature
+// for interface stability (other GridEditActions call sites still pass it) but is no longer
+// needed here — the target tick is stored as-is, at whatever resolution it represents.
+bool setNoteStartTick(NoteEvent& note, int targetTick, int bars, int /*ticksPerStep*/)
 {
-    const int maxTicks = juce::jmax(1, bars * 16 * ticksPerStep);
-    int clamped = juce::jlimit(0, maxTicks - 1, targetTick);
-    int step = clamped / ticksPerStep;
-    int micro = clamped - step * ticksPerStep;
-    if (micro > ticksPerStep / 2)
-    {
-        micro -= ticksPerStep;
-        ++step;
-    }
-
-    step = juce::jlimit(0, bars * 16 - 1, step);
-    note.step = step;
-    note.microOffset = juce::jlimit(-240, 240, micro);
+    const int maxTicks = juce::jmax(1, bars * TimingGrid::TicksPerBar4_4);
+    note.gridTick = juce::jlimit(0, maxTicks - 1, targetTick);
+    note.timingOffsetTicks = 0;
     return true;
 }
 
@@ -183,8 +179,8 @@ bool splitNote(ModelContext context, const RuntimeLaneId& laneId, int noteIndex,
 
     NoteEvent second = note;
     setNoteStartTick(second, cutTick, juce::jmax(1, context.project.params.bars), context.ticksPerStep);
-    note.length = juce::jmax(1, static_cast<int>(std::ceil(static_cast<double>(cutTick - startTick) / static_cast<double>(context.ticksPerStep))));
-    second.length = juce::jmax(1, static_cast<int>(std::ceil(static_cast<double>(endTick - cutTick) / static_cast<double>(context.ticksPerStep))));
+    note.lengthTicks = juce::jmax(1, cutTick - startTick);
+    second.lengthTicks = juce::jmax(1, endTick - cutTick);
     track->notes.push_back(second);
     sortTrackNotes(*track);
     return true;
@@ -310,6 +306,8 @@ bool changeVelocityWave(ModelContext context,
     return changed;
 }
 
+// This is the one place a user can directly edit timingOffsetTicks (microtiming/nudge mode) —
+// gridTick is left untouched, exactly the swing/humanize split the timing model is built on.
 bool changeMicroOffset(ModelContext context, const std::vector<DragSnapshot>& snapshots, int deltaTicks)
 {
     bool changed = false;
@@ -322,9 +320,9 @@ bool changeMicroOffset(ModelContext context, const std::vector<DragSnapshot>& sn
 
         auto& note = track->notes[static_cast<size_t>(snapshot.index)];
         const int nextMicro = juce::jlimit(-microLimit, microLimit, snapshot.startMicroOffset + deltaTicks);
-        if (note.microOffset != nextMicro)
+        if (note.timingOffsetTicks != nextMicro)
         {
-            note.microOffset = nextMicro;
+            note.timingOffsetTicks = nextMicro;
             changed = true;
         }
     }
@@ -372,8 +370,8 @@ bool moveSelection(ModelContext context,
         setNoteStartTick(movedNote, targetTick, context.project.params.bars, context.ticksPerStep);
 
         if (targetLaneId != snapshot.laneId
-            || movedNote.step != snapshot.sourceNote.step
-            || movedNote.microOffset != snapshot.sourceNote.microOffset)
+            || movedNote.gridTick != snapshot.sourceNote.gridTick
+            || movedNote.timingOffsetTicks != snapshot.sourceNote.timingOffsetTicks)
         {
             changed = true;
         }
@@ -469,25 +467,22 @@ bool resizeSelection(ModelContext context,
             const int clampedStartTick = juce::jlimit(0,
                                                       snapshot.startEndTick - context.ticksPerStep,
                                                       snapshot.startTick + deltaTicks);
-            const int nextLength = juce::jlimit(1,
-                                                context.project.params.bars * 16,
-                                                static_cast<int>(std::ceil(static_cast<double>(snapshot.startEndTick - clampedStartTick)
-                                                                           / static_cast<double>(context.ticksPerStep))));
+            const int nextLengthTicks = juce::jmax(context.ticksPerStep, snapshot.startEndTick - clampedStartTick);
 
             NoteEvent resizedNote = snapshot.sourceNote;
             setNoteStartTick(resizedNote,
                              clampedStartTick,
                              context.project.params.bars,
                              context.ticksPerStep);
-            resizedNote.length = nextLength;
+            resizedNote.lengthTicks = nextLengthTicks;
 
-            if (note.step != resizedNote.step
-                || note.microOffset != resizedNote.microOffset
-                || note.length != resizedNote.length)
+            if (note.gridTick != resizedNote.gridTick
+                || note.timingOffsetTicks != resizedNote.timingOffsetTicks
+                || note.lengthTicks != resizedNote.lengthTicks)
             {
-                note.step = resizedNote.step;
-                note.microOffset = resizedNote.microOffset;
-                note.length = resizedNote.length;
+                note.gridTick = resizedNote.gridTick;
+                note.timingOffsetTicks = resizedNote.timingOffsetTicks;
+                note.lengthTicks = resizedNote.lengthTicks;
                 changed = true;
             }
         }
@@ -496,13 +491,10 @@ bool resizeSelection(ModelContext context,
             const int clampedEndTick = juce::jlimit(snapshot.startTick + context.ticksPerStep,
                                                     maxTick,
                                                     snapshot.startEndTick + deltaTicks);
-            const int nextLength = juce::jlimit(1,
-                                                context.project.params.bars * 16,
-                                                static_cast<int>(std::ceil(static_cast<double>(clampedEndTick - snapshot.startTick)
-                                                                           / static_cast<double>(context.ticksPerStep))));
-            if (note.length != nextLength)
+            const int nextLengthTicks = juce::jmax(context.ticksPerStep, clampedEndTick - snapshot.startTick);
+            if (note.lengthTicks != nextLengthTicks)
             {
-                note.length = nextLength;
+                note.lengthTicks = nextLengthTicks;
                 changed = true;
             }
         }
@@ -559,10 +551,10 @@ bool pasteNotes(ModelContext context,
         {
             const auto& current = track->notes[static_cast<size_t>(index)];
             if (noteStartTick(current, context.ticksPerStep) == noteStartTick(note, context.ticksPerStep)
-                && current.length == note.length
+                && current.lengthTicks == note.lengthTicks
                 && current.velocity == note.velocity
                 && current.pitch == note.pitch
-                && current.microOffset == note.microOffset)
+                && current.timingOffsetTicks == note.timingOffsetTicks)
             {
                 inserted.push_back({ targetLaneId, index });
                 break;
@@ -605,18 +597,18 @@ bool rollSelection(ModelContext context,
             continue;
 
         const auto source = track->notes[static_cast<size_t>(ref.index)];
-        if (source.length < divisions || (source.length % divisions) != 0)
+        if (source.lengthTicks < divisions || (source.lengthTicks % divisions) != 0)
             continue;
 
         const int startTick = noteStartTick(source, context.ticksPerStep);
-        const int segmentSteps = source.length / divisions;
+        const int segmentTicks = source.lengthTicks / divisions;
         track->notes.erase(track->notes.begin() + ref.index);
 
         for (int division = 0; division < divisions; ++division)
         {
             NoteEvent rolled = source;
-            rolled.length = segmentSteps;
-            setNoteStartTick(rolled, startTick + division * segmentSteps * context.ticksPerStep, context.project.params.bars, context.ticksPerStep);
+            rolled.lengthTicks = segmentTicks;
+            setNoteStartTick(rolled, startTick + division * segmentTicks, context.project.params.bars, context.ticksPerStep);
             track->notes.push_back(rolled);
         }
 
@@ -625,7 +617,7 @@ bool rollSelection(ModelContext context,
         {
             const auto& current = track->notes[static_cast<size_t>(index)];
             if (noteStartTick(current, context.ticksPerStep) >= startTick
-                && noteStartTick(current, context.ticksPerStep) < startTick + source.length * context.ticksPerStep)
+                && noteStartTick(current, context.ticksPerStep) < startTick + source.lengthTicks)
             {
                 inserted.push_back({ ref.laneId, index });
             }

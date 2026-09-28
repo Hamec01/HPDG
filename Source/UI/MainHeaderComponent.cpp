@@ -1,5 +1,8 @@
 #include "MainHeaderComponent.h"
 
+#include <ImageAssets.h>
+
+#include "../Core/GeneratorParams.h"
 #include "SketchDrawing.h"
 #include "SketchTheme.h"
 
@@ -129,9 +132,11 @@ MainHeaderComponent::MainHeaderComponent()
     genreLabel.setText("Genre", juce::dontSendNotification);
     addAndMakeVisible(genreLabel);
     genreCombo.addItem("Boom Bap", 1);
-    genreCombo.addItem("Rap", 2);
+    if (kShowRapAndDrillGenres)
+        genreCombo.addItem("Rap", 2);
     genreCombo.addItem("Trap", 3);
-    genreCombo.addItem("Drill", 4);
+    if (kShowRapAndDrillGenres)
+        genreCombo.addItem("Drill", 4);
     addAndMakeVisible(genreCombo);
 
     substyleLabel.setText("Substyle", juce::dontSendNotification);
@@ -379,15 +384,15 @@ void MainHeaderComponent::paint(juce::Graphics& g)
 
     g.setColour(sketch::Theme::ochreWash().withAlpha(0.50f));
     g.fillRect(10.0f, 8.0f, 112.0f, 28.0f);
-    juce::Path crown;
-    crown.startNewSubPath(126.0f, 28.0f);
-    crown.lineTo(132.0f, 18.0f);
-    crown.lineTo(137.0f, 26.0f);
-    crown.lineTo(143.0f, 15.0f);
-    crown.lineTo(148.0f, 29.0f);
-    crown.closeSubPath();
-    g.setColour(sketch::Theme::graphite());
-    g.strokePath(crown, juce::PathStrokeType(1.4f));
+
+    static const auto logoImage = juce::ImageCache::getFromMemory(ImageBinaryData::Logo_png, ImageBinaryData::Logo_pngSize);
+    if (logoImage.isValid())
+    {
+        const juce::Rectangle<float> logoBounds(126.0f, 12.0f, 26.0f, 22.0f);
+        const auto imageBounds = logoImage.getBounds().toFloat();
+        const auto placement = juce::RectanglePlacement(juce::RectanglePlacement::centred).getTransformToFit(imageBounds, logoBounds);
+        g.drawImageTransformed(logoImage, placement);
+    }
 }
 
 void MainHeaderComponent::setGridModeIndicatorText(const juce::String& text)
@@ -422,11 +427,19 @@ void MainHeaderComponent::resized()
     auto masterArea = fixedRow.removeFromRight(320);
     fixedRow.removeFromRight(6);
 
-    auto titleArea = fixedRow.removeFromLeft(380).reduced(2);
+    // Primary VST actions are deliberately placed directly after the identity
+    // block. They remain reachable at the minimum editor width; secondary
+    // controls may progressively clip on the right instead.
+    auto titleArea = fixedRow.removeFromLeft(160).reduced(2);
     titleLabel.setBounds(titleArea.removeFromTop(28));
     subtitleLabel.setBounds(titleArea.removeFromTop(10));
     diagnosticsLabel.setBounds(titleArea.removeFromTop(14));
 
+    fixedRow.removeFromLeft(4);
+    generateButton.setBounds(fixedRow.removeFromLeft(124).reduced(2));
+    playButton.setBounds(fixedRow.removeFromLeft(88).reduced(2));
+
+    fixedRow.removeFromLeft(4);
     auto bpmArea = fixedRow.removeFromLeft(196);
     bpmLabel.setBounds(bpmArea.removeFromTop(14));
     auto bpmControlRow = bpmArea.removeFromTop(24);
@@ -434,11 +447,8 @@ void MainHeaderComponent::resized()
     bpmSlider.setBounds(bpmControlRow.removeFromLeft(102));
     syncTempoToggle.setBounds(bpmControlRow.reduced(2));
 
-    fixedRow.removeFromLeft(4);
-    generateButton.setBounds(fixedRow.removeFromLeft(124).reduced(2));
     mutateButton.setBounds(fixedRow.removeFromLeft(84).reduced(2));
     clearAllButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));
-    playButton.setBounds(fixedRow.removeFromLeft(88).reduced(2));
     exportFullButton.setBounds(fixedRow.removeFromLeft(92).reduced(2));
     exportLoopWavButton.setBounds(fixedRow.removeFromLeft(118).reduced(2));
     dragFullButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));

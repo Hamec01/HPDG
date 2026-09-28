@@ -4,6 +4,7 @@
 
 #include "BoomBapPatternLibrary.h"
 #include "../../Core/PatternProject.h"
+#include "../../Core/TimingGrid.h"
 #include "../../Core/TrackRegistry.h"
 
 namespace bbg
@@ -11,6 +12,9 @@ namespace bbg
 namespace
 {
 constexpr float kStyleLabReferenceBlend = 0.40f;
+
+int stepIndexOf(const NoteEvent& note) { return note.gridTick / TimingGrid::Sixteenth; }
+int tickForStep(int step) { return step * TimingGrid::Sixteenth; }
 
 struct ReferenceBoomBapSupportFeel
 {
@@ -93,7 +97,7 @@ bool hasNonGhostSnareAtStep(const TrackState& snareTrack, int step)
 {
     return std::any_of(snareTrack.notes.begin(), snareTrack.notes.end(), [step](const NoteEvent& note)
     {
-        return !note.isGhost && note.step == step;
+        return !note.isGhost && note.gridTick == tickForStep(step);
     });
 }
 }
@@ -122,7 +126,7 @@ void BoomBapGhostGenerator::generateGhostKick(TrackState& ghostKickTrack,
 
     for (const auto& hit : kickTrack.notes)
     {
-        const int bar = hit.step / 16;
+        const int bar = stepIndexOf(hit) / 16;
         const auto referenceFeel = buildReferenceBoomBapSupportFeel(styleInfluence, bar);
         const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : PhraseRole::Base;
         const float roleBoost = 1.0f + BoomBapPhrasePlanner::roleVariationStrength(role) * 0.4f;
@@ -148,11 +152,18 @@ void BoomBapGhostGenerator::generateGhostKick(TrackState& ghostKickTrack,
         if (chance(rng) > gate)
             continue;
 
-        int pickupStep = std::max(0, hit.step - 1);
+        int pickupStep = std::max(0, stepIndexOf(hit) - 1);
         if (preset.barEndBias && chance(rng) < 0.5f)
             pickupStep = bar * 16 + 14;
 
-        ghostKickTrack.notes.push_back({ pitch, pickupStep, 1, vel(rng), offset(rng), true });
+        NoteEvent ghost;
+        ghost.pitch = pitch;
+        ghost.gridTick = tickForStep(pickupStep);
+        ghost.lengthTicks = TimingGrid::Sixteenth;
+        ghost.velocity = vel(rng);
+        ghost.timingOffsetTicks = offset(rng);
+        ghost.isGhost = true;
+        ghostKickTrack.notes.push_back(ghost);
         if (bar < static_cast<int>(perBarCount.size()))
             ++perBarCount[static_cast<size_t>(bar)];
     }
@@ -179,7 +190,7 @@ void BoomBapGhostGenerator::generateClapLayer(TrackState& clapTrack,
     {
         int bars = std::max(1, static_cast<int>(phraseRoles.size()));
         for (const auto& snare : snareTrack.notes)
-            bars = std::max(bars, snare.step / 16 + 1);
+            bars = std::max(bars, stepIndexOf(snare) / 16 + 1);
 
         const int maxEvents = std::max(1, (bars + 3) / 4);
         std::uniform_int_distribution<int> ghostVel(style.ghostVelocityMin, style.ghostVelocityMax);
@@ -212,7 +223,14 @@ void BoomBapGhostGenerator::generateClapLayer(TrackState& clapTrack,
             if (hasNonGhostSnareAtStep(snareTrack, step))
                 continue;
 
-            clapTrack.notes.push_back({ pitch, step, 1, ghostVel(rng), std::max(4, late(rng) / 2), true });
+            NoteEvent layer;
+            layer.pitch = pitch;
+            layer.gridTick = tickForStep(step);
+            layer.lengthTicks = TimingGrid::Sixteenth;
+            layer.velocity = ghostVel(rng);
+            layer.timingOffsetTicks = std::max(4, late(rng) / 2);
+            layer.isGhost = true;
+            clapTrack.notes.push_back(layer);
             ++generated;
         }
 
@@ -221,7 +239,7 @@ void BoomBapGhostGenerator::generateClapLayer(TrackState& clapTrack,
 
     for (const auto& snare : snareTrack.notes)
     {
-        const int bar = snare.step / 16;
+        const int bar = stepIndexOf(snare) / 16;
         const auto referenceFeel = buildReferenceBoomBapSupportFeel(styleInfluence, bar);
         const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : PhraseRole::Base;
         float gate = std::clamp(style.clapLayerChance * feel.clapLayerProbability
@@ -238,7 +256,14 @@ void BoomBapGhostGenerator::generateClapLayer(TrackState& clapTrack,
         if (chance(rng) > gate)
             continue;
 
-        clapTrack.notes.push_back({ pitch, snare.step, 1, vel(rng), snare.microOffset + late(rng), false });
+        NoteEvent layer;
+        layer.pitch = pitch;
+        layer.gridTick = snare.gridTick;
+        layer.lengthTicks = TimingGrid::Sixteenth;
+        layer.velocity = vel(rng);
+        layer.timingOffsetTicks = snare.timingOffsetTicks + late(rng);
+        layer.isGhost = false;
+        clapTrack.notes.push_back(layer);
     }
 }
 } // namespace bbg

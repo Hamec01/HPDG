@@ -5,6 +5,7 @@
 
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/ProjectStateController.h"
+#include "../Core/TimingGrid.h"
 
 namespace bbg
 {
@@ -82,13 +83,13 @@ float notePriority(TrackType lane, const NoteEvent& note, bool sampleSource)
 
     if (sampleSource)
         score += 0.9f;
-    if (isAnchorStep(lane, note.step))
+    if (isAnchorStep(lane, note.gridTick / TimingGrid::Sixteenth))
         score += 2.2f;
     if (note.semanticRole.containsIgnoreCase("backbone") || note.semanticRole.containsIgnoreCase("anchor"))
         score += 1.7f;
     if (note.semanticRole.containsIgnoreCase("sample_copy"))
         score += 1.2f;
-    if (isDecorativeLane(lane) && stepInBar(note.step) >= 12)
+    if (isDecorativeLane(lane) && stepInBar(note.gridTick / TimingGrid::Sixteenth) >= 12)
         score += 0.25f;
     if (note.isGhost)
         score -= 0.2f;
@@ -98,15 +99,15 @@ float notePriority(TrackType lane, const NoteEvent& note, bool sampleSource)
 
 bool slotsCollide(TrackType lane, const NoteEvent& left, const NoteEvent& right)
 {
-    if (left.step == right.step)
+    if (left.gridTick == right.gridTick)
         return true;
 
     if (lane != TrackType::Sub808)
         return false;
 
-    const int leftEnd = left.step + juce::jmax(1, left.length);
-    const int rightEnd = right.step + juce::jmax(1, right.length);
-    return left.step < rightEnd && right.step < leftEnd;
+    const int leftEnd = left.gridTick + juce::jmax(1, left.lengthTicks);
+    const int rightEnd = right.gridTick + juce::jmax(1, right.lengthTicks);
+    return left.gridTick < rightEnd && right.gridTick < leftEnd;
 }
 
 bool noteSequencesEqual(const std::vector<NoteEvent>& left, const std::vector<NoteEvent>& right)
@@ -119,10 +120,10 @@ bool noteSequencesEqual(const std::vector<NoteEvent>& left, const std::vector<No
         const auto& lhs = left[index];
         const auto& rhs = right[index];
         if (lhs.pitch != rhs.pitch
-            || lhs.step != rhs.step
-            || lhs.length != rhs.length
+            || lhs.gridTick != rhs.gridTick
+            || lhs.lengthTicks != rhs.lengthTicks
             || lhs.velocity != rhs.velocity
-            || lhs.microOffset != rhs.microOffset
+            || lhs.timingOffsetTicks != rhs.timingOffsetTicks
             || lhs.isGhost != rhs.isGhost
             || lhs.semanticRole != rhs.semanticRole
             || lhs.isSlide != rhs.isSlide
@@ -140,8 +141,8 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        if (left.step != right.step)
-            return left.step < right.step;
+        if (left.gridTick != right.gridTick)
+            return left.gridTick < right.gridTick;
         if (left.pitch != right.pitch)
             return left.pitch < right.pitch;
         return left.velocity > right.velocity;
@@ -149,7 +150,7 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        return left.step == right.step && left.pitch == right.pitch;
+        return left.gridTick == right.gridTick && left.pitch == right.pitch;
     }), notes.end());
 }
 
@@ -162,8 +163,8 @@ std::vector<NoteEvent> prioritizedNotes(const std::vector<NoteEvent>& source, Tr
         const float rightScore = notePriority(lane, right, sampleSource);
         if (std::abs(leftScore - rightScore) > 0.001f)
             return leftScore > rightScore;
-        if (left.step != right.step)
-            return left.step < right.step;
+        if (left.gridTick != right.gridTick)
+            return left.gridTick < right.gridTick;
         return left.pitch < right.pitch;
     });
     return result;

@@ -210,7 +210,8 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
         return;
 
     const auto frame = bounds.toFloat();
-    g.setColour(sketch::Theme::paperLight().withAlpha(0.78f));
+    sketch::dropShadow(g, frame, 4.0f, 3.0f, 0.9f);
+    g.setGradientFill(sketch::raisedPaperGradient(frame, sketch::Theme::paperLight().brighter(0.05f), sketch::Theme::paper()));
     g.fillRoundedRectangle(frame, 3.0f);
     sketch::drawFrame(g, frame, sketch::Theme::graphiteSoft(), 1.2f, getWidth() + getHeight(), 3.0f);
 
@@ -221,8 +222,11 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
     const float stepWidth = juce::jmax(static_cast<float>(kMinStepPixelWidth),
                                        static_cast<float>(gridArea.getWidth()) / static_cast<float>(totalSteps));
 
-    g.setColour(sketch::Theme::ochreWash());
+    g.setGradientFill(sketch::raisedPaperGradient(rulerArea.toFloat(), sketch::Theme::ochreWash().withMultipliedAlpha(1.15f),
+                                                  sketch::Theme::ochreWash()));
     g.fillRect(rulerArea);
+    g.setColour(sketch::Theme::graphiteSoft().withAlpha(0.4f));
+    g.drawLine(0.0f, static_cast<float>(rulerArea.getBottom()) - 0.5f, static_cast<float>(getWidth()), static_cast<float>(rulerArea.getBottom()) - 0.5f, 0.6f);
     g.setColour(sketch::Theme::paperLight());
     g.fillRect(rulerArea.withTrimmedLeft(kLaneLabelWidth));
     g.setColour(sketch::Theme::graphite());
@@ -312,14 +316,14 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
 
         for (const auto& note : track.notes)
         {
-            const float startStep = static_cast<float>(note.step)
-                + static_cast<float>(note.microOffset) / static_cast<float>(ticksPerStep());
+            const float startStep = static_cast<float>(note.startTick()) / static_cast<float>(ticksPerStep());
             const float x = static_cast<float>(gridArea.getX()) + startStep * stepWidth;
             const float maxWidth = static_cast<float>(gridArea.getRight()) - x - 2.0f;
             if (maxWidth <= 0.0f)
                 continue;
 
-            const float width = juce::jmin(maxWidth, juce::jmax(4.0f, static_cast<float>(juce::jmax(1, note.length)) * stepWidth - 2.0f));
+            const float lengthSteps = static_cast<float>(juce::jmax(1, note.lengthTicks)) / static_cast<float>(ticksPerStep());
+            const float width = juce::jmin(maxWidth, juce::jmax(4.0f, lengthSteps * stepWidth - 2.0f));
             const auto rect = juce::Rectangle<float>(x + 1.0f,
                                                      y + 4.0f,
                                                      width,
@@ -327,7 +331,7 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
             const auto colour = noteColour(note, selectedLane);
 
             drawHatchedNote(g, rect, colour, note.isGhost,
-                            note.step * 97 + laneIndex * 19 + note.velocity);
+                            note.gridTick + laneIndex * 19 + note.velocity);
         }
     }
 

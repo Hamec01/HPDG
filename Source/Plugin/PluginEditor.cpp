@@ -1947,8 +1947,8 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
         {
             Sub808PianoRollComponent::DrumGhostNote ghostNote;
             ghostNote.trackType = track.type;
-            ghostNote.startTick = note.step * ticksPerStep() + note.microOffset;
-            ghostNote.lengthTicks = juce::jmax(1, note.length) * ticksPerStep();
+            ghostNote.startTick = note.startTick();
+            ghostNote.lengthTicks = juce::jmax(1, note.lengthTicks);
             ghostNote.velocity = note.velocity;
             ghostNote.isGhostTrack = isGhostTrack;
             drumGhostNotes.push_back(ghostNote);

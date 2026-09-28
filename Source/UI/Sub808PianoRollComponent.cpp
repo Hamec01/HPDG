@@ -270,14 +270,18 @@ Sub808PianoRollComponent::Sub808PianoRollComponent()
     updateMouseCursor();
 }
 
+// PitchedNoteEvent (this editor's internal representation) is still step + micro-offset based;
+// Sub808NoteEvent is tick-native. Sub808 notes are always generated on exact 1/16 boundaries
+// (see Drill808Generator/Trap808Generator/BoomBapEngine), so this decomposition is lossless in
+// practice. A hi-res Sub808 piano-roll editor is a separate follow-up, not part of this stage.
 Sub808PianoRollComponent::PitchedNoteEvent Sub808PianoRollComponent::toPitchedNoteEvent(const Sub808NoteEvent& note)
 {
     PitchedNoteEvent pitched;
     pitched.pitch = note.pitch;
-    pitched.step = note.step;
-    pitched.length = note.length;
+    pitched.step = note.gridTick / ticksPerStep();
+    pitched.length = juce::jmax(1, note.lengthTicks / ticksPerStep());
     pitched.velocity = note.velocity;
-    pitched.microOffset = note.microOffset;
+    pitched.microOffset = note.timingOffsetTicks;
     pitched.isGhost = false;
     pitched.semanticRole = note.semanticRole;
     pitched.isSlide = note.isSlide;
@@ -290,10 +294,10 @@ Sub808NoteEvent Sub808PianoRollComponent::toSub808NoteEvent(const PitchedNoteEve
 {
     Sub808NoteEvent event;
     event.pitch = note.pitch;
-    event.step = note.step;
-    event.length = note.length;
+    event.gridTick = note.step * ticksPerStep();
+    event.lengthTicks = juce::jmax(1, note.length) * ticksPerStep();
     event.velocity = note.velocity;
-    event.microOffset = note.microOffset;
+    event.timingOffsetTicks = note.microOffset;
     event.semanticRole = note.semanticRole;
     event.isSlide = note.isSlide;
     event.isLegato = note.isLegato;

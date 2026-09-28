@@ -2,12 +2,18 @@
 
 #include <algorithm>
 
+#include "../Core/TimingGrid.h"
 #include "StyleDefaults.h"
 
 namespace bbg
 {
 namespace
 {
+int stepIndexOf(const NoteEvent& note)
+{
+    return note.gridTick / TimingGrid::Sixteenth;
+}
+
 int stepInBar(int step)
 {
     const int normalized = step % 16;
@@ -24,10 +30,10 @@ bool noteSequencesEqual(const std::vector<NoteEvent>& left, const std::vector<No
         const auto& lhs = left[index];
         const auto& rhs = right[index];
         if (lhs.pitch != rhs.pitch
-            || lhs.step != rhs.step
-            || lhs.length != rhs.length
+            || lhs.gridTick != rhs.gridTick
+            || lhs.lengthTicks != rhs.lengthTicks
             || lhs.velocity != rhs.velocity
-            || lhs.microOffset != rhs.microOffset
+            || lhs.timingOffsetTicks != rhs.timingOffsetTicks
             || lhs.isGhost != rhs.isGhost
             || lhs.semanticRole != rhs.semanticRole
             || lhs.isSlide != rhs.isSlide
@@ -49,7 +55,7 @@ float classicPriority(TrackType lane, const NoteEvent& note)
         score += 1.8f;
     if (note.semanticRole.containsIgnoreCase("sample_copy"))
         score += 1.1f;
-    if (stepInBar(note.step) >= 12)
+    if (stepInBar(stepIndexOf(note)) >= 12)
         score += 0.2f;
     if (lane == TrackType::ClapGhostSnare || lane == TrackType::GhostKick)
         score += note.isGhost ? 0.15f : 0.0f;
@@ -61,8 +67,8 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        if (left.step != right.step)
-            return left.step < right.step;
+        if (left.gridTick != right.gridTick)
+            return left.gridTick < right.gridTick;
         if (left.pitch != right.pitch)
             return left.pitch < right.pitch;
         return left.velocity > right.velocity;
@@ -70,7 +76,7 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        return left.step == right.step && left.pitch == right.pitch;
+        return left.gridTick == right.gridTick && left.pitch == right.pitch;
     }), notes.end());
 }
 
@@ -85,7 +91,7 @@ int prunePerBar(TrackState& track, int bars, int maxPerBar)
         std::vector<NoteEvent> barNotes;
         for (const auto& note : track.notes)
         {
-            if ((note.step / 16) == bar)
+            if ((stepIndexOf(note) / 16) == bar)
                 barNotes.push_back(note);
         }
 
@@ -95,8 +101,8 @@ int prunePerBar(TrackState& track, int bars, int maxPerBar)
             const float rightScore = classicPriority(track.type, right);
             if (std::abs(leftScore - rightScore) > 0.001f)
                 return leftScore > rightScore;
-            if (left.step != right.step)
-                return left.step < right.step;
+            if (left.gridTick != right.gridTick)
+                return left.gridTick < right.gridTick;
             return left.pitch < right.pitch;
         });
 
@@ -140,11 +146,11 @@ SubstyleRuleReport SubstyleRuleEnforcer::enforce(PatternProject& project)
         return track.type == TrackType::Snare;
     });
 
-    std::unordered_set<int> protectedSnareSteps;
+    std::unordered_set<int> protectedSnareTicks;
     if (snareTrackIt != project.tracks.end())
     {
         for (const auto& note : snareTrackIt->notes)
-            protectedSnareSteps.insert(note.step);
+            protectedSnareTicks.insert(note.gridTick);
     }
 
     for (auto& track : project.tracks)
@@ -158,7 +164,7 @@ SubstyleRuleReport SubstyleRuleEnforcer::enforce(PatternProject& project)
         {
             track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
             {
-                return protectedSnareSteps.count(note.step) > 0;
+                return protectedSnareTicks.count(note.gridTick) > 0;
             }), track.notes.end());
             report.prunedNotes += static_cast<int>(beforeNotes.size()) - static_cast<int>(track.notes.size());
             report.prunedNotes += prunePerBar(track, bars, 1);

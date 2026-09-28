@@ -6,6 +6,7 @@
 #include <unordered_set>
 
 #include "../Core/PatternProject.h"
+#include "../Core/TimingGrid.h"
 #include "GenrePerformanceProfile.h"
 
 namespace bbg::PatternPerformanceTransformEngine
@@ -38,12 +39,16 @@ inline uint32_t noteHash(TrackType trackType, const NoteLike& note, uint32_t sal
         value ^= component + 0x9e3779b9u + (value << 6) + (value >> 2);
     };
 
+    // Hash on step-normalized quantities (not raw ticks) so the deterministic noise sequence
+    // stays identical to the pre-TIMING-GRID-V2 step+microOffset era for every on-grid note —
+    // otherwise every note's tick-native gridTick/lengthTicks (240x the old step/length scale)
+    // would reseed this hash and silently reshuffle humanize/timing jitter across all genres.
     mix(static_cast<uint32_t>(trackType));
-    mix(static_cast<uint32_t>(note.step));
+    mix(static_cast<uint32_t>(note.gridTick / TimingGrid::Sixteenth));
     mix(static_cast<uint32_t>(note.pitch));
-    mix(static_cast<uint32_t>(note.length));
+    mix(static_cast<uint32_t>(std::max(1, note.lengthTicks / TimingGrid::Sixteenth)));
     mix(static_cast<uint32_t>(note.velocity));
-    mix(static_cast<uint32_t>(note.microOffset + 2048));
+    mix(static_cast<uint32_t>(note.timingOffsetTicks + 2048));
     mix(salt);
 
     return value;
@@ -72,7 +77,7 @@ inline float semanticRigidity(const juce::String& semanticRole)
 template <typename NoteLike>
 inline int stepInBar(const NoteLike& note)
 {
-    const int normalized = note.step % 16;
+    const int normalized = (note.gridTick / TimingGrid::Sixteenth) % 16;
     return normalized < 0 ? normalized + 16 : normalized;
 }
 
@@ -265,7 +270,7 @@ inline float biasedTimingNoise(float noise, const GenrePerformanceProfile& profi
 template <typename NoteLike>
 inline float accentWeight(TrackType trackType, const NoteLike& note)
 {
-    const int stepInBar = note.step % 16;
+    const int stepInBar = (note.gridTick / TimingGrid::Sixteenth) % 16;
     float accent = 0.50f;
 
     switch (trackType)
@@ -350,10 +355,10 @@ template <typename NoteLike>
 inline NoteAuthoringKey makeAuthoringKey(const NoteLike& note)
 {
     NoteAuthoringKey key;
-    key.step = note.step;
-    key.microOffset = note.microOffset;
+    key.gridTick = note.gridTick;
+    key.timingOffsetTicks = note.timingOffsetTicks;
     key.pitch = note.pitch;
-    key.length = note.length;
+    key.lengthTicks = note.lengthTicks;
     key.isGhost = isGhostNote(note);
     return key;
 }
@@ -373,10 +378,10 @@ inline DensityAuthoringInfo densityAuthoringInfo(const PatternAuthoringState& au
     for (const auto& state : laneIt->second)
     {
         const auto& noteKey = state.noteKey;
-        if (noteKey.step != key.step
-            || noteKey.microOffset != key.microOffset
+        if (noteKey.gridTick != key.gridTick
+            || noteKey.timingOffsetTicks != key.timingOffsetTicks
             || noteKey.pitch != key.pitch
-            || noteKey.length != key.length
+            || noteKey.lengthTicks != key.lengthTicks
             || noteKey.isGhost != key.isGhost)
         {
             continue;
@@ -529,7 +534,7 @@ inline float densityPriority(const PatternAuthoringState& authoring,
             break;
     }
 
-    if (track.type == TrackType::Sub808 && note.length >= 4)
+    if (track.type == TrackType::Sub808 && note.lengthTicks >= 4 * TimingGrid::Sixteenth)
         priority = std::max(priority, 0.64f);
 
     return std::clamp(priority, 0.0f, 1.0f);
@@ -576,9 +581,9 @@ inline bool shouldKeepForDensity(const PatternAuthoringState& authoring,
     return score >= threshold;
 }
 
-inline int noteEndStep(const Sub808NoteEvent& note)
+inline int noteEndTick(const Sub808NoteEvent& note)
 {
-    return note.step + std::max(note.length, 1);
+    return note.gridTick + std::max(note.lengthTicks, 1);
 }
 
 inline bool hasDirectSub808Link(const Sub808NoteEvent& current, const Sub808NoteEvent& next)
@@ -633,12 +638,12 @@ inline void applyTransformSequence(std::vector<NoteLike>& visibleNotes,
                                   * laneProfile.timingScale
                                   * timingAllowance);
 
-        int microOffset = static_cast<int>(std::lround(static_cast<float>(baseNote.microOffset) * baseTimingScale));
+        int microOffset = static_cast<int>(std::lround(static_cast<float>(baseNote.timingOffsetTicks) * baseTimingScale));
 
         const float timingNoise = biasedTimingNoise(stableUnit(trackType, baseNote, 17u), profile, support);
         const float humanizeNoise = biasedTimingNoise(stableUnit(trackType, baseNote, 43u), profile, support * 0.75f);
 
-        if (std::abs(baseNote.microOffset) < 2)
+        if (std::abs(baseNote.timingOffsetTicks) < 2)
         {
             microOffset += static_cast<int>(std::lround(timingDelta
                                                         * profile.zeroTimingTicks
@@ -665,7 +670,7 @@ inline void applyTransformSequence(std::vector<NoteLike>& visibleNotes,
                                                     * timingAllowance
                                                     * supportHumanizeScale
                                                     * humanizeNoise));
-        note.microOffset = clampMicroOffset(trackType, microOffset);
+        note.timingOffsetTicks = clampMicroOffset(trackType, microOffset);
 
         const float accent = accentWeight(trackType, baseNote);
         const float velocityAllowance = std::clamp(1.0f - anchor * 0.48f, 0.30f, 1.0f);
@@ -747,7 +752,7 @@ inline void applySub808TransformSequence(std::vector<Sub808NoteEvent>& visibleNo
                     return lhs.protect && !rhs.protect;
                 if (!approximatelyEqual(lhs.priority, rhs.priority, 0.0001f))
                     return lhs.priority > rhs.priority;
-                return baseNotes[lhs.index].step < baseNotes[rhs.index].step;
+                return baseNotes[lhs.index].gridTick < baseNotes[rhs.index].gridTick;
             });
 
             std::vector<bool> keep(baseNotes.size(), false);
@@ -765,18 +770,18 @@ inline void applySub808TransformSequence(std::vector<Sub808NoteEvent>& visibleNo
             densityNotes.clear();
             densityNotes.reserve(keptIndices.size());
 
-            const int maxPatternSteps = std::max(currentParams.bars, baseParams.bars) * 16;
+            const int maxPatternTicks = std::max(currentParams.bars, baseParams.bars) * TimingGrid::TicksPerBar4_4;
             for (size_t keptPosition = 0; keptPosition < keptIndices.size(); ++keptPosition)
             {
                 const size_t noteIndex = keptIndices[keptPosition];
                 auto note = baseNotes[noteIndex];
 
                 const bool hasNextKept = keptPosition + 1 < keptIndices.size();
-                int spanEnd = noteEndStep(note);
+                int spanEndTick = noteEndTick(note);
 
                 const size_t endIndexExclusive = hasNextKept ? keptIndices[keptPosition + 1] : baseNotes.size();
                 for (size_t index = noteIndex + 1; index < endIndexExclusive; ++index)
-                    spanEnd = std::max(spanEnd, noteEndStep(baseNotes[index]));
+                    spanEndTick = std::max(spanEndTick, noteEndTick(baseNotes[index]));
 
                 const bool preserveDirectLink = hasNextKept
                     && keptIndices[keptPosition + 1] == noteIndex + 1
@@ -784,13 +789,13 @@ inline void applySub808TransformSequence(std::vector<Sub808NoteEvent>& visibleNo
 
                 if (hasNextKept)
                 {
-                    const int nextStep = baseNotes[keptIndices[keptPosition + 1]].step;
-                    spanEnd = std::max(spanEnd, nextStep);
-                    spanEnd = std::min(spanEnd, nextStep + (preserveDirectLink ? 1 : 0));
+                    const int nextTick = baseNotes[keptIndices[keptPosition + 1]].gridTick;
+                    spanEndTick = std::max(spanEndTick, nextTick);
+                    spanEndTick = std::min(spanEndTick, nextTick + (preserveDirectLink ? TimingGrid::Sixteenth : 0));
                 }
 
-                spanEnd = std::min(spanEnd, maxPatternSteps);
-                note.length = std::max(1, spanEnd - note.step);
+                spanEndTick = std::min(spanEndTick, maxPatternTicks);
+                note.lengthTicks = std::max(1, spanEndTick - note.gridTick);
                 note.glideToNext = preserveDirectLink;
                 note.isLegato = preserveDirectLink;
                 note.isSlide = false;
@@ -820,12 +825,12 @@ inline void applySub808TransformSequence(std::vector<Sub808NoteEvent>& visibleNo
                                                    * laneProfile.timingScale
                                                    * timingAllowance);
 
-        int microOffset = static_cast<int>(std::lround(static_cast<float>(baseNote.microOffset) * baseTimingScale));
+        int microOffset = static_cast<int>(std::lround(static_cast<float>(baseNote.timingOffsetTicks) * baseTimingScale));
 
         const float timingNoise = biasedTimingNoise(stableUnit(TrackType::Sub808, baseNote, 17u), profile, support);
         const float humanizeNoise = biasedTimingNoise(stableUnit(TrackType::Sub808, baseNote, 43u), profile, support * 0.75f);
 
-        if (std::abs(baseNote.microOffset) < 2)
+        if (std::abs(baseNote.timingOffsetTicks) < 2)
         {
             microOffset += static_cast<int>(std::lround(timingDelta
                                                         * profile.zeroTimingTicks
@@ -852,7 +857,7 @@ inline void applySub808TransformSequence(std::vector<Sub808NoteEvent>& visibleNo
                                                     * timingAllowance
                                                     * supportHumanizeScale
                                                     * humanizeNoise));
-        note.microOffset = clampMicroOffset(TrackType::Sub808, microOffset);
+        note.timingOffsetTicks = clampMicroOffset(TrackType::Sub808, microOffset);
 
         const float accent = accentWeight(TrackType::Sub808, baseNote);
         const float velocityAllowance = std::clamp(1.0f - anchor * 0.48f, 0.30f, 1.0f);

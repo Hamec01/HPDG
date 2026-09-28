@@ -7,6 +7,7 @@
 
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/Sub808TrackAccess.h"
+#include "../Core/TimingGrid.h"
 
 #include "PluginEditor.h"
 #include "../Core/PatternProjectSerialization.h"
@@ -256,9 +257,14 @@ public:
         horizontalSplitterHandle.reset(horizontalSplitter);
         horizontalSplitterHandle->setVisible(false);
 
-        setSize(1460, 860);
         setResizable(true, true);
-        setResizeLimits(1180, 720, 2200, 1500);
+        setResizeLimits(BoomBapGeneratorAudioProcessor::kVst3EditorMinWidth,
+                        BoomBapGeneratorAudioProcessor::kVst3EditorMinHeight,
+                        BoomBapGeneratorAudioProcessor::kVst3EditorMaxWidth,
+                        BoomBapGeneratorAudioProcessor::kVst3EditorMaxHeight);
+        const auto savedEditorSize = audioProcessor.getVst3EditorSize();
+        setSize(savedEditorSize.x, savedEditorSize.y);
+        canStoreEditorSize = true;
 
         header.setStandaloneWindowButtonVisible(false);
         header.setHeaderControlsMode(MainHeaderComponent::HeaderControlsMode::Compact);
@@ -269,7 +275,7 @@ public:
         header.laneHeightSlider.setEnabled(true);
         header.laneHeightSlider.setInterceptsMouseClicks(false, false);
         header.laneHeightSlider.setAlpha(1.0f);
-        header.gridResolutionCombo.setEnabled(false);
+        header.gridResolutionCombo.setEnabled(true);
 
         trackList.setShowAnalysisPanel(false);
         trackList.setDisplayMode(LaneRackDisplayMode::Full);
@@ -295,6 +301,7 @@ public:
     ~Vst3SafeHeaderEditor() override
     {
         stopTimer();
+        audioProcessor.setVst3EditorSize(getWidth(), getHeight());
         setLookAndFeel(nullptr);
     }
 
@@ -309,6 +316,9 @@ public:
 
     void resized() override
     {
+        if (canStoreEditorSize)
+            audioProcessor.setVst3EditorSize(getWidth(), getHeight());
+
         auto area = getWorkspaceBounds();
         header.setBounds(area.removeFromTop(header.getPreferredHeight()));
         area.removeFromTop(10);
@@ -508,7 +518,11 @@ private:
         header.onDragFullGesture = [this] { commandController.dragFullPatternExternal(this, logUiAction); };
         header.onToggleStandaloneWindow = [] {};
         header.onZoomChanged = [](float, float) {};
-        header.onGridResolutionChanged = [](int) {};
+        header.onGridResolutionChanged = [this](int selectedId)
+        {
+            selectedSnapResolutionId = selectedId;
+            gridLite.repaint();
+        };
         header.onHeaderControlsModeChanged = [](MainHeaderComponent::HeaderControlsMode) {};
 
         header.onPreviewPlaybackModeChanged = [this](int selectedId)
@@ -742,6 +756,15 @@ private:
     void refreshFromProcessor(bool refreshTrackRows)
     {
         const auto project = audioProcessor.getProjectSnapshot();
+        auto visibleProject = project;
+        for (auto& lane : visibleProject.runtimeLaneProfile.lanes)
+        {
+            if (lane.runtimeTrackType == TrackType::ClapGhostSnare || lane.runtimeTrackType == TrackType::Perc)
+                lane.isVisibleInEditor = false;
+        }
+        visibleLaneCount = static_cast<int>(std::count_if(visibleProject.runtimeLaneProfile.lanes.begin(),
+                                                         visibleProject.runtimeLaneProfile.lanes.end(),
+                                                         [](const auto& lane) { return lane.isVisibleInEditor; }));
         syncLaneDisplayOrder(project);
 
         const auto analysisRequest = audioProcessor.getSampleAnalysisRequest();
@@ -763,7 +786,7 @@ private:
         hatFxDragDensityUi = audioProcessor.getHatFxDragDensity();
         hatFxDragLockedUi = audioProcessor.isHatFxDragDensityLocked();
 
-        gridLite.setProject(project);
+        gridLite.setProject(visibleProject);
         gridLite.setLaneDisplayOrder(laneDisplayOrder);
         gridLite.setSelectedTrack(selectedTrack);
         gridLite.setPlayheadStep(audioProcessor.getPreviewPlayheadStep());
@@ -774,7 +797,7 @@ private:
         if (refreshTrackRows)
         {
             trackList.setLaneDisplayOrder(buildVst3LaneOrder(project, laneDisplayOrder));
-            trackList.setTracks(project.runtimeLaneProfile,
+            trackList.setTracks(visibleProject.runtimeLaneProfile,
                                 project.tracks,
                                 audioProcessor.getBassKeyRootChoice(),
                                 audioProcessor.getBassScaleModeChoice());
@@ -843,13 +866,35 @@ private:
             return;
 
         const int contentWidth = juce::jmax(1, trackListViewport.getMaximumVisibleWidth());
-        const int contentHeight = juce::jmax(trackList.getLaneSectionHeight(), gridLite.getPreferredContentHeight());
+        const int availableHeight = juce::jmax(1, trackListViewport.getMaximumVisibleHeight());
+        const int stretchedRowHeight = juce::jlimit(22,
+                                                    80,
+                                                    (availableHeight - 42) / juce::jmax(1, visibleLaneCount));
+        trackList.setRowHeight(stretchedRowHeight);
+        gridLite.setRowHeight(stretchedRowHeight);
+        const int laneContentHeight = juce::jmax(trackList.getLaneSectionHeight(), gridLite.getPreferredContentHeight());
+        const int contentHeight = juce::jmax(laneContentHeight, availableHeight);
         const int gridGap = 8;
-        const int gridWidth = juce::jmax(300, contentWidth - leftColumnWidth - gridGap);
+        constexpr int minimumRackWidth = 340;
+        constexpr int minimumGridWidth = 260;
+        const int preferredRackWidth = juce::roundToInt(static_cast<float>(contentWidth) * 0.54f);
+        const int maximumRackWidth = juce::jmax(minimumRackWidth,
+                                                contentWidth - minimumGridWidth - gridGap);
+        leftColumnWidth = juce::jlimit(minimumRackWidth,
+                                       juce::jmin(760, maximumRackWidth),
+                                       preferredRackWidth);
+
+        const auto rackMode = leftColumnWidth >= 650 ? LaneRackDisplayMode::Full
+                            : leftColumnWidth >= 470 ? LaneRackDisplayMode::Compact
+                                                     : LaneRackDisplayMode::Minimal;
+        trackList.setDisplayMode(rackMode);
+
+        const int gridWidth = juce::jmax(minimumGridWidth, contentWidth - leftColumnWidth - gridGap);
+        const int workspaceWidth = juce::jmax(contentWidth, leftColumnWidth + gridGap + gridWidth);
 
         trackList.setBounds(0, 0, leftColumnWidth, contentHeight);
         gridLite.setBounds(leftColumnWidth + gridGap, 0, gridWidth, contentHeight);
-        laneGridWorkspace.setSize(contentWidth, contentHeight);
+        laneGridWorkspace.setSize(workspaceWidth, contentHeight);
     }
 
     void syncLaneDisplayOrder(const PatternProject& project)
@@ -1015,7 +1060,9 @@ private:
 
         auto shell = childBounds.expanded(5);
         const auto shellF = shell.toFloat();
-        g.setColour(sketch::Theme::paperLight().withAlpha(0.62f));
+        sketch::dropShadow(g, shellF, 4.0f, emphasise ? 3.4f : 2.4f, 0.9f);
+        g.setGradientFill(sketch::raisedPaperGradient(shellF, sketch::Theme::paperLight().withAlpha(0.7f),
+                                                      sketch::Theme::paperShadow().withAlpha(0.5f)));
         g.fillRoundedRectangle(shellF, 4.0f);
         sketch::drawFrame(g, shellF, emphasise ? sketch::Theme::ochre() : sketch::Theme::graphiteSoft(),
                           emphasise ? 1.7f : 1.2f, title.hashCode() + shell.getX(), 4.0f);
@@ -1078,6 +1125,9 @@ private:
     std::vector<RuntimeLaneId> laneDisplayOrder;
     int leftColumnWidth = 760;
     int topSectionHeight = 320;
+    int visibleLaneCount = 1;
+    int selectedSnapResolutionId = 14;
+    bool canStoreEditorSize = false;
     float hatFxDragDensityUi = 1.0f;
     bool hatFxDragLockedUi = false;
 
@@ -1221,8 +1271,8 @@ std::vector<NoteEvent> noteEventsForLane(const std::vector<TranscribedEvent>& ev
 
         NoteEvent note;
         note.pitch = event.pitch;
-        note.step = event.step;
-        note.length = juce::jmax(1, event.lengthSteps);
+        note.gridTick = event.step * TimingGrid::Sixteenth;
+        note.lengthTicks = juce::jmax(1, event.lengthSteps) * TimingGrid::Sixteenth;
         note.velocity = juce::jlimit(1, 127, event.velocity);
         note.isGhost = event.ghost;
         note.semanticRole = "sample_copy";
@@ -1231,8 +1281,8 @@ std::vector<NoteEvent> noteEventsForLane(const std::vector<TranscribedEvent>& ev
 
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        if (left.step != right.step)
-            return left.step < right.step;
+        if (left.gridTick != right.gridTick)
+            return left.gridTick < right.gridTick;
         if (left.pitch != right.pitch)
             return left.pitch < right.pitch;
         return left.velocity > right.velocity;
@@ -1240,7 +1290,7 @@ std::vector<NoteEvent> noteEventsForLane(const std::vector<TranscribedEvent>& ev
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        return left.step == right.step && left.pitch == right.pitch;
+        return left.gridTick == right.gridTick && left.pitch == right.pitch;
     }), notes.end());
     return notes;
 }
@@ -1255,8 +1305,8 @@ std::vector<Sub808NoteEvent> subNotesForEvents(const std::vector<TranscribedEven
 
         Sub808NoteEvent note;
         note.pitch = event.pitch;
-        note.step = event.step;
-        note.length = juce::jmax(1, event.lengthSteps);
+        note.gridTick = event.step * TimingGrid::Sixteenth;
+        note.lengthTicks = juce::jmax(1, event.lengthSteps) * TimingGrid::Sixteenth;
         note.velocity = juce::jlimit(1, 127, event.velocity);
         note.semanticRole = "sample_copy";
         notes.push_back(note);
@@ -1264,8 +1314,8 @@ std::vector<Sub808NoteEvent> subNotesForEvents(const std::vector<TranscribedEven
 
     std::sort(notes.begin(), notes.end(), [](const Sub808NoteEvent& left, const Sub808NoteEvent& right)
     {
-        if (left.step != right.step)
-            return left.step < right.step;
+        if (left.gridTick != right.gridTick)
+            return left.gridTick < right.gridTick;
         if (left.pitch != right.pitch)
             return left.pitch < right.pitch;
         return left.velocity > right.velocity;
@@ -1273,7 +1323,7 @@ std::vector<Sub808NoteEvent> subNotesForEvents(const std::vector<TranscribedEven
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const Sub808NoteEvent& left, const Sub808NoteEvent& right)
     {
-        return left.step == right.step && left.pitch == right.pitch;
+        return left.gridTick == right.gridTick && left.pitch == right.pitch;
     }), notes.end());
     return notes;
 }
@@ -1360,10 +1410,10 @@ std::vector<NoteEvent> effectiveNotesForTrack(const TrackState& track)
 bool noteEventsEqual(const NoteEvent& left, const NoteEvent& right)
 {
     return left.pitch == right.pitch
-        && left.step == right.step
-        && left.length == right.length
+        && left.gridTick == right.gridTick
+        && left.lengthTicks == right.lengthTicks
         && left.velocity == right.velocity
-        && left.microOffset == right.microOffset
+        && left.timingOffsetTicks == right.timingOffsetTicks
         && left.isGhost == right.isGhost
         && left.semanticRole == right.semanticRole
         && left.isSlide == right.isSlide
@@ -1536,7 +1586,8 @@ LaneMetrics analyzeLaneMetrics(const TrackState& track)
     for (const auto& note : notes)
     {
         velocitySum += note.velocity;
-        const int stepInBar = ((note.step % 16) + 16) % 16;
+        const int noteStep = note.gridTick / TimingGrid::Sixteenth;
+        const int stepInBar = ((noteStep % 16) + 16) % 16;
 
         switch (track.type)
         {
@@ -2455,6 +2506,8 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
     juce::ValueTree state(kStateType);
     state.copyPropertiesAndChildrenFrom(apvts.copyState(), nullptr);
     state.setProperty("root_schema_version", kRootSchemaVersion, nullptr);
+    state.setProperty("vst3_editor_width", vst3EditorWidth.load(), nullptr);
+    state.setProperty("vst3_editor_height", vst3EditorHeight.load(), nullptr);
 
     {
         std::scoped_lock lock(projectMutex);
@@ -2477,6 +2530,12 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
         return;
 
     apvts.replaceState(loaded);
+    if (loaded.hasProperty("vst3_editor_width"))
+        vst3EditorWidth.store(juce::jlimit(kVst3EditorMinWidth, kVst3EditorMaxWidth,
+                                          static_cast<int>(loaded.getProperty("vst3_editor_width"))));
+    if (loaded.hasProperty("vst3_editor_height"))
+        vst3EditorHeight.store(juce::jlimit(kVst3EditorMinHeight, kVst3EditorMaxHeight,
+                                           static_cast<int>(loaded.getProperty("vst3_editor_height"))));
 
     const auto* genreValue = apvts.getRawParameterValue(ParamIds::genre);
     const auto* boombapSubstyleValue = apvts.getRawParameterValue(ParamIds::boombapSubstyle);
@@ -2786,6 +2845,18 @@ bool BoomBapGeneratorAudioProcessor::isStartPlayWithDawEnabled() const
 {
     std::scoped_lock lock(projectMutex);
     return startPlayWithDawEnabled;
+}
+
+juce::Point<int> BoomBapGeneratorAudioProcessor::getVst3EditorSize() const
+{
+    return { juce::jlimit(kVst3EditorMinWidth, kVst3EditorMaxWidth, vst3EditorWidth.load()),
+             juce::jlimit(kVst3EditorMinHeight, kVst3EditorMaxHeight, vst3EditorHeight.load()) };
+}
+
+void BoomBapGeneratorAudioProcessor::setVst3EditorSize(int width, int height)
+{
+    vst3EditorWidth.store(juce::jlimit(kVst3EditorMinWidth, kVst3EditorMaxWidth, width));
+    vst3EditorHeight.store(juce::jlimit(kVst3EditorMinHeight, kVst3EditorMaxHeight, height));
 }
 
 void BoomBapGeneratorAudioProcessor::rescanLaneSamples()
@@ -4031,7 +4102,7 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
                 ? toLegacyNoteEvent(sub808Notes[static_cast<size_t>(noteIndex)])
                 : track.notes[static_cast<size_t>(noteIndex)];
             PreviewEvent event;
-            const int noteTicks = clampedNoteStartTicks(note.step, note.microOffset, project.params.bars);
+            const int noteTicks = clampTickToPattern(note.startTick(), project.params.bars);
             event.sample = ticksToSamples(noteTicks, currentSampleRate, project.params.bpm);
             event.track = track.type;
             event.pitch = juce::jlimit(0, 127, note.pitch);
@@ -4050,7 +4121,7 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
             }
             if (track.type == TrackType::Sub808)
             {
-                const int endTick = noteTicks + juce::jmax(1, note.length) * ticksPerStep();
+                const int endTick = noteTicks + juce::jmax(1, note.lengthTicks);
                 event.endSample = ticksToSamples(endTick, currentSampleRate, project.params.bpm);
             }
 

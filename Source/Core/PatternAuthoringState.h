@@ -11,10 +11,10 @@ namespace bbg
 {
 struct NoteAuthoringKey
 {
-    int step = 0;
-    int microOffset = 0;
+    int gridTick = 0;
+    int timingOffsetTicks = 0;
     int pitch = 36;
-    int length = 1;
+    int lengthTicks = 1;
     bool isGhost = false;
 };
 

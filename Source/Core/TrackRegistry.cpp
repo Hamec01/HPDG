@@ -12,12 +12,12 @@ const std::array<TrackInfo, 11>& TrackRegistry::all()
         { TrackType::HatFX, "Hat Accent", 44, false, true, true, true },
         { TrackType::OpenHat, "OpenHat", 46, true, false, true, true },
         { TrackType::Snare, "Snare", 38, true, false, true, true },
-        { TrackType::ClapGhostSnare, "Clap Ghost", 39, true, true, true, true },
+        { TrackType::ClapGhostSnare, "Clap Ghost", 39, false, true, false, false },
         { TrackType::Kick, "Kick", 36, true, false, true, true },
         { TrackType::GhostKick, "Kick Ghost", 35, true, true, true, true },
         { TrackType::Ride, "Ride", 51, false, false, true, true },
         { TrackType::Cymbal, "Cymbal", 49, false, false, true, true },
-        { TrackType::Perc, "Perc", 50, true, false, true, true },
+        { TrackType::Perc, "Perc", 50, false, false, false, false },
         { TrackType::Sub808, "Sub808", 34, false, false, true, true }
     }};
 

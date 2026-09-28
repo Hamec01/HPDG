@@ -3,11 +3,15 @@
 #include <array>
 #include <cstdint>
 #include <random>
+#include <optional>
 #include <vector>
 
 #include <juce_core/juce_core.h>
 
 #include "BoomBapStyleProfile.h"
+#include "BoomBapGenerationContext.h"
+#include "../GenerationModel/PatternFeatureVector.h"
+#include "../GenerationModel/StyleTargetModel.h"
 
 namespace bbg
 {
@@ -50,6 +54,13 @@ enum class BoomBapClassicRole
     Response,
     Support,
     Ghost,
+    GhostBeforeSnare,
+    GhostAfterSnare,
+    ClapLayer,
+    FillSupport,
+    PickupToKick,
+    ResponseFromKick,
+    FillKick,
     Accent,
     WeakPulse,
     StrongPulse,
@@ -70,6 +81,9 @@ struct BoomBapClassicAlgebraParams
     float variation = 0.35f;
     int candidateCount = 64;
     BoomBapSubstyle substyle = BoomBapSubstyle::Classic;
+    std::optional<BoomBapGrooveArchetype> forcedArchetype;
+    std::optional<RarePhraseEvent> forcedRareEvent;
+    std::optional<BoomBapFillType> forcedFillType;
 };
 
 struct BoomBapClassicAlgebraNote
@@ -83,6 +97,9 @@ struct BoomBapClassicAlgebraNote
     BoomBapTiming::TimingBreakdown timing;
     BoomBapClassicRole role = BoomBapClassicRole::Support;
     juce::String roleString = "support";
+    int anchorLane = -1;
+    int anchorTick64 = -1;
+    int priority = 40;
 };
 
 struct BoomBapClassicScoreBreakdown
@@ -109,6 +126,14 @@ struct BoomBapClassicScoreBreakdown
     float similarity12 = 0.0f;
     float similarity13 = 0.0f;
     float similarity14 = 0.0f;
+    float ghostContextQuality = 0.0f;
+    float ghostVelocityQuality = 0.0f;
+    float kickConversationQuality = 0.0f;
+    float hatMotifCoherence = 0.0f;
+    float rareEventQuality = 0.0f;
+    float fillQuality = 0.0f;
+    float dropoutQuality = 0.0f;
+    float novelty = 0.0f;
 };
 
 struct BoomBapClassicAlgebraPattern
@@ -123,6 +148,19 @@ struct BoomBapClassicAlgebraPattern
     juce::StringArray repairsApplied;
     int selectedCandidateIndex = 0;
     BoomBapClassicScoreBreakdown score;
+    PatternFeatureVector features;
+    StyleTargetMatch styleMatch;
+    float selectionQuality = 0.0f;
+    BoomBapGenerationContext context;
+    RarePhraseEvent realizedEvent = RarePhraseEvent::None;
+    BoomBapFillType fillType = BoomBapFillType::None;
+    int orphanGhostCount = 0;
+    int repairedGhostCount = 0;
+    int orphanKickGhostCount = 0;
+    float maxGhostVelocityRatio = 0.0f;
+    int nearBestPoolSize = 0;
+    float bestCandidateQuality = 0.0f;
+    float selectedCandidateQuality = 0.0f;
     juce::String debugSummary;
 
     std::vector<BoomBapClassicAlgebraNote> allNotes() const;
@@ -148,20 +186,26 @@ public:
     static int ticksPerEighth();
 
 private:
-    BoomBapClassicAlgebraPattern generateCandidate(const BoomBapClassicAlgebraParams& params, int candidateIndex) const;
+    BoomBapClassicAlgebraPattern generateCandidate(const BoomBapClassicAlgebraParams& params, const BoomBapGenerationContext& context, int candidateIndex) const;
     void generateBar(BoomBapClassicAlgebraPattern& pattern,
                      const BoomBapClassicAlgebraParams& params,
                      int candidateIndex,
                      int barIndex,
                      std::mt19937& rng,
+                     const BoomBapGenerationContext& context,
                      const std::vector<int>* kickSkeletonToAnswer = nullptr) const;
     void cloneBarWithSmallMutation(BoomBapClassicAlgebraPattern& pattern,
                                    const BoomBapClassicAlgebraParams& params,
-                                   std::mt19937& rng) const;
+                                   std::mt19937& rng,
+                                   const BoomBapGenerationContext& context) const;
     void deriveBarFromStatement(BoomBapClassicAlgebraPattern& pattern,
                                 const BoomBapClassicAlgebraParams& params,
                                 std::mt19937& rng,
-                                int targetBar) const;
+                                int targetBar,
+                                const BoomBapGenerationContext& context) const;
+    void applyRarePhraseEvent(BoomBapClassicAlgebraPattern& pattern,
+                              const BoomBapClassicAlgebraParams& params,
+                              std::mt19937& rng) const;
     void validateAndRepair(BoomBapClassicAlgebraPattern& pattern,
                            const BoomBapClassicAlgebraParams& params) const;
     juce::String buildDebugSummary(const BoomBapClassicAlgebraPattern& pattern,

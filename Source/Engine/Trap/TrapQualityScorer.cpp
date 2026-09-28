@@ -33,6 +33,34 @@ float rangeScore(float value, float low, float high, float tolerance)
     return clamp01(1.0f - distanceToRange(value, low, high) / std::max(0.0001f, tolerance));
 }
 
+std::pair<float, float> targetCouplingBand(TrapAlgebraSubstyle substyle)
+{
+    switch (substyle)
+    {
+        case TrapAlgebraSubstyle::RageTrap: return { 0.72f, 0.90f };
+        case TrapAlgebraSubstyle::CloudTrap: return { 0.50f, 0.72f };
+        case TrapAlgebraSubstyle::DarkTrap: return { 0.58f, 0.78f };
+        case TrapAlgebraSubstyle::MemphisTrap: return { 0.60f, 0.80f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.56f, 0.76f };
+        case TrapAlgebraSubstyle::ATLClassic:
+        default: return { 0.62f, 0.82f };
+    }
+}
+
+std::pair<float, float> targetOccupancyBand(TrapAlgebraSubstyle substyle)
+{
+    switch (substyle)
+    {
+        case TrapAlgebraSubstyle::RageTrap: return { 0.34f, 0.55f };
+        case TrapAlgebraSubstyle::CloudTrap: return { 0.22f, 0.42f };
+        case TrapAlgebraSubstyle::DarkTrap: return { 0.24f, 0.43f };
+        case TrapAlgebraSubstyle::MemphisTrap: return { 0.26f, 0.46f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.25f, 0.44f };
+        case TrapAlgebraSubstyle::ATLClassic:
+        default: return { 0.28f, 0.48f };
+    }
+}
+
 float velocityVariance(const std::vector<TrapAlgebraNote>& notes)
 {
     if (notes.size() < 2)
@@ -311,18 +339,26 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
                                               const TrapAlgebraParams& params,
                                               const TrapSubstyleWeights& weights) const
 {
-    juce::ignoreUnused(params);
-
     TrapQualityBreakdown out;
     const int bars = std::max(1, matrix.getBars());
     const int totalTicks = matrix.getTotalTicks();
 
     int missingSnare = 0;
+    int expectedSnare = 0;
     for (int bar = 0; bar < bars; ++bar)
-        if (!matrix.hasNote(TrapAlgebraLanes::Snare, bar * kTicksPerBar + 32))
-            ++missingSnare;
+    {
+        for (const int localTick : { params.tempoContext.doubleTime ? 16 : 32,
+                                     params.tempoContext.doubleTime ? 48 : -1 })
+        {
+            if (localTick < 0)
+                continue;
+            ++expectedSnare;
+            if (!matrix.hasNote(TrapAlgebraLanes::Snare, bar * kTicksPerBar + localTick))
+                ++missingSnare;
+        }
+    }
     out.snareMissingCount = missingSnare;
-    out.snareBackboneScore = 1.0f - static_cast<float>(missingSnare) / static_cast<float>(bars);
+    out.snareBackboneScore = 1.0f - static_cast<float>(missingSnare) / static_cast<float>(std::max(1, expectedSnare));
 
     const auto kicks = matrix.notesForLane(TrapAlgebraLanes::Kick);
     int coupledKicks = 0;
@@ -338,11 +374,14 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
         }
     }
     out.kick808CouplingRatio = kicks.empty() ? 0.0f : static_cast<float>(coupledKicks) / static_cast<float>(kicks.size());
-    out.kick808CouplingScore = 0.64f * out.kick808CouplingRatio + 0.36f * lowEndPocketScore(matrix);
+    const auto [couplingLow, couplingHigh] = targetCouplingBand(params.substyle);
+    const float couplingBandScore = rangeScore(out.kick808CouplingRatio, couplingLow, couplingHigh, 0.22f);
+    out.kick808CouplingScore = 0.64f * couplingBandScore + 0.36f * lowEndPocketScore(matrix);
 
     out.sub808Density = totalTicks > 0 ? static_cast<float>(matrix.active808Ticks()) / static_cast<float>(totalTicks) : 0.0f;
-    const float mud = std::max(0.0f, out.sub808Density - 0.65f);
-    const float empty = std::max(0.0f, 0.18f - out.sub808Density);
+    const auto [occupancyLow, occupancyHigh] = targetOccupancyBand(params.substyle);
+    const float mud = std::max(0.0f, out.sub808Density - occupancyHigh);
+    const float empty = std::max(0.0f, occupancyLow - out.sub808Density);
     out.mudPenalty = clamp01((mud * mud + empty * empty) * 8.0f);
 
     const auto hats = matrix.notesForLane(TrapAlgebraLanes::HiHat);
@@ -428,7 +467,7 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
                             + std::max(0, perc - bars * 2) * 0.08f);
 
     const float syncopationScore = lowEndPocketScore(matrix);
-    const float bassWeightScore = rangeScore(out.sub808Density, 0.18f, 0.65f, 0.18f);
+    const float bassWeightScore = rangeScore(out.sub808Density, occupancyLow, occupancyHigh, 0.16f);
     const float coreScore = clamp01((1.22f * out.snareBackboneScore
                                   + 1.24f * out.kick808CouplingScore
                                   + 1.00f * out.hiHatMovementScore
@@ -462,16 +501,21 @@ juce::StringArray TrapConstraintValidator::validate(const TrapPatternMatrix& mat
     const int bars = std::max(1, matrix.getBars());
 
     for (int bar = 0; bar < bars; ++bar)
-        if (!matrix.hasNote(TrapAlgebraLanes::Snare, bar * kTicksPerBar + 32))
-            issues.add("missing_snare_backbone");
+        for (const int localTick : { params.tempoContext.doubleTime ? 16 : 32,
+                                     params.tempoContext.doubleTime ? 48 : -1 })
+            if (localTick >= 0 && !matrix.hasNote(TrapAlgebraLanes::Snare, bar * kTicksPerBar + localTick))
+                issues.add("missing_snare_backbone");
 
     if (matrix.countLane(TrapAlgebraLanes::Sub808) == 0)
         issues.add("missing_808_anchor");
-    if (score.sub808Density > 0.65f)
+    const auto [occupancyLow, occupancyHigh] = targetOccupancyBand(params.substyle);
+    const auto [couplingLow, couplingHigh] = targetCouplingBand(params.substyle);
+    juce::ignoreUnused(couplingHigh);
+    if (score.sub808Density > occupancyHigh)
         issues.add("constant_808_wall");
-    if (score.sub808Density < 0.18f)
+    if (score.sub808Density < occupancyLow)
         issues.add("empty_808");
-    if (score.kick808CouplingRatio < 0.45f)
+    if (score.kick808CouplingRatio < couplingLow - 0.08f)
         issues.add("low_kick_808_coupling");
     if (score.kick808CouplingScore < 0.60f)
         issues.add("low_trap_core_low_end");

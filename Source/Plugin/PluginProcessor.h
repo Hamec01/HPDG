@@ -114,6 +114,14 @@ public:
     std::optional<juce::Range<int>> getPreviewLoopRegion() const;
     void setStartPlayWithDawEnabled(bool enabled);
     bool isStartPlayWithDawEnabled() const;
+    static constexpr int kVst3EditorDefaultWidth = 1460;
+    static constexpr int kVst3EditorDefaultHeight = 520;
+    static constexpr int kVst3EditorMinWidth = 820;
+    static constexpr int kVst3EditorMinHeight = 480;
+    static constexpr int kVst3EditorMaxWidth = 2200;
+    static constexpr int kVst3EditorMaxHeight = 1500;
+    juce::Point<int> getVst3EditorSize() const;
+    void setVst3EditorSize(int width, int height);
 
     void rescanLaneSamples();
     bool selectNextLaneSample(TrackType track);
@@ -369,6 +377,8 @@ private:
     int previewSamplePosition = 0;
     bool startPlayWithDawEnabled = false;
     bool lastObservedHostPlaying = false;
+    std::atomic<int> vst3EditorWidth { kVst3EditorDefaultWidth };
+    std::atomic<int> vst3EditorHeight { kVst3EditorDefaultHeight };
 
     double currentSampleRate = 44100.0;
     int transportSamplePosition = 0;

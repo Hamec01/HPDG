@@ -2,13 +2,17 @@
 
 #include <cmath>
 
+#include "../Core/GeneratorParams.h"
+
 namespace bbg
 {
 namespace
 {
 juce::StringArray genreOptions()
 {
-    return { "Boom Bap", "Rap", "Trap", "Drill" };
+    if (kShowRapAndDrillGenres)
+        return { "Boom Bap", "Rap", "Trap", "Drill" };
+    return { "Boom Bap", "Trap" };
 }
 
 void setupLabel(juce::Label& label, const juce::String& text, const juce::Colour colour = juce::Colour::fromRGB(182, 190, 202))

@@ -17,57 +17,26 @@ inline void setPreviewLoopRegion(PatternProject& project, const std::optional<ju
 
 namespace detail
 {
-inline int floorDiv(int a, int b)
-{
-    const int q = a / b;
-    const int r = a % b;
-    return (r != 0 && ((r > 0) != (b > 0))) ? (q - 1) : q;
-}
-
 inline void normalizeNoteEvent(NoteEvent& note, int bars)
 {
-    const int maxTicks = bars * 16 * ticksPerStep();
+    const int maxTicks = bars * TimingGrid::TicksPerBar4_4;
 
     note.pitch = juce::jlimit(0, 127, note.pitch);
     note.velocity = juce::jlimit(1, 127, note.velocity);
-    note.length = juce::jlimit(1, 64, note.length);
-
-    int ticks = note.step * ticksPerStep() + note.microOffset;
-    ticks = juce::jlimit(0, juce::jmax(0, maxTicks - 1), ticks);
-
-    int step = floorDiv(ticks, ticksPerStep());
-    int micro = ticks - step * ticksPerStep();
-    if (micro > ticksPerStep() / 2)
-    {
-        micro -= ticksPerStep();
-        ++step;
-    }
-
-    note.step = juce::jlimit(0, bars * 16 - 1, step);
-    note.microOffset = juce::jlimit(-960, 960, micro);
+    note.lengthTicks = juce::jlimit(1, maxTicks, note.lengthTicks);
+    note.gridTick = juce::jlimit(0, juce::jmax(0, maxTicks - 1), note.gridTick);
+    note.timingOffsetTicks = juce::jlimit(-960, 960, note.timingOffsetTicks);
 }
 
 inline void normalizeSub808NoteEvent(Sub808NoteEvent& note, int bars)
 {
-    const int maxTicks = bars * 16 * ticksPerStep();
+    const int maxTicks = bars * TimingGrid::TicksPerBar4_4;
 
     note.pitch = juce::jlimit(0, 127, note.pitch);
     note.velocity = juce::jlimit(1, 127, note.velocity);
-    note.length = juce::jlimit(1, 64, note.length);
-
-    int ticks = note.step * ticksPerStep() + note.microOffset;
-    ticks = juce::jlimit(0, juce::jmax(0, maxTicks - 1), ticks);
-
-    int step = floorDiv(ticks, ticksPerStep());
-    int micro = ticks - step * ticksPerStep();
-    if (micro > ticksPerStep() / 2)
-    {
-        micro -= ticksPerStep();
-        ++step;
-    }
-
-    note.step = juce::jlimit(0, bars * 16 - 1, step);
-    note.microOffset = juce::jlimit(-960, 960, micro);
+    note.lengthTicks = juce::jlimit(1, maxTicks, note.lengthTicks);
+    note.gridTick = juce::jlimit(0, juce::jmax(0, maxTicks - 1), note.gridTick);
+    note.timingOffsetTicks = juce::jlimit(-960, 960, note.timingOffsetTicks);
     note.semanticRole = note.semanticRole.trim();
 }
 } // namespace detail
@@ -96,7 +65,7 @@ inline void setBars(PatternProject& project, int bars)
     {
         track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
         {
-            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            const int ticks = note.startTick();
             return ticks < 0 || ticks >= maxTicks;
         }), track.notes.end());
 
@@ -105,14 +74,14 @@ inline void setBars(PatternProject& project, int bars)
 
         std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
         {
-            if (a.step != b.step)
-                return a.step < b.step;
+            if (a.gridTick != b.gridTick)
+                return a.gridTick < b.gridTick;
             return a.pitch < b.pitch;
         });
 
         track.baseNotes.erase(std::remove_if(track.baseNotes.begin(), track.baseNotes.end(), [&](const NoteEvent& note)
         {
-            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            const int ticks = note.startTick();
             return ticks < 0 || ticks >= maxTicks;
         }), track.baseNotes.end());
 
@@ -121,14 +90,14 @@ inline void setBars(PatternProject& project, int bars)
 
         std::sort(track.baseNotes.begin(), track.baseNotes.end(), [](const NoteEvent& a, const NoteEvent& b)
         {
-            if (a.step != b.step)
-                return a.step < b.step;
+            if (a.gridTick != b.gridTick)
+                return a.gridTick < b.gridTick;
             return a.pitch < b.pitch;
         });
 
         track.sub808Notes.erase(std::remove_if(track.sub808Notes.begin(), track.sub808Notes.end(), [&](const Sub808NoteEvent& note)
         {
-            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            const int ticks = note.startTick();
             return ticks < 0 || ticks >= maxTicks;
         }), track.sub808Notes.end());
 
@@ -137,14 +106,14 @@ inline void setBars(PatternProject& project, int bars)
 
         std::sort(track.sub808Notes.begin(), track.sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
         {
-            if (a.step != b.step)
-                return a.step < b.step;
+            if (a.gridTick != b.gridTick)
+                return a.gridTick < b.gridTick;
             return a.pitch < b.pitch;
         });
 
         track.baseSub808Notes.erase(std::remove_if(track.baseSub808Notes.begin(), track.baseSub808Notes.end(), [&](const Sub808NoteEvent& note)
         {
-            const int ticks = note.step * ticksPerStep() + note.microOffset;
+            const int ticks = note.startTick();
             return ticks < 0 || ticks >= maxTicks;
         }), track.baseSub808Notes.end());
 
@@ -153,8 +122,8 @@ inline void setBars(PatternProject& project, int bars)
 
         std::sort(track.baseSub808Notes.begin(), track.baseSub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
         {
-            if (a.step != b.step)
-                return a.step < b.step;
+            if (a.gridTick != b.gridTick)
+                return a.gridTick < b.gridTick;
             return a.pitch < b.pitch;
         });
 
@@ -214,8 +183,8 @@ inline void setSub808TrackNotes(PatternProject& project, TrackType trackType, co
 
     std::sort(state->sub808Notes.begin(), state->sub808Notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
         return a.pitch < b.pitch;
     });
 
@@ -326,8 +295,8 @@ inline void setTrackNotes(PatternProject& project, TrackType trackType, const st
 
     std::sort(state->notes.begin(), state->notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
         return a.pitch < b.pitch;
     });
 }

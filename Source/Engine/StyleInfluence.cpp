@@ -106,37 +106,6 @@ void resetMusicalBiasState(PatternProject& project)
     project.styleInfluence.referenceDebugDiagnostics = referenceDebugDiagnostics;
 }
 
-void applyBoomBapMusicalHints(const ResolvedStyleDefinition& definition, PatternProject& project)
-{
-    auto& params = project.params;
-    auto& styleInfluence = project.styleInfluence;
-    const float referenceBlend = definition.loadedFromReference ? 0.40f : 1.0f;
-    const auto sharedSwing = hintValue(definition.styleHints, "groove.swing", normalizedSwing(params.swingPercent));
-    const auto sharedTiming = hintValue(definition.styleHints, "groove.timing", params.timingAmount);
-    const auto sharedHumanize = hintValue(definition.styleHints, "groove.humanize", params.humanizeAmount);
-    const auto sharedDensity = hintValue(definition.styleHints, "groove.density", params.densityAmount);
-
-    const auto looseness = hintValue(definition.styleHints, "boom_bap.groove_looseness", sharedHumanize);
-    const auto percSparsity = hintValue(definition.styleHints, "boom_bap.perc_sparsity", 0.4f);
-    const auto clapFocus = hintValue(definition.styleHints, "boom_bap.clap_focus", 0.7f);
-    const auto kickBias = laneHintValue(definition, TrackType::Kick, "lane.densityBias", 1.0f);
-    const auto hatBias = laneHintValue(definition, TrackType::HiHat, "lane.densityBias", 1.0f);
-
-    blendSwing(params.swingPercent, juce::jmax(sharedSwing, hintValue(definition.styleHints, "boom_bap.swing_feel", sharedSwing)), 0.8f * referenceBlend);
-    blendParam(params.timingAmount, clampUnit(sharedTiming * 0.45f + looseness * 0.55f), 0.75f * referenceBlend);
-    blendParam(params.humanizeAmount, clampUnit(sharedHumanize * 0.35f + looseness * 0.65f), 0.85f * referenceBlend);
-    blendParam(params.densityAmount,
-               clampUnit(sharedDensity * 0.7f + kickBias * 0.08f + hatBias * 0.06f - percSparsity * 0.18f),
-               0.7f * referenceBlend);
-
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::Kick).activityWeight, 0.96f + kickBias * 0.14f, 0.55f * referenceBlend);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 0.92f + hatBias * 0.10f, 0.45f * referenceBlend);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::ClapGhostSnare).balanceWeight, 1.0f + clapFocus * 0.24f, 0.8f * referenceBlend);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::Perc).activityWeight, 0.56f + (1.0f - percSparsity) * 0.18f, 0.75f * referenceBlend);
-    blendWeight(laneBiasFor(styleInfluence, TrackRole::OpenHat).activityWeight, 0.66f + (1.0f - percSparsity) * 0.16f, 0.7f * referenceBlend);
-    blendWeight(styleInfluence.supportAccentWeight, 1.0f + clapFocus * 0.18f - percSparsity * 0.08f, 0.7f * referenceBlend);
-}
-
 void applyRapMusicalHints(const ResolvedStyleDefinition& definition, PatternProject& project)
 {
     auto& params = project.params;
@@ -407,8 +376,14 @@ bool BoomBapStyleInfluence::applyResolvedStyle(const ResolvedStyleDefinition& de
     if (!StyleInfluenceHelpers::applyToProject(definition, project, applicationOptions(), errorMessage))
         return false;
 
+    // Production BoomBap generation always goes through BoomBapClassicAlgebraGenerator, which
+    // owns swing/timing/humanize/density itself (via BoomBapClassicAlgebraParams and
+    // StyleTargetModel) and never reads project.styleInfluence. Blending those same params
+    // toward old Style Lab captures here would silently retune them out from under the
+    // Algebra system before it ever runs, so BoomBap intentionally skips
+    // applyBoomBapMusicalHints — Style Lab references still drive sample/volume/sound-layer
+    // choice via applyToProject above, just not the pattern itself.
     resetMusicalBiasState(project);
-    applyBoomBapMusicalHints(definition, project);
     if (errorMessage != nullptr)
         *errorMessage = {};
     return true;

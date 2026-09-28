@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../Core/GeneratorParams.h"
 #include "StyleLabReferenceBrowserComponent.h"
 
 namespace bbg
@@ -17,7 +18,9 @@ juce::String makeLaneId()
 
 juce::StringArray genreOptions()
 {
-    return { "Boom Bap", "Rap", "Trap", "Drill" };
+    if (kShowRapAndDrillGenres)
+        return { "Boom Bap", "Rap", "Trap", "Drill" };
+    return { "Boom Bap", "Trap" };
 }
 
 juce::StringArray moodOptions()

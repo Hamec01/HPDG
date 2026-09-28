@@ -19,6 +19,13 @@ juce_add_binary_data(HPDG_FontAssets
         Assets/Fonts/OFL.txt
 )
 
+juce_add_binary_data(HPDG_ImageAssets
+    NAMESPACE ImageBinaryData
+    HEADER_NAME ImageAssets.h
+    SOURCES
+        Assets/Images/Logo.png
+)
+
 juce_add_plugin(HPDG
     COMPANY_NAME "BoomBap Labs"
     BUNDLE_ID com.boombaplabs.boombapgenerator
@@ -68,6 +75,9 @@ target_sources(HPDG
     Source/Engine/StyleDefinitionResolver.cpp
     Source/Engine/StyleInfluence.cpp
     Source/Engine/GrooveEngine.cpp
+    Source/Engine/GenerationModel/PatternFeatureVector.cpp
+    Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
+    Source/Engine/GenerationModel/StyleTargetModel.cpp
     Source/Engine/VelocityEngine.cpp
     Source/Engine/HumanizeEngine.cpp
     Source/Engine/MidiExportEngine.cpp
@@ -90,12 +100,14 @@ target_sources(HPDG
     Source/Engine/BoomBap/BoomBapPercGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
+    Source/Engine/BoomBap/BoomBapGenerationContext.cpp
     Source/Engine/Rap/RapStyleProfile.cpp
     Source/Engine/Rap/RapPhrasePlanner.cpp
     Source/Engine/Rap/RapKickGenerator.cpp
     Source/Engine/Rap/RapSnareGenerator.cpp
     Source/Engine/Rap/RapHatGenerator.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
+    Source/Engine/Trap/TrapTempoContext.cpp
     Source/Engine/Trap/TrapPhrasePlanner.cpp
     Source/Engine/Trap/TrapKickGenerator.cpp
     Source/Engine/Trap/TrapSnareGenerator.cpp
@@ -133,6 +145,7 @@ target_include_directories(HPDG
 target_link_libraries(HPDG
     PRIVATE
         HPDG_FontAssets
+        HPDG_ImageAssets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -148,6 +161,9 @@ add_executable(HPDG_CoreTests
     Source/Core/PatternProjectSerialization.cpp
     Source/Analysis/SampleApplyWeights.cpp
     Source/Engine/GrooveEngine.cpp
+    Source/Engine/GenerationModel/PatternFeatureVector.cpp
+    Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
+    Source/Engine/GenerationModel/StyleTargetModel.cpp
     Source/Engine/VelocityEngine.cpp
     Source/Engine/BoomBapEngine.cpp
     Source/Engine/DrillEngine.cpp
@@ -182,6 +198,7 @@ add_executable(HPDG_CoreTests
     Source/Engine/BoomBap/BoomBapPercGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
+    Source/Engine/BoomBap/BoomBapGenerationContext.cpp
     Source/Engine/RapEngine.cpp
     Source/Engine/Rap/RapStyleProfile.cpp
     Source/Engine/Rap/RapPhrasePlanner.cpp
@@ -190,6 +207,7 @@ add_executable(HPDG_CoreTests
     Source/Engine/Rap/RapHatGenerator.cpp
     Source/Engine/TrapEngine.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
+    Source/Engine/Trap/TrapTempoContext.cpp
     Source/Engine/Trap/TrapPhrasePlanner.cpp
     Source/Engine/Trap/TrapKickGenerator.cpp
     Source/Engine/Trap/TrapSnareGenerator.cpp
@@ -222,10 +240,99 @@ target_link_libraries(HPDG_CoreTests
 
 add_test(NAME HPDG_CoreTests COMMAND HPDG_CoreTests)
 
-add_executable(HPDG_BoomBapBatchAudit
-    Tests/BoomBapBatchAudit.cpp
+# Temporary regression safety net for the TIMING GRID V2 (NoteEvent tick-native) migration.
+# See Tests/TimingMigrationBaselineDump.cpp for how to use it. Safe to delete once the migration
+# is verified and merged.
+add_executable(HPDG_TimingBaselineDump
+    Tests/TimingMigrationBaselineDump.cpp
+    Source/Core/TrackRegistry.cpp
+    Source/Core/RuntimeLaneLifecycle.cpp
+    Source/Core/PatternProjectSerialization.cpp
+    Source/Analysis/SampleApplyWeights.cpp
+    Source/Engine/GrooveEngine.cpp
+    Source/Engine/GenerationModel/PatternFeatureVector.cpp
+    Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
+    Source/Engine/GenerationModel/StyleTargetModel.cpp
+    Source/Engine/VelocityEngine.cpp
+    Source/Engine/BoomBapEngine.cpp
+    Source/Engine/DrillEngine.cpp
+    Source/Engine/Drill/Drill808Generator.cpp
+    Source/Engine/Drill/DrillHatFxGenerator.cpp
+    Source/Engine/Drill/DrillHatGenerator.cpp
+    Source/Engine/Drill/DrillKickGenerator.cpp
+    Source/Engine/Drill/DrillPatternValidator.cpp
+    Source/Engine/Drill/DrillPhrasePlanner.cpp
+    Source/Engine/Drill/DrillSnareGenerator.cpp
+    Source/Engine/HumanizeEngine.cpp
+    Source/Engine/SampleLibraryManager.cpp
+    Source/Engine/LaneSampleBank.cpp
+    Source/Engine/MidiExportEngine.cpp
+    Source/Engine/ExtractPatternBuilder.cpp
+    Source/Engine/PatternBlendEngine.cpp
+    Source/Engine/SubstyleRuleEnforcer.cpp
+    Source/Engine/StyleDefaults.cpp
+    Source/Engine/StyleDefinitionLoader.cpp
+    Source/Engine/StyleDefinitionResolver.cpp
+    Source/Engine/StyleInfluence.cpp
+    Source/Engine/BoomBap/BoomBapPatternLibrary.cpp
+    Source/Engine/BoomBap/BoomBapPhrasePlanner.cpp
+    Source/Engine/BoomBap/BoomBapStyleProfile.cpp
+    Source/Engine/BoomBap/BoomBapGrooveBlueprint.cpp
+    Source/Engine/BoomBap/BoomBapLaneActivation.cpp
+    Source/Engine/BoomBap/BoomBapKickGenerator.cpp
+    Source/Engine/BoomBap/BoomBapSnareGenerator.cpp
+    Source/Engine/BoomBap/BoomBapHatGenerator.cpp
+    Source/Engine/BoomBap/BoomBapGhostGenerator.cpp
+    Source/Engine/BoomBap/BoomBapOpenHatGenerator.cpp
+    Source/Engine/BoomBap/BoomBapPercGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
+    Source/Engine/BoomBap/BoomBapGenerationContext.cpp
+    Source/Engine/RapEngine.cpp
+    Source/Engine/Rap/RapStyleProfile.cpp
+    Source/Engine/Rap/RapPhrasePlanner.cpp
+    Source/Engine/Rap/RapKickGenerator.cpp
+    Source/Engine/Rap/RapSnareGenerator.cpp
+    Source/Engine/Rap/RapHatGenerator.cpp
+    Source/Engine/TrapEngine.cpp
+    Source/Engine/Trap/TrapStyleProfile.cpp
+    Source/Engine/Trap/TrapTempoContext.cpp
+    Source/Engine/Trap/TrapPhrasePlanner.cpp
+    Source/Engine/Trap/TrapKickGenerator.cpp
+    Source/Engine/Trap/TrapSnareGenerator.cpp
+    Source/Engine/Trap/TrapHatGenerator.cpp
+    Source/Engine/Trap/TrapHatFxGenerator.cpp
+    Source/Engine/Trap/Trap808Generator.cpp
+    Source/Engine/Trap/TrapAlgebraEngine.cpp
+    Source/Engine/Trap/TrapQualityScorer.cpp
+    Source/Services/TemporaryMidiExportService.cpp
+    Source/Services/StyleLabReferenceService.cpp
+    Source/Services/StyleLabReferenceBrowserService.cpp
+)
+
+target_include_directories(HPDG_TimingBaselineDump
+    PRIVATE
+        Source
+)
+
+target_link_libraries(HPDG_TimingBaselineDump
+    PRIVATE
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_executable(HPDG_BoomBapBatchAudit
+    Tests/BoomBapBatchAudit.cpp
+    Source/Engine/GenerationModel/PatternFeatureVector.cpp
+    Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
+    Source/Engine/GenerationModel/StyleTargetModel.cpp
+    Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
+    Source/Engine/BoomBap/BoomBapGenerationContext.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
 )
 target_include_directories(HPDG_BoomBapBatchAudit PRIVATE Source)

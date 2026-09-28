@@ -29,6 +29,9 @@ TrackState* findTrack(PatternProject& project, TrackType type)
     return nullptr;
 }
 
+int stepIndexOf(const NoteEvent& note) { return note.gridTick / HiResTiming::kTicks1_16; }
+int tickForStep(int step) { return step * HiResTiming::kTicks1_16; }
+
 void applyResolvedStyleInfluence(PatternProject& project)
 {
     juce::String applyError;
@@ -182,7 +185,7 @@ bool containsStep(const std::vector<NoteEvent>& notes, int step)
 {
     return std::any_of(notes.begin(), notes.end(), [step](const NoteEvent& n)
     {
-        return n.step == step;
+        return stepIndexOf(n) == step;
     });
 }
 
@@ -224,7 +227,7 @@ void applySampleAwareRapFlavor(PatternProject& project, const std::unordered_set
 
         for (auto& note : track.notes)
         {
-            const auto* f = featureAtStep(ctx.featureMap, note.step);
+            const auto* f = featureAtStep(ctx.featureMap, stepIndexOf(note));
             if (f == nullptr)
                 continue;
 
@@ -246,11 +249,11 @@ void applySampleAwareRapFlavor(PatternProject& project, const std::unordered_set
         {
             track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [&](const NoteEvent& note)
             {
-                const auto* f = featureAtStep(ctx.featureMap, note.step);
+                const auto* f = featureAtStep(ctx.featureMap, stepIndexOf(note));
                 if (f == nullptr)
                     return false;
 
-                const int phase = (note.step + note.velocity + static_cast<int>(track.type)) % 8;
+                const int phase = (stepIndexOf(note) + note.velocity + static_cast<int>(track.type)) % 8;
                 return phase == 0 && f->high > 0.80f && f->onset < 0.28f && !f->isStrongBeat;
             }), track.notes.end());
         }
@@ -388,8 +391,9 @@ int eastCoastPocketOffsetFor(TrackType type,
                              const PatternProject& project,
                              int offbeatDelayTicks)
 {
-    const int step = normalizedStepInBar(note.step);
-    const int bar = std::max(0, note.step / 16);
+    const int noteStep = stepIndexOf(note);
+    const int step = normalizedStepInBar(noteStep);
+    const int bar = std::max(0, noteStep / 16);
     const int phase = step % 4;
     const int spread = eastCoastControlSpread(project);
     const int drift = deterministicRapDrift(project.params.seed + 1103, bar, step, static_cast<int>(type) + 211, spread);
@@ -438,7 +442,7 @@ int eastCoastPocketOffsetFor(TrackType type,
             break;
     }
 
-    return note.microOffset;
+    return note.timingOffsetTicks;
 }
 
 int westCoastOffbeatDelayTicks(const PatternProject& project, const RapStyleProfile& style)
@@ -462,8 +466,9 @@ int westCoastPocketOffsetFor(TrackType type,
                              const PatternProject& project,
                              int offbeatDelayTicks)
 {
-    const int step = normalizedStepInBar(note.step);
-    const int bar = std::max(0, note.step / 16);
+    const int noteStep = stepIndexOf(note);
+    const int step = normalizedStepInBar(noteStep);
+    const int bar = std::max(0, noteStep / 16);
     const int phase = step % 4;
     const int spread = westCoastControlSpread(project);
     const int drift = deterministicRapDrift(project.params.seed + 1301, bar, step, static_cast<int>(type) + 241, spread);
@@ -517,7 +522,7 @@ int westCoastPocketOffsetFor(TrackType type,
             break;
     }
 
-    return note.microOffset;
+    return note.timingOffsetTicks;
 }
 
 int sampleLofiVelocity(TrackType trackType, const NoteEvent& note, std::mt19937& rng)
@@ -575,7 +580,7 @@ std::pair<int, int> lofiTimingWindow(TrackType trackType, const NoteEvent& note)
         case TrackType::Snare:
             return note.isGhost ? std::make_pair(0, 10) : std::make_pair(6, 18);
         case TrackType::Kick:
-            return isAnchorStep(TrackType::Kick, note.step % 16) ? std::make_pair(-10, 12) : std::make_pair(-16, 18);
+            return isAnchorStep(TrackType::Kick, stepIndexOf(note) % 16) ? std::make_pair(-10, 12) : std::make_pair(-16, 18);
         case TrackType::GhostKick:
             return std::make_pair(-16, 18);
         case TrackType::OpenHat:
@@ -724,14 +729,14 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
         return a.velocity > b.velocity;
     });
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        return a.step == b.step;
+        return a.gridTick == b.gridTick;
     }), notes.end());
 }
 
@@ -739,7 +744,7 @@ NoteEvent* findNoteAtStep(TrackState& track, int step)
 {
     auto it = std::find_if(track.notes.begin(), track.notes.end(), [step](const NoteEvent& note)
     {
-        return note.step == step;
+        return stepIndexOf(note) == step;
     });
     return it != track.notes.end() ? &(*it) : nullptr;
 }
@@ -754,19 +759,26 @@ void upsertEastCoastNote(TrackState& track,
     if (auto* existing = findNoteAtStep(track, step); existing != nullptr)
     {
         existing->pitch = pitch;
-        existing->length = std::max(1, existing->length);
+        existing->lengthTicks = std::max(HiResTiming::kTicks1_16, existing->lengthTicks);
         existing->velocity = velocity;
-        existing->microOffset = microOffset;
+        existing->timingOffsetTicks = microOffset;
         existing->isGhost = ghost;
         return;
     }
 
-    track.notes.push_back({ pitch, step, 1, velocity, microOffset, ghost });
+    NoteEvent note;
+    note.pitch = pitch;
+    note.gridTick = tickForStep(step);
+    note.lengthTicks = HiResTiming::kTicks1_16;
+    note.velocity = velocity;
+    note.timingOffsetTicks = microOffset;
+    note.isGhost = ghost;
+    track.notes.push_back(note);
 }
 
 int eastCoastPriority(TrackType type, const NoteEvent& note)
 {
-    const int step = normalizedStepInBar(note.step);
+    const int step = normalizedStepInBar(stepIndexOf(note));
     int score = note.velocity;
 
     switch (type)
@@ -818,7 +830,7 @@ void pruneEastCoastBarLimit(TrackState& track, int bars, int maxPerBar, int endi
     {
         std::vector<NoteEvent> barNotes;
         for (const auto& note : track.notes)
-            if (note.step / 16 == bar)
+            if (stepIndexOf(note) / 16 == bar)
                 barNotes.push_back(note);
 
         std::stable_sort(barNotes.begin(), barNotes.end(), [&track](const NoteEvent& left, const NoteEvent& right)
@@ -827,7 +839,7 @@ void pruneEastCoastBarLimit(TrackState& track, int bars, int maxPerBar, int endi
             const int rightScore = eastCoastPriority(track.type, right);
             if (leftScore != rightScore)
                 return leftScore > rightScore;
-            return left.step < right.step;
+            return left.gridTick < right.gridTick;
         });
 
         const int limit = bar == bars - 1 ? endingMaxPerBar : maxPerBar;
@@ -881,8 +893,8 @@ void shapeEastCoastHatCarrier(TrackState& hat,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool down = stepInBar == 0 || stepInBar == 8;
             const bool backbeat = stepInBar == 4 || stepInBar == 12;
             const bool offbeat = (stepInBar % 4) == 2;
@@ -890,9 +902,9 @@ void shapeEastCoastHatCarrier(TrackState& hat,
             note.velocity = std::clamp(style.hatVelocityMin + (down ? 26 : backbeat ? 21 : offbeat ? 15 : 7) + dust + velocityLift,
                                        style.hatVelocityMin,
                                        style.hatVelocityMax);
-            note.microOffset = eastCoastPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = eastCoastPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
             note.isGhost = false;
-            upsertEastCoastNote(hat, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(hat, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -940,16 +952,16 @@ void shapeEastCoastKickPocket(TrackState& kick,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool root = stepInBar == 0;
             const bool anchor = stepInBar == 8 || stepInBar == 10;
             note.velocity = std::clamp(style.kickVelocityMin + (root ? 24 : anchor ? 18 : 10) + velocityLift,
                                        style.kickVelocityMin,
                                        style.kickVelocityMax);
-            note.microOffset = eastCoastPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = eastCoastPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
             note.isGhost = false;
-            upsertEastCoastNote(kick, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(kick, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -977,14 +989,14 @@ void shapeEastCoastSnarePocket(TrackState& snare,
         {
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.snareVelocityMin + (stepInBar == 12 ? 17 : 13) + velocityLift,
                                        style.snareVelocityMin,
                                        style.snareVelocityMax);
-            note.microOffset = eastCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = eastCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = false;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
 
         const float ghostPick = deterministicRapUnit(project.params.seed, bar, 0, 1221);
@@ -994,14 +1006,14 @@ void shapeEastCoastSnarePocket(TrackState& snare,
             const int stepInBar = ghostPick < 0.34f ? 11 : (ghostPick < 0.58f ? 3 : 15);
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.ghostVelocityMin + 4 + static_cast<int>(deterministicRapUnit(project.params.seed, bar, stepInBar, 1223) * 9.0f),
                                        style.ghostVelocityMin,
                                        style.ghostVelocityMax);
-            note.microOffset = eastCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = eastCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = true;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
             ++ghostCount;
         }
     }
@@ -1010,12 +1022,12 @@ void shapeEastCoastSnarePocket(TrackState& snare,
     {
         NoteEvent note;
         note.pitch = pitch;
-        note.step = (bars - 1) * 16 + 11;
-        note.length = 1;
+        note.gridTick = ((bars - 1) * 16 + 11) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.ghostVelocityMin + 6, style.ghostVelocityMin, style.ghostVelocityMax);
-        note.microOffset = eastCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
+        note.timingOffsetTicks = eastCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
         note.isGhost = true;
-        upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+        upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
     }
 
     pruneEastCoastBarLimit(snare, bars, 3, 3);
@@ -1030,16 +1042,17 @@ void shapeEastCoastSupportTrack(TrackState& track,
 
     for (auto& note : track.notes)
     {
-        const int step = normalizedStepInBar(note.step);
-        const int bar = std::max(0, note.step / 16);
+        const int noteStep = stepIndexOf(note);
+        const int step = normalizedStepInBar(noteStep);
+        const int bar = std::max(0, noteStep / 16);
         const bool ending = bar == bars - 1;
-        note.microOffset = eastCoastPocketOffsetFor(track.type, note, project, offbeatDelayTicks);
+        note.timingOffsetTicks = eastCoastPocketOffsetFor(track.type, note, project, offbeatDelayTicks);
 
         switch (track.type)
         {
             case TrackType::ClapGhostSnare:
                 if (!ending || step != 12)
-                    note.step = -1;
+                    note.gridTick = (-1) * HiResTiming::kTicks1_16;
                 else
                 {
                     note.isGhost = false;
@@ -1048,23 +1061,23 @@ void shapeEastCoastSupportTrack(TrackState& track,
                 break;
             case TrackType::GhostKick:
                 if (!ending || (step != 7 && step != 11 && step != 15))
-                    note.step = -1;
+                    note.gridTick = (-1) * HiResTiming::kTicks1_16;
                 else
                     note.velocity = std::clamp(note.velocity - 16, style.ghostVelocityMin, style.ghostVelocityMax);
                 break;
             case TrackType::OpenHat:
-                note.step = -1;
+                note.gridTick = (-1) * HiResTiming::kTicks1_16;
                 break;
             case TrackType::Perc:
                 if (!(step == 7 || step == 11 || step == 15))
-                    note.step = -1;
+                    note.gridTick = (-1) * HiResTiming::kTicks1_16;
                 else
                     note.velocity = std::clamp(note.velocity - 14, style.percVelocityMin, style.percVelocityMax);
                 break;
             case TrackType::Ride:
             case TrackType::Cymbal:
             case TrackType::Sub808:
-                note.step = -1;
+                note.gridTick = (-1) * HiResTiming::kTicks1_16;
                 break;
             default:
                 break;
@@ -1073,7 +1086,7 @@ void shapeEastCoastSupportTrack(TrackState& track,
 
     track.notes.erase(std::remove_if(track.notes.begin(), track.notes.end(), [](const NoteEvent& note)
     {
-        return note.step < 0;
+        return note.gridTick < 0;
     }), track.notes.end());
 
     switch (track.type)
@@ -1129,7 +1142,7 @@ void applyEastCoastPocketRules(PatternProject& project,
 
 int westCoastPriority(TrackType type, const NoteEvent& note)
 {
-    const int step = normalizedStepInBar(note.step);
+    const int step = normalizedStepInBar(stepIndexOf(note));
     int score = note.velocity;
 
     switch (type)
@@ -1189,7 +1202,7 @@ void pruneWestCoastBarLimit(TrackState& track, int bars, int maxPerBar, int endi
     {
         std::vector<NoteEvent> barNotes;
         for (const auto& note : track.notes)
-            if (note.step / 16 == bar)
+            if (stepIndexOf(note) / 16 == bar)
                 barNotes.push_back(note);
 
         std::stable_sort(barNotes.begin(), barNotes.end(), [&track](const NoteEvent& left, const NoteEvent& right)
@@ -1198,7 +1211,7 @@ void pruneWestCoastBarLimit(TrackState& track, int bars, int maxPerBar, int endi
             const int rightScore = westCoastPriority(track.type, right);
             if (leftScore != rightScore)
                 return leftScore > rightScore;
-            return left.step < right.step;
+            return left.gridTick < right.gridTick;
         });
 
         const int limit = bar == bars - 1 ? endingMaxPerBar : maxPerBar;
@@ -1253,8 +1266,8 @@ void shapeWestCoastHatCarrier(TrackState& hat,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool down = stepInBar == 0 || stepInBar == 8;
             const bool backbeat = stepInBar == 4 || stepInBar == 12;
             const bool offbeat = (stepInBar % 4) == 2;
@@ -1262,9 +1275,9 @@ void shapeWestCoastHatCarrier(TrackState& hat,
             note.velocity = std::clamp(style.hatVelocityMin + (down ? 24 : backbeat ? 19 : offbeat ? 14 : 7) + dust + velocityLift,
                                        style.hatVelocityMin,
                                        style.hatVelocityMax);
-            note.microOffset = westCoastPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
             note.isGhost = false;
-            upsertEastCoastNote(hat, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(hat, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -1312,16 +1325,16 @@ void shapeWestCoastKickPocket(TrackState& kick,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool root = stepInBar == 0;
             const bool weight = stepInBar == 8 || stepInBar == 10;
             note.velocity = std::clamp(style.kickVelocityMin + (root ? 21 : weight ? 15 : 8) + velocityLift,
                                        style.kickVelocityMin,
                                        style.kickVelocityMax);
-            note.microOffset = westCoastPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
             note.isGhost = false;
-            upsertEastCoastNote(kick, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(kick, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -1349,14 +1362,14 @@ void shapeWestCoastSnarePocket(TrackState& snare,
         {
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.snareVelocityMin + (stepInBar == 12 ? 14 : 10) + velocityLift,
                                        style.snareVelocityMin,
                                        style.snareVelocityMax);
-            note.microOffset = westCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = false;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
 
         const float ghostPick = deterministicRapUnit(project.params.seed, bar, 0, 1351);
@@ -1366,14 +1379,14 @@ void shapeWestCoastSnarePocket(TrackState& snare,
             const int stepInBar = ghostPick < 0.34f ? 11 : (ghostPick < 0.62f ? 3 : 15);
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.ghostVelocityMin + 5 + static_cast<int>(deterministicRapUnit(project.params.seed, bar, stepInBar, 1353) * 10.0f),
                                        style.ghostVelocityMin,
                                        style.ghostVelocityMax);
-            note.microOffset = westCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = true;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
             ++ghostCount;
         }
     }
@@ -1382,12 +1395,12 @@ void shapeWestCoastSnarePocket(TrackState& snare,
     {
         NoteEvent note;
         note.pitch = pitch;
-        note.step = (bars - 1) * 16 + 11;
-        note.length = 1;
+        note.gridTick = ((bars - 1) * 16 + 11) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.ghostVelocityMin + 7, style.ghostVelocityMin, style.ghostVelocityMax);
-        note.microOffset = westCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
+        note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::Snare, note, project, 0);
         note.isGhost = true;
-        upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+        upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
     }
 
     pruneWestCoastBarLimit(snare, bars, 3, 3);
@@ -1412,14 +1425,14 @@ void shapeWestCoastClapLayer(TrackState& clap,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.snareVelocityMin - 18 + (stepInBar == 12 ? 7 : 4),
                                        style.ghostVelocityMin,
                                        style.snareVelocityMax - 10);
-            note.microOffset = westCoastPocketOffsetFor(TrackType::ClapGhostSnare, note, project, offbeatDelayTicks) + 2;
+            note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::ClapGhostSnare, note, project, offbeatDelayTicks) + 2;
             note.isGhost = false;
-            upsertEastCoastNote(clap, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(clap, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -1447,20 +1460,20 @@ void shapeWestCoastOpenHatTrack(TrackState& openHat,
         const int stepInBar = deterministicRapUnit(project.params.seed, bar, 6, 1373) < 0.42f ? 6 : 14;
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + stepInBar;
-        note.length = ending ? 2 : 1;
+        note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (ending ? 2 : 1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.hatVelocityMin + 20 + static_cast<int>(density * 8.0f), style.hatVelocityMin, std::min(96, style.hatVelocityMax + 8));
-        note.microOffset = westCoastPocketOffsetFor(TrackType::OpenHat, note, project, offbeatDelayTicks);
+        note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::OpenHat, note, project, offbeatDelayTicks);
         note.isGhost = false;
-        upsertEastCoastNote(openHat, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(openHat, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
 
         if (ending && density > 0.55f)
         {
             NoteEvent pickup = note;
-            pickup.step = bar * 16 + 15;
+            pickup.gridTick = (bar * 16 + 15) * HiResTiming::kTicks1_16;
             pickup.velocity = std::max(style.hatVelocityMin, note.velocity - 8);
-            pickup.microOffset = westCoastPocketOffsetFor(TrackType::OpenHat, pickup, project, offbeatDelayTicks);
-            upsertEastCoastNote(openHat, pickup.pitch, pickup.step, pickup.velocity, pickup.microOffset, false);
+            pickup.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::OpenHat, pickup, project, offbeatDelayTicks);
+            upsertEastCoastNote(openHat, pickup.pitch, stepIndexOf(pickup), pickup.velocity, pickup.timingOffsetTicks, false);
         }
     }
 
@@ -1488,20 +1501,20 @@ void shapeWestCoastPercTrack(TrackState& perc,
         const int stepInBar = deterministicRapUnit(project.params.seed, bar, 5, 1383) < 0.52f ? 13 : 7;
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + stepInBar;
-        note.length = 1;
+        note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.percVelocityMin + 9 + static_cast<int>(density * 7.0f), style.percVelocityMin, style.percVelocityMax);
-        note.microOffset = westCoastPocketOffsetFor(TrackType::Perc, note, project, offbeatDelayTicks);
+        note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::Perc, note, project, offbeatDelayTicks);
         note.isGhost = false;
-        upsertEastCoastNote(perc, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(perc, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
 
         if (ending && density > 0.62f)
         {
             NoteEvent pickup = note;
-            pickup.step = bar * 16 + 15;
+            pickup.gridTick = (bar * 16 + 15) * HiResTiming::kTicks1_16;
             pickup.velocity = std::max(style.percVelocityMin, note.velocity - 6);
-            pickup.microOffset = westCoastPocketOffsetFor(TrackType::Perc, pickup, project, offbeatDelayTicks);
-            upsertEastCoastNote(perc, pickup.pitch, pickup.step, pickup.velocity, pickup.microOffset, false);
+            pickup.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::Perc, pickup, project, offbeatDelayTicks);
+            upsertEastCoastNote(perc, pickup.pitch, stepIndexOf(pickup), pickup.velocity, pickup.timingOffsetTicks, false);
         }
     }
 
@@ -1522,18 +1535,18 @@ void shapeWestCoastSubBass(TrackState& sub,
 
     for (const auto& kickNote : kick->notes)
     {
-        const int stepInBar = normalizedStepInBar(kickNote.step);
+        const int stepInBar = normalizedStepInBar(stepIndexOf(kickNote));
         if (!(stepInBar == 0 || stepInBar == 8 || stepInBar == 10))
             continue;
 
         NoteEvent note;
         note.pitch = basePitch + (stepInBar == 10 ? -2 : 0);
-        note.step = kickNote.step;
-        note.length = stepInBar == 0 ? 3 : 2;
+        note.gridTick = kickNote.gridTick;
+        note.lengthTicks = (stepInBar == 0 ? 3 : 2) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.kickVelocityMin - 16 + static_cast<int>(project.params.velocityAmount * 10.0f), 58, 94);
-        note.microOffset = westCoastPocketOffsetFor(TrackType::Sub808, note, project, 0);
+        note.timingOffsetTicks = westCoastPocketOffsetFor(TrackType::Sub808, note, project, 0);
         note.isGhost = false;
-        upsertEastCoastNote(sub, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(sub, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
     }
 
     pruneWestCoastBarLimit(sub, bars, 2, 2);
@@ -1618,8 +1631,9 @@ int dirtySouthPocketOffsetFor(TrackType type,
                               const PatternProject& project,
                               int offbeatDelayTicks)
 {
-    const int step = normalizedStepInBar(note.step);
-    const int bar = std::max(0, note.step / 16);
+    const int noteStep = stepIndexOf(note);
+    const int step = normalizedStepInBar(noteStep);
+    const int bar = std::max(0, noteStep / 16);
     const int phase = step % 4;
     const int spread = dirtySouthControlSpread(project);
     const int drift = deterministicRapDrift(project.params.seed + 1501, bar, step, static_cast<int>(type) + 271, spread);
@@ -1678,12 +1692,12 @@ int dirtySouthPocketOffsetFor(TrackType type,
             break;
     }
 
-    return note.microOffset;
+    return note.timingOffsetTicks;
 }
 
 int dirtySouthPriority(TrackType type, const NoteEvent& note)
 {
-    const int step = normalizedStepInBar(note.step);
+    const int step = normalizedStepInBar(stepIndexOf(note));
     int score = note.velocity;
 
     switch (type)
@@ -1747,7 +1761,7 @@ void pruneDirtySouthBarLimit(TrackState& track, int bars, int maxPerBar, int end
     {
         std::vector<NoteEvent> barNotes;
         for (const auto& note : track.notes)
-            if (note.step / 16 == bar)
+            if (stepIndexOf(note) / 16 == bar)
                 barNotes.push_back(note);
 
         std::stable_sort(barNotes.begin(), barNotes.end(), [&track](const NoteEvent& left, const NoteEvent& right)
@@ -1756,7 +1770,7 @@ void pruneDirtySouthBarLimit(TrackState& track, int bars, int maxPerBar, int end
             const int rightScore = dirtySouthPriority(track.type, right);
             if (leftScore != rightScore)
                 return leftScore > rightScore;
-            return left.step < right.step;
+            return left.gridTick < right.gridTick;
         });
 
         const int limit = bar == bars - 1 ? endingMaxPerBar : maxPerBar;
@@ -1812,8 +1826,8 @@ void shapeDirtySouthHatCarrier(TrackState& hat,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool down = stepInBar == 0 || stepInBar == 8;
             const bool backbeat = stepInBar == 4 || stepInBar == 12;
             const bool offbeat = (stepInBar % 4) == 2;
@@ -1821,11 +1835,11 @@ void shapeDirtySouthHatCarrier(TrackState& hat,
             note.velocity = std::clamp(style.hatVelocityMin + (down ? 25 : backbeat ? 18 : offbeat ? 14 : 6) + dust + velocityLift,
                                        style.hatVelocityMin,
                                        style.hatVelocityMax);
-            note.microOffset = dirtySouthPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
             note.isGhost = (stepInBar % 2) == 1;
             if (note.isGhost)
                 note.velocity = std::min(note.velocity, style.hatVelocityMin + 18);
-            upsertEastCoastNote(hat, note.pitch, note.step, note.velocity, note.microOffset, note.isGhost);
+            upsertEastCoastNote(hat, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, note.isGhost);
         }
     }
 
@@ -1874,17 +1888,17 @@ void shapeDirtySouthKickPocket(TrackState& kick,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool root = stepInBar == 0;
             const bool weight = stepInBar == 8 || stepInBar == 10;
             const bool pickup = stepInBar == 14 || stepInBar == 15;
             note.velocity = std::clamp(style.kickVelocityMin + (root ? 24 : weight ? 18 : pickup ? 13 : 9) + velocityLift,
                                        style.kickVelocityMin,
                                        style.kickVelocityMax);
-            note.microOffset = dirtySouthPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
             note.isGhost = false;
-            upsertEastCoastNote(kick, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(kick, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -1909,14 +1923,14 @@ void shapeDirtySouthSnarePocket(TrackState& snare,
         {
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.snareVelocityMin + (stepInBar == 12 ? 14 : 10) + velocityLift,
                                        style.snareVelocityMin,
                                        style.snareVelocityMax);
-            note.microOffset = dirtySouthPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = false;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
 
         const float ghostPick = deterministicRapUnit(project.params.seed, bar, 0, 1551);
@@ -1926,14 +1940,14 @@ void shapeDirtySouthSnarePocket(TrackState& snare,
             const int stepInBar = ghostPick < 0.42f ? 11 : 3;
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.ghostVelocityMin + 5 + static_cast<int>(deterministicRapUnit(project.params.seed, bar, stepInBar, 1553) * 9.0f),
                                        style.ghostVelocityMin,
                                        style.ghostVelocityMax);
-            note.microOffset = dirtySouthPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = true;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
             ++ghostCount;
         }
     }
@@ -1942,12 +1956,12 @@ void shapeDirtySouthSnarePocket(TrackState& snare,
     {
         NoteEvent note;
         note.pitch = pitch;
-        note.step = (bars - 1) * 16 + 11;
-        note.length = 1;
+        note.gridTick = ((bars - 1) * 16 + 11) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.ghostVelocityMin + 6, style.ghostVelocityMin, style.ghostVelocityMax);
-        note.microOffset = dirtySouthPocketOffsetFor(TrackType::Snare, note, project, 0);
+        note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Snare, note, project, 0);
         note.isGhost = true;
-        upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+        upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
     }
 
     pruneDirtySouthBarLimit(snare, bars, 3, 3);
@@ -1969,14 +1983,14 @@ void shapeDirtySouthClapLayer(TrackState& clap,
         {
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.snareVelocityMin - 12 + (stepInBar == 12 ? 7 : 4),
                                        style.ghostVelocityMin,
                                        style.snareVelocityMax - 6);
-            note.microOffset = dirtySouthPocketOffsetFor(TrackType::ClapGhostSnare, note, project, offbeatDelayTicks) + 2;
+            note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::ClapGhostSnare, note, project, offbeatDelayTicks) + 2;
             note.isGhost = false;
-            upsertEastCoastNote(clap, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(clap, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -2004,22 +2018,22 @@ void shapeDirtySouthOpenHatTrack(TrackState& openHat,
         const int stepInBar = deterministicRapUnit(project.params.seed, bar, 6, 1563) < 0.48f ? 6 : 14;
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + stepInBar;
-        note.length = ending ? 2 : 1;
+        note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (ending ? 2 : 1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.hatVelocityMin + 22 + static_cast<int>(density * 9.0f),
                                    style.hatVelocityMin,
                                    std::min(104, style.hatVelocityMax + 10));
-        note.microOffset = dirtySouthPocketOffsetFor(TrackType::OpenHat, note, project, offbeatDelayTicks);
+        note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::OpenHat, note, project, offbeatDelayTicks);
         note.isGhost = false;
-        upsertEastCoastNote(openHat, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(openHat, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
 
         if (ending && density > 0.54f)
         {
             NoteEvent pickup = note;
-            pickup.step = bar * 16 + 15;
+            pickup.gridTick = (bar * 16 + 15) * HiResTiming::kTicks1_16;
             pickup.velocity = std::max(style.hatVelocityMin, note.velocity - 9);
-            pickup.microOffset = dirtySouthPocketOffsetFor(TrackType::OpenHat, pickup, project, offbeatDelayTicks);
-            upsertEastCoastNote(openHat, pickup.pitch, pickup.step, pickup.velocity, pickup.microOffset, false);
+            pickup.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::OpenHat, pickup, project, offbeatDelayTicks);
+            upsertEastCoastNote(openHat, pickup.pitch, stepIndexOf(pickup), pickup.velocity, pickup.timingOffsetTicks, false);
         }
     }
 
@@ -2047,20 +2061,20 @@ void shapeDirtySouthPercTrack(TrackState& perc,
         const int stepInBar = deterministicRapUnit(project.params.seed, bar, 5, 1573) < 0.45f ? 5 : 13;
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + stepInBar;
-        note.length = 1;
+        note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.percVelocityMin + 10 + static_cast<int>(density * 7.0f), style.percVelocityMin, style.percVelocityMax);
-        note.microOffset = dirtySouthPocketOffsetFor(TrackType::Perc, note, project, offbeatDelayTicks);
+        note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Perc, note, project, offbeatDelayTicks);
         note.isGhost = false;
-        upsertEastCoastNote(perc, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(perc, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
 
         if (ending && density > 0.62f)
         {
             NoteEvent pickup = note;
-            pickup.step = bar * 16 + 15;
+            pickup.gridTick = (bar * 16 + 15) * HiResTiming::kTicks1_16;
             pickup.velocity = std::max(style.percVelocityMin, note.velocity - 6);
-            pickup.microOffset = dirtySouthPocketOffsetFor(TrackType::Perc, pickup, project, offbeatDelayTicks);
-            upsertEastCoastNote(perc, pickup.pitch, pickup.step, pickup.velocity, pickup.microOffset, false);
+            pickup.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Perc, pickup, project, offbeatDelayTicks);
+            upsertEastCoastNote(perc, pickup.pitch, stepIndexOf(pickup), pickup.velocity, pickup.timingOffsetTicks, false);
         }
     }
 
@@ -2084,16 +2098,24 @@ void shapeDirtySouthCymbalTrack(TrackState& cymbal,
 
     if (firstHit)
     {
-        NoteEvent note { pitch, 0, 2, std::clamp(style.snareVelocityMin - 18, 58, 96), 0, false };
-        note.microOffset = dirtySouthPocketOffsetFor(TrackType::Cymbal, note, project, 0);
-        upsertEastCoastNote(cymbal, note.pitch, note.step, note.velocity, note.microOffset, false);
+        NoteEvent note;
+        note.pitch = pitch;
+        note.gridTick = 0;
+        note.lengthTicks = 2 * HiResTiming::kTicks1_16;
+        note.velocity = std::clamp(style.snareVelocityMin - 18, 58, 96);
+        note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Cymbal, note, project, 0);
+        upsertEastCoastNote(cymbal, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
     }
 
     if (endingHit)
     {
-        NoteEvent note { pitch, (bars - 1) * 16 + 15, 2, std::clamp(style.snareVelocityMin - 14, 62, 100), 0, false };
-        note.microOffset = dirtySouthPocketOffsetFor(TrackType::Cymbal, note, project, 0);
-        upsertEastCoastNote(cymbal, note.pitch, note.step, note.velocity, note.microOffset, false);
+        NoteEvent note;
+        note.pitch = pitch;
+        note.gridTick = ((bars - 1) * 16 + 15) * HiResTiming::kTicks1_16;
+        note.lengthTicks = 2 * HiResTiming::kTicks1_16;
+        note.velocity = std::clamp(style.snareVelocityMin - 14, 62, 100);
+        note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Cymbal, note, project, 0);
+        upsertEastCoastNote(cymbal, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
     }
 
     pruneDirtySouthBarLimit(cymbal, bars, 1, 1);
@@ -2113,7 +2135,7 @@ void shapeDirtySouthSubBass(TrackState& sub,
 
     for (const auto& kickNote : kick->notes)
     {
-        const int stepInBar = normalizedStepInBar(kickNote.step);
+        const int stepInBar = normalizedStepInBar(stepIndexOf(kickNote));
         if (!(stepInBar == 0 || stepInBar == 8 || stepInBar == 10 || stepInBar == 14 || stepInBar == 15))
             continue;
 
@@ -2123,12 +2145,12 @@ void shapeDirtySouthSubBass(TrackState& sub,
             note.pitch = std::clamp(basePitch - 2, 24, 84);
         else if (stepInBar == 14 || stepInBar == 15)
             note.pitch = std::clamp(basePitch + 3, 24, 88);
-        note.step = kickNote.step;
-        note.length = stepInBar == 0 ? 4 : (stepInBar == 8 ? 3 : 2);
+        note.gridTick = kickNote.gridTick;
+        note.lengthTicks = (stepInBar == 0 ? 4 : (stepInBar == 8 ? 3 : 2)) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.kickVelocityMin - 12 + static_cast<int>(project.params.velocityAmount * 12.0f), 62, 104);
-        note.microOffset = dirtySouthPocketOffsetFor(TrackType::Sub808, note, project, 0);
+        note.timingOffsetTicks = dirtySouthPocketOffsetFor(TrackType::Sub808, note, project, 0);
         note.isGhost = false;
-        upsertEastCoastNote(sub, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(sub, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
     }
 
     pruneDirtySouthBarLimit(sub, bars, 3, 3);
@@ -2223,8 +2245,9 @@ int germanStreetPocketOffsetFor(TrackType type,
                                 const PatternProject& project,
                                 int offbeatDelayTicks)
 {
-    const int step = normalizedStepInBar(note.step);
-    const int bar = std::max(0, note.step / 16);
+    const int noteStep = stepIndexOf(note);
+    const int step = normalizedStepInBar(noteStep);
+    const int bar = std::max(0, noteStep / 16);
     const int phase = step % 4;
     const int spread = germanStreetControlSpread(project);
     const int drift = deterministicRapDrift(project.params.seed + 1701, bar, step, static_cast<int>(type) + 281, spread);
@@ -2271,12 +2294,12 @@ int germanStreetPocketOffsetFor(TrackType type,
             break;
     }
 
-    return note.microOffset;
+    return note.timingOffsetTicks;
 }
 
 int germanStreetPriority(TrackType type, const NoteEvent& note)
 {
-    const int step = normalizedStepInBar(note.step);
+    const int step = normalizedStepInBar(stepIndexOf(note));
     int score = note.velocity;
 
     switch (type)
@@ -2334,7 +2357,7 @@ void pruneGermanStreetBarLimit(TrackState& track, int bars, int maxPerBar, int e
     {
         std::vector<NoteEvent> barNotes;
         for (const auto& note : track.notes)
-            if (note.step / 16 == bar)
+            if (stepIndexOf(note) / 16 == bar)
                 barNotes.push_back(note);
 
         std::stable_sort(barNotes.begin(), barNotes.end(), [&track](const NoteEvent& left, const NoteEvent& right)
@@ -2343,7 +2366,7 @@ void pruneGermanStreetBarLimit(TrackState& track, int bars, int maxPerBar, int e
             const int rightScore = germanStreetPriority(track.type, right);
             if (leftScore != rightScore)
                 return leftScore > rightScore;
-            return left.step < right.step;
+            return left.gridTick < right.gridTick;
         });
 
         const int limit = bar == bars - 1 ? endingMaxPerBar : maxPerBar;
@@ -2398,8 +2421,8 @@ void shapeGermanStreetHatCarrier(TrackState& hat,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool down = stepInBar == 0 || stepInBar == 8;
             const bool backbeat = stepInBar == 4 || stepInBar == 12;
             const bool offbeat = (stepInBar % 4) == 2;
@@ -2407,9 +2430,9 @@ void shapeGermanStreetHatCarrier(TrackState& hat,
             note.velocity = std::clamp(style.hatVelocityMin + (down ? 20 : backbeat ? 16 : offbeat ? 11 : 5) + dust + velocityLift,
                                        style.hatVelocityMin,
                                        std::min(86, style.hatVelocityMax));
-            note.microOffset = germanStreetPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::HiHat, note, project, offbeatDelayTicks);
             note.isGhost = false;
-            upsertEastCoastNote(hat, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(hat, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -2460,16 +2483,16 @@ void shapeGermanStreetKickPocket(TrackState& kick,
 
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             const bool root = stepInBar == 0;
             const bool anchor = stepInBar == 8 || stepInBar == 10;
             note.velocity = std::clamp(style.kickVelocityMin + (root ? 24 : anchor ? 16 : 9) + velocityLift,
                                        style.kickVelocityMin,
                                        style.kickVelocityMax);
-            note.microOffset = germanStreetPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
+            note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::Kick, note, project, offbeatDelayTicks);
             note.isGhost = false;
-            upsertEastCoastNote(kick, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(kick, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
     }
 
@@ -2496,14 +2519,14 @@ void shapeGermanStreetSnarePocket(TrackState& snare,
         {
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.snareVelocityMin + (stepInBar == 12 ? 9 : 6) + velocityLift,
                                        style.snareVelocityMin,
                                        style.snareVelocityMax);
-            note.microOffset = germanStreetPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = false;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, false);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
         }
 
         const float ghostPick = deterministicRapUnit(project.params.seed, bar, 0, 1731);
@@ -2516,14 +2539,14 @@ void shapeGermanStreetSnarePocket(TrackState& snare,
             const int stepInBar = ghostPick < 0.48f ? 11 : 3;
             NoteEvent note;
             note.pitch = pitch;
-            note.step = bar * 16 + stepInBar;
-            note.length = 1;
+            note.gridTick = (bar * 16 + stepInBar) * HiResTiming::kTicks1_16;
+            note.lengthTicks = (1) * HiResTiming::kTicks1_16;
             note.velocity = std::clamp(style.ghostVelocityMin + 4 + static_cast<int>(deterministicRapUnit(project.params.seed, bar, stepInBar, 1733) * 8.0f),
                                        style.ghostVelocityMin,
                                        style.ghostVelocityMax);
-            note.microOffset = germanStreetPocketOffsetFor(TrackType::Snare, note, project, 0);
+            note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::Snare, note, project, 0);
             note.isGhost = true;
-            upsertEastCoastNote(snare, note.pitch, note.step, note.velocity, note.microOffset, true);
+            upsertEastCoastNote(snare, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
         }
     }
 
@@ -2550,14 +2573,14 @@ void shapeGermanStreetClapLayer(TrackState& clap,
 
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + 12;
-        note.length = 1;
+        note.gridTick = (bar * 16 + 12) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.snareVelocityMin - 18 + static_cast<int>(project.params.velocityAmount * 8.0f),
                                    style.ghostVelocityMin,
                                    std::min(98, style.snareVelocityMax));
-        note.microOffset = germanStreetPocketOffsetFor(TrackType::ClapGhostSnare, note, project, offbeatDelayTicks) + 1;
+        note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::ClapGhostSnare, note, project, offbeatDelayTicks) + 1;
         note.isGhost = false;
-        upsertEastCoastNote(clap, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(clap, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
     }
 
     pruneGermanStreetBarLimit(clap, bars, 1, 1);
@@ -2584,14 +2607,14 @@ void shapeGermanStreetOpenHatTrack(TrackState& openHat,
 
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + (deterministicRapUnit(project.params.seed, bar, 15, 1753) < 0.82f ? 14 : 15);
-        note.length = ending ? 2 : 1;
+        note.gridTick = (bar * 16 + (deterministicRapUnit(project.params.seed, bar, 15, 1753) < 0.82f ? 14 : 15)) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (ending ? 2 : 1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.hatVelocityMin + 18 + static_cast<int>(density * 6.0f),
                                    style.hatVelocityMin,
                                    92);
-        note.microOffset = germanStreetPocketOffsetFor(TrackType::OpenHat, note, project, offbeatDelayTicks);
+        note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::OpenHat, note, project, offbeatDelayTicks);
         note.isGhost = false;
-        upsertEastCoastNote(openHat, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(openHat, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
     }
 
     pruneGermanStreetBarLimit(openHat, bars, 1, 1);
@@ -2618,12 +2641,12 @@ void shapeGermanStreetPercTrack(TrackState& perc,
 
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + (deterministicRapUnit(project.params.seed, bar, 7, 1763) < 0.55f ? 7 : 13);
-        note.length = 1;
+        note.gridTick = (bar * 16 + (deterministicRapUnit(project.params.seed, bar, 7, 1763) < 0.55f ? 7 : 13)) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.percVelocityMin + 8 + static_cast<int>(density * 5.0f), style.percVelocityMin, style.percVelocityMax);
-        note.microOffset = germanStreetPocketOffsetFor(TrackType::Perc, note, project, offbeatDelayTicks);
+        note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::Perc, note, project, offbeatDelayTicks);
         note.isGhost = false;
-        upsertEastCoastNote(perc, note.pitch, note.step, note.velocity, note.microOffset, false);
+        upsertEastCoastNote(perc, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, false);
     }
 
     pruneGermanStreetBarLimit(perc, bars, 1, 1);
@@ -2652,12 +2675,12 @@ void shapeGermanStreetGhostKickTrack(TrackState& ghostKick,
 
         NoteEvent note;
         note.pitch = pitch;
-        note.step = bar * 16 + (ending ? 15 : 7);
-        note.length = 1;
+        note.gridTick = (bar * 16 + (ending ? 15 : 7)) * HiResTiming::kTicks1_16;
+        note.lengthTicks = (1) * HiResTiming::kTicks1_16;
         note.velocity = std::clamp(style.ghostVelocityMin + 8 + static_cast<int>(density * 7.0f), style.ghostVelocityMin, style.ghostVelocityMax);
-        note.microOffset = germanStreetPocketOffsetFor(TrackType::GhostKick, note, project, 0);
+        note.timingOffsetTicks = germanStreetPocketOffsetFor(TrackType::GhostKick, note, project, 0);
         note.isGhost = true;
-        upsertEastCoastNote(ghostKick, note.pitch, note.step, note.velocity, note.microOffset, true);
+        upsertEastCoastNote(ghostKick, note.pitch, stepIndexOf(note), note.velocity, note.timingOffsetTicks, true);
     }
 
     pruneGermanStreetBarLimit(ghostKick, bars, 1, 1);
@@ -2874,7 +2897,7 @@ void RapEngine::mutateTrack(PatternProject& project, TrackType trackType)
         std::vector<size_t> removable;
         for (size_t i = 0; i < track->notes.size(); ++i)
         {
-            if (!isAnchorStep(trackType, track->notes[i].step % 16))
+            if (!isAnchorStep(trackType, stepIndexOf(track->notes[i]) % 16))
                 removable.push_back(i);
         }
 
@@ -2889,10 +2912,11 @@ void RapEngine::mutateTrack(PatternProject& project, TrackType trackType)
     {
         std::uniform_int_distribution<size_t> pick(0, track->notes.size() - 1);
         auto& n = track->notes[pick(rng)];
-        if (!isAnchorStep(trackType, n.step % 16))
+        const int currentStep = stepIndexOf(n);
+        if (!isAnchorStep(trackType, currentStep % 16))
         {
             std::uniform_int_distribution<int> shift(isLofi ? -1 : -1, isLofi ? 1 : 1);
-            n.step = std::clamp(n.step + shift(rng), 0, std::max(0, project.params.bars * 16 - 1));
+            n.gridTick = tickForStep(std::clamp(currentStep + shift(rng), 0, std::max(0, project.params.bars * 16 - 1)));
         }
     }
 
@@ -2988,16 +3012,34 @@ void RapEngine::generateDependentTracks(PatternProject& project,
 
         for (const auto& n : snare->notes)
         {
-            const int bar = std::clamp(n.step / 16, 0, std::max(0, project.params.bars - 1));
+            const int nStep = stepIndexOf(n);
+            const int bar = std::clamp(nStep / 16, 0, std::max(0, project.params.bars - 1));
             const auto referenceKickFeel = buildReferenceRapKickFeel(project, bar);
             const auto& clapDefaults = getLaneStyleDefaults(styleDefaults, clap->type);
             float clapGate = std::clamp(clapDensity * clapDefaults.noteProbability, 0.01f, 0.58f);
             if (referenceKickFeel.available)
                 clapGate *= std::clamp(0.88f + referenceKickFeel.supportRatio * 0.22f + referenceKickFeel.anchorRatio * 0.1f, 0.76f, 1.22f);
             if (!n.isGhost && chance(rng) < clapGate)
-                clap->notes.push_back({ 39, n.step, 1, std::clamp(clapVel(rng), 1, 127), 3, false });
+            {
+                NoteEvent note;
+                note.pitch = 39;
+                note.gridTick = tickForStep(nStep);
+                note.lengthTicks = HiResTiming::kTicks1_16;
+                note.velocity = std::clamp(clapVel(rng), 1, 127);
+                note.timingOffsetTicks = 3;
+                clap->notes.push_back(note);
+            }
             else if (chance(rng) < std::clamp(clapDensity * 0.62f * (referenceKickFeel.available ? std::clamp(0.9f + referenceKickFeel.supportRatio * 0.18f, 0.8f, 1.18f) : 1.0f), 0.01f, 0.30f))
-                clap->notes.push_back({ 39, std::max(0, n.step - 1), 1, std::clamp(ghostVel(rng), 1, 127), 2, true });
+            {
+                NoteEvent note;
+                note.pitch = 39;
+                note.gridTick = tickForStep(std::max(0, nStep - 1));
+                note.lengthTicks = HiResTiming::kTicks1_16;
+                note.velocity = std::clamp(ghostVel(rng), 1, 127);
+                note.timingOffsetTicks = 2;
+                note.isGhost = true;
+                clap->notes.push_back(note);
+            }
         }
     }
 
@@ -3009,19 +3051,29 @@ void RapEngine::generateDependentTracks(PatternProject& project,
 
         for (const auto& n : kick->notes)
         {
-            if ((n.step % 16) == 0 || (n.step % 16) == 8)
+            const int nStep = stepIndexOf(n);
+            if ((nStep % 16) == 0 || (nStep % 16) == 8)
                 continue;
 
-            const int bar = std::clamp(n.step / 16, 0, std::max(0, project.params.bars - 1));
+            const int bar = std::clamp(nStep / 16, 0, std::max(0, project.params.bars - 1));
             const auto referenceKickFeel = buildReferenceRapKickFeel(project, bar);
             const auto& ghostDefaults = getLaneStyleDefaults(styleDefaults, ghostKick->type);
             const float baseGhost = rapMix(spec.ghostKickDensityMin, spec.ghostKickDensityMax, project.params.densityAmount)
                 * supportAccentWeight(project);
             float gate = std::clamp(baseGhost * ghostDefaults.noteProbability, 0.01f, 0.28f);
             if (referenceKickFeel.available)
-                gate *= std::clamp(0.86f + referenceKickFeel.supportRatio * 0.3f + referenceKickFeel.presence[static_cast<size_t>(n.step % 16)] * 0.16f, 0.74f, 1.26f);
+                gate *= std::clamp(0.86f + referenceKickFeel.supportRatio * 0.3f + referenceKickFeel.presence[static_cast<size_t>(nStep % 16)] * 0.16f, 0.74f, 1.26f);
             if (chance(rng) < gate)
-                ghostKick->notes.push_back({ 35, std::max(0, n.step - 1), 1, vel(rng), 2, true });
+            {
+                NoteEvent note;
+                note.pitch = 35;
+                note.gridTick = tickForStep(std::max(0, nStep - 1));
+                note.lengthTicks = HiResTiming::kTicks1_16;
+                note.velocity = vel(rng);
+                note.timingOffsetTicks = 2;
+                note.isGhost = true;
+                ghostKick->notes.push_back(note);
+            }
         }
     }
 
@@ -3039,8 +3091,9 @@ void RapEngine::generateDependentTracks(PatternProject& project,
 
             for (const auto& n : hat->notes)
             {
-                const int stepInBar = n.step % 16;
-                const int bar = n.step / 16;
+                const int nStep = stepIndexOf(n);
+                const int stepInBar = nStep % 16;
+                const int bar = nStep / 16;
                 const auto referenceHatFeel = buildReferenceRapHatFeel(project, bar);
                 const auto role = bar < static_cast<int>(phrasePlan.size()) ? phrasePlan[static_cast<size_t>(bar)] : RapPhraseRole::Base;
                 const auto& openDefaults = getLaneStyleDefaults(styleDefaults, openHat->type);
@@ -3054,7 +3107,15 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                     gate *= std::clamp(0.86f + referenceHatFeel.supportRatio * 0.28f + (referenceHatFeel.gapRatio > 0.45f ? 0.08f : 0.0f), 0.74f, 1.22f);
 
                 if (chance(rng) < std::clamp(gate, 0.0f, 0.52f))
-                    openHat->notes.push_back({ 46, n.step, role == RapPhraseRole::Ending ? 2 : 1, std::clamp(vel(rng), 1, 127), n.microOffset, false });
+                {
+                    NoteEvent note;
+                    note.pitch = 46;
+                    note.gridTick = n.gridTick;
+                    note.lengthTicks = (role == RapPhraseRole::Ending ? 2 : 1) * HiResTiming::kTicks1_16;
+                    note.velocity = std::clamp(vel(rng), 1, 127);
+                    note.timingOffsetTicks = n.timingOffsetTicks;
+                    openHat->notes.push_back(note);
+                }
             }
         }
     }
@@ -3079,7 +3140,15 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                         if (referenceHatFeel.available)
                             gate *= std::clamp(0.9f + referenceHatFeel.supportRatio * 0.2f - std::max(0.0f, referenceHatFeel.gapRatio - 0.5f) * 0.12f, 0.78f, 1.18f);
                         if (chance(rng) < gate)
-                            ride->notes.push_back({ 51, bar * 16 + step, 1, vel(rng), 2, false });
+                        {
+                            NoteEvent note;
+                            note.pitch = 51;
+                            note.gridTick = tickForStep(bar * 16 + step);
+                            note.lengthTicks = HiResTiming::kTicks1_16;
+                            note.velocity = vel(rng);
+                            note.timingOffsetTicks = 2;
+                            ride->notes.push_back(note);
+                        }
                     }
                 }
             }
@@ -3095,11 +3164,25 @@ void RapEngine::generateDependentTracks(PatternProject& project,
             std::uniform_int_distribution<int> vel(style.snareVelocityMin - 4, style.snareVelocityMax);
             const auto& crashDefaults = getLaneStyleDefaults(styleDefaults, crash->type);
             if (chance(rng) < std::clamp(0.55f * crashDefaults.phraseEndingProbability, 0.06f, 0.9f))
-                crash->notes.push_back({ 49, 0, 2, std::clamp(vel(rng), 1, 127), 0, false });
+            {
+                NoteEvent note;
+                note.pitch = 49;
+                note.gridTick = 0;
+                note.lengthTicks = 2 * HiResTiming::kTicks1_16;
+                note.velocity = std::clamp(vel(rng), 1, 127);
+                crash->notes.push_back(note);
+            }
 
             const int lastBar = std::max(1, project.params.bars) - 1;
             if (chance(rng) < std::clamp(0.35f * crashDefaults.phraseEndingProbability, 0.05f, 0.9f))
-                crash->notes.push_back({ 49, lastBar * 16 + 15, 2, std::clamp(vel(rng), 1, 127), 0, false });
+            {
+                NoteEvent note;
+                note.pitch = 49;
+                note.gridTick = tickForStep(lastBar * 16 + 15);
+                note.lengthTicks = 2 * HiResTiming::kTicks1_16;
+                note.velocity = std::clamp(vel(rng), 1, 127);
+                crash->notes.push_back(note);
+            }
         }
     }
 
@@ -3125,7 +3208,14 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                     if (referenceHatFeel.available)
                         gate *= std::clamp(0.88f + referenceHatFeel.supportRatio * 0.24f + (step == 13 ? 0.04f : 0.0f), 0.76f, 1.2f);
                     if (chance(rng) < gate)
-                        perc->notes.push_back({ 50, bar * 16 + step, 1, std::clamp(vel(rng), 1, 127), 0, false });
+                    {
+                        NoteEvent note;
+                        note.pitch = 50;
+                        note.gridTick = tickForStep(bar * 16 + step);
+                        note.lengthTicks = HiResTiming::kTicks1_16;
+                        note.velocity = std::clamp(vel(rng), 1, 127);
+                        perc->notes.push_back(note);
+                    }
                 }
             }
             dedupeAndSort(perc->notes);
@@ -3142,7 +3232,14 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                 {
                     const auto& percDefaults = getLaneStyleDefaults(styleDefaults, perc->type);
                     if (chance(rng) < std::clamp(style.percChance * percDefaults.noteProbability, 0.01f, 0.45f))
-                        perc->notes.push_back({ 50, bar * 16 + step, 1, vel(rng), 0, false });
+                    {
+                        NoteEvent note;
+                        note.pitch = 50;
+                        note.gridTick = tickForStep(bar * 16 + step);
+                        note.lengthTicks = HiResTiming::kTicks1_16;
+                        note.velocity = vel(rng);
+                        perc->notes.push_back(note);
+                    }
                 }
             }
         }
@@ -3167,8 +3264,9 @@ void RapEngine::generateDependentTracks(PatternProject& project,
         {
             for (const auto& k : kick->notes)
             {
-                const int stepInBar = k.step % 16;
-                const int bar = std::clamp(k.step / 16, 0, std::max(0, project.params.bars - 1));
+                const int kStep = stepIndexOf(k);
+                const int stepInBar = kStep % 16;
+                const int bar = std::clamp(kStep / 16, 0, std::max(0, project.params.bars - 1));
                 const auto referenceKickFeel = buildReferenceRapKickFeel(project, bar);
                 const bool anchor = stepInBar == 0 || stepInBar == 8;
                 float gate = spec.sub808FollowKickMoreOften ? (anchor ? 0.62f : 0.36f) : (anchor ? 0.42f : 0.20f);
@@ -3195,7 +3293,12 @@ void RapEngine::generateDependentTracks(PatternProject& project,
                     if (stepInBar >= 14 && referenceKickFeel.tailRatio > 0.14f)
                         length = std::max(length, 2);
                 }
-                sub->notes.push_back({ pitch, k.step, length, std::clamp(vel(rng), 1, 127), 0, false });
+                NoteEvent note;
+                note.pitch = pitch;
+                note.gridTick = tickForStep(kStep);
+                note.lengthTicks = length * HiResTiming::kTicks1_16;
+                note.velocity = std::clamp(vel(rng), 1, 127);
+                sub->notes.push_back(note);
             }
         }
 
@@ -3233,10 +3336,10 @@ void RapEngine::postProcess(PatternProject& project,
                 const auto timing = lofiTimingWindow(track.type, note);
                 std::uniform_int_distribution<int> microDist(timing.first, timing.second);
                 int micro = microDist(rng);
-                if ((note.step % 2) == 1 && (track.type == TrackType::HiHat || track.type == TrackType::Perc))
+                if ((stepIndexOf(note) % 2) == 1 && (track.type == TrackType::HiHat || track.type == TrackType::Perc))
                     micro += static_cast<int>(std::round(swingTicks * 0.42f));
 
-                note.microOffset = std::clamp(micro, -120, 120);
+                note.timingOffsetTicks = std::clamp(micro, -120, 120);
 
                 if (chance(rng) < velocityBlend)
                     note.velocity = std::clamp(sampleLofiVelocity(track.type, note, rng), 1, 127);
@@ -3265,10 +3368,10 @@ void RapEngine::postProcess(PatternProject& project,
             const auto timing = rapTimingWindow(style.substyle, track.type, note);
             std::uniform_int_distribution<int> microDist(timing.first, timing.second);
             int micro = microDist(rng);
-            if ((note.step % 2) == 1 && (track.type == TrackType::HiHat || track.type == TrackType::Perc || track.type == TrackType::OpenHat))
+            if ((stepIndexOf(note) % 2) == 1 && (track.type == TrackType::HiHat || track.type == TrackType::Perc || track.type == TrackType::OpenHat))
                 micro += static_cast<int>(std::round(swingTicks * 0.40f));
 
-            note.microOffset = std::clamp(micro, -120, 120);
+            note.timingOffsetTicks = std::clamp(micro, -120, 120);
 
             if (chance(rng) < velocityBlend)
                 note.velocity = std::clamp(sampleRapVelocity(style.substyle, track.type, note, rng), 1, 127);
@@ -3292,10 +3395,10 @@ void RapEngine::validatePattern(PatternProject& project, const std::unordered_se
 
         for (auto& note : track.notes)
         {
-            note.step = std::clamp(note.step, 0, bars * 16 - 1);
-            note.length = std::max(1, note.length);
+            note.gridTick = std::clamp(note.gridTick, 0, (bars * 16 - 1) * HiResTiming::kTicks1_16);
+            note.lengthTicks = std::max(HiResTiming::kTicks1_16, note.lengthTicks);
             note.velocity = std::clamp(note.velocity, 1, 127);
-            note.microOffset = std::clamp(note.microOffset, -120, 120);
+            note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -120, 120);
         }
 
         int maxHits = bars * 10;
@@ -3321,12 +3424,12 @@ void RapEngine::validatePattern(PatternProject& project, const std::unordered_se
         {
             const bool onSnare = snare != nullptr && std::any_of(snare->notes.begin(), snare->notes.end(), [&k](const NoteEvent& s)
             {
-                return !s.isGhost && s.step == k.step;
+                return !s.isGhost && s.gridTick == k.gridTick;
             });
 
             const bool onClap = clap != nullptr && std::any_of(clap->notes.begin(), clap->notes.end(), [&k](const NoteEvent& c)
             {
-                return !c.isGhost && c.step == k.step;
+                return !c.isGhost && c.gridTick == k.gridTick;
             });
 
             return onSnare || onClap;

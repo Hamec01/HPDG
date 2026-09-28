@@ -6,6 +6,7 @@
 
 #include "Sub808Types.h"
 
+#include "TimingGrid.h"
 #include "TrackRegistry.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -54,20 +55,54 @@ juce::String safeString(const juce::ValueTree& node, const juce::Identifier& key
     return v.isVoid() ? fallback : v.toString();
 }
 
+// Tick-native (schema v11+) note properties. Legacy step/length/micro_offset are still read
+// (never written) by deserializeNoteNode below, for projects saved by v10 and earlier.
 juce::ValueTree serializeNoteNode(const char* nodeType, const NoteEvent& note)
 {
     juce::ValueTree node(nodeType);
     node.setProperty("pitch", note.pitch, nullptr);
-    node.setProperty("step", note.step, nullptr);
-    node.setProperty("length", note.length, nullptr);
+    node.setProperty("grid_tick", note.gridTick, nullptr);
+    node.setProperty("timing_offset_ticks", note.timingOffsetTicks, nullptr);
+    node.setProperty("length_ticks", note.lengthTicks, nullptr);
     node.setProperty("velocity", note.velocity, nullptr);
-    node.setProperty("micro_offset", note.microOffset, nullptr);
     node.setProperty("is_ghost", note.isGhost, nullptr);
     node.setProperty("semantic_role", note.semanticRole, nullptr);
     node.setProperty("is_slide", note.isSlide, nullptr);
     node.setProperty("is_legato", note.isLegato, nullptr);
     node.setProperty("glide_to_next", note.glideToNext, nullptr);
     return node;
+}
+
+NoteEvent deserializeNoteNode(const juce::ValueTree& noteNode, int defaultPitch)
+{
+    NoteEvent note;
+    note.pitch = safeInt(noteNode, "pitch", defaultPitch);
+
+    if (!noteNode.getProperty("grid_tick").isVoid())
+    {
+        // Schema v11+: already tick-native.
+        note.gridTick = safeInt(noteNode, "grid_tick", 0);
+        note.timingOffsetTicks = safeInt(noteNode, "timing_offset_ticks", 0);
+        note.lengthTicks = juce::jmax(1, safeInt(noteNode, "length_ticks", TimingGrid::Sixteenth));
+    }
+    else
+    {
+        // Schema v10 and earlier: step (1/16 index) + length (1/16 count) + micro_offset ticks.
+        // gridTick = step * 240; timingOffsetTicks = micro_offset; lengthTicks = length * 240.
+        const int legacyStep = safeInt(noteNode, "step", 0);
+        const int legacyLength = juce::jmax(1, safeInt(noteNode, "length", 1));
+        note.gridTick = legacyStep * TimingGrid::Sixteenth;
+        note.timingOffsetTicks = safeInt(noteNode, "micro_offset", 0);
+        note.lengthTicks = legacyLength * TimingGrid::Sixteenth;
+    }
+
+    note.velocity = safeInt(noteNode, "velocity", 100);
+    note.isGhost = safeBool(noteNode, "is_ghost", false);
+    note.semanticRole = noteNode.getProperty("semantic_role", {}).toString().trim();
+    note.isSlide = safeBool(noteNode, "is_slide", false);
+    note.isLegato = safeBool(noteNode, "is_legato", false);
+    note.glideToNext = safeBool(noteNode, "glide_to_next", false);
+    return note;
 }
 
 void sanitizeGeneratorParams(GeneratorParams& params)
@@ -132,7 +167,7 @@ void deserializePerformanceBaseParams(const juce::ValueTree& node, TrackState& t
     sanitizeGeneratorParams(params);
 }
 
-void sanitizeLegacyNotes(std::vector<NoteEvent>& notes, TrackType trackType, int maxStep)
+void sanitizeLegacyNotes(std::vector<NoteEvent>& notes, TrackType trackType, int maxTick)
 {
     const auto* info = TrackRegistry::find(trackType);
 
@@ -142,10 +177,10 @@ void sanitizeLegacyNotes(std::vector<NoteEvent>& notes, TrackType trackType, int
         if (note.pitch == 0 && info != nullptr)
             note.pitch = info->defaultMidiNote;
 
-        note.step = std::clamp(note.step, 0, maxStep);
-        note.length = std::clamp(note.length, 1, 64);
+        note.gridTick = std::clamp(note.gridTick, 0, maxTick);
+        note.lengthTicks = std::clamp(note.lengthTicks, TimingGrid::Sixteenth, 64 * TimingGrid::Sixteenth);
         note.velocity = std::clamp(note.velocity, 1, 127);
-        note.microOffset = std::clamp(note.microOffset, -960, 960);
+        note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -960, 960);
         note.semanticRole = note.semanticRole.trim();
         if (trackType != TrackType::Sub808)
         {
@@ -157,28 +192,28 @@ void sanitizeLegacyNotes(std::vector<NoteEvent>& notes, TrackType trackType, int
 
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
         return a.pitch < b.pitch;
     });
 }
 
-void sanitizeSub808Notes(std::vector<Sub808NoteEvent>& notes, int maxStep)
+void sanitizeSub808Notes(std::vector<Sub808NoteEvent>& notes, int maxTick)
 {
     for (auto& note : notes)
     {
         note.pitch = std::clamp(note.pitch, 0, 127);
-        note.step = std::clamp(note.step, 0, maxStep);
-        note.length = std::clamp(note.length, 1, 64);
+        note.gridTick = std::clamp(note.gridTick, 0, maxTick);
+        note.lengthTicks = std::clamp(note.lengthTicks, TimingGrid::Sixteenth, 64 * TimingGrid::Sixteenth);
         note.velocity = std::clamp(note.velocity, 1, 127);
-        note.microOffset = std::clamp(note.microOffset, -960, 960);
+        note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -960, 960);
         note.semanticRole = note.semanticRole.trim();
     }
 
     std::sort(notes.begin(), notes.end(), [](const Sub808NoteEvent& a, const Sub808NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
         return a.pitch < b.pitch;
     });
 }
@@ -573,10 +608,10 @@ juce::ValueTree serializeAuthoringState(const PatternAuthoringState& authoring)
         for (const auto& state : noteStates)
         {
             juce::ValueTree noteNode(kNoteAuthoringNode);
-            noteNode.setProperty("step", state.noteKey.step, nullptr);
-            noteNode.setProperty("micro_offset", state.noteKey.microOffset, nullptr);
+            noteNode.setProperty("grid_tick", state.noteKey.gridTick, nullptr);
+            noteNode.setProperty("timing_offset_ticks", state.noteKey.timingOffsetTicks, nullptr);
             noteNode.setProperty("pitch", state.noteKey.pitch, nullptr);
-            noteNode.setProperty("length", state.noteKey.length, nullptr);
+            noteNode.setProperty("length_ticks", state.noteKey.lengthTicks, nullptr);
             noteNode.setProperty("is_ghost", state.noteKey.isGhost, nullptr);
             noteNode.setProperty("anchor_locked", state.anchorLocked, nullptr);
             noteNode.setProperty("importance_weight", state.importanceWeight, nullptr);
@@ -651,10 +686,20 @@ PatternAuthoringState deserializeAuthoringState(const juce::ValueTree& patternNo
                 continue;
 
             NoteAuthoringState state;
-            state.noteKey.step = safeInt(noteNode, "step", 0);
-            state.noteKey.microOffset = safeInt(noteNode, "micro_offset", 0);
+            if (!noteNode.getProperty("grid_tick").isVoid())
+            {
+                state.noteKey.gridTick = safeInt(noteNode, "grid_tick", 0);
+                state.noteKey.timingOffsetTicks = safeInt(noteNode, "timing_offset_ticks", 0);
+                state.noteKey.lengthTicks = safeInt(noteNode, "length_ticks", TimingGrid::Sixteenth);
+            }
+            else
+            {
+                // Schema v10 and earlier.
+                state.noteKey.gridTick = safeInt(noteNode, "step", 0) * TimingGrid::Sixteenth;
+                state.noteKey.timingOffsetTicks = safeInt(noteNode, "micro_offset", 0);
+                state.noteKey.lengthTicks = juce::jmax(1, safeInt(noteNode, "length", 1)) * TimingGrid::Sixteenth;
+            }
             state.noteKey.pitch = safeInt(noteNode, "pitch", 36);
-            state.noteKey.length = safeInt(noteNode, "length", 1);
             state.noteKey.isGhost = safeBool(noteNode, "is_ghost", false);
             state.anchorLocked = safeBool(noteNode, "anchor_locked", false);
             state.importanceWeight = safeInt(noteNode, "importance_weight", 50);
@@ -867,18 +912,18 @@ void sanitizeTrackStates(PatternProject& project)
 
 void sanitizeTrackNotes(PatternProject& project)
 {
-    const int maxStep = 16 * 16 - 1;
+    const int maxTick = 16 * TimingGrid::TicksPerBar4_4 - 1;
 
     for (auto& track : project.tracks)
     {
-        sanitizeLegacyNotes(track.notes, track.type, maxStep);
+        sanitizeLegacyNotes(track.notes, track.type, maxTick);
 
         if (track.type == TrackType::Sub808)
         {
             if (track.sub808Notes.empty() && !track.notes.empty())
                 track.sub808Notes = toSub808NoteEvents(track.notes);
 
-            sanitizeSub808Notes(track.sub808Notes, maxStep);
+            sanitizeSub808Notes(track.sub808Notes, maxTick);
 
             if (track.baseSub808Notes.empty())
             {
@@ -888,7 +933,7 @@ void sanitizeTrackNotes(PatternProject& project)
                     track.baseSub808Notes = track.sub808Notes;
             }
 
-            sanitizeSub808Notes(track.baseSub808Notes, maxStep);
+            sanitizeSub808Notes(track.baseSub808Notes, maxTick);
 
             track.notes = toLegacyNoteEvents(track.sub808Notes);
             track.baseNotes = toLegacyNoteEvents(track.baseSub808Notes);
@@ -896,7 +941,7 @@ void sanitizeTrackNotes(PatternProject& project)
         else
         {
             track.sub808Notes.clear();
-            sanitizeLegacyNotes(track.baseNotes, track.type, maxStep);
+            sanitizeLegacyNotes(track.baseNotes, track.type, maxTick);
             track.baseSub808Notes.clear();
 
             if (track.baseNotes.empty() && !track.notes.empty())
@@ -907,7 +952,7 @@ void sanitizeTrackNotes(PatternProject& project)
 
 void sanitizeAuthoringState(PatternProject& project)
 {
-    const int maxStep = 16 * 16 - 1;
+    const int maxTick = 16 * TimingGrid::TicksPerBar4_4 - 1;
     const int totalTicks = std::max(1, project.params.bars * 16 * ticksPerStep());
 
     for (auto it = project.authoring.trackPreferencesByLane.begin(); it != project.authoring.trackPreferencesByLane.end();)
@@ -939,16 +984,16 @@ void sanitizeAuthoringState(PatternProject& project)
         auto& noteStates = it->second;
         for (auto& state : noteStates)
         {
-            state.noteKey.step = std::clamp(state.noteKey.step, 0, maxStep);
-            state.noteKey.microOffset = std::clamp(state.noteKey.microOffset, -960, 960);
+            state.noteKey.gridTick = std::clamp(state.noteKey.gridTick, 0, maxTick);
+            state.noteKey.timingOffsetTicks = std::clamp(state.noteKey.timingOffsetTicks, -960, 960);
             state.noteKey.pitch = std::clamp(state.noteKey.pitch, 0, 127);
-            state.noteKey.length = std::clamp(state.noteKey.length, 1, 64);
+            state.noteKey.lengthTicks = std::clamp(state.noteKey.lengthTicks, TimingGrid::Sixteenth, 64 * TimingGrid::Sixteenth);
             state.importanceWeight = std::clamp(state.importanceWeight, 0, 100);
         }
 
         noteStates.erase(std::remove_if(noteStates.begin(), noteStates.end(), [](const NoteAuthoringState& state)
         {
-            return state.noteKey.length <= 0;
+            return state.noteKey.lengthTicks <= 0;
         }),
                          noteStates.end());
 
@@ -1140,17 +1185,8 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
             if (!isVisibleNote && !isBaseNote)
                 continue;
 
-            NoteEvent note;
-            note.pitch = safeInt(noteNode, "pitch", TrackRegistry::find(track.type) != nullptr ? TrackRegistry::find(track.type)->defaultMidiNote : 36);
-            note.step = safeInt(noteNode, "step", 0);
-            note.length = safeInt(noteNode, "length", 1);
-            note.velocity = safeInt(noteNode, "velocity", 100);
-            note.microOffset = safeInt(noteNode, "micro_offset", 0);
-            note.isGhost = safeBool(noteNode, "is_ghost", false);
-            note.semanticRole = noteNode.getProperty("semantic_role", {}).toString().trim();
-            note.isSlide = safeBool(noteNode, "is_slide", false);
-            note.isLegato = safeBool(noteNode, "is_legato", false);
-            note.glideToNext = safeBool(noteNode, "glide_to_next", false);
+            const int defaultPitch = TrackRegistry::find(track.type) != nullptr ? TrackRegistry::find(track.type)->defaultMidiNote : 36;
+            NoteEvent note = deserializeNoteNode(noteNode, defaultPitch);
 
             if (track.type == TrackType::Sub808)
             {

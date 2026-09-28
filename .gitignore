@@ -26,6 +26,10 @@ drag.log
 contract-out.txt
 contract-err.txt
 Releases/
+/Release/
+/Installer/Output/
+/Vst3ViewerTmp/
+*.zip
 
 # OS
 Thumbs.db

@@ -4,6 +4,7 @@
 
 #include "TrapLowEndRoles.h"
 #include "../../Core/PatternProject.h"
+#include "../../Core/TimingGrid.h"
 #include "../../Core/TrackRegistry.h"
 #include "../TempoInterpretation.h"
 
@@ -173,9 +174,10 @@ void tryAddEvent(std::vector<TrapKickEvent>& plan,
     if (step < 0 || step >= bars * 16)
         return;
 
-    auto duplicate = std::find_if(plan.begin(), plan.end(), [step](const TrapKickEvent& e)
+    const int tick = step * TimingGrid::Sixteenth;
+    auto duplicate = std::find_if(plan.begin(), plan.end(), [tick](const TrapKickEvent& e)
     {
-        return e.note.step == step;
+        return e.note.gridTick == tick;
     });
     if (duplicate != plan.end())
     {
@@ -184,7 +186,13 @@ void tryAddEvent(std::vector<TrapKickEvent>& plan,
         return;
     }
 
-    plan.push_back({ NoteEvent { 36, step, 1, velocityForRole(role, style, rng), 0, role == TrapKickRole::GhostLike, {} }, role });
+    NoteEvent note;
+    note.pitch = 36;
+    note.gridTick = tick;
+    note.lengthTicks = TimingGrid::Sixteenth;
+    note.velocity = velocityForRole(role, style, rng);
+    note.isGhost = role == TrapKickRole::GhostLike;
+    plan.push_back({ note, role });
 }
 
 std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
@@ -322,14 +330,14 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
 
     std::sort(plan.begin(), plan.end(), [](const TrapKickEvent& a, const TrapKickEvent& b)
     {
-        return a.note.step < b.note.step;
+        return a.note.gridTick < b.note.gridTick;
     });
 
     std::vector<int> perBarAnchors(static_cast<size_t>(bars), 0);
     std::vector<int> perBarCount(static_cast<size_t>(bars), 0);
     for (const auto& e : plan)
     {
-        const int bar = std::clamp(e.note.step / 16, 0, bars - 1);
+        const int bar = std::clamp((e.note.gridTick / TimingGrid::Sixteenth) / 16, 0, bars - 1);
         perBarCount[static_cast<size_t>(bar)] += 1;
         if (e.role == TrapKickRole::Anchor)
             perBarAnchors[static_cast<size_t>(bar)] += 1;
@@ -344,8 +352,8 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
 
     std::sort(plan.begin(), plan.end(), [](const TrapKickEvent& a, const TrapKickEvent& b)
     {
-        if (a.note.step != b.note.step)
-            return a.note.step < b.note.step;
+        if (a.note.gridTick != b.note.gridTick)
+            return a.note.gridTick < b.note.gridTick;
         return static_cast<int>(a.role) < static_cast<int>(b.role);
     });
 
@@ -354,7 +362,7 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
     {
         std::vector<size_t> indices;
         for (size_t i = 0; i < plan.size(); ++i)
-            if ((plan[i].note.step / 16) == bar)
+            if (((plan[i].note.gridTick / TimingGrid::Sixteenth) / 16) == bar)
                 indices.push_back(i);
 
         if (static_cast<int>(indices.size()) <= maxEvents)
@@ -378,12 +386,12 @@ std::vector<TrapKickEvent> buildKickPhrasePlan(int bars,
         });
 
         for (size_t i = static_cast<size_t>(maxEvents); i < indices.size(); ++i)
-            plan[indices[i]].note.step = -1;
+            plan[indices[i]].note.gridTick = -1;
     }
 
     plan.erase(std::remove_if(plan.begin(), plan.end(), [](const TrapKickEvent& e)
     {
-        return e.note.step < 0;
+        return e.note.gridTick < 0;
     }), plan.end());
 
     return plan;
@@ -424,14 +432,14 @@ void TrapKickGenerator::generate(TrackState& track,
 
     std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
         return a.velocity > b.velocity;
     });
 
     track.notes.erase(std::unique(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        return a.step == b.step;
+        return a.gridTick == b.gridTick;
     }), track.notes.end());
 }
 } // namespace bbg

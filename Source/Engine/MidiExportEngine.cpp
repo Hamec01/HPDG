@@ -1,6 +1,7 @@
 #include "MidiExportEngine.h"
 
 #include <algorithm>
+#include <cstdint>
 
 #include "../Core/TrackRegistry.h"
 #include "../Utils/MidiHelpers.h"
@@ -17,7 +18,32 @@ bool isHatChokeTrack(TrackType type)
 
 bool isNoteWithinVisibleBars(const NoteEvent& note, int bars)
 {
-    return stepWithinPatternBars(note.step, bars);
+    // Bounds-check the structural gridTick, not startTick(): a note whose groove/humanize
+    // timingOffsetTicks nudges it slightly before/after the pattern must still be considered
+    // visible (and later clamped by exportStartTick) rather than silently dropped here.
+    return tickWithinPatternBars(note.gridTick, bars);
+}
+
+// Rescales a note's true (internal-PPQ) tick/length to the MIDI file's target ppq. Every real
+// caller in this codebase passes ppq == kInternalPpq, so this is normally an identity operation;
+// the rescale exists so the exporter stays correct if that ever changes.
+int64_t rescaleToExportPpq(int internalTicks, int ppq)
+{
+    if (ppq == kInternalPpq)
+        return internalTicks;
+    return (static_cast<int64_t>(internalTicks) * ppq) / kInternalPpq;
+}
+
+int exportStartTick(const NoteEvent& note, int bars, int ppq)
+{
+    const auto rescaled = rescaleToExportPpq(note.startTick(), ppq);
+    return clampTickToPattern(static_cast<int>(rescaled), bars, ppq);
+}
+
+int exportLengthTicks(const NoteEvent& note, int ppq)
+{
+    const auto rescaled = rescaleToExportPpq(juce::jmax(1, note.lengthTicks), ppq);
+    return static_cast<int>(std::max<int64_t>(1, rescaled));
 }
 
 bool hasSoloTracks(const PatternProject& project)
@@ -94,7 +120,7 @@ std::vector<int> collectHatChokeStarts(const PatternProject& project,
         for (const auto& note : track.notes)
         {
             if (isNoteWithinVisibleBars(note, bars))
-                starts.push_back(clampedNoteStartTicks(note.step, note.microOffset, bars, ppq));
+                starts.push_back(exportStartTick(note, bars, ppq));
         }
     }
 
@@ -115,7 +141,7 @@ std::vector<int> collectHatChokeStartsAll(const PatternProject& project, int bar
         for (const auto& note : track.notes)
         {
             if (isNoteWithinVisibleBars(note, bars))
-                starts.push_back(clampedNoteStartTicks(note.step, note.microOffset, bars, ppq));
+                starts.push_back(exportStartTick(note, bars, ppq));
         }
     }
 
@@ -144,7 +170,7 @@ juce::MidiMessageSequence MidiExportEngine::trackToSequence(const TrackState& tr
     for (const auto& note : track.notes)
     {
         if (isNoteWithinVisibleBars(note, bars))
-            localStarts.push_back(clampedNoteStartTicks(note.step, note.microOffset, bars, ppq));
+            localStarts.push_back(exportStartTick(note, bars, ppq));
     }
     std::sort(localStarts.begin(), localStarts.end());
     localStarts.erase(std::unique(localStarts.begin(), localStarts.end()), localStarts.end());
@@ -159,8 +185,8 @@ juce::MidiMessageSequence MidiExportEngine::trackToSequence(const TrackState& tr
 
         const int midiNote = exportMidiPitch(track, note);
 
-        const int startTick = clampedNoteStartTicks(note.step, note.microOffset, bars, ppq);
-        int gateTicks = std::max(1, note.length) * ticksPerStep(ppq);
+        const int startTick = exportStartTick(note, bars, ppq);
+        int gateTicks = exportLengthTicks(note, ppq);
         if (applyHatCutoff)
             gateTicks = std::min(gateTicks, std::max(1, ticksPerStep(ppq) / 2));
 

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "../Core/TimingGrid.h"
+
 namespace bbg
 {
 void HumanizeEngine::applyHumanize(PatternProject& project,
@@ -41,8 +43,8 @@ void HumanizeEngine::applyHumanize(PatternProject& project,
 
         for (auto& note : track.notes)
         {
-            const int stepInBar = note.step % 16;
-            const bool snareAnchor = (track.type == TrackType::Snare) && ((note.step % 16 == 4) || (note.step % 16 == 12));
+            const int stepInBar = (note.gridTick / TimingGrid::Sixteenth) % 16;
+            const bool snareAnchor = (track.type == TrackType::Snare) && (stepInBar == 4 || stepInBar == 12);
             int timingJitter = snareAnchor ? std::max(0, earlyLate(rng) / 3) : earlyLate(rng);
 
             if (track.type == TrackType::HiHat)
@@ -77,7 +79,7 @@ void HumanizeEngine::applyHumanize(PatternProject& project,
             if (style.substyle == BoomBapSubstyle::RussianUnderground)
                 timingJitter = std::clamp(timingJitter, -6, 9);
 
-            note.microOffset += timingJitter;
+            note.timingOffsetTicks += timingJitter;
             note.velocity = std::clamp(note.velocity + velJitter(rng), 1, 127);
         }
     }

@@ -292,7 +292,7 @@ int localHatDensityLimit(TrapSubstyle substyle)
 
 bool isKickAnchor(const NoteEvent& note)
 {
-    const int s = note.step % 16;
+    const int s = (note.gridTick / HiResTiming::kTicks1_16) % 16;
     return s == 0 || s == 8;
 }
 
@@ -955,10 +955,10 @@ void dedupeAndSortNotes(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
-        if (a.microOffset != b.microOffset)
-            return a.microOffset < b.microOffset;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
+        if (a.timingOffsetTicks != b.timingOffsetTicks)
+            return a.timingOffsetTicks < b.timingOffsetTicks;
         if (a.pitch != b.pitch)
             return a.pitch < b.pitch;
         return a.velocity > b.velocity;
@@ -966,7 +966,7 @@ void dedupeAndSortNotes(std::vector<NoteEvent>& notes)
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        return a.step == b.step && a.microOffset == b.microOffset && a.pitch == b.pitch;
+        return a.gridTick == b.gridTick && a.timingOffsetTicks == b.timingOffsetTicks && a.pitch == b.pitch;
     }), notes.end());
 }
 } // namespace
@@ -991,7 +991,7 @@ void TrapHatFxGenerator::generate(TrackState& hatFxTrack,
 
     std::uniform_real_distribution<float> chance(0.0f, 1.0f);
     const int barsFromPhrase = static_cast<int>(phrase.size());
-    const int barsFromHat = hatTrack.notes.empty() ? 0 : (hatTrack.notes.back().step / 16) + 1;
+    const int barsFromHat = hatTrack.notes.empty() ? 0 : (hatTrack.notes.back().gridTick / HiResTiming::kTicks1_16 / 16) + 1;
     const int bars = std::max(1, std::max(barsFromPhrase, barsFromHat));
 
     const float baseFxRaw = fxIntensity * style.hatFxIntensity * fxDensityBias(style.substyle) * hatFxModeMultiplier(spec.hatFxMode);

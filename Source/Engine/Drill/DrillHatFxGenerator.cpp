@@ -88,10 +88,11 @@ void DrillHatFxGenerator::generate(TrackState& track,
 
         for (const auto& note : hiHatTrack.notes)
         {
-            if ((note.step / 16) != bar.barIndex)
+            const int noteStep = note.gridTick / HiResTiming::kTicks1_16;
+            if ((noteStep / 16) != bar.barIndex)
                 continue;
 
-            const int stepInBar = note.step - barStartStep;
+            const int stepInBar = noteStep - barStartStep;
             const bool transitionLike = note.semanticRole != "drill_hat_backbone"
                 || stepInBar >= 12
                 || (snareAnchor >= 0 && std::abs(stepInBar - snareAnchor) <= 1)
@@ -134,10 +135,10 @@ void DrillHatFxGenerator::generate(TrackState& track,
 
     std::sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        if (lhs.step != rhs.step)
-            return lhs.step < rhs.step;
-        if (lhs.microOffset != rhs.microOffset)
-            return lhs.microOffset < rhs.microOffset;
+        if (lhs.gridTick != rhs.gridTick)
+            return lhs.gridTick < rhs.gridTick;
+        if (lhs.timingOffsetTicks != rhs.timingOffsetTicks)
+            return lhs.timingOffsetTicks < rhs.timingOffsetTicks;
         return lhs.velocity > rhs.velocity;
     });
 }

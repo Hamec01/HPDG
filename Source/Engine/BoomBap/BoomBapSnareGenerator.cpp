@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "BoomBapPatternLibrary.h"
+#include "../../Core/TimingGrid.h"
 #include "../../Core/TrackRegistry.h"
 #include "../TempoInterpretation.h"
 
@@ -11,6 +12,20 @@ namespace bbg
 {
 namespace
 {
+// step is an absolute 1/16 index (bar*16 + stepInBar); offsetTicks is the swing/humanize-style
+// displacement applied on top of that structural position.
+void addSnareNote(std::vector<NoteEvent>& notes, int pitch, int step, int velocity, int offsetTicks, bool isGhost)
+{
+    NoteEvent note;
+    note.pitch = pitch;
+    note.gridTick = step * TimingGrid::Sixteenth;
+    note.lengthTicks = TimingGrid::Sixteenth;
+    note.velocity = velocity;
+    note.timingOffsetTicks = offsetTicks;
+    note.isGhost = isGhost;
+    notes.push_back(note);
+}
+
 float substyleGhostScale(BoomBapSubstyle substyle)
 {
     switch (substyle)
@@ -35,8 +50,9 @@ int sampleLateTicks(int center, int spread, std::mt19937& rng)
 
 int classicGhostPriority(const NoteEvent& note, int bars)
 {
-    const int step = ((note.step % 16) + 16) % 16;
-    const int bar = note.step / 16;
+    const int absoluteStep = note.gridTick / TimingGrid::Sixteenth;
+    const int step = ((absoluteStep % 16) + 16) % 16;
+    const int bar = absoluteStep / 16;
     int score = note.velocity;
 
     if (bar == bars - 1)
@@ -75,7 +91,7 @@ void pruneClassicGhostSnares(TrackState& track, int bars)
         const int rightScore = classicGhostPriority(right, bars);
         if (leftScore != rightScore)
             return leftScore > rightScore;
-        return left.step < right.step;
+        return left.gridTick < right.gridTick;
     });
 
     if (static_cast<int>(ghosts.size()) > maxGhosts)
@@ -84,8 +100,8 @@ void pruneClassicGhostSnares(TrackState& track, int bars)
     anchors.insert(anchors.end(), ghosts.begin(), ghosts.end());
     std::sort(anchors.begin(), anchors.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        if (left.step != right.step)
-            return left.step < right.step;
+        if (left.gridTick != right.gridTick)
+            return left.gridTick < right.gridTick;
         if (left.isGhost != right.isGhost)
             return !left.isGhost;
         return left.velocity > right.velocity;
@@ -140,17 +156,17 @@ void BoomBapSnareGenerator::generate(TrackState& track,
 
         if (halfTimeAware)
         {
-            track.notes.push_back({ pitch, bar * 16 + 8, 1, velDist(rng), beat4Late, false });
+            addSnareNote(track.notes, pitch, bar * 16 + 8, velDist(rng), beat4Late, false);
             if (tempoBand == TempoBand::Fast && role == PhraseRole::Ending && chance(rng) < 0.24f)
-                track.notes.push_back({ pitch, bar * 16 + 15, 1, std::max(style.snareVelocityMin, velDist(rng) - 10), std::max(1, beat4Late / 2), true });
+                addSnareNote(track.notes, pitch, bar * 16 + 15, std::max(style.snareVelocityMin, velDist(rng) - 10), std::max(1, beat4Late / 2), true);
 
             if (style.substyle == BoomBapSubstyle::Jazzy && chance(rng) < std::clamp(feel.dragProbability + 0.06f, 0.02f, 0.4f))
-                track.notes.push_back({ pitch, bar * 16 + 6, 1, std::max(style.ghostVelocityMin, ghostVel(rng) - 4), std::max(1, beat4Late / 3), true });
+                addSnareNote(track.notes, pitch, bar * 16 + 6, std::max(style.ghostVelocityMin, ghostVel(rng) - 4), std::max(1, beat4Late / 3), true);
         }
         else
         {
-            track.notes.push_back({ pitch, bar * 16 + 4, 1, velDist(rng), beat2Late, false });
-            track.notes.push_back({ pitch, bar * 16 + 12, 1, velDist(rng), beat4Late, false });
+            addSnareNote(track.notes, pitch, bar * 16 + 4, velDist(rng), beat2Late, false);
+            addSnareNote(track.notes, pitch, bar * 16 + 12, velDist(rng), beat4Late, false);
 
             float dragChance = std::clamp(feel.dragProbability + BoomBapPhrasePlanner::roleVariationStrength(role) * 0.12f, 0.0f, 0.42f);
             if (classicTightGhosts)
@@ -158,7 +174,7 @@ void BoomBapSnareGenerator::generate(TrackState& track,
 
             if (chance(rng) < dragChance)
             {
-                track.notes.push_back({ pitch, bar * 16 + 10, 1, std::max(style.ghostVelocityMin, ghostVel(rng) - 2), std::max(1, beat4Late / 3), true });
+                addSnareNote(track.notes, pitch, bar * 16 + 10, std::max(style.ghostVelocityMin, ghostVel(rng) - 2), std::max(1, beat4Late / 3), true);
                 if (classicTightGhosts)
                     classicSupportHitUsed = true;
             }
@@ -208,7 +224,7 @@ void BoomBapSnareGenerator::generate(TrackState& track,
         }
 
         if (role == PhraseRole::Ending && style.substyle == BoomBapSubstyle::BoomBapGold)
-            track.notes.push_back({ pitch, bar * 16 + 14, 1, std::max(style.snareVelocityMin, velDist(rng) - 8), std::max(1, beat4Late / 2), true });
+            addSnareNote(track.notes, pitch, bar * 16 + 14, std::max(style.snareVelocityMin, velDist(rng) - 8), std::max(1, beat4Late / 2), true);
 
         float fillChance = std::clamp(feel.fillHitProbability, 0.0f, 0.45f);
         if (classicTightGhosts)
@@ -218,7 +234,7 @@ void BoomBapSnareGenerator::generate(TrackState& track,
         {
             if (!classicTightGhosts || !classicSupportHitUsed)
             {
-                track.notes.push_back({ pitch, bar * 16 + 15, 1, std::max(style.snareVelocityMin, velDist(rng) - 6), std::max(1, beat4Late / 2), true });
+                addSnareNote(track.notes, pitch, bar * 16 + 15, std::max(style.snareVelocityMin, velDist(rng) - 6), std::max(1, beat4Late / 2), true);
                 if (classicTightGhosts)
                     classicSupportHitUsed = true;
             }
@@ -228,7 +244,7 @@ void BoomBapSnareGenerator::generate(TrackState& track,
         {
             if (chance(rng) < ghostChance && (!classicTightGhosts || !classicSupportHitUsed))
             {
-                track.notes.push_back({ pitch, bar * 16 + 7, 1, ghostVel(rng), std::max(1, beat4Late / 3), true });
+                addSnareNote(track.notes, pitch, bar * 16 + 7, ghostVel(rng), std::max(1, beat4Late / 3), true);
                 if (classicTightGhosts)
                     classicSupportHitUsed = true;
             }
@@ -246,29 +262,29 @@ void BoomBapSnareGenerator::generate(TrackState& track,
                 {
                     const float total = before2Gate + before4Gate;
                     const bool pickBefore2 = total <= 0.0f || chance(rng) < (before2Gate / total);
-                    track.notes.push_back({ pitch,
-                                            bar * 16 + (pickBefore2 ? 3 : 11),
-                                            1,
-                                            ghostVel(rng),
-                                            std::max(1, (pickBefore2 ? beat2Late : beat4Late) / 3),
-                                            true });
+                    addSnareNote(track.notes,
+                                pitch,
+                                bar * 16 + (pickBefore2 ? 3 : 11),
+                                ghostVel(rng),
+                                std::max(1, (pickBefore2 ? beat2Late : beat4Late) / 3),
+                                true);
                 }
                 else if (wantBefore2)
                 {
-                    track.notes.push_back({ pitch, bar * 16 + 3, 1, ghostVel(rng), std::max(1, beat2Late / 3), true });
+                    addSnareNote(track.notes, pitch, bar * 16 + 3, ghostVel(rng), std::max(1, beat2Late / 3), true);
                 }
                 else if (wantBefore4)
                 {
-                    track.notes.push_back({ pitch, bar * 16 + 11, 1, ghostVel(rng), std::max(1, beat4Late / 3), true });
+                    addSnareNote(track.notes, pitch, bar * 16 + 11, ghostVel(rng), std::max(1, beat4Late / 3), true);
                 }
             }
         }
         else
         {
             if (chance(rng) < std::max(ghostChance, ghostBefore2Chance))
-                track.notes.push_back({ pitch, bar * 16 + 3, 1, ghostVel(rng), std::max(1, beat2Late / 3), true });
+                addSnareNote(track.notes, pitch, bar * 16 + 3, ghostVel(rng), std::max(1, beat2Late / 3), true);
             if (chance(rng) < std::max(ghostChance, ghostBefore4Chance))
-                track.notes.push_back({ pitch, bar * 16 + 11, 1, ghostVel(rng), std::max(1, beat4Late / 3), true });
+                addSnareNote(track.notes, pitch, bar * 16 + 11, ghostVel(rng), std::max(1, beat4Late / 3), true);
         }
     }
 

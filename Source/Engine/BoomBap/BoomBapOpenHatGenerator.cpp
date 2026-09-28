@@ -4,6 +4,7 @@
 
 #include "BoomBapPatternLibrary.h"
 #include "../../Core/PatternProject.h"
+#include "../../Core/TimingGrid.h"
 #include "../../Core/TrackRegistry.h"
 
 namespace bbg
@@ -83,12 +84,13 @@ void BoomBapOpenHatGenerator::generate(TrackState& track,
 
     for (const auto& hat : hatTrack.notes)
     {
-        const int bar = hat.step / 16;
+        const int hatStep = hat.gridTick / TimingGrid::Sixteenth;
+        const int bar = hatStep / 16;
         const auto referenceFeel = buildReferenceBoomBapHatSupportFeel(styleInfluence, bar);
         const auto role = bar < static_cast<int>(phraseRoles.size()) ? phraseRoles[static_cast<size_t>(bar)] : PhraseRole::Base;
 
-        const bool endOfHalfBar = (hat.step % 8 == 7);
-        const bool afterKickPulse = (hat.step % 4 == 1);
+        const bool endOfHalfBar = (hatStep % 8 == 7);
+        const bool afterKickPulse = (hatStep % 4 == 1);
 
         float gate = preset.eventProbability * style.openHatChance * (0.25f + density * 0.75f);
         if (preset.barEndBias && endOfHalfBar)
@@ -113,7 +115,14 @@ void BoomBapOpenHatGenerator::generate(TrackState& track,
         if (chance(rng) > std::clamp(gate, 0.01f, gateMax))
             continue;
 
-        track.notes.push_back({ pitch, hat.step, (role == PhraseRole::Ending) ? 2 : 1, vel(rng), hat.microOffset, false });
+        NoteEvent note;
+        note.pitch = pitch;
+        note.gridTick = hat.gridTick;
+        note.lengthTicks = ((role == PhraseRole::Ending) ? 2 : 1) * TimingGrid::Sixteenth;
+        note.velocity = vel(rng);
+        note.timingOffsetTicks = hat.timingOffsetTicks;
+        note.isGhost = false;
+        track.notes.push_back(note);
     }
 }
 } // namespace bbg

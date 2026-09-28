@@ -1596,6 +1596,35 @@ void populateGenreStyleHints(ResolvedStyleDefinition& definition, GenreType genr
 }
 }
 
+namespace
+{
+struct CachedStyleResolution
+{
+    juce::int64 fingerprint = 0;
+    std::optional<StyleDefinition> definition;
+    juce::String errorMessage;
+    StyleLabReferenceDebugDiagnostics diagnostics;
+};
+
+// loadLatestForStyle used to re-scan the Style Lab reference directory and re-parse every
+// metadata.json on every single Generate click. With dozens of accumulated reference captures
+// for a heavily-used substyle (BoomBap Classic in practice), that made Generate visibly hang
+// for seconds. The candidate-directory listing itself is cheap (just a stat per entry), so it
+// is still done every call and turned into a fingerprint; the expensive per-file JSON parse
+// only re-runs when that fingerprint actually changes (a capture was added/removed/edited).
+std::map<juce::String, CachedStyleResolution>& styleResolutionCache()
+{
+    static std::map<juce::String, CachedStyleResolution> cache;
+    return cache;
+}
+
+juce::CriticalSection& styleResolutionCacheLock()
+{
+    static juce::CriticalSection lock;
+    return lock;
+}
+}
+
 std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const juce::String& genreName,
                                                                          const juce::String& substyleName,
                                                                          const juce::File& rootDirectory,
@@ -1632,16 +1661,38 @@ std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const j
     }
 
     std::vector<juce::File> candidates;
+    juce::String fingerprintText;
     for (const auto& styleDirectory : styleDirectories)
     {
         for (const auto& entry : juce::RangedDirectoryIterator(styleDirectory, false, "*", juce::File::findDirectories))
         {
             const auto directory = entry.getFile();
-            if (directory.getChildFile("metadata.json").existsAsFile())
+            const auto metadataFile = directory.getChildFile("metadata.json");
+            if (metadataFile.existsAsFile())
+            {
                 candidates.push_back(directory);
+                fingerprintText << directory.getFullPathName() << ':'
+                                << juce::String(metadataFile.getLastModificationTime().toMilliseconds()) << ';';
+            }
         }
     }
     diagnostics.candidateDirectoryCount = static_cast<int>(candidates.size());
+
+    const auto cacheKey = rootDirectory.getFullPathName() + "|" + genreName + "|" + substyleName;
+    const auto fingerprint = fingerprintText.hashCode64();
+    {
+        const juce::ScopedLock cacheLock(styleResolutionCacheLock());
+        auto& cache = styleResolutionCache();
+        const auto it = cache.find(cacheKey);
+        if (it != cache.end() && it->second.fingerprint == fingerprint)
+        {
+            if (referenceDiagnostics != nullptr)
+                *referenceDiagnostics = it->second.diagnostics;
+            if (errorMessage != nullptr)
+                *errorMessage = it->second.errorMessage;
+            return it->second.definition;
+        }
+    }
 
     std::vector<StyleLabReferenceRecord> matchingRecords;
     int parseFailureCount = 0;
@@ -1684,6 +1735,11 @@ std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const j
 
         if (errorMessage != nullptr)
             *errorMessage = {};
+
+        {
+            const juce::ScopedLock cacheLock(styleResolutionCacheLock());
+            styleResolutionCache()[cacheKey] = { fingerprint, definition, {}, diagnostics };
+        }
         return definition;
     }
 
@@ -1698,8 +1754,14 @@ std::optional<StyleDefinition> StyleDefinitionLoader::loadLatestForStyle(const j
     if (referenceDiagnostics != nullptr)
         *referenceDiagnostics = diagnostics;
 
+    const auto finalStatus = status.isNotEmpty() ? status : "No valid Style Lab reference metadata found.";
     if (errorMessage != nullptr)
-        *errorMessage = status.isNotEmpty() ? status : "No valid Style Lab reference metadata found.";
+        *errorMessage = finalStatus;
+
+    {
+        const juce::ScopedLock cacheLock(styleResolutionCacheLock());
+        styleResolutionCache()[cacheKey] = { fingerprint, std::nullopt, finalStatus, diagnostics };
+    }
     return std::nullopt;
 }
 

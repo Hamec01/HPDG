@@ -6,6 +6,7 @@
 #include <set>
 
 #include "../Core/ProjectLaneAccess.h"
+#include "../Core/TimingGrid.h"
 #include "../Core/TrackRegistry.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -963,7 +964,7 @@ void GridEditorComponent::paint(juce::Graphics& g)
         if (row >= 0)
         {
             NoteEvent previewNote;
-            previewNote.length = defaultNoteLengthSteps();
+            previewNote.lengthTicks = defaultNoteLengthTicks();
             setNoteStartTick(previewNote, hoverDrawTick, juce::jmax(1, project.params.bars));
 
             const bool occupied = hasNoteAtTick(*hoverDrawTrack, noteStartTick(previewNote));
@@ -1396,9 +1397,9 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
                 track != nullptr && hit->index >= 0 && hit->index < static_cast<int>(track->notes.size()))
             {
                 const auto& note = track->notes[static_cast<size_t>(hit->index)];
-                dragOriginalTicks = note.step * ticksPerStep() + note.microOffset;
-                dragOriginalLength = std::max(1, note.length);
-                dragOriginalEndTick = dragOriginalTicks + dragOriginalLength * ticksPerStep();
+                dragOriginalTicks = note.startTick();
+                dragOriginalLength = juce::jmax(1, note.lengthTicks);
+                dragOriginalEndTick = dragOriginalTicks + dragOriginalLength;
                 dragOriginalVelocity = note.velocity;
             }
 
@@ -1457,9 +1458,9 @@ void GridEditorComponent::mouseDown(const juce::MouseEvent& event)
             track != nullptr && hit->index >= 0 && hit->index < static_cast<int>(track->notes.size()))
         {
             const auto& note = track->notes[static_cast<size_t>(hit->index)];
-            dragOriginalTicks = note.step * ticksPerStep() + note.microOffset;
-            dragOriginalLength = std::max(1, note.length);
-            dragOriginalEndTick = dragOriginalTicks + dragOriginalLength * ticksPerStep();
+            dragOriginalTicks = note.startTick();
+            dragOriginalLength = juce::jmax(1, note.lengthTicks);
+            dragOriginalEndTick = dragOriginalTicks + dragOriginalLength;
             dragOriginalVelocity = note.velocity;
         }
 
@@ -1786,7 +1787,7 @@ int GridEditorComponent::noteEndTick(const NoteEvent& note) const
 
 int GridEditorComponent::noteEditorEndTick(const NoteEvent& note) const
 {
-    return noteStartTick(note) + displayedNoteLengthTicks(note);
+    return noteEndTick(note);
 }
 
 bool GridEditorComponent::eraseNote(const SelectedNoteRef& ref)
@@ -1941,9 +1942,9 @@ void GridEditorComponent::sortTrackNotes(TrackState& track)
 {
     std::stable_sort(track.notes.begin(), track.notes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
-        return a.microOffset < b.microOffset;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
+        return a.timingOffsetTicks < b.timingOffsetTicks;
     });
 }
 
@@ -2183,10 +2184,10 @@ void GridEditorComponent::collectDragSnapshots()
         snap.index = ref.index;
         snap.sourceNote = n;
         snap.startTick = noteStartTick(n);
-        snap.startLength = std::max(1, n.length);
-        snap.startEndTick = snap.startTick + snap.startLength * ticksPerStep();
+        snap.startLength = juce::jmax(1, n.lengthTicks);
+        snap.startEndTick = snap.startTick + snap.startLength;
         snap.startVelocity = n.velocity;
-        snap.startMicroOffset = n.microOffset;
+        snap.startMicroOffset = n.timingOffsetTicks;
         snap.startPitch = n.pitch;
         dragSnapshots.push_back(snap);
     }
@@ -2877,7 +2878,7 @@ std::vector<int> GridEditorComponent::availableAdvancedRollDivisions() const
             }
 
             const auto& note = track->notes[static_cast<size_t>(ref.index)];
-            if (note.length < division || (note.length % division) != 0)
+            if (note.lengthTicks < division || (note.lengthTicks % division) != 0)
             {
                 validForAll = false;
                 break;
@@ -3377,7 +3378,7 @@ bool GridEditorComponent::placeDrawNoteAt(const RuntimeLaneId& laneId, int tick)
 
     const int bars = juce::jmax(1, project.params.bars);
     NoteEvent insertedNote;
-    insertedNote.length = defaultNoteLengthSteps();
+    insertedNote.lengthTicks = defaultNoteLengthTicks();
     insertedNote.velocity = 100;
     setNoteStartTick(insertedNote, tick, bars);
 
@@ -3396,17 +3397,14 @@ juce::Rectangle<int> GridEditorComponent::noteBounds(const NoteEvent& note, int 
     if (rowBounds.isEmpty())
         return {};
 
-    const float microStep = static_cast<float>(note.microOffset) / static_cast<float>(ticksPerStep());
-    const float microShiftPx = juce::jlimit(-0.98f * stepWidth, 0.98f * stepWidth, microStep * stepWidth);
-    const float x = static_cast<float>(note.step) * stepWidth + microShiftPx;
-    const float resolutionWidth = stepWidth * (static_cast<float>(isSnapEnabled() ? effectiveSnapTicks() : visualSubdivisionTicks())
-                                               / static_cast<float>(ticksPerStep()));
-    const int defaultResolutionSteps = juce::jmax(1,
-                                                  static_cast<int>(std::ceil(static_cast<double>(isSnapEnabled() ? effectiveSnapTicks() : visualSubdivisionTicks())
-                                                                             / static_cast<double>(ticksPerStep()))));
+    // Position/width are driven by the note's real tick span, not its nearest 1/16 step — a
+    // true 1/32, 1/64 or triplet position renders at its exact fractional location.
+    const float x = (static_cast<float>(note.startTick()) / static_cast<float>(ticksPerStep())) * stepWidth;
+    const int resolutionTicks = isSnapEnabled() ? effectiveSnapTicks() : visualSubdivisionTicks();
+    const float resolutionWidth = stepWidth * (static_cast<float>(resolutionTicks) / static_cast<float>(ticksPerStep()));
 
-    float width = stepWidth * static_cast<float>(std::max(1, note.length));
-    if (std::max(1, note.length) == defaultResolutionSteps)
+    float width = stepWidth * (static_cast<float>(juce::jmax(1, note.lengthTicks)) / static_cast<float>(ticksPerStep()));
+    if (note.lengthTicks == resolutionTicks)
         width = juce::jmax(2.0f, resolutionWidth - 1.0f);
 
     const int rowHeight = rowBounds.getHeight();
@@ -3427,21 +3425,23 @@ int GridEditorComponent::snapTicksForCurrentResolution() const
 
 int GridEditorComponent::ticksForGridResolution() const
 {
+    // Sourced from TimingGrid (Source/Core/TimingGrid.h), the canonical PPQ-960 tick table,
+    // so this switch can't drift from the values Engine/MIDI import-export use elsewhere.
     switch (gridResolution)
     {
-        case GridResolution::OneQuarter: return ticksPerStep() * 4;
-        case GridResolution::OneQuarterTriplet: return juce::jmax(1, (ticksPerStep() * 8) / 3);
-        case GridResolution::OneEighth: return ticksPerStep() * 2;
-        case GridResolution::OneEighthTriplet: return juce::jmax(1, (ticksPerStep() * 4) / 3);
-        case GridResolution::OneSixteenth: return ticksPerStep();
-        case GridResolution::OneSixteenthTriplet: return juce::jmax(1, (ticksPerStep() * 2) / 3);
-        case GridResolution::OneThirtySecond: return juce::jmax(1, ticksPerStep() / 2);
-        case GridResolution::OneThirtySecondTriplet: return juce::jmax(1, ticksPerStep() / 3);
-        case GridResolution::OneSixtyFourth: return juce::jmax(1, ticksPerStep() / 4);
-        case GridResolution::OneSixtyFourthTriplet: return juce::jmax(1, ticksPerStep() / 6);
+        case GridResolution::OneQuarter: return TimingGrid::Quarter;
+        case GridResolution::OneQuarterTriplet: return TimingGrid::QuarterTriplet;
+        case GridResolution::OneEighth: return TimingGrid::Eighth;
+        case GridResolution::OneEighthTriplet: return TimingGrid::EighthTriplet;
+        case GridResolution::OneSixteenth: return TimingGrid::Sixteenth;
+        case GridResolution::OneSixteenthTriplet: return TimingGrid::SixteenthTriplet;
+        case GridResolution::OneThirtySecond: return TimingGrid::ThirtySecond;
+        case GridResolution::OneThirtySecondTriplet: return TimingGrid::ThirtySecondTriplet;
+        case GridResolution::OneSixtyFourth: return TimingGrid::SixtyFourth;
+        case GridResolution::OneSixtyFourthTriplet: return TimingGrid::SixtyFourthTriplet;
         case GridResolution::Adaptive:
         case GridResolution::Micro:
-        default: return ticksPerStep();
+        default: return TimingGrid::Sixteenth;
     }
 }
 
@@ -3453,27 +3453,6 @@ bool GridEditorComponent::isSnapEnabled() const
 int GridEditorComponent::defaultNoteLengthTicks() const
 {
     return isSnapEnabled() ? effectiveSnapTicks() : ticksPerStep();
-}
-
-int GridEditorComponent::defaultNoteLengthSteps() const
-{
-    return juce::jmax(1,
-                      static_cast<int>(std::ceil(static_cast<double>(defaultNoteLengthTicks())
-                                                 / static_cast<double>(juce::jmax(1, ticksPerStep())))));
-}
-
-int GridEditorComponent::displayedNoteLengthTicks(const NoteEvent& note) const
-{
-    const int stepTicks = juce::jmax(1, ticksPerStep());
-    const int noteLengthSteps = juce::jmax(1, note.length);
-    const int noteLengthTicks = noteLengthSteps * stepTicks;
-    const int defaultLengthTicks = defaultNoteLengthTicks();
-    const int defaultLengthSteps = defaultNoteLengthSteps();
-
-    if (noteLengthSteps == defaultLengthSteps && defaultLengthTicks != noteLengthTicks)
-        return defaultLengthTicks;
-
-    return noteLengthTicks;
 }
 
 int GridEditorComponent::effectiveSnapTicks() const

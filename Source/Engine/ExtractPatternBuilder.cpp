@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "../Core/TimingGrid.h"
+
 namespace bbg
 {
 namespace
@@ -10,8 +12,8 @@ NoteEvent toNoteEvent(const TranscribedEvent& event, bool bassEvent)
 {
     NoteEvent note;
     note.pitch = event.pitch;
-    note.step = event.step;
-    note.length = juce::jmax(1, event.lengthSteps);
+    note.gridTick = event.step * TimingGrid::Sixteenth;
+    note.lengthTicks = juce::jmax(1, event.lengthSteps) * TimingGrid::Sixteenth;
     note.velocity = juce::jlimit(1, 127, event.velocity);
     note.isGhost = event.ghost;
     note.semanticRole = bassEvent ? "sample_copy_bass" : "sample_copy";
@@ -22,8 +24,8 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 {
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        if (left.step != right.step)
-            return left.step < right.step;
+        if (left.gridTick != right.gridTick)
+            return left.gridTick < right.gridTick;
         if (left.pitch != right.pitch)
             return left.pitch < right.pitch;
         return left.velocity > right.velocity;
@@ -31,7 +33,7 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 
     notes.erase(std::unique(notes.begin(), notes.end(), [](const NoteEvent& left, const NoteEvent& right)
     {
-        return left.step == right.step && left.pitch == right.pitch;
+        return left.gridTick == right.gridTick && left.pitch == right.pitch;
     }), notes.end());
 }
 }

@@ -6,6 +6,10 @@
 
 #include <juce_core/juce_core.h>
 
+#include "TrapTempoContext.h"
+#include "../GenerationModel/PatternFeatureVector.h"
+#include "../GenerationModel/StyleTargetModel.h"
+
 namespace bbg
 {
 namespace TrapAlgebraLanes
@@ -57,7 +61,51 @@ enum class TrapAlgebraRole
     Roll,
     Fill,
     Bass,
+    BassAnchor,
+    BassAnswer,
+    BassPickup,
+    BassHold,
     Ending
+};
+
+enum class HatRate
+{
+    Eighth,
+    Sixteenth,
+    ThirtySecond,
+    SixtyFourth,
+    EighthTriplet,
+    SixteenthTriplet,
+    ThirtySecondTriplet
+};
+
+enum class HatBurstRole
+{
+    PreSnareTension,
+    PostSnareRelease,
+    KickResponse,
+    BarTransition,
+    PhraseEnding,
+    Surprise
+};
+
+enum class HatVelocityContour
+{
+    Rising,
+    Falling,
+    Wave,
+    StrongWeak,
+    AccentEnd
+};
+
+struct HatBurst
+{
+    int startPpq = 0;
+    HatRate rate = HatRate::ThirtySecond;
+    int noteCount = 2;
+    HatBurstRole role = HatBurstRole::Surprise;
+    HatVelocityContour contour = HatVelocityContour::Rising;
+    float strength = 0.5f;
 };
 
 struct TrapAlgebraParams
@@ -73,6 +121,7 @@ struct TrapAlgebraParams
     float qMin = 0.62f;
     int candidateCount = 64;
     TrapAlgebraSubstyle substyle = TrapAlgebraSubstyle::ATLClassic;
+    TrapTempoContext tempoContext;
 };
 
 struct TrapAlgebraNote
@@ -194,10 +243,17 @@ struct TrapAlgebraPattern
 {
     TrapPatternMatrix matrix { 4 };
     TrapQualityBreakdown score;
+    PatternFeatureVector features;
+    StyleTargetMatch styleMatch;
+    float selectionQuality = 0.0f;
     juce::StringArray repairsApplied;
     int selectedCandidateIndex = 0;
     bool acceptedByThreshold = false;
+    int nearBestPoolSize = 0;
+    float bestCandidateQuality = 0.0f;
+    float selectedCandidateQuality = 0.0f;
     juce::String debugSummary;
+    TrapTempoContext tempoContext;
 };
 
 class TrapQualityScorer
@@ -246,6 +302,8 @@ private:
                  int bar,
                  bool barFill,
                  std::mt19937& rng) const;
+    void shape808Durations(TrapPatternMatrix& matrix,
+                           const TrapAlgebraParams& params) const;
     void repair(TrapAlgebraPattern& pattern,
                 const TrapAlgebraParams& params,
                 const TrapSubstyleWeights& weights) const;

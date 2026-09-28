@@ -195,8 +195,12 @@ void TrackListComponent::paint(juce::Graphics& g)
 {
     g.fillAll(sketch::Theme::paper());
 
-    g.setColour(sketch::Theme::ochreWash());
-    g.fillRect(0, 0, getWidth(), rulerHeight);
+    auto ribbon = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(getWidth()), static_cast<float>(rulerHeight));
+    g.setGradientFill(sketch::raisedPaperGradient(ribbon, sketch::Theme::ochreWash().withMultipliedAlpha(1.15f),
+                                                  sketch::Theme::ochreWash()));
+    g.fillRect(ribbon);
+    g.setColour(sketch::Theme::graphiteSoft().withAlpha(0.4f));
+    g.drawLine(0.0f, ribbon.getBottom() - 0.5f, ribbon.getWidth(), ribbon.getBottom() - 0.5f, 0.6f);
     g.setColour(sketch::Theme::graphite());
     g.setFont(sketch::notebookFont(18.5f, true));
     g.drawText("Instrument Rack", 12, 0, 158, rulerHeight, juce::Justification::centredLeft);

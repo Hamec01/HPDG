@@ -4,6 +4,7 @@
 
 #include "TrapPhrasePlanner.h"
 #include "../../Core/NoteEvent.h"
+#include "../../Core/TimingGrid.h"
 
 namespace bbg
 {
@@ -23,7 +24,8 @@ inline bool isPrimaryKickRole(TrapKickRole role)
 
 inline TrapKickRole classifyKickRoleFromNote(const NoteEvent& note, TrapPhraseRole phraseRole)
 {
-    const int stepInBar = ((note.step % 16) + 16) % 16;
+    const int noteStep = note.gridTick / TimingGrid::Sixteenth;
+    const int stepInBar = ((noteStep % 16) + 16) % 16;
 
     if (note.isGhost || note.velocity <= 78)
         return TrapKickRole::GhostLike;

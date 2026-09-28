@@ -25,27 +25,12 @@ int internalTickFromSourceTick(double sourceTick, int sourcePpq)
     return static_cast<int>(std::lround(sourceTick * ratio));
 }
 
+// Imported notes keep their true tick position — no forced quantization to the nearest 1/16.
+// A genuine 1/32, 1/64 or triplet position in the source MIDI stays exactly that after import.
 void setNoteStartFromTick(NoteEvent& note, int tick)
 {
-    const int ticksPerGridStep = ticksPerStep();
-    int step = tick / ticksPerGridStep;
-    int micro = tick - step * ticksPerGridStep;
-
-    if (micro > ticksPerGridStep / 2)
-    {
-        micro -= ticksPerGridStep;
-        ++step;
-    }
-
-    note.step = juce::jmax(0, step);
-    note.microOffset = juce::jlimit(-ticksPerGridStep, ticksPerGridStep, micro);
-}
-
-int lengthStepsFromTicks(int tickLength)
-{
-    const int ticksPerGridStep = ticksPerStep();
-    return juce::jmax(1, static_cast<int>(std::lround(static_cast<double>(juce::jmax(1, tickLength))
-                                                      / static_cast<double>(ticksPerGridStep))));
+    note.gridTick = juce::jmax(0, tick);
+    note.timingOffsetTicks = 0;
 }
 }
 
@@ -117,7 +102,7 @@ MidiImportResult MidiImportService::importLaneFromFile(const juce::File& midiFil
                     ? juce::jlimit(24, 84, holder->message.getNoteNumber())
                     : lanePitch;
                 note.velocity = juce::jlimit(1, 127, static_cast<int>(holder->message.getVelocity()));
-                note.length = lengthStepsFromTicks(endTick - startTick);
+                note.lengthTicks = juce::jmax(1, endTick - startTick);
                 setNoteStartFromTick(note, juce::jmax(0, startTick));
 
                 importedNotes.push_back(note);
@@ -134,19 +119,19 @@ MidiImportResult MidiImportService::importLaneFromFile(const juce::File& midiFil
 
     std::sort(importedNotes.begin(), importedNotes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        if (a.step != b.step)
-            return a.step < b.step;
-        if (a.microOffset != b.microOffset)
-            return a.microOffset < b.microOffset;
+        if (a.gridTick != b.gridTick)
+            return a.gridTick < b.gridTick;
+        if (a.timingOffsetTicks != b.timingOffsetTicks)
+            return a.timingOffsetTicks < b.timingOffsetTicks;
         return a.velocity > b.velocity;
     });
 
     importedNotes.erase(std::unique(importedNotes.begin(), importedNotes.end(), [](const NoteEvent& a, const NoteEvent& b)
     {
-        return a.step == b.step
-            && a.microOffset == b.microOffset
+        return a.gridTick == b.gridTick
+            && a.timingOffsetTicks == b.timingOffsetTicks
             && a.pitch == b.pitch
-            && a.length == b.length;
+            && a.lengthTicks == b.lengthTicks;
     }), importedNotes.end());
 
     const int barTicks = kInternalPpq * 4;

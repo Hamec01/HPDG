@@ -10,6 +10,11 @@ enum class GenreType
     Drill
 };
 
+// Temporary product decision: Rap and Drill are hidden from genre selection while those
+// engines get more work. Flip to true to restore them in the UI -- GenreType values,
+// AudioParameterChoice indices, and saved projects are untouched either way.
+constexpr bool kShowRapAndDrillGenres = false;
+
 struct GeneratorParams
 {
     float bpm = 90.0f;

@@ -196,16 +196,16 @@ const TrackState* findTrackForLaneId(const PatternProject& project, const Runtim
 juce::var noteToMetadataVar(const NoteEvent& note)
 {
     auto* object = new juce::DynamicObject();
-    const int startTick = note.step * ticksPerStep() + note.microOffset;
+    const int sixteenthIndex = note.gridTick / ticksPerStep();
     object->setProperty("pitch", note.pitch);
-    object->setProperty("step", note.step);
-    object->setProperty("lengthSteps", note.length);
+    object->setProperty("step", sixteenthIndex);
+    object->setProperty("lengthSteps", juce::jmax(1, note.lengthTicks / ticksPerStep()));
     object->setProperty("velocity", note.velocity);
-    object->setProperty("microOffsetTicks", note.microOffset);
-    object->setProperty("startTick", startTick);
-    object->setProperty("lengthTicks", note.length * ticksPerStep());
-    object->setProperty("barIndex", note.step / 16);
-    object->setProperty("stepInBar", note.step % 16);
+    object->setProperty("microOffsetTicks", note.timingOffsetTicks);
+    object->setProperty("startTick", note.startTick());
+    object->setProperty("lengthTicks", note.lengthTicks);
+    object->setProperty("barIndex", sixteenthIndex / 16);
+    object->setProperty("stepInBar", sixteenthIndex % 16);
     object->setProperty("isGhost", note.isGhost);
     object->setProperty("semanticRole", note.semanticRole);
     object->setProperty("isSlide", note.isSlide);

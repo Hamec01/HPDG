@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../../Core/TimingGrid.h"
 #include "../../Core/TrackRegistry.h"
 
 namespace bbg
@@ -153,10 +154,10 @@ void DrillSnareGenerator::generate(TrackState& snareTrack,
 
             NoteEvent note;
             note.pitch = snarePitch;
-            note.step = barStart + stepInBar;
-            note.length = 1;
+            note.gridTick = (barStart + stepInBar) * TimingGrid::Sixteenth;
+            note.lengthTicks = TimingGrid::Sixteenth;
             note.velocity = snareVelocity(rng);
-            note.microOffset = 0;
+            note.timingOffsetTicks = 0;
             note.isGhost = false;
             note.semanticRole = "drill_snare_backbone";
             snareTrack.notes.push_back(note);
@@ -165,10 +166,10 @@ void DrillSnareGenerator::generate(TrackState& snareTrack,
             {
                 NoteEvent layer;
                 layer.pitch = clapPitch;
-                layer.step = barStart + stepInBar;
-                layer.length = 1;
+                layer.gridTick = (barStart + stepInBar) * TimingGrid::Sixteenth;
+                layer.lengthTicks = TimingGrid::Sixteenth;
                 layer.velocity = layerVelocity(rng);
-                layer.microOffset = layerDrag(rng);
+                layer.timingOffsetTicks = layerDrag(rng);
                 layer.isGhost = false;
                 layer.semanticRole = "drill_clap_layer";
                 clapGhostTrack->notes.push_back(layer);
@@ -184,10 +185,10 @@ void DrillSnareGenerator::generate(TrackState& snareTrack,
 
         NoteEvent ghost;
         ghost.pitch = clapPitch;
-        ghost.step = barStart + ghostCandidates.front();
-        ghost.length = 1;
+        ghost.gridTick = (barStart + ghostCandidates.front()) * TimingGrid::Sixteenth;
+        ghost.lengthTicks = TimingGrid::Sixteenth;
         ghost.velocity = ghostVelocity(rng);
-        ghost.microOffset = decorationMode == DrillSnareDecorationMode::DragGhost ? dragOffset(rng) : pushOffset(rng);
+        ghost.timingOffsetTicks = decorationMode == DrillSnareDecorationMode::DragGhost ? dragOffset(rng) : pushOffset(rng);
         ghost.isGhost = true;
         ghost.semanticRole = "drill_snare_ghost";
         clapGhostTrack->notes.push_back(ghost);
@@ -195,15 +196,15 @@ void DrillSnareGenerator::generate(TrackState& snareTrack,
 
     std::sort(snareTrack.notes.begin(), snareTrack.notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
     {
-        return lhs.step < rhs.step;
+        return lhs.gridTick < rhs.gridTick;
     });
 
     if (clapGhostTrack != nullptr)
     {
         std::sort(clapGhostTrack->notes.begin(), clapGhostTrack->notes.end(), [](const NoteEvent& lhs, const NoteEvent& rhs)
         {
-            if (lhs.step != rhs.step)
-                return lhs.step < rhs.step;
+            if (lhs.gridTick != rhs.gridTick)
+                return lhs.gridTick < rhs.gridTick;
             return lhs.velocity > rhs.velocity;
         });
     }
