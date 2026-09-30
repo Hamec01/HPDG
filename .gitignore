@@ -2,6 +2,9 @@
 build/
 **/build/
 build-*/
+# JUCE's own CMake helpers live in JUCE/extras/Build; on case-insensitive
+# file systems (Windows) the rules above would otherwise drop it from the repo.
+!JUCE/extras/Build/
 Binaries/
 
 # IDE

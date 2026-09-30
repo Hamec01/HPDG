@@ -275,7 +275,7 @@ void serializeSoundLayer(juce::ValueTree& node, const SoundLayerState& sound, co
     node.setProperty(prefix + "_monsta_fx_order", serializedSound.monstaFx.order, nullptr);
     node.setProperty(prefix + "_monsta_fx_dry", serializedSound.monstaFx.dry, nullptr);
     node.setProperty(prefix + "_monsta_fx_wet", serializedSound.monstaFx.wet, nullptr);
-    node.setProperty(prefix + "_monsta_fx_chaos_seed", static_cast<int64_t>(serializedSound.monstaFx.chaosSeed), nullptr);
+    node.setProperty(prefix + "_monsta_fx_chaos_seed", static_cast<juce::int64>(serializedSound.monstaFx.chaosSeed), nullptr);
 
     node.setProperty(prefix + "_compression", serializedSound.compression, nullptr);
     node.setProperty(prefix + "_reverb", serializedSound.reverb, nullptr);
