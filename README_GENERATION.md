@@ -78,10 +78,8 @@ This document explains **how HPDG places drum hits** for **BoomBap** and **Trap/
 - Математически: добавляем смещение, потом `clamp(min..max)`.
 
 Кодовые ориентиры:
-- `Source/Engine/BoomBap/BoomBapKickGenerator.cpp`
-- `Source/Engine/BoomBap/BoomBapSnareGenerator.cpp`
-- `Source/Engine/BoomBap/BoomBapHatGenerator.cpp`
-- `Source/Engine/BoomBap/BoomBapPatternLibrary.cpp`
+- `Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp`
+- `Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp`
 - `Source/Engine/BoomBapEngine.cpp`
 
 ---
@@ -104,9 +102,8 @@ This document explains **how HPDG places drum hits** for **BoomBap** and **Trap/
 
 Кодовые ориентиры:
 - `Source/Engine/TrapEngine.cpp`
-- `Source/Engine/Trap/TrapKickGenerator.cpp`
-- `Source/Engine/Trap/TrapSnareGenerator.cpp`
-- `Source/Engine/Trap/TrapHatGenerator.cpp`
+- `Source/Engine/Trap/TrapAlgebraEngine.cpp`
+- `Source/Engine/Trap/TrapQualityScorer.cpp`
 - `Source/Engine/DrillEngine.cpp`
 
 ---
@@ -191,10 +188,8 @@ Typical math pattern:
 - Swing/humanize are mainly **timing offsets** (`microOffset`) and velocity tweaks, not step reshuffles.
 
 Code pointers:
-- `Source/Engine/BoomBap/BoomBapKickGenerator.cpp`
-- `Source/Engine/BoomBap/BoomBapSnareGenerator.cpp`
-- `Source/Engine/BoomBap/BoomBapHatGenerator.cpp`
-- `Source/Engine/BoomBap/BoomBapPatternLibrary.cpp`
+- `Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp`
+- `Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp`
 - `Source/Engine/BoomBapEngine.cpp`
 
 ---
@@ -217,9 +212,8 @@ Code pointers:
 
 Code pointers:
 - `Source/Engine/TrapEngine.cpp`
-- `Source/Engine/Trap/TrapKickGenerator.cpp`
-- `Source/Engine/Trap/TrapSnareGenerator.cpp`
-- `Source/Engine/Trap/TrapHatGenerator.cpp`
+- `Source/Engine/Trap/TrapAlgebraEngine.cpp`
+- `Source/Engine/Trap/TrapQualityScorer.cpp`
 - `Source/Engine/DrillEngine.cpp`
 
 ---

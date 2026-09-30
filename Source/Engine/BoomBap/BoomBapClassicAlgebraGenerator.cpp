@@ -405,6 +405,31 @@ float barSimilarity(const BoomBapClassicAlgebraPattern& pattern, int lhsBar, int
     return compared > 0 ? static_cast<float>(same) / static_cast<float>(compared) : 1.0f;
 }
 
+// Copied bars re-sample their pocket and nudge velocity, so every bar breathes on its own
+// instead of repeating bar 1's exact human feel. Positions and roles stay untouched.
+void refreshCopiedPerformance(BoomBapClassicAlgebraNote& note,
+                              int lane,
+                              const BoomBapClassicAlgebraParams& params,
+                              const BoomBapStyleProfile& style,
+                              std::mt19937& rng)
+{
+    const bool timedLane = lane == BoomBapClassicLanes::HiHat
+        || lane == BoomBapClassicLanes::HatAccent
+        || lane == BoomBapClassicLanes::Snare
+        || lane == BoomBapClassicLanes::ClapGhost
+        || lane == BoomBapClassicLanes::Kick
+        || lane == BoomBapClassicLanes::KickGhost;
+    if (timedLane)
+    {
+        note.timing = makeTiming(rng, params, style, lane, note.role, normalizeTickInBar(note.tick64));
+        note.microTimingTicks = note.timing.total();
+    }
+
+    const int spread = (lane == BoomBapClassicLanes::HiHat || lane == BoomBapClassicLanes::HatAccent) ? 5
+        : lane == BoomBapClassicLanes::Snare ? 4 : 3;
+    note.velocity = std::clamp(note.velocity + randomInt(rng, -spread, spread), 1, 127);
+}
+
 float sigmoid(float value)
 {
     return 1.0f / (1.0f + std::exp(-value));
@@ -534,11 +559,13 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generateCandidate(c
     }
 
     if (params.bars > 2)
-        deriveBarFromStatement(pattern, params, rng, 2, context);
+        deriveBarFromStatement(pattern, params, rng, 0, 2, context);
     if (params.bars > 3)
-        deriveBarFromStatement(pattern, params, rng, 3, context);
+        deriveBarFromStatement(pattern, params, rng, 0, 3, context);
+    // Longer phrases repeat the 4-bar arc: each confirmation bar answers bar 2, the rest
+    // re-state bar 1, and the development/turnaround roles follow bar % 4.
     for (int bar = 4; bar < params.bars; ++bar)
-        deriveBarFromStatement(pattern, params, rng, bar, context);
+        deriveBarFromStatement(pattern, params, rng, bar % 4 == 1 ? 1 : 0, bar, context);
 
     applyRarePhraseEvent(pattern, params, rng);
 
@@ -763,6 +790,7 @@ void BoomBapClassicAlgebraGenerator::cloneBarWithSmallMutation(BoomBapClassicAlg
 {
     juce::ignoreUnused(context);
     const auto& profile = algebraProfile(params.substyle);
+    const auto& style = getBoomBapProfile(params.substyle);
 
     for (int lane = 0; lane < BoomBapClassicLanes::Count; ++lane)
     {
@@ -775,8 +803,7 @@ void BoomBapClassicAlgebraGenerator::cloneBarWithSmallMutation(BoomBapClassicAlg
             auto copy = note;
             copy.barIndex = 1;
             copy.tick64 = kTicksPerBar + normalizeTickInBar(note.tick64);
-            if (lane == BoomBapClassicLanes::HiHat)
-                copy.velocity = std::clamp(copy.velocity + randomInt(rng, -5, 5), 1, 127);
+            refreshCopiedPerformance(copy, lane, params, style, rng);
             if ((lane == BoomBapClassicLanes::ClapGhost || lane == BoomBapClassicLanes::OpenHat) && chance(rng, 0.18f + params.variation * 0.12f))
                 continue;
             pattern.notesByLane[static_cast<size_t>(lane)].push_back(copy);
@@ -804,18 +831,22 @@ void BoomBapClassicAlgebraGenerator::cloneBarWithSmallMutation(BoomBapClassicAlg
 void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebraPattern& pattern,
                                                              const BoomBapClassicAlgebraParams& params,
                                                              std::mt19937& rng,
+                                                             int sourceBar,
                                                              int targetBar,
                                                              const BoomBapGenerationContext& context) const
 {
     const bool development = targetBar % 4 == 2;
     const bool turnaround = targetBar % 4 == 3;
+    // In 8/16-bar phrases the bar closing each 8-bar section gets a stronger turnaround
+    // than the half-way bar, so long loops still read as phrases.
+    const bool sectionEnd = params.bars >= 8 && targetBar % 8 == 7;
     const auto& style = getBoomBapProfile(params.substyle);
     for (int lane = 0; lane < BoomBapClassicLanes::Count; ++lane)
     {
         const auto source = pattern.notesByLane[static_cast<size_t>(lane)];
         for (const auto& original : source)
         {
-            if (original.barIndex != 0 || lane == BoomBapClassicLanes::Sub808)
+            if (original.barIndex != sourceBar || lane == BoomBapClassicLanes::Sub808)
                 continue;
             auto copy = original;
             const bool protectedBackbeat = lane == BoomBapClassicLanes::Snare
@@ -827,9 +858,12 @@ void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebr
                 continue; // HatDropout / RemovePickup / RemoveGhost
             copy.barIndex = targetBar;
             int local = normalizeTickInBar(copy.tick64);
-            if (lane == BoomBapClassicLanes::Kick && local % 16 != 0 && chance(rng, development ? 0.28f : 0.16f))
+            refreshCopiedPerformance(copy, lane, params, style, rng);
+            const int shiftedLocal = std::clamp(local + (chance(rng, 0.5f) ? 4 : -4), 0, 63);
+            if (lane == BoomBapClassicLanes::Kick && local % 16 != 0 && !isBackbeatTick(shiftedLocal)
+                && chance(rng, development ? 0.28f : 0.16f))
             {
-                local = std::clamp(local + (chance(rng, 0.5f) ? 4 : -4), 0, 63); // ShiftSyncopatedKick
+                local = shiftedLocal; // ShiftSyncopatedKick (never onto the snare backbeat)
                 copy.role = turnaround ? BoomBapClassicRole::Turnaround : BoomBapClassicRole::Response;
                 copy.roleString = roleToString(copy.role);
                 copy.timing = makeTiming(rng, params, style, lane, copy.role, local);
@@ -844,10 +878,10 @@ void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebr
                      chance(rng, .5f) ? 12 : 44, randomInt(rng, 36, 62), BoomBapClassicRole::Ghost);
     if (turnaround)
     {
-        if (chance(rng, 0.62f))
+        if (chance(rng, sectionEnd ? 0.80f : 0.62f))
             addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::HatAccent, targetBar, 60,
                          randomInt(rng, 84, 104), BoomBapClassicRole::Turnaround);
-        if (chance(rng, 0.38f + params.variation * .2f))
+        if (chance(rng, (sectionEnd ? 0.55f : 0.38f) + params.variation * .2f))
             addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::Kick, targetBar, 56,
                          randomInt(rng, 82, 108), BoomBapClassicRole::Turnaround);
     }

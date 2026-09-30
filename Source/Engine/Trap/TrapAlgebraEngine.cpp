@@ -104,11 +104,6 @@ bool chance(std::mt19937& rng, float probability)
     return random01(rng) <= clamp01(probability);
 }
 
-float sigmoid(float value)
-{
-    return 1.0f / (1.0f + std::exp(-value));
-}
-
 int barStart(int bar)
 {
     return bar * kTicksPerBar;
@@ -164,8 +159,13 @@ float barVariationAmount(int bar)
     }
 }
 
-bool isLegalMainKickLocalTick(int tick, bool /*bar4*/)
+bool isLegalMainKickLocalTick(int tick, bool /*bar4*/, bool doubleTime)
 {
+    // Double-time places the snare backbone on 16 and 48, so a main kick there would
+    // land on top of the snare.
+    if (doubleTime && (tick == 16 || tick == 48))
+        return false;
+
     return tick == 0
         || tick == 16
         || tick == 24
@@ -252,25 +252,37 @@ float velocityVariance(const std::vector<TrapAlgebraNote>& notes)
     return variance / static_cast<float>(notes.size());
 }
 
-bool inRollZone(int tick, bool bar4)
+struct RollZone
 {
-    const int local = tickInBar(tick);
-    if (local >= 24 && local <= 31)
-        return true;
-    if (local >= 34 && local <= 40)
-        return true;
-    if (local >= 56 && local <= 63)
-        return true;
-    return bar4 && local >= 48 && local <= 63;
+    int start;
+    int end;
+};
+
+// Zone order: pre-snare tension, post-snare release, bar transition, bar-4 phrase ending.
+// Normal time has one snare on 32; double-time has snares on 16 and 48.
+std::vector<RollZone> rollZones(bool bar4, bool doubleTime)
+{
+    std::vector<RollZone> zones = doubleTime
+        ? std::vector<RollZone> { { 40, 47 }, { 18, 24 }, { 56, 63 } }
+        : std::vector<RollZone> { { 24, 31 }, { 34, 40 }, { 56, 63 } };
+    if (bar4)
+        zones.push_back(doubleTime ? RollZone { 50, 63 } : RollZone { 48, 63 });
+    return zones;
 }
 
-int nearestRollZoneStart(int tick, bool bar4)
+bool inRollZone(int tick, bool bar4, bool doubleTime)
 {
     const int local = tickInBar(tick);
-    struct Zone { int start; int end; };
-    std::vector<Zone> zones { { 24, 31 }, { 34, 40 }, { 56, 63 } };
-    if (bar4)
-        zones.push_back({ 48, 63 });
+    for (const auto& zone : rollZones(bar4, doubleTime))
+        if (local >= zone.start && local <= zone.end)
+            return true;
+    return false;
+}
+
+int nearestRollZoneStart(int tick, bool bar4, bool doubleTime)
+{
+    const int local = tickInBar(tick);
+    const auto zones = rollZones(bar4, doubleTime);
 
     int best = zones.front().start;
     int bestDistance = 1000;
@@ -649,7 +661,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
             break;
         if (candidateTick < 0 || matrix.hasNote(TrapAlgebraLanes::Kick, start + candidateTick))
             continue;
-        if (!isLegalMainKickLocalTick(candidateTick, bar4))
+        if (!isLegalMainKickLocalTick(candidateTick, bar4, params.tempoContext.doubleTime))
             continue;
         if (std::find(selectedKicks.begin(), selectedKicks.end(), candidateTick) != selectedKicks.end())
             continue;
@@ -683,7 +695,9 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
 
     if (params.substyle == TrapAlgebraSubstyle::RageTrap && bar4 && chance(rng, 0.04f + density * 0.04f))
     {
-        const int tick = 48;
+        // Post-snare ghost: 48 follows the normal-time snare on 32; in double-time 48 is
+        // itself a snare, so answer the 16 snare instead.
+        const int tick = params.tempoContext.doubleTime ? 32 : 48;
         const bool nearMainKick = std::any_of(selectedKicks.begin(), selectedKicks.end(), [tick](int mainTick)
         {
             return std::abs(mainTick - tick) < 8;
@@ -706,10 +720,21 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         const auto nextIt = std::find_if(selectedKicks.begin(), selectedKicks.end(), [kickTick](int other) { return other > kickTick; });
         const int nextKickTick = nextIt != selectedKicks.end() ? *nextIt : 64;
         int endLimit = nextKickTick - 2;
-        if (kickTick < 32)
-            endLimit = std::min(endLimit, 30);
-        if (kickTick >= 32 && kickTick < 56)
-            endLimit = std::min(endLimit, 54);
+        if (params.tempoContext.doubleTime)
+        {
+            // Let the 808 breathe before each double-time snare (16 and 48).
+            if (kickTick < 16)
+                endLimit = std::min(endLimit, 14);
+            else if (kickTick < 48)
+                endLimit = std::min(endLimit, 46);
+        }
+        else
+        {
+            if (kickTick < 32)
+                endLimit = std::min(endLimit, 30);
+            if (kickTick >= 32 && kickTick < 56)
+                endLimit = std::min(endLimit, 54);
+        }
 
         const int styleExtra = static_cast<int>(std::lround(style.bassLegato * 5.0f));
         const int maxDuration = std::clamp(endLimit - kickTick, 4, (bar4 ? 10 : 8) + styleExtra);
@@ -777,7 +802,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
 
     for (const int tick : { 4, 12, 20, 28, 36, 44, 52, 60 })
     {
-        const bool preSnare = tick == 28;
+        const bool preSnare = params.tempoContext.doubleTime ? (tick == 12 || tick == 44) : tick == 28;
         const bool ending = bar4 && tick >= 52;
         float probability = 0.05f + style.hatRate * 0.28f + density * 0.18f + variation * 0.16f + (preSnare ? 0.08f : 0.0f) + (ending ? 0.10f : 0.0f);
         if (params.substyle == TrapAlgebraSubstyle::CloudTrap || params.substyle == TrapAlgebraSubstyle::LuxuryTrap)
@@ -810,7 +835,10 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         matrix.setNote(TrapAlgebraLanes::Perc, start + randomInt(rng, 0, 15) * 4, randomInt(rng, 48, 94), 1, microTimingForLane(TrapAlgebraLanes::Perc, start, params, rng), TrapAlgebraRole::Support);
 
     if (chance(rng, 0.08f + params.humanize * 0.08f + (bar == 1 || bar4 ? 0.05f : 0.0f)))
-        matrix.setNote(TrapAlgebraLanes::ClapGhost, start + randomInt(rng, 29, 35), randomInt(rng, 38, 76), 1, microTimingForLane(TrapAlgebraLanes::ClapGhost, start + 32, params, rng), TrapAlgebraRole::Ghost);
+    {
+        const int snareTick = params.tempoContext.doubleTime ? 48 : 32;
+        matrix.setNote(TrapAlgebraLanes::ClapGhost, start + randomInt(rng, snareTick - 3, snareTick + 3), randomInt(rng, 38, 76), 1, microTimingForLane(TrapAlgebraLanes::ClapGhost, start + snareTick, params, rng), TrapAlgebraRole::Ghost);
+    }
 }
 
 void TrapAlgebraEngine::shape808Durations(TrapPatternMatrix& matrix,
@@ -857,23 +885,9 @@ void TrapAlgebraEngine::addRoll(TrapPatternMatrix& matrix,
     constexpr int ppqPerTick64 = kPpqPerQuarter / 16;
     const int start = barStart(bar);
     const int zonePick = randomInt(rng, 0, barFill ? 3 : 2);
-    int zoneStart = 24;
-    int zoneEnd = 31;
-    if (zonePick == 1)
-    {
-        zoneStart = 34;
-        zoneEnd = 40;
-    }
-    else if (zonePick == 2)
-    {
-        zoneStart = 56;
-        zoneEnd = 63;
-    }
-    else if (zonePick == 3)
-    {
-        zoneStart = 48;
-        zoneEnd = 63;
-    }
+    const auto zones = rollZones(barFill, params.tempoContext.doubleTime);
+    const int zoneStart = zones[static_cast<size_t>(zonePick)].start;
+    const int zoneEnd = zones[static_cast<size_t>(zonePick)].end;
 
     const auto style = weightsForSubstyle(params.substyle);
     HatBurst burst;
@@ -1028,7 +1042,7 @@ void TrapAlgebraEngine::repair(TrapAlgebraPattern& pattern,
 
             const int local = tickInBar(kick.tick64);
             const bool bar4 = (bar % 4) == 3;
-            if (!isLegalMainKickLocalTick(local, bar4) || isStumblingMainKickLocalTick(local))
+            if (!isLegalMainKickLocalTick(local, bar4, params.tempoContext.doubleTime) || isStumblingMainKickLocalTick(local))
             {
                 matrix.clearNote(TrapAlgebraLanes::Kick, kick.tick64);
                 matrix.clearNote(TrapAlgebraLanes::Sub808, kick.tick64);
@@ -1158,9 +1172,9 @@ void TrapAlgebraEngine::repair(TrapAlgebraPattern& pattern,
             continue;
 
         const bool bar4 = (hat.barIndex % 4) == 3;
-        if (!inRollZone(hat.tick64, bar4))
+        if (!inRollZone(hat.tick64, bar4, params.tempoContext.doubleTime))
         {
-            const int newTick = barStart(hat.barIndex) + nearestRollZoneStart(hat.tick64, bar4);
+            const int newTick = barStart(hat.barIndex) + nearestRollZoneStart(hat.tick64, bar4, params.tempoContext.doubleTime);
             matrix.clearNote(TrapAlgebraLanes::HiHat, hat.tick64);
             matrix.setNote(TrapAlgebraLanes::HiHat, newTick, hat.velocity, 1, hat.microTimingTicks, TrapAlgebraRole::Roll);
             pattern.repairsApplied.add("move_roll_to_valid_zone");

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <iostream>
@@ -7,7 +8,9 @@
 
 #include "../Source/Core/ProjectLaneAccess.h"
 #include "../Source/Core/RuntimeLaneLifecycle.h"
+#include "../Source/Engine/BoomBapEngine.h"
 #include "../Source/Engine/MidiExportEngine.h"
+#include "../Source/Engine/TrapEngine.h"
 #include "../Source/Plugin/PluginProcessor.h"
 #include "../Source/UI/ComboBoxIdParameterAttachment.h"
 
@@ -679,6 +682,200 @@ int runTest(const char* name, const std::function<void()>& test)
         return 1;
     }
 }
+
+// Generation engine regressions -------------------------------------------------------------
+
+// Grid step a note belongs to: an early push of up to a 1/64 still counts as its own step.
+int perceivedStep(const NoteEvent& note)
+{
+    return (note.gridTick + TimingGrid::Sixteenth / 4) / TimingGrid::Sixteenth;
+}
+
+PatternProject makeEngineProject(GenreType genre, int bars, float bpm, int seed)
+{
+    auto project = createDefaultProject();
+    project.params.genre = genre;
+    project.params.bars = bars;
+    project.params.bpm = bpm;
+    project.params.seed = seed;
+    return project;
+}
+
+bool sameNotes(const std::vector<NoteEvent>& a, const std::vector<NoteEvent>& b)
+{
+    if (a.size() != b.size())
+        return false;
+    for (size_t i = 0; i < a.size(); ++i)
+    {
+        if (a[i].gridTick != b[i].gridTick || a[i].timingOffsetTicks != b[i].timingOffsetTicks
+            || a[i].velocity != b[i].velocity || a[i].pitch != b[i].pitch)
+            return false;
+    }
+    return true;
+}
+
+// Per-lane actions must never touch a locked lane, including ones that are musically coupled
+// to the lane being regenerated.
+void testBoomBapLaneActionsKeepLockedLanes()
+{
+    BoomBapEngine engine;
+    auto project = makeEngineProject(GenreType::BoomBap, 4, 90.0f, 4242);
+    engine.generate(project);
+
+    auto* snare = ProjectLaneAccess::findTrackState(project, TrackType::Snare);
+    auto* openHat = ProjectLaneAccess::findTrackState(project, TrackType::OpenHat);
+    auto* ghostKick = ProjectLaneAccess::findTrackState(project, TrackType::GhostKick);
+    auto* hatFx = ProjectLaneAccess::findTrackState(project, TrackType::HatFX);
+    expect(snare != nullptr && openHat != nullptr && ghostKick != nullptr && hatFx != nullptr, "BoomBap lanes missing");
+
+    // A user edit: drop the bar-1 beat-4 snare, hand-place an open hat, then lock them.
+    snare->notes.erase(std::remove_if(snare->notes.begin(), snare->notes.end(),
+                                      [](const NoteEvent& n) { return perceivedStep(n) == 12; }),
+                       snare->notes.end());
+    NoteEvent edit;
+    edit.pitch = 46;
+    edit.gridTick = 3 * TimingGrid::Sixteenth;
+    edit.velocity = 99;
+    openHat->notes.push_back(edit);
+    for (auto* lane : { snare, openHat, ghostKick, hatFx })
+        lane->locked = true;
+
+    const auto lockedSnare = snare->notes;
+    const auto lockedOpenHat = openHat->notes;
+    const auto lockedGhostKick = ghostKick->notes;
+    const auto lockedHatFx = hatFx->notes;
+
+    for (int round = 0; round < 3; ++round)
+    {
+        for (const auto type : { TrackType::Kick, TrackType::HiHat, TrackType::Cymbal, TrackType::Snare })
+        {
+            engine.generateTrackNew(project, type);
+            engine.regenerateTrackVariation(project, type);
+            engine.mutateTrack(project, type);
+        }
+        engine.mutatePattern(project);
+        ++project.generationCounter;
+    }
+
+    snare = ProjectLaneAccess::findTrackState(project, TrackType::Snare);
+    openHat = ProjectLaneAccess::findTrackState(project, TrackType::OpenHat);
+    ghostKick = ProjectLaneAccess::findTrackState(project, TrackType::GhostKick);
+    hatFx = ProjectLaneAccess::findTrackState(project, TrackType::HatFX);
+    expect(sameNotes(snare->notes, lockedSnare), "locked Snare changed by a per-lane action");
+    expect(sameNotes(openHat->notes, lockedOpenHat), "locked OpenHat changed by a per-lane action");
+    expect(sameNotes(ghostKick->notes, lockedGhostKick), "locked GhostKick changed by a Kick action");
+    expect(sameNotes(hatFx->notes, lockedHatFx), "locked HatFX changed by a HiHat action");
+}
+
+void testTrapLaneActionsKeepLockedCoupledLanes()
+{
+    TrapEngine engine;
+    auto project = makeEngineProject(GenreType::Trap, 4, 140.0f, 777);
+    engine.generate(project);
+
+    auto* sub = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+    auto* hatFx = ProjectLaneAccess::findTrackState(project, TrackType::HatFX);
+    expect(sub != nullptr && hatFx != nullptr, "Trap lanes missing");
+    // A user-placed 808 on the normal-time snare (step 8); validation used to shove it off.
+    NoteEvent onSnare;
+    onSnare.pitch = 36;
+    onSnare.gridTick = 8 * TimingGrid::Sixteenth;
+    onSnare.velocity = 100;
+    sub->notes.push_back(onSnare);
+    std::sort(sub->notes.begin(), sub->notes.end(), [](const NoteEvent& a, const NoteEvent& b) { return a.gridTick < b.gridTick; });
+    sub->sub808Notes = toSub808NoteEvents(sub->notes); // the 808 editor's own storage
+    sub->locked = true;
+    hatFx->locked = true;
+    const auto lockedSub = sub->notes;
+    const auto lockedHatFx = hatFx->notes;
+
+    for (int round = 0; round < 3; ++round)
+    {
+        engine.generateTrackNew(project, TrackType::Kick);
+        engine.mutateTrack(project, TrackType::HiHat);
+        ++project.generationCounter;
+    }
+
+    sub = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+    hatFx = ProjectLaneAccess::findTrackState(project, TrackType::HatFX);
+    expect(sameNotes(sub->notes, lockedSub), "locked Sub808 changed by a Kick action");
+    expect(sameNotes(hatFx->notes, lockedHatFx), "locked HatFX changed by a HiHat action");
+}
+
+// Host 70 BPM puts Trap in double-time: snares land on steps 4 and 12, so no main kick may
+// share a step with them.
+void testTrapDoubleTimeKicksAvoidSnares()
+{
+    TrapEngine engine;
+    for (int seed = 1; seed <= 40; ++seed)
+    {
+        auto project = makeEngineProject(GenreType::Trap, 4, 70.0f, seed);
+        project.params.trapSubstyle = seed % 6;
+        engine.generate(project);
+        const auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+        const auto* snare = ProjectLaneAccess::findTrackState(project, TrackType::Snare);
+        expect(kick != nullptr && snare != nullptr, "Trap lanes missing");
+
+        bool doubleTimeSnare = false;
+        for (const auto& s : snare->notes)
+            doubleTimeSnare = doubleTimeSnare || perceivedStep(s) % 16 == 4;
+        expect(doubleTimeSnare, "70 BPM Trap should place double-time snares on step 4");
+
+        for (const auto& k : kick->notes)
+            for (const auto& s : snare->notes)
+                expect(perceivedStep(k) != perceivedStep(s),
+                       "seed " + juce::String(seed) + ": kick on snare step " + juce::String(perceivedStep(k)));
+    }
+}
+
+void testBoomBapKicksNeverLandOnBackbeat()
+{
+    BoomBapEngine engine;
+    for (int seed = 1; seed <= 60; ++seed)
+    {
+        auto project = makeEngineProject(GenreType::BoomBap, seed % 2 == 0 ? 8 : 4, 90.0f, seed);
+        project.params.boombapSubstyle = seed % 6;
+        engine.generate(project);
+        for (int i = 0; i < 4; ++i)
+            engine.mutateTrack(project, TrackType::Kick);
+
+        const auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+        for (const auto& k : kick->notes)
+        {
+            const int step = perceivedStep(k) % 16;
+            expect(step != 4 && step != 12, "seed " + juce::String(seed) + ": BoomBap kick on backbeat step " + juce::String(step));
+        }
+    }
+}
+
+// Derived bars used to copy bar 1's exact micro-timing and velocity; they must now breathe.
+void testBoomBapDerivedBarsAreNotCarbonCopies()
+{
+    BoomBapEngine engine;
+    int identical = 0;
+    int compared = 0;
+    for (int seed = 1; seed <= 12; ++seed)
+    {
+        auto project = makeEngineProject(GenreType::BoomBap, 4, 90.0f, seed);
+        engine.generate(project);
+        const auto* hat = ProjectLaneAccess::findTrackState(project, TrackType::HiHat);
+        for (const auto& a : hat->notes)
+        {
+            if (perceivedStep(a) / 16 != 0)
+                continue;
+            for (const auto& b : hat->notes)
+            {
+                if (perceivedStep(b) != perceivedStep(a) + 32)
+                    continue;
+                ++compared;
+                identical += (b.gridTick - 2 * TimingGrid::TicksPerBar4_4 == a.gridTick && b.velocity == a.velocity) ? 1 : 0;
+            }
+        }
+    }
+    expect(compared > 0, "no bar-1 / bar-3 hat pairs to compare");
+    expect(identical * 2 < compared,
+           "bar 3 hats repeat bar 1 exactly: " + juce::String(identical) + " of " + juce::String(compared));
+}
 } // namespace
 } // namespace bbg
 
@@ -701,6 +898,11 @@ int main()
     failures += runTest("Guide mode accent kicks avoid backbeat", testGuideModeAccentKicksAvoidBackbeat);
     failures += runTest("Genre combo selects Trap, not Drill", testGenreComboSelectsTrapNotDrill);
     failures += runTest("Trap guide 808 follows sample bass and key", testTrapGuide808FollowsSampleBassAndKey);
+    failures += runTest("BoomBap lane actions keep locked lanes", testBoomBapLaneActionsKeepLockedLanes);
+    failures += runTest("Trap lane actions keep locked coupled lanes", testTrapLaneActionsKeepLockedCoupledLanes);
+    failures += runTest("Trap double-time kicks avoid snares", testTrapDoubleTimeKicksAvoidSnares);
+    failures += runTest("BoomBap kicks never land on the backbeat", testBoomBapKicksNeverLandOnBackbeat);
+    failures += runTest("BoomBap derived bars are not carbon copies", testBoomBapDerivedBarsAreNotCarbonCopies);
 
     if (failures == 0)
     {

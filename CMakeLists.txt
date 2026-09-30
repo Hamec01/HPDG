@@ -76,12 +76,9 @@ target_sources(HPDG
     Source/Engine/StyleDefinitionLoader.cpp
     Source/Engine/StyleDefinitionResolver.cpp
     Source/Engine/StyleInfluence.cpp
-    Source/Engine/GrooveEngine.cpp
     Source/Engine/GenerationModel/PatternFeatureVector.cpp
     Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
     Source/Engine/GenerationModel/StyleTargetModel.cpp
-    Source/Engine/VelocityEngine.cpp
-    Source/Engine/HumanizeEngine.cpp
     Source/Engine/MidiExportEngine.cpp
     Source/Engine/PreviewEngine.cpp
     Source/Engine/SampleLibraryManager.cpp
@@ -91,17 +88,7 @@ target_sources(HPDG
     Source/Engine/SampleBassFollower.cpp
     Source/Engine/PatternBlendEngine.cpp
     Source/Engine/SubstyleRuleEnforcer.cpp
-    Source/Engine/BoomBap/BoomBapPatternLibrary.cpp
-    Source/Engine/BoomBap/BoomBapPhrasePlanner.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
-    Source/Engine/BoomBap/BoomBapGrooveBlueprint.cpp
-    Source/Engine/BoomBap/BoomBapLaneActivation.cpp
-        Source/Engine/BoomBap/BoomBapKickGenerator.cpp
-        Source/Engine/BoomBap/BoomBapSnareGenerator.cpp
-        Source/Engine/BoomBap/BoomBapHatGenerator.cpp
-    Source/Engine/BoomBap/BoomBapGhostGenerator.cpp
-    Source/Engine/BoomBap/BoomBapOpenHatGenerator.cpp
-    Source/Engine/BoomBap/BoomBapPercGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/BoomBap/BoomBapGenerationContext.cpp
@@ -112,12 +99,6 @@ target_sources(HPDG
     Source/Engine/Rap/RapHatGenerator.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Engine/Trap/TrapTempoContext.cpp
-    Source/Engine/Trap/TrapPhrasePlanner.cpp
-    Source/Engine/Trap/TrapKickGenerator.cpp
-    Source/Engine/Trap/TrapSnareGenerator.cpp
-    Source/Engine/Trap/TrapHatGenerator.cpp
-    Source/Engine/Trap/TrapHatFxGenerator.cpp
-    Source/Engine/Trap/Trap808Generator.cpp
     Source/Engine/Trap/TrapAlgebraEngine.cpp
     Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/StyleLabReferenceService.cpp
@@ -165,11 +146,9 @@ add_executable(HPDG_CoreTests
     Source/Core/RuntimeLaneLifecycle.cpp
     Source/Core/PatternProjectSerialization.cpp
     Source/Analysis/SampleApplyWeights.cpp
-    Source/Engine/GrooveEngine.cpp
     Source/Engine/GenerationModel/PatternFeatureVector.cpp
     Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
     Source/Engine/GenerationModel/StyleTargetModel.cpp
-    Source/Engine/VelocityEngine.cpp
     Source/Engine/BoomBapEngine.cpp
     Source/Engine/DrillEngine.cpp
     Source/Engine/Drill/Drill808Generator.cpp
@@ -179,7 +158,6 @@ add_executable(HPDG_CoreTests
     Source/Engine/Drill/DrillPatternValidator.cpp
     Source/Engine/Drill/DrillPhrasePlanner.cpp
     Source/Engine/Drill/DrillSnareGenerator.cpp
-    Source/Engine/HumanizeEngine.cpp
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
     Source/Engine/MidiExportEngine.cpp
@@ -190,17 +168,7 @@ add_executable(HPDG_CoreTests
     Source/Engine/StyleDefinitionLoader.cpp
     Source/Engine/StyleDefinitionResolver.cpp
     Source/Engine/StyleInfluence.cpp
-    Source/Engine/BoomBap/BoomBapPatternLibrary.cpp
-    Source/Engine/BoomBap/BoomBapPhrasePlanner.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
-    Source/Engine/BoomBap/BoomBapGrooveBlueprint.cpp
-    Source/Engine/BoomBap/BoomBapLaneActivation.cpp
-    Source/Engine/BoomBap/BoomBapKickGenerator.cpp
-    Source/Engine/BoomBap/BoomBapSnareGenerator.cpp
-    Source/Engine/BoomBap/BoomBapHatGenerator.cpp
-    Source/Engine/BoomBap/BoomBapGhostGenerator.cpp
-    Source/Engine/BoomBap/BoomBapOpenHatGenerator.cpp
-    Source/Engine/BoomBap/BoomBapPercGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/BoomBap/BoomBapGenerationContext.cpp
@@ -213,12 +181,6 @@ add_executable(HPDG_CoreTests
     Source/Engine/TrapEngine.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Engine/Trap/TrapTempoContext.cpp
-    Source/Engine/Trap/TrapPhrasePlanner.cpp
-    Source/Engine/Trap/TrapKickGenerator.cpp
-    Source/Engine/Trap/TrapSnareGenerator.cpp
-    Source/Engine/Trap/TrapHatGenerator.cpp
-    Source/Engine/Trap/TrapHatFxGenerator.cpp
-    Source/Engine/Trap/Trap808Generator.cpp
     Source/Engine/Trap/TrapAlgebraEngine.cpp
     Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/TemporaryMidiExportService.cpp
@@ -254,11 +216,9 @@ add_executable(HPDG_TimingBaselineDump
     Source/Core/RuntimeLaneLifecycle.cpp
     Source/Core/PatternProjectSerialization.cpp
     Source/Analysis/SampleApplyWeights.cpp
-    Source/Engine/GrooveEngine.cpp
     Source/Engine/GenerationModel/PatternFeatureVector.cpp
     Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
     Source/Engine/GenerationModel/StyleTargetModel.cpp
-    Source/Engine/VelocityEngine.cpp
     Source/Engine/BoomBapEngine.cpp
     Source/Engine/DrillEngine.cpp
     Source/Engine/Drill/Drill808Generator.cpp
@@ -268,7 +228,6 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/Drill/DrillPatternValidator.cpp
     Source/Engine/Drill/DrillPhrasePlanner.cpp
     Source/Engine/Drill/DrillSnareGenerator.cpp
-    Source/Engine/HumanizeEngine.cpp
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
     Source/Engine/MidiExportEngine.cpp
@@ -279,17 +238,7 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/StyleDefinitionLoader.cpp
     Source/Engine/StyleDefinitionResolver.cpp
     Source/Engine/StyleInfluence.cpp
-    Source/Engine/BoomBap/BoomBapPatternLibrary.cpp
-    Source/Engine/BoomBap/BoomBapPhrasePlanner.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
-    Source/Engine/BoomBap/BoomBapGrooveBlueprint.cpp
-    Source/Engine/BoomBap/BoomBapLaneActivation.cpp
-    Source/Engine/BoomBap/BoomBapKickGenerator.cpp
-    Source/Engine/BoomBap/BoomBapSnareGenerator.cpp
-    Source/Engine/BoomBap/BoomBapHatGenerator.cpp
-    Source/Engine/BoomBap/BoomBapGhostGenerator.cpp
-    Source/Engine/BoomBap/BoomBapOpenHatGenerator.cpp
-    Source/Engine/BoomBap/BoomBapPercGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/BoomBap/BoomBapGenerationContext.cpp
@@ -302,12 +251,6 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/TrapEngine.cpp
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Engine/Trap/TrapTempoContext.cpp
-    Source/Engine/Trap/TrapPhrasePlanner.cpp
-    Source/Engine/Trap/TrapKickGenerator.cpp
-    Source/Engine/Trap/TrapSnareGenerator.cpp
-    Source/Engine/Trap/TrapHatGenerator.cpp
-    Source/Engine/Trap/TrapHatFxGenerator.cpp
-    Source/Engine/Trap/Trap808Generator.cpp
     Source/Engine/Trap/TrapAlgebraEngine.cpp
     Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/TemporaryMidiExportService.cpp

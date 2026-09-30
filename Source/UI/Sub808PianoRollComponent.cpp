@@ -272,7 +272,7 @@ Sub808PianoRollComponent::Sub808PianoRollComponent()
 
 // PitchedNoteEvent (this editor's internal representation) is still step + micro-offset based;
 // Sub808NoteEvent is tick-native. Sub808 notes are always generated on exact 1/16 boundaries
-// (see Drill808Generator/Trap808Generator/BoomBapEngine), so this decomposition is lossless in
+// (see Drill808Generator/TrapEngine/BoomBapEngine), so this decomposition is lossless in
 // practice. A hi-res Sub808 piano-roll editor is a separate follow-up, not part of this stage.
 Sub808PianoRollComponent::PitchedNoteEvent Sub808PianoRollComponent::toPitchedNoteEvent(const Sub808NoteEvent& note)
 {

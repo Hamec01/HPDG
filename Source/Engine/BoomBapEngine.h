@@ -1,26 +1,14 @@
 #pragma once
 
-#include <random>
-#include <unordered_set>
-#include <vector>
-
-#include <juce_core/juce_core.h>
-
 #include "GenreEngine.h"
-#include "BoomBap/BoomBapGhostGenerator.h"
 #include "BoomBap/BoomBapClassicAlgebraGenerator.h"
-#include "BoomBap/BoomBapGrooveBlueprint.h"
-#include "BoomBap/BoomBapHatGenerator.h"
-#include "BoomBap/BoomBapKickGenerator.h"
-#include "BoomBap/BoomBapLaneActivation.h"
-#include "BoomBap/BoomBapOpenHatGenerator.h"
-#include "BoomBap/BoomBapPercGenerator.h"
-#include "BoomBap/BoomBapPhrasePlanner.h"
-#include "BoomBap/BoomBapSnareGenerator.h"
 #include "BoomBap/BoomBapStyleProfile.h"
 
 namespace bbg
 {
+// BoomBap generation runs entirely on the Classic Algebra generator. Whole-pattern
+// generation and every per-lane action (new / variation / mutate) draw from the same
+// statistical model, so a regenerated lane always matches the rest of the groove.
 class BoomBapEngine final : public GenreEngine
 {
 public:
@@ -34,61 +22,6 @@ public:
     void mutateTrack(PatternProject& project, TrackType trackType);
 
 private:
-    struct GrooveContext
-    {
-        CarrierMode carrierMode = CarrierMode::Hat;
-        bool halfTimeReference = false;
-        float phraseVariationAmount = 0.3f;
-    };
-
-    GrooveContext buildGrooveContext(const PatternProject& project,
-                                     const BoomBapStyleProfile& style,
-                                     std::mt19937& rng) const;
-    void applyCarrierMode(PatternProject& project,
-                          const BoomBapStyleProfile& style,
-                          const std::vector<PhraseRole>& phrasePlan,
-                          const BoomBapLaneActivationPlan& lanePlan,
-                          const GrooveContext& grooveContext,
-                          std::mt19937& rng,
-                          const std::unordered_set<TrackType>& mutableTracks) const;
-
-    void regenerateTrackInternal(PatternProject& project,
-                                 TrackState& track,
-                                 const BoomBapStyleProfile& style,
-                                 const std::vector<PhraseRole>& phrasePlan,
-                                 const BoomBapGrooveBlueprint& blueprint,
-                                 std::mt19937& rng);
-    void generateDependentTracks(PatternProject& project,
-                                 const BoomBapStyleProfile& style,
-                                 const std::vector<PhraseRole>& phrasePlan,
-                                 const BoomBapLaneActivationPlan& lanePlan,
-                                 std::mt19937& rng,
-                                 const std::unordered_set<TrackType>& mutableTracks);
-    void postProcess(PatternProject& project,
-                     const BoomBapStyleProfile& style,
-                     const BoomBapGrooveBlueprint& blueprint,
-                     const BoomBapLaneActivationPlan& lanePlan,
-                     std::mt19937& rng,
-                     const std::unordered_set<TrackType>& mutableTracks);
-    void applyPhraseEndingAccents(PatternProject& project,
-                                  const BoomBapStyleProfile& style,
-                                  std::mt19937& rng,
-                                  const std::vector<PhraseRole>& phrasePlan,
-                                  const std::unordered_set<TrackType>& mutableTracks);
-    void validatePattern(PatternProject& project,
-                         const BoomBapGrooveBlueprint& blueprint,
-                         const BoomBapLaneActivationPlan& lanePlan,
-                         const std::unordered_set<TrackType>& mutableTracks) const;
-    bool generateWithAlgebra(PatternProject& project, const BoomBapStyleProfile& style) const;
-    static juce::String phraseSummaryString(const std::vector<PhraseRole>& roles);
-    static bool isKickAnchorStep(int stepInBar);
-    static bool isSnareAnchorStep(int stepInBar);
-
-    BoomBapKickGenerator kickGenerator;
-    BoomBapSnareGenerator snareGenerator;
-    BoomBapHatGenerator hatGenerator;
-    BoomBapGhostGenerator ghostGenerator;
-    BoomBapOpenHatGenerator openHatGenerator;
-    BoomBapPercGenerator percGenerator;
+    void generateWithAlgebra(PatternProject& project, const BoomBapStyleProfile& style) const;
 };
 } // namespace bbg

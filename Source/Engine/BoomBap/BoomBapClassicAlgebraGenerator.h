@@ -201,6 +201,7 @@ private:
     void deriveBarFromStatement(BoomBapClassicAlgebraPattern& pattern,
                                 const BoomBapClassicAlgebraParams& params,
                                 std::mt19937& rng,
+                                int sourceBar,
                                 int targetBar,
                                 const BoomBapGenerationContext& context) const;
     void applyRarePhraseEvent(BoomBapClassicAlgebraPattern& pattern,
