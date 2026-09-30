@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cmath>
 
+#include "../Core/TimingGrid.h"
+
 namespace bbg
 {
 namespace
@@ -65,9 +67,40 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
 
     std::vector<float> mono;
     featureExtractor.downmixToMono(input, mono, request.downmixToMono);
+
+    // Tempo (and, for drum breaks, the K/S/H events) come from the onset-level transcriber,
+    // which works in seconds first, so the step grid below is built on a measured tempo.
+    DrumBreakOptions breakOptions;
+    breakOptions.hostBpm = hostBpm;
+    breakOptions.quantizeAmount = request.breakQuantizeAmount;
+    bundle.breakAnalysis = breakTranscriber.analyze(mono, sampleRate, breakOptions);
+
+    // Key + bass line, on the original timeline. Segments are one beat of the tempo the
+    // generator will use to place them: the sample's own when measured confidently, otherwise
+    // the session tempo with beat 1 at the start of the file.
+    // Onset-based tempo is only trusted on drum loops; a tonal sample's onsets (chord changes,
+    // swells) can give a confident but wrong tempo, while the producer plays it at session tempo.
+    const bool sampleTempoTrusted = bundle.breakAnalysis.valid
+        && bundle.breakAnalysis.drumLoopConfidence >= 0.75f
+        && bundle.breakAnalysis.tempoConfidence >= 0.5f;
+    bundle.harmonyBpm = sampleTempoTrusted ? bundle.breakAnalysis.bpm : (hostBpm > 20.0 ? hostBpm : 90.0);
+    bundle.harmonyOriginSeconds = sampleTempoTrusted ? bundle.breakAnalysis.originSeconds : 0.0;
+    bundle.harmony = harmonyAnalyzer.analyze(mono, sampleRate, 60.0 / bundle.harmonyBpm, bundle.harmonyOriginSeconds);
+
+    // Every step-grid stage below counts sixteenths from sample 0, so start the signal on the
+    // detected beat 1 (drop a lead-in, or pad a pickup) to keep those steps on the real grid.
+    if (bundle.breakAnalysis.valid && bundle.breakAnalysis.tempoConfidence >= 0.35f)
+    {
+        const auto offset = static_cast<long long>(std::llround(bundle.breakAnalysis.originSeconds * sampleRate));
+        if (offset > 0 && offset < static_cast<long long>(mono.size()) / 2)
+            mono.erase(mono.begin(), mono.begin() + static_cast<std::ptrdiff_t>(offset));
+        else if (offset < 0)
+            mono.insert(mono.begin(), static_cast<size_t>(-offset), 0.0f);
+    }
+
     featureExtractor.normalizeWorkingLevel(mono);
 
-    bundle.summary = analyzePreparedMono(mono, sampleRate, request, hostBpm);
+    bundle.summary = analyzePreparedMono(mono, sampleRate, request, hostBpm, bundle.breakAnalysis);
     if (!bundle.summary.valid)
         return bundle;
 
@@ -109,10 +142,50 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     if (request.buildTranscription || request.detectBassline || request.detectDrumEvents)
         bundle.transcription = sampleTranscriber.transcribe(bundle.laneEvidence, bassline, request);
 
+    // Copy mode always uses the tick-accurate K/S/H transcription; guide mode does too when the
+    // sample is clearly a drum loop (the step transcriber would invent ghost kicks and an 808
+    // line out of the kicks).
+    const bool clearlyDrumLoop = bundle.breakAnalysis.valid && bundle.breakAnalysis.drumLoopConfidence >= 0.75f;
+    if (request.transcribeDrumBreak || (request.detectDrumEvents && clearlyDrumLoop))
+        applyBreakTranscription(bundle);
+
     if (request.buildGenerationHints)
         bundle.hints = hintsBuilder.build(bundle.laneEvidence, bundle.transcription, bundle.summary);
 
     return bundle;
+}
+
+void SampleAnalyzer::applyBreakTranscription(SampleAnalysisBundle& bundle)
+{
+    const auto& analysis = bundle.breakAnalysis;
+    if (!analysis.valid)
+        return;
+
+    // Drum copy owns only the three core lanes; ghosts, open hats, percs and 808 stay with the
+    // genre engines, and a drum loop has no bassline to extract.
+    bundle.transcription.drumEvents.clear();
+    bundle.transcription.bassEvents.clear();
+    bundle.transcription.hasDetectedBass = false;
+
+    for (const auto& hit : analysis.hits)
+    {
+        TranscribedEvent event;
+        event.lane = hit.lane;
+        event.tick = hit.gridTick;
+        event.timingOffsetTicks = hit.timingOffsetTicks;
+        event.step = hit.gridTick / TimingGrid::Sixteenth;
+        event.lengthSteps = 1;
+        event.velocity = hit.velocity;
+        event.pitch = hit.lane == TrackType::Kick ? 36 : hit.lane == TrackType::Snare ? 38 : 42;
+        event.confidence = hit.confidence;
+        bundle.transcription.drumEvents.push_back(event);
+    }
+
+    bundle.transcription.hasDetectedDrums = !bundle.transcription.drumEvents.empty();
+    bundle.summary.analyzedBars = analysis.bars;
+    bundle.summary.detectedBpm = analysis.bpm;
+    bundle.summary.bpmReliable = analysis.tempoConfidence >= 0.35f;
+    bundle.summary.phraseBoundaryBars.clear();
 }
 
 SampleAnalysisBundle SampleAnalyzer::analyzeAudioFileExtended(const juce::File& file,
@@ -147,8 +220,11 @@ SampleAnalysisBundle SampleAnalyzer::analyzeAudioFileExtended(const juce::File& 
     }
 
     const int channels = juce::jlimit(1, 2, static_cast<int>(reader->numChannels));
+    // Analysis runs on the host's message thread: at most 16 bars are ever used (64 s even at
+    // 60 BPM), so longer files are cut there instead of freezing the DAW for many seconds.
+    constexpr double kMaxAnalysisSeconds = 64.0;
     const int samplesToRead = static_cast<int>(juce::jmin<int64_t>(lengthSamples,
-                                                                   static_cast<int64_t>(reader->sampleRate * 60.0 * 4.0)));
+                                                                   static_cast<int64_t>(reader->sampleRate * kMaxAnalysisSeconds)));
     juce::AudioBuffer<float> buffer(channels, samplesToRead);
 
     if (!reader->read(&buffer, 0, samplesToRead, 0, true, channels > 1))
@@ -206,9 +282,24 @@ AudioFeatureMap SampleAnalyzer::buildFeatureMap(const SampleAnalysisResult& resu
 SampleAnalysisResult SampleAnalyzer::analyzePreparedMono(const std::vector<float>& mono,
                                                          double sampleRate,
                                                          const SampleAnalysisRequest& request,
-                                                         double hostBpm) const
+                                                         double hostBpm,
+                                                         const DrumBreakAnalysis& breakAnalysis) const
 {
     SampleAnalysisResult result;
+
+    // The sample's own tempo comes first: a sample at 88 BPM in a 92 BPM session is still at
+    // 88. The host tempo is only a hint (already used by the transcriber) or a fallback.
+    const bool fileTempoUsable = request.detectTempoFromFile
+        && breakAnalysis.valid
+        && breakAnalysis.tempoConfidence >= 0.35f;
+    if (fileTempoUsable)
+    {
+        result.bpmFromHost = breakAnalysis.bpmMatchesHost;
+        result.bpmReliable = true;
+        featureExtractor.computeStepFeatures(mono, sampleRate, breakAnalysis.bpm, request, result);
+        result.detectedBpm = breakAnalysis.bpm;
+        return result;
+    }
 
     const bool hostTempoUsable = request.useHostTempoIfAvailable && hostBpm > 20.0;
     const double initialBpm = hostTempoUsable ? hostBpm : 120.0;

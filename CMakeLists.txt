@@ -54,6 +54,8 @@ target_sources(HPDG
         Source/Audio/DrumCompressorBlock.cpp
         Source/Audio/MonstaFxBlock.cpp
     Source/Analysis/SampleAnalyzer.cpp
+    Source/Analysis/DrumBreakTranscriber.cpp
+    Source/Analysis/SampleHarmonyAnalyzer.cpp
     Source/Analysis/FeatureExtractor.cpp
     Source/Analysis/SampleApplyWeights.cpp
     Source/Core/TrackRegistry.cpp
@@ -85,6 +87,8 @@ target_sources(HPDG
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
     Source/Engine/ExtractPatternBuilder.cpp
+    Source/Engine/SampleGuideAccents.cpp
+    Source/Engine/SampleBassFollower.cpp
     Source/Engine/PatternBlendEngine.cpp
     Source/Engine/SubstyleRuleEnforcer.cpp
     Source/Engine/BoomBap/BoomBapPatternLibrary.cpp
@@ -135,6 +139,7 @@ target_sources(HPDG
         Source/UI/GridEditActions.cpp
         Source/UI/GridEditorComponent.cpp
         Source/UI/Vst3GridLiteComponent.cpp
+        Source/UI/SampleBreakStripComponent.cpp
 )
 
 target_include_directories(HPDG
@@ -362,3 +367,21 @@ add_executable(HPDG_TrackSemanticsTests
 )
 
 add_test(NAME HPDG_TrackSemanticsTests COMMAND HPDG_TrackSemanticsTests)
+
+# Drum-break transcription bench: analyze real breaks (report + MIDI) or score synthetic ones.
+add_executable(HPDG_BreakLab
+    Tests/BreakTranscriptionLab.cpp
+    Source/Analysis/DrumBreakTranscriber.cpp
+    Source/Analysis/SampleHarmonyAnalyzer.cpp
+)
+
+target_include_directories(HPDG_BreakLab PRIVATE Source)
+
+target_link_libraries(HPDG_BreakLab
+    PRIVATE
+        juce::juce_audio_formats
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)

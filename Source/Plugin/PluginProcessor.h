@@ -208,6 +208,8 @@ public:
     void setSupportVsContrast(float value);
 
     SampleAnalysisResult getSampleAnalysisResult() const;
+    DrumBreakAnalysis getDrumBreakAnalysis() const;
+    SampleHarmony getSampleHarmony() const;
     AudioFeatureMap getAudioFeatureMap() const;
     SampleAwareGenerationContext getSampleAwareGenerationContext() const;
     juce::String getGenerationDebugSummary() const;

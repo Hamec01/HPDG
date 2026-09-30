@@ -91,9 +91,10 @@ juce::String SampleLibraryManager::folderNameForGenre(GenreType genre)
     switch (genre)
     {
         case GenreType::BoomBap: return "BoomBap";
-        case GenreType::Rap: return "Rap";
+        // While Rap / Drill are parked, their kits are never loaded.
+        case GenreType::Rap: return kShowRapAndDrillGenres ? "Rap" : "BoomBap";
         case GenreType::Trap: return "Trap";
-        case GenreType::Drill: return "Drill";
+        case GenreType::Drill: return kShowRapAndDrillGenres ? "Drill" : "Trap";
         default: return "BoomBap";
     }
 }

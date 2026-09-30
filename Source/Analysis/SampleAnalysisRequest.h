@@ -44,6 +44,11 @@ struct SampleAnalysisRequest
     bool detectDrumEvents = true;
     bool usePercussiveHarmonicSeparation = true;
 
+    // Drum break / drum loop copy: transcribe Kick / Snare / HiHat with real timing (PPQ 960)
+    // instead of the step-grid transcription. 0 = keep the original groove, 1 = hard quantize.
+    bool transcribeDrumBreak = false;
+    float breakQuantizeAmount = 0.0f;
+
     juce::File audioFile;
 };
 } // namespace bbg

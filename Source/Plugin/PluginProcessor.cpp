@@ -14,6 +14,8 @@
 #include "../Core/ProjectStateController.h"
 #include "../Core/TrackRegistry.h"
 #include "../Engine/ExtractPatternBuilder.h"
+#include "../Engine/SampleGuideAccents.h"
+#include "../Engine/SampleBassFollower.h"
 #include "../Engine/MidiExportEngine.h"
 #include "../Engine/PatternPerformanceTransformEngine.h"
 #include "../Engine/PatternBlendEngine.h"
@@ -29,6 +31,8 @@
 #include "../UI/SoundModuleController.h"
 #include "../UI/TrackListComponent.h"
 #include "../UI/Vst3GridLiteComponent.h"
+#include "../UI/SampleBreakStripComponent.h"
+#include "../UI/ComboBoxIdParameterAttachment.h"
 #include "../Utils/TimingHelpers.h"
 
 namespace bbg
@@ -93,9 +97,10 @@ GenreType genreFromChoice(int choice)
 {
     switch (choice)
     {
-        case 1: return GenreType::Rap;
+        // Hidden genres (e.g. set by host automation) fall back to the visible Boom Bap / Trap.
+        case 1: return kShowRapAndDrillGenres ? GenreType::Rap : GenreType::BoomBap;
         case 2: return GenreType::Trap;
-        case 3: return GenreType::Drill;
+        case 3: return kShowRapAndDrillGenres ? GenreType::Drill : GenreType::Trap;
         default: return GenreType::BoomBap;
     }
 }
@@ -168,6 +173,32 @@ void logDrag(const juce::String& message)
     file.appendText(line, false, false, "\n");
 }
 
+// Teardown trace: Documents/DRUMENGINE/Logs/shutdown-trace.log (host hang diagnostics).
+void shutdownTrace(const juce::String& step)
+{
+    auto file = dragLogFile().getSiblingFile("shutdown-trace.log");
+    file.getParentDirectory().createDirectory();
+    file.appendText(juce::Time::getCurrentTime().toString(true, true, true, true)
+                        + " | PLUGIN | tid=" + juce::String(static_cast<juce::int64>(reinterpret_cast<juce::pointer_sized_int>(juce::Thread::getCurrentThreadId())))
+                        + " | " + step + "\n",
+                    false, false, "\n");
+}
+
+// Last sample analysis, hit by hit: Documents/DRUMENGINE/Logs/sample_analysis.log
+void writeSampleAnalysisLog(const juce::File& source, const SampleAnalysisBundle& bundle)
+{
+    auto file = dragLogFile().getSiblingFile("sample_analysis.log");
+    file.getParentDirectory().createDirectory();
+    juce::String text;
+    text << juce::Time::getCurrentTime().toString(true, true) << " | " << source.getFullPathName() << "\n"
+         << "Summary bpm " << juce::String(bundle.summary.detectedBpm, 2)
+         << " | bars " << bundle.summary.analyzedBars
+         << " | drum events " << static_cast<int>(bundle.transcription.drumEvents.size()) << "\n"
+         << bundle.harmony.describe() << " | grid " << juce::String(bundle.harmonyBpm, 2) << " bpm\n"
+         << bundle.breakAnalysis.describe(true) << "\n";
+    file.replaceWithText(text);
+}
+
 std::vector<RuntimeLaneId> buildVst3LaneOrder(const PatternProject& project,
                                               const std::vector<RuntimeLaneId>& laneOrderPreference)
 {
@@ -229,8 +260,11 @@ public:
     {
         setLookAndFeel(&sketchLookAndFeel);
         addAndMakeVisible(header);
+        addAndMakeVisible(sampleStrip);
         addAndMakeVisible(trackListViewport);
         analysisPanel.setVisible(false);
+        if (processor.getAnalysisMode() == AnalysisMode::GenerateFromSample)
+            sampleStripMode = SampleBreakStripComponent::Mode::Guide;
         soundModule.setVisible(false);
 
         laneGridWorkspace.addAndMakeVisible(trackList);
@@ -300,9 +334,11 @@ public:
 
     ~Vst3SafeHeaderEditor() override
     {
+        shutdownTrace("editor destructor begin");
         stopTimer();
         audioProcessor.setVst3EditorSize(getWidth(), getHeight());
         setLookAndFeel(nullptr);
+        shutdownTrace("editor destructor body end");
     }
 
     void paint(juce::Graphics& g) override
@@ -321,7 +357,9 @@ public:
 
         auto area = getWorkspaceBounds();
         header.setBounds(area.removeFromTop(header.getPreferredHeight()));
-        area.removeFromTop(10);
+        area.removeFromTop(8);
+        sampleStrip.setBounds(area.removeFromTop(SampleBreakStripComponent::kPreferredHeight));
+        area.removeFromTop(12);
 
         trackListViewport.setBounds(area);
         syncRackViewportContentSize();
@@ -404,7 +442,7 @@ private:
         densityAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::densityAmount, header.densitySlider);
         tempoInterpretationAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::tempoInterpretation, header.tempoInterpretationCombo);
         barsAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::bars, header.barsCombo);
-        genreAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::genre, header.genreCombo);
+        genreAttachment = std::make_unique<ComboBoxIdParameterAttachment>(*apvts.getParameter(ParamIds::genre), header.genreCombo);
         seedAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::seed, header.seedSlider);
         seedLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::seedLock, header.seedLockToggle);
         masterVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, header.masterVolumeSlider);
@@ -441,8 +479,128 @@ private:
         substyleAttachment = std::make_unique<ComboAttachment>(apvts, substyleParamId, header.substyleCombo);
     }
 
+    void applySampleStripMode()
+    {
+        const bool copy = sampleStripMode == SampleBreakStripComponent::Mode::CopyBreak;
+        audioProcessor.setAnalysisMode(copy ? AnalysisMode::ExtractFromSample : AnalysisMode::GenerateFromSample);
+        audioProcessor.setSampleApplyMode(copy ? SampleApplyMode::ExactCopy : SampleApplyMode::Blend);
+    }
+
+    void setSampleStripFile(const juce::File& file)
+    {
+        auto request = audioProcessor.getSampleAnalysisRequest();
+        request.source = SampleAnalysisRequest::SourceType::AudioFile;
+        request.audioFile = file;
+        audioProcessor.setSampleAnalysisRequest(request);
+        sampleStripError.clear();
+        runSampleAnalysis();
+    }
+
+    void runSampleAnalysis()
+    {
+        const auto request = audioProcessor.getSampleAnalysisRequest();
+        if (!request.audioFile.existsAsFile())
+        {
+            refreshFromProcessor(false);
+            return;
+        }
+
+        applySampleStripMode();
+        juce::String error;
+        const bool ok = audioProcessor.analyzeCurrentSampleSource(&error);
+        sampleStripError = ok ? juce::String() : (error.isNotEmpty() ? error : juce::String("Analysis failed"));
+        if (!ok)
+            logDrag("vst3 sample analysis error: " + sampleStripError);
+        refreshFromProcessor(true);
+    }
+
+    void refreshSampleStrip(const SampleAnalysisRequest& request, bool analysisReady, AnalysisMode)
+    {
+        SampleBreakStripComponent::State state;
+        state.file = request.audioFile;
+        state.mode = sampleStripMode;
+        state.quantize = request.breakQuantizeAmount;
+        state.analysisReady = analysisReady;
+        state.error = sampleStripError;
+        state.analysis = audioProcessor.getDrumBreakAnalysis();
+        const auto harmony = audioProcessor.getSampleHarmony();
+        if (harmony.valid)
+            state.harmonyText = "key " + harmony.keyName() + " " + juce::String(juce::roundToInt(harmony.keyConfidence * 100.0f)) + "%"
+                + "  bass " + juce::String(harmony.confidentBassNotes()) + "/" + juce::String(static_cast<int>(harmony.bass.size()));
+
+        // The editor refreshes at 10 Hz; only push (and repaint) when something changed.
+        const int signature = (state.file.getFullPathName()
+                               + "|" + juce::String(static_cast<int>(state.mode))
+                               + "|" + juce::String(state.quantize, 3)
+                               + "|" + juce::String(analysisReady ? 1 : 0)
+                               + "|" + state.error
+                               + "|" + state.harmonyText
+                               + "|" + juce::String(state.analysis.bpm, 3)
+                               + "|" + juce::String(static_cast<int>(state.analysis.hits.size()))).hashCode();
+        if (signature == sampleStripSignature)
+            return;
+        sampleStripSignature = signature;
+        sampleStrip.setState(state);
+    }
+
+    void wireSampleStrip()
+    {
+        sampleStrip.onChooseFile = [this]
+        {
+            auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+            const auto current = audioProcessor.getSampleAnalysisRequest().audioFile;
+            sampleFileChooser = std::make_shared<juce::FileChooser>(
+                "Select a drum break or sample",
+                current.existsAsFile() ? current.getParentDirectory() : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+                "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+            sampleFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                           [safeEditor](const juce::FileChooser& chooser)
+                                           {
+                                               const auto selected = chooser.getResult();
+                                               if (safeEditor != nullptr && selected.existsAsFile())
+                                                   safeEditor->setSampleStripFile(selected);
+                                           });
+        };
+
+        sampleStrip.onFileDropped = [this](const juce::File& file) { setSampleStripFile(file); };
+
+        sampleStrip.onModeChanged = [this](SampleBreakStripComponent::Mode mode)
+        {
+            sampleStripMode = mode;
+            applySampleStripMode();
+            refreshFromProcessor(false);
+        };
+
+        sampleStrip.onQuantizeChanged = [this](float amount)
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.breakQuantizeAmount = juce::jlimit(0.0f, 1.0f, amount);
+            audioProcessor.setSampleAnalysisRequest(request);
+            if (sampleStripMode == SampleBreakStripComponent::Mode::CopyBreak && audioProcessor.isSampleAnalysisReady())
+                runSampleAnalysis();
+            else
+                refreshFromProcessor(false);
+        };
+
+        sampleStrip.onAnalyze = [this] { runSampleAnalysis(); };
+
+        sampleStrip.onClear = [this]
+        {
+            auto request = audioProcessor.getSampleAnalysisRequest();
+            request.source = SampleAnalysisRequest::SourceType::None;
+            request.audioFile = juce::File();
+            audioProcessor.setSampleAnalysisRequest(request);
+            audioProcessor.clearSampleAnalysis();
+            audioProcessor.setAnalysisMode(AnalysisMode::Off);
+            sampleStripError.clear();
+            refreshFromProcessor(true);
+        };
+    }
+
     void wireCallbacks()
     {
+        wireSampleStrip();
+
         header.onGeneratePressed = [this]
         {
             audioProcessor.applySelectedStylePreset(false);
@@ -772,6 +930,7 @@ private:
         const auto sampleContext = audioProcessor.getSampleAwareGenerationContext();
         const bool analysisReady = audioProcessor.isSampleAnalysisReady();
         const auto analysisMode = audioProcessor.getAnalysisMode();
+        refreshSampleStrip(analysisRequest, analysisReady, analysisMode);
         const auto selectedTrack = project.tracks.empty()
             ? RuntimeLaneId{}
             : project.tracks[static_cast<size_t>(juce::jlimit(0,
@@ -1116,6 +1275,11 @@ private:
     TrackListComponent trackList;
     Vst3GridLiteComponent gridLite;
     SampleAnalysisPanelComponent analysisPanel;
+    SampleBreakStripComponent sampleStrip;
+    SampleBreakStripComponent::Mode sampleStripMode = SampleBreakStripComponent::Mode::CopyBreak;
+    juce::String sampleStripError;
+    std::shared_ptr<juce::FileChooser> sampleFileChooser;
+    int sampleStripSignature = 0;
     SoundModuleComponent soundModule;
     SoundModuleController soundModuleController;
     std::unique_ptr<ProcessorSplitterHandleComponent> verticalSplitterHandle;
@@ -1141,7 +1305,7 @@ private:
     std::unique_ptr<SliderAttachment> densityAttachment;
     std::unique_ptr<ComboAttachment> tempoInterpretationAttachment;
     std::unique_ptr<ComboAttachment> barsAttachment;
-    std::unique_ptr<ComboAttachment> genreAttachment;
+    std::unique_ptr<ComboBoxIdParameterAttachment> genreAttachment;
     std::unique_ptr<ComboAttachment> substyleAttachment;
     std::unique_ptr<SliderAttachment> seedAttachment;
     std::unique_ptr<ButtonAttachment> seedLockAttachment;
@@ -2053,7 +2217,10 @@ BoomBapGeneratorAudioProcessor::BoomBapGeneratorAudioProcessor()
     generatePattern();
 }
 
-BoomBapGeneratorAudioProcessor::~BoomBapGeneratorAudioProcessor() = default;
+BoomBapGeneratorAudioProcessor::~BoomBapGeneratorAudioProcessor()
+{
+    shutdownTrace("processor destructor begin");
+}
 
 void BoomBapGeneratorAudioProcessor::prepareToPlay(double sampleRate, int)
 {
@@ -2476,7 +2643,10 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 juce::AudioProcessorEditor* BoomBapGeneratorAudioProcessor::createEditor()
 {
     if (wrapperType == juce::AudioProcessor::wrapperType_VST3)
+    {
+        shutdownTrace("editor create");
         return new Vst3SafeHeaderEditor(*this);
+    }
 
     return new BoomBGeneratorAudioProcessorEditor(*this);
 }
@@ -2530,6 +2700,17 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
         return;
 
     apvts.replaceState(loaded);
+
+    // While Rap / Drill are hidden, a saved hidden genre (e.g. a "Trap" session that the old
+    // position-based genre binding stored as Drill) is mapped back onto a visible one.
+    if (!kShowRapAndDrillGenres)
+    {
+        const auto* savedGenre = apvts.getRawParameterValue(ParamIds::genre);
+        const int choice = savedGenre != nullptr ? static_cast<int>(savedGenre->load()) : 0;
+        if (choice == 1 || choice == 3)
+            setFloatParameterValue(ParamIds::genre, choice == 3 ? 2.0f : 0.0f);
+    }
+
     if (loaded.hasProperty("vst3_editor_width"))
         vst3EditorWidth.store(juce::jlimit(kVst3EditorMinWidth, kVst3EditorMaxWidth,
                                           static_cast<int>(loaded.getProperty("vst3_editor_width"))));
@@ -2575,6 +2756,21 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
         setFloatParameterValue(ParamIds::bpm, bpmSelection.bpm);
 
     generationParams.bpm = bpmSelection.bpm;
+
+    // Guide mode with a tonal sample: the 808 plays in the sample's key (set before the engine
+    // runs so its own pitch choices are already in key; shown in the key / scale controls).
+    const auto& harmony = currentAnalysisBundle.harmony;
+    if (analysisReady
+        && analysisMode == AnalysisMode::GenerateFromSample
+        && generationParams.genre == GenreType::Trap
+        && SampleBassFollower::shouldApplyKey(harmony))
+    {
+        generationParams.keyRoot = harmony.keyRoot;
+        generationParams.scaleMode = harmony.scaleMode;
+        setBassKeyRootChoice(harmony.keyRoot);
+        setBassScaleModeChoice(harmony.scaleMode);
+    }
+
     project.params = generationParams;
     project.sampleContext = currentSampleContext;
     switch (project.params.genre)
@@ -3612,7 +3808,15 @@ bool BoomBapGeneratorAudioProcessor::analyzeAudioFile(const juce::File& file, ju
         request.usePercussiveHarmonicSeparation = true;
     }
 
+    // Extract / Copy treats the file as a drum break: Kick / Snare / HiHat with their real
+    // timing, conformed to the plugin tempo through PPQ ticks.
+    request.transcribeDrumBreak = mode == AnalysisMode::ExtractFromSample;
+
+    shutdownTrace("analysis begin | " + file.getFileName());
+    const auto analysisStart = juce::Time::getMillisecondCounterHiRes();
     const auto bundle = sampleAnalyzer.analyzeAudioFileExtended(file, request, hostBpm, errorMessage);
+    shutdownTrace("analysis end | " + juce::String(juce::Time::getMillisecondCounterHiRes() - analysisStart, 0) + " ms");
+    writeSampleAnalysisLog(file, bundle);
     const int extractedBars = bundle.summary.valid ? juce::jlimit(1, 16, bundle.summary.analyzedBars) : 0;
 
     if (mode == AnalysisMode::ExtractFromSample && extractedBars > 0)
@@ -3725,6 +3929,18 @@ SampleAnalysisResult BoomBapGeneratorAudioProcessor::getSampleAnalysisResult() c
     return currentAnalysisResult;
 }
 
+SampleHarmony BoomBapGeneratorAudioProcessor::getSampleHarmony() const
+{
+    std::scoped_lock lock(projectMutex);
+    return analysisReady ? currentAnalysisBundle.harmony : SampleHarmony {};
+}
+
+DrumBreakAnalysis BoomBapGeneratorAudioProcessor::getDrumBreakAnalysis() const
+{
+    std::scoped_lock lock(projectMutex);
+    return analysisReady ? currentAnalysisBundle.breakAnalysis : DrumBreakAnalysis {};
+}
+
 AudioFeatureMap BoomBapGeneratorAudioProcessor::getAudioFeatureMap() const
 {
     std::scoped_lock lock(projectMutex);
@@ -3758,6 +3974,8 @@ juce::String BoomBapGeneratorAudioProcessor::getGenerationDebugSummary() const
               + " | bass " + juce::String(static_cast<int>(currentAnalysisBundle.hints.bassStepWeights.size())));
     lines.add("Copy bias: drums " + juce::String(currentSampleContext.preferCopyDrums ? "yes" : "no")
               + " | bass " + juce::String(currentSampleContext.preferCopyBass ? "yes" : "no"));
+    if (currentAnalysisBundle.breakAnalysis.valid)
+        lines.add(currentAnalysisBundle.breakAnalysis.describe(false));
     if (lastSampleApplyDebug.isNotEmpty())
         lines.add(lastSampleApplyDebug);
 
@@ -3802,6 +4020,41 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
         || analysisMode == AnalysisMode::ExtractFromSample;
     if (!analysisReady || !modeUsesGuidance)
         return false;
+
+    // Guide mode with a musical sample: nothing is "extracted" (a melody has no drums to copy,
+    // and reading kicks / an 808 line out of it lands them on snare beats). The genre engine's
+    // beat stays, and the sample's strong low peaks may add a kick where the genre allows one.
+    const auto& breakAnalysis = currentAnalysisBundle.breakAnalysis;
+    const bool drumLoop = breakAnalysis.valid && breakAnalysis.drumLoopConfidence >= 0.75f;
+    if (analysisMode == AnalysisMode::GenerateFromSample && !drumLoop)
+    {
+        const auto report = SampleGuideAccents::apply(project,
+                                                      breakAnalysis,
+                                                      currentAnalysisBundle.harmonyBpm,
+                                                      currentAnalysisBundle.harmonyOriginSeconds,
+                                                      currentSampleContext.reactivity);
+        lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext) + "\n" + describeSampleGuideAccentReport(report);
+
+        std::unordered_set<TrackType> changed;
+        if (report.addedKicks > 0)
+            changed.insert(TrackType::Kick);
+
+        // 808 follows the sample's bass (Trap has an 808 lane; Boom Bap has none yet).
+        if (project.params.genre == GenreType::Trap)
+        {
+            const auto bassReport = SampleBassFollower::apply(project,
+                                                              currentAnalysisBundle.harmony,
+                                                              currentAnalysisBundle.harmonyBpm,
+                                                              currentAnalysisBundle.harmonyOriginSeconds);
+            lastSampleApplyDebug += "\n" + describeSampleBassFollowReport(bassReport, currentAnalysisBundle.harmony);
+            if (bassReport.notesFollowed > 0)
+                changed.insert(TrackType::Sub808);
+        }
+
+        if (!changed.empty())
+            PatternPerformanceTransformEngine::captureBasePatterns(project, changed);
+        return !changed.empty();
+    }
 
     const auto extracted = ExtractPatternBuilder::build(currentAnalysisBundle);
     if (!extracted.hasAnyContent())

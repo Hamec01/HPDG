@@ -6412,7 +6412,8 @@ int main()
     failures += runTest("TrapEngine uses Algebra generation smoke", testTrapEngineUsesAlgebraGenerationSmoke);
     failures += runTest("Sample apply weights smoke", testSampleApplyWeightsSmoke);
     failures += runTest("Extract pattern blend and copy smoke", testExtractPatternBlendAndCopySmoke);
-    failures += runTest("Lane sample preferred tag rotation smoke", testLaneSampleBankPreferredTagRotationSmoke);
+    if (kShowRapAndDrillGenres) // Rap's Dirty South kit is parked while Rap / Drill are hidden.
+        failures += runTest("Lane sample preferred tag rotation smoke", testLaneSampleBankPreferredTagRotationSmoke);
     failures += runTest("Rap EastCoast pocket generation smoke", testRapEastCoastPocketGenerationSmoke);
     failures += runTest("Rap EastCoast controls influence smoke", testRapEastCoastControlsInfluenceSmoke);
     failures += runTest("Rap WestCoast pocket generation smoke", testRapWestCoastPocketGenerationSmoke);

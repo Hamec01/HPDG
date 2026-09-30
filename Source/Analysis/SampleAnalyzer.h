@@ -5,6 +5,8 @@
 
 #include "AudioFeatureMap.h"
 #include "BasslineInferer.h"
+#include "DrumBreakTranscriber.h"
+#include "SampleHarmonyAnalyzer.h"
 #include "FeatureExtractor.h"
 #include "GenerationHintsBuilder.h"
 #include "LaneEventInferer.h"
@@ -51,9 +53,14 @@ private:
     SampleAnalysisResult analyzePreparedMono(const std::vector<float>& mono,
                                              double sampleRate,
                                              const SampleAnalysisRequest& request,
-                                             double hostBpm) const;
+                                             double hostBpm,
+                                             const DrumBreakAnalysis& breakAnalysis) const;
+
+    static void applyBreakTranscription(SampleAnalysisBundle& bundle);
 
     FeatureExtractor featureExtractor;
+    DrumBreakTranscriber breakTranscriber;
+    SampleHarmonyAnalyzer harmonyAnalyzer;
     STFTAnalyzer stftAnalyzer;
     OnsetDetector onsetDetector;
     PercussiveHarmonicSeparator percussiveHarmonicSeparator;

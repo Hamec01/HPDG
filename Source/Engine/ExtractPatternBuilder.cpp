@@ -12,7 +12,8 @@ NoteEvent toNoteEvent(const TranscribedEvent& event, bool bassEvent)
 {
     NoteEvent note;
     note.pitch = event.pitch;
-    note.gridTick = event.step * TimingGrid::Sixteenth;
+    note.gridTick = event.tick >= 0 ? event.tick : event.step * TimingGrid::Sixteenth;
+    note.timingOffsetTicks = event.tick >= 0 ? event.timingOffsetTicks : 0;
     note.lengthTicks = juce::jmax(1, event.lengthSteps) * TimingGrid::Sixteenth;
     note.velocity = juce::jlimit(1, 127, event.velocity);
     note.isGhost = event.ghost;
@@ -53,7 +54,8 @@ ExtractedPatternData ExtractPatternBuilder::build(const SampleAnalysisBundle& bu
             continue;
 
         result.laneNotes[laneIndex].push_back(toNoteEvent(event, false));
-        highestStep = juce::jmax(highestStep, event.step + juce::jmax(0, event.lengthSteps - 1));
+        const int eventStep = event.tick >= 0 ? event.tick / TimingGrid::Sixteenth : event.step;
+        highestStep = juce::jmax(highestStep, eventStep + juce::jmax(0, event.lengthSteps - 1));
     }
 
     for (const auto& event : bundle.transcription.bassEvents)

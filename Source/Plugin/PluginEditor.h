@@ -15,6 +15,7 @@
 #include "../UI/HotkeyController.h"
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
+#include "../UI/ComboBoxIdParameterAttachment.h"
 #include "../UI/SoundModuleComponent.h"
 #include "../UI/SoundModuleController.h"
 #include "../UI/StyleLabDraftState.h"
@@ -220,7 +221,7 @@ private:
     std::unique_ptr<SliderAttachment> densityAttachment;
     std::unique_ptr<ComboAttachment> tempoInterpretationAttachment;
     std::unique_ptr<ComboAttachment> barsAttachment;
-    std::unique_ptr<ComboAttachment> genreAttachment;
+    std::unique_ptr<ComboBoxIdParameterAttachment> genreAttachment;
     std::unique_ptr<ComboAttachment> substyleAttachment;
     int lastGenreChoice = -1;
     std::unique_ptr<SliderAttachment> seedAttachment;

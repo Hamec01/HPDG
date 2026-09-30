@@ -385,7 +385,10 @@ void MainHeaderComponent::paint(juce::Graphics& g)
     g.setColour(sketch::Theme::ochreWash().withAlpha(0.50f));
     g.fillRect(10.0f, 8.0f, 112.0f, 28.0f);
 
-    static const auto logoImage = juce::ImageCache::getFromMemory(ImageBinaryData::Logo_png, ImageBinaryData::Logo_pngSize);
+    // No function-local static: a juce::Image outliving JUCE is released during DLL unload
+    // (inside DllMain), which deadlocks hosts when the plugin is removed. ImageCache already
+    // caches the decoded logo and is cleared with JUCE's own shutdown.
+    const auto logoImage = juce::ImageCache::getFromMemory(ImageBinaryData::Logo_png, ImageBinaryData::Logo_pngSize);
     if (logoImage.isValid())
     {
         const juce::Rectangle<float> logoBounds(126.0f, 12.0f, 26.0f, 22.0f);
