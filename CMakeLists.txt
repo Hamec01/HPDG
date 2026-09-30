@@ -54,6 +54,7 @@ target_sources(HPDG
         Source/Audio/DrumCompressorBlock.cpp
         Source/Audio/MonstaFxBlock.cpp
     Source/Analysis/SampleAnalyzer.cpp
+    Source/Analysis/SampleSourceAudio.cpp
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
     Source/Analysis/FeatureExtractor.cpp
@@ -121,6 +122,7 @@ target_sources(HPDG
         Source/UI/GridEditorComponent.cpp
         Source/UI/Vst3GridLiteComponent.cpp
         Source/UI/SampleBreakStripComponent.cpp
+        Source/UI/SampleTrimEditorComponent.cpp
 )
 
 target_include_directories(HPDG
@@ -328,3 +330,28 @@ target_link_libraries(HPDG_BreakLab
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+# Sample source (waveform peaks, transients, tempo grid, suggested fragment) and the trim editor.
+add_executable(HPDG_SampleTrimTests
+    Tests/SampleTrimTests.cpp
+    Source/Analysis/SampleSourceAudio.cpp
+    Source/UI/SampleTrimEditorComponent.cpp
+)
+
+target_include_directories(HPDG_SampleTrimTests PRIVATE Source)
+
+target_compile_definitions(HPDG_SampleTrimTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+
+target_link_libraries(HPDG_SampleTrimTests
+    PRIVATE
+        juce::juce_audio_formats
+        juce::juce_gui_basics
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_test(NAME HPDG_SampleTrimTests COMMAND HPDG_SampleTrimTests)

@@ -85,6 +85,7 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
         && bundle.breakAnalysis.tempoConfidence >= 0.5f;
     bundle.harmonyBpm = sampleTempoTrusted ? bundle.breakAnalysis.bpm : (hostBpm > 20.0 ? hostBpm : 90.0);
     bundle.harmonyOriginSeconds = sampleTempoTrusted ? bundle.breakAnalysis.originSeconds : 0.0;
+    bundle.harmonyTempoFromSample = sampleTempoTrusted;
     bundle.harmony = harmonyAnalyzer.analyze(mono, sampleRate, 60.0 / bundle.harmonyBpm, bundle.harmonyOriginSeconds);
 
     // Every step-grid stage below counts sixteenths from sample 0, so start the signal on the
@@ -222,12 +223,20 @@ SampleAnalysisBundle SampleAnalyzer::analyzeAudioFileExtended(const juce::File& 
     const int channels = juce::jlimit(1, 2, static_cast<int>(reader->numChannels));
     // Analysis runs on the host's message thread: at most 16 bars are ever used (64 s even at
     // 60 BPM), so longer files are cut there instead of freezing the DAW for many seconds.
+    // A trimmed request reads only the selected fragment (the file itself is untouched).
     constexpr double kMaxAnalysisSeconds = 64.0;
-    const int samplesToRead = static_cast<int>(juce::jmin<int64_t>(lengthSamples,
+    int64_t startSample = 0;
+    int64_t endSample = lengthSamples;
+    if (request.hasTrim())
+    {
+        startSample = juce::jlimit<int64_t>(0, lengthSamples - 1, static_cast<int64_t>(std::llround(request.trimStartSeconds * reader->sampleRate)));
+        endSample = juce::jlimit<int64_t>(startSample + 1, lengthSamples, static_cast<int64_t>(std::llround(request.trimEndSeconds * reader->sampleRate)));
+    }
+    const int samplesToRead = static_cast<int>(juce::jmin<int64_t>(endSample - startSample,
                                                                    static_cast<int64_t>(reader->sampleRate * kMaxAnalysisSeconds)));
     juce::AudioBuffer<float> buffer(channels, samplesToRead);
 
-    if (!reader->read(&buffer, 0, samplesToRead, 0, true, channels > 1))
+    if (!reader->read(&buffer, 0, samplesToRead, startSample, true, channels > 1))
     {
         if (errorMessage != nullptr)
             *errorMessage = "Failed to read audio file samples.";

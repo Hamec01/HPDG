@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <vector>
@@ -28,6 +29,7 @@
 #include "../Analysis/SampleAnalysisRequest.h"
 #include "../Analysis/SampleAnalysisResult.h"
 #include "../Analysis/SampleAnalyzer.h"
+#include "../Analysis/SampleSourceAudio.h"
 #include "../Analysis/SampleAwareGenerationContext.h"
 
 namespace bbg
@@ -213,6 +215,36 @@ public:
     AudioFeatureMap getAudioFeatureMap() const;
     SampleAwareGenerationContext getSampleAwareGenerationContext() const;
     juce::String getGenerationDebugSummary() const;
+
+    // --- Dropped sample: waveform, trim editor, sample playback ---
+    // The file is decoded once on drop; the analyzer reads only the selected fragment.
+    bool loadSampleSource(const juce::File& file, juce::String* errorMessage = nullptr);
+    std::shared_ptr<const SampleSourceAudio> getSampleSource() const;
+    void clearSampleSource();
+
+    // Where the analyzed fragment sits in the file: bar 1 at startSeconds, `bars` bars at `bpm`.
+    // followsSessionTempo: a tonal sample assumed to play at session tempo (bpm = project bpm).
+    struct SampleTimeline
+    {
+        bool valid = false;
+        double startSeconds = 0.0;
+        double bpm = 0.0;
+        int bars = 0;
+        bool followsSessionTempo = false;
+    };
+    SampleTimeline getSampleTimeline() const;
+
+    // Trim editor / dot audition: plays [start, end) of the sample (looped or once).
+    void auditionSampleRegion(double startSeconds, double endSeconds, bool loop);
+    void stopSampleAudition();
+    bool isSampleAuditionPlaying() const;
+    double getSampleAuditionPositionSeconds() const;
+
+    // "Play sample with HPDG": while the pattern plays, the analyzed fragment plays along,
+    // bar-locked to the pattern (time-stretched by varispeed when the tempos differ).
+    void setPlaySampleWithPattern(bool enabled);
+    bool isPlaySampleWithPattern() const;
+    void setSamplePlaybackGain(float gain);
 
 private:
     struct PreviewEvent
@@ -420,6 +452,36 @@ private:
     std::array<std::atomic<float>, kEqDisplayAnalyzerBinCount> eqDisplayAnalyzerMagnitudes {};
     std::atomic<float> eqDisplayAnalyzerRms { 0.0f };
     std::atomic<bool> eqDisplayAnalyzerActive { false };
+
+    // Sample playback (see loadSampleSource). Guarded by sampleSourceLock; the audio thread
+    // only try-locks it, so a busy UI never blocks the audio callback.
+    struct SampleAuditionState
+    {
+        bool active = false;
+        bool loop = false;
+        double startSeconds = 0.0;
+        double endSeconds = 0.0;
+        double positionSeconds = 0.0;
+    };
+    // Per-block values captured by processBlock for the sample sync (audio thread only).
+    struct SampleSyncBlock
+    {
+        bool active = false;
+        int patternStart = 0;
+        int patternLength = 0;
+        double projectBpm = 120.0;
+        std::optional<juce::Range<int>> loopRange;
+    };
+    void renderSamplePlayback(juce::AudioBuffer<float>& output, int numSamples);
+
+    mutable juce::SpinLock sampleSourceLock;
+    std::shared_ptr<const SampleSourceAudio> sampleSource;
+    SampleTimeline sampleTimeline;
+    SampleAuditionState sampleAudition;
+    SampleSyncBlock sampleSyncBlock;
+    std::atomic<double> sampleAuditionPosition { -1.0 };
+    std::atomic<bool> playSampleWithPattern { false };
+    std::atomic<float> samplePlaybackGain { 0.8f };
 
     juce::AudioBuffer<float> liveCaptureBuffer;
     bool isCapturingInput = false;

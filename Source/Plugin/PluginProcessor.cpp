@@ -32,6 +32,7 @@
 #include "../UI/TrackListComponent.h"
 #include "../UI/Vst3GridLiteComponent.h"
 #include "../UI/SampleBreakStripComponent.h"
+#include "../UI/SampleTrimEditorComponent.h"
 #include "../UI/ComboBoxIdParameterAttachment.h"
 #include "../Utils/TimingHelpers.h"
 
@@ -336,6 +337,7 @@ public:
     {
         shutdownTrace("editor destructor begin");
         stopTimer();
+        closeTrimEditor();
         audioProcessor.setVst3EditorSize(getWidth(), getHeight());
         setLookAndFeel(nullptr);
         shutdownTrace("editor destructor body end");
@@ -486,14 +488,109 @@ private:
         audioProcessor.setSampleApplyMode(copy ? SampleApplyMode::ExactCopy : SampleApplyMode::Blend);
     }
 
+    // Files longer than this open the trim editor first (a song, not a loop).
+    static constexpr double kAutoTrimSeconds = 20.0;
+
     void setSampleStripFile(const juce::File& file)
     {
         auto request = audioProcessor.getSampleAnalysisRequest();
         request.source = SampleAnalysisRequest::SourceType::AudioFile;
         request.audioFile = file;
+        request.trimStartSeconds = 0.0;
+        request.trimEndSeconds = 0.0;
         audioProcessor.setSampleAnalysisRequest(request);
         sampleStripError.clear();
+
+        juce::String loadError;
+        if (!audioProcessor.loadSampleSource(file, &loadError))
+        {
+            sampleStripError = loadError.isNotEmpty() ? loadError : juce::String("Could not read the file");
+            refreshFromProcessor(true);
+            return;
+        }
+
+        const auto source = audioProcessor.getSampleSource();
+        if (source != nullptr && source->getDurationSeconds() > kAutoTrimSeconds)
+        {
+            // A long file: pick the fragment first (pre-selected: the most drum-like 8 bars).
+            audioProcessor.clearSampleAnalysis();
+            refreshFromProcessor(true);
+            openTrimEditor();
+            return;
+        }
         runSampleAnalysis();
+    }
+
+    void closeTrimEditor()
+    {
+        audioProcessor.stopSampleAudition();
+        if (trimDialog != nullptr)
+            trimDialog->exitModalState(0);
+        trimDialog = nullptr;
+    }
+
+    void openTrimEditor()
+    {
+        auto source = audioProcessor.getSampleSource();
+        if (source == nullptr || !source->isLoaded())
+            return;
+        if (trimDialog != nullptr)
+        {
+            trimDialog->toFront(true);
+            return;
+        }
+
+        const auto request = audioProcessor.getSampleAnalysisRequest();
+        juce::Range<double> initial;
+        if (request.hasTrim())
+            initial = { request.trimStartSeconds, request.trimEndSeconds };
+        else if (source->getDurationSeconds() <= kAutoTrimSeconds)
+            initial = { 0.0, source->getDurationSeconds() };
+
+        auto* trimEditor = new SampleTrimEditorComponent(source, initial, sampleStripMode == SampleBreakStripComponent::Mode::Guide);
+        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        trimEditor->getPlayheadSeconds = [safeEditor]
+        {
+            return safeEditor != nullptr ? safeEditor->audioProcessor.getSampleAuditionPositionSeconds() : -1.0;
+        };
+        trimEditor->onPlaySelection = [safeEditor](juce::Range<double> range)
+        {
+            if (safeEditor != nullptr)
+                safeEditor->audioProcessor.auditionSampleRegion(range.getStart(), range.getEnd(), true);
+        };
+        trimEditor->onStopPlayback = [safeEditor]
+        {
+            if (safeEditor != nullptr)
+                safeEditor->audioProcessor.stopSampleAudition();
+        };
+        trimEditor->onAnalyzeSelection = [safeEditor](juce::Range<double> range)
+        {
+            if (safeEditor == nullptr)
+                return;
+            auto trimmed = safeEditor->audioProcessor.getSampleAnalysisRequest();
+            trimmed.trimStartSeconds = range.getStart();
+            trimmed.trimEndSeconds = range.getEnd();
+            safeEditor->audioProcessor.setSampleAnalysisRequest(trimmed);
+            safeEditor->closeTrimEditor();
+            safeEditor->runSampleAnalysis();
+        };
+        trimEditor->onCancel = [safeEditor]
+        {
+            if (safeEditor != nullptr)
+                safeEditor->closeTrimEditor();
+        };
+
+        juce::DialogWindow::LaunchOptions options;
+        options.content.setOwned(trimEditor);
+        options.dialogTitle = "Trim sample";
+        options.dialogBackgroundColour = sketch::Theme::paper();
+        options.escapeKeyTriggersCloseButton = true;
+        options.useNativeTitleBar = true;
+        options.resizable = true;
+        options.componentToCentreAround = this;
+        trimDialog = options.launchAsync();
+        if (trimDialog != nullptr)
+            trimDialog->setResizeLimits(700, 300, 2600, 1000);
     }
 
     void runSampleAnalysis()
@@ -504,6 +601,11 @@ private:
             refreshFromProcessor(false);
             return;
         }
+
+        // The waveform / audition source follows the analyzed file.
+        const auto loaded = audioProcessor.getSampleSource();
+        if (loaded == nullptr || loaded->getFile() != request.audioFile)
+            audioProcessor.loadSampleSource(request.audioFile);
 
         applySampleStripMode();
         juce::String error;
@@ -523,6 +625,10 @@ private:
         state.analysisReady = analysisReady;
         state.error = sampleStripError;
         state.analysis = audioProcessor.getDrumBreakAnalysis();
+        state.source = audioProcessor.getSampleSource();
+        state.trimStartSeconds = request.trimStartSeconds;
+        state.trimEndSeconds = request.trimEndSeconds;
+        state.playWithPattern = audioProcessor.isPlaySampleWithPattern();
         const auto harmony = audioProcessor.getSampleHarmony();
         if (harmony.valid)
             state.harmonyText = "key " + harmony.keyName() + " " + juce::String(juce::roundToInt(harmony.keyConfidence * 100.0f)) + "%"
@@ -536,7 +642,10 @@ private:
                                + "|" + state.error
                                + "|" + state.harmonyText
                                + "|" + juce::String(state.analysis.bpm, 3)
-                               + "|" + juce::String(static_cast<int>(state.analysis.hits.size()))).hashCode();
+                               + "|" + juce::String(static_cast<int>(state.analysis.hits.size()))
+                               + "|" + juce::String(state.trimStartSeconds, 3) + "-" + juce::String(state.trimEndSeconds, 3)
+                               + "|" + juce::String(reinterpret_cast<juce::pointer_sized_int>(state.source.get()))
+                               + "|" + juce::String(state.playWithPattern ? 1 : 0)).hashCode();
         if (signature == sampleStripSignature)
             return;
         sampleStripSignature = signature;
@@ -583,14 +692,28 @@ private:
         };
 
         sampleStrip.onAnalyze = [this] { runSampleAnalysis(); };
+        sampleStrip.onTrim = [this] { openTrimEditor(); };
+        sampleStrip.onPlayWithPatternChanged = [this](bool enabled)
+        {
+            audioProcessor.setPlaySampleWithPattern(enabled);
+            refreshFromProcessor(false);
+        };
+        sampleStrip.onAuditionRange = [this](double start, double end)
+        {
+            audioProcessor.auditionSampleRegion(start, end, false);
+        };
 
         sampleStrip.onClear = [this]
         {
             auto request = audioProcessor.getSampleAnalysisRequest();
             request.source = SampleAnalysisRequest::SourceType::None;
             request.audioFile = juce::File();
+            request.trimStartSeconds = 0.0;
+            request.trimEndSeconds = 0.0;
             audioProcessor.setSampleAnalysisRequest(request);
+            closeTrimEditor();
             audioProcessor.clearSampleAnalysis();
+            audioProcessor.clearSampleSource();
             audioProcessor.setAnalysisMode(AnalysisMode::Off);
             sampleStripError.clear();
             refreshFromProcessor(true);
@@ -1280,6 +1403,7 @@ private:
     juce::String sampleStripError;
     std::shared_ptr<juce::FileChooser> sampleFileChooser;
     int sampleStripSignature = 0;
+    juce::Component::SafePointer<juce::DialogWindow> trimDialog;
     SoundModuleComponent soundModule;
     SoundModuleController soundModuleController;
     std::unique_ptr<ProcessorSplitterHandleComponent> verticalSplitterHandle;
@@ -2373,6 +2497,16 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     buffer.clear();
     midiMessages.clear();
 
+    // The dropped sample (trim audition, dot audition, play with HPDG) is mixed in after
+    // everything else, on every return path, without master FX.
+    sampleSyncBlock.active = false;
+    struct SamplePlaybackMix
+    {
+        BoomBapGeneratorAudioProcessor& processor;
+        juce::AudioBuffer<float>& output;
+        ~SamplePlaybackMix() { processor.renderSamplePlayback(output, output.getNumSamples()); }
+    } samplePlaybackMix { *this, buffer };
+
     const auto snapshot = TransportSnapshot::fromPlayHead(getPlayHead());
     const auto currentParams = buildParamsFromState(snapshot);
     bool shouldAutoStartPreview = false;
@@ -2492,6 +2626,19 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 
     if (previewPlaying)
     {
+        sampleSyncBlock.active = true;
+        sampleSyncBlock.patternStart = previewSamplePosition;
+        sampleSyncBlock.patternLength = patternLength;
+        sampleSyncBlock.projectBpm = project.params.bpm > 0.0f ? static_cast<double>(project.params.bpm) : 120.0;
+        sampleSyncBlock.loopRange.reset();
+        if (const auto syncLoopTicks = activePreviewLoopTicks(project); syncLoopTicks.has_value())
+        {
+            const int loopStart = ticksToSamples(syncLoopTicks->getStart(), currentSampleRate, project.params.bpm);
+            const int loopEnd = ticksToSamples(syncLoopTicks->getEnd(), currentSampleRate, project.params.bpm);
+            if (loopEnd > loopStart)
+                sampleSyncBlock.loopRange = juce::Range<int>(loopStart, loopEnd);
+        }
+
         const auto schedulePreviewSegment = [this](int segmentStart,
                                                    int segmentLength,
                                                    int bufferOffset,
@@ -3759,7 +3906,14 @@ TransportSnapshot BoomBapGeneratorAudioProcessor::getLastTransportSnapshot() con
 void BoomBapGeneratorAudioProcessor::setSampleAnalysisRequest(const SampleAnalysisRequest& request)
 {
     std::scoped_lock lock(projectMutex);
+    const bool fileChanged = request.audioFile != currentAnalysisRequest.audioFile;
     currentAnalysisRequest = request;
+    // A fragment belongs to its file: a new file starts untrimmed.
+    if (fileChanged)
+    {
+        currentAnalysisRequest.trimStartSeconds = 0.0;
+        currentAnalysisRequest.trimEndSeconds = 0.0;
+    }
 }
 
 SampleAnalysisRequest BoomBapGeneratorAudioProcessor::getSampleAnalysisRequest() const
@@ -3822,6 +3976,17 @@ bool BoomBapGeneratorAudioProcessor::analyzeAudioFile(const juce::File& file, ju
     if (mode == AnalysisMode::ExtractFromSample && extractedBars > 0)
         setFloatParameterValue(ParamIds::bars, static_cast<float>(choiceIndexFromBars(extractedBars)));
 
+    {
+        SampleTimeline timeline;
+        timeline.valid = bundle.summary.valid;
+        timeline.startSeconds = (request.hasTrim() ? request.trimStartSeconds : 0.0) + bundle.harmonyOriginSeconds;
+        timeline.bpm = bundle.harmonyBpm;
+        timeline.followsSessionTempo = !bundle.harmonyTempoFromSample;
+        timeline.bars = juce::jmax(1, bundle.summary.analyzedBars);
+        const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+        sampleTimeline = timeline;
+    }
+
     std::scoped_lock lock(projectMutex);
     currentAnalysisRequest = request;
     currentAnalysisBundle = bundle;
@@ -3844,6 +4009,10 @@ bool BoomBapGeneratorAudioProcessor::extractPatternFromAnalyzedSample()
 
 void BoomBapGeneratorAudioProcessor::clearSampleAnalysis()
 {
+    {
+        const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+        sampleTimeline = {};
+    }
     std::scoped_lock lock(projectMutex);
     currentAnalysisBundle = {};
     currentAnalysisResult = {};
@@ -5021,6 +5190,200 @@ void BoomBapGeneratorAudioProcessor::restorePatternProjectFromState(const juce::
     PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(restored, restored.params);
     project = std::move(restored);
 }
+//==============================================================================
+// Dropped sample: decoded source, audition and play-along
+//==============================================================================
+
+bool BoomBapGeneratorAudioProcessor::loadSampleSource(const juce::File& file, juce::String* errorMessage)
+{
+    auto source = std::make_shared<SampleSourceAudio>();
+    if (!source->load(file, errorMessage))
+        return false;
+
+    const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+    sampleSource = std::move(source);
+    sampleAudition = {};
+    sampleTimeline = {};
+    sampleAuditionPosition.store(-1.0);
+    return true;
+}
+
+std::shared_ptr<const SampleSourceAudio> BoomBapGeneratorAudioProcessor::getSampleSource() const
+{
+    const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+    return sampleSource;
+}
+
+void BoomBapGeneratorAudioProcessor::clearSampleSource()
+{
+    std::shared_ptr<const SampleSourceAudio> released;
+    {
+        const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+        released = std::move(sampleSource);
+        sampleSource.reset();
+        sampleAudition = {};
+        sampleTimeline = {};
+    }
+    sampleAuditionPosition.store(-1.0);
+    // `released` is freed here, on the message thread, never inside the audio callback.
+}
+
+BoomBapGeneratorAudioProcessor::SampleTimeline BoomBapGeneratorAudioProcessor::getSampleTimeline() const
+{
+    const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+    return sampleTimeline;
+}
+
+void BoomBapGeneratorAudioProcessor::auditionSampleRegion(double startSeconds, double endSeconds, bool loop)
+{
+    const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+    if (sampleSource == nullptr || !sampleSource->isLoaded())
+        return;
+    const double duration = sampleSource->getDurationSeconds();
+    const double start = juce::jlimit(0.0, duration, startSeconds);
+    const double end = juce::jlimit(start, duration, endSeconds > start ? endSeconds : duration);
+    if (end - start < 0.01)
+        return;
+    sampleAudition.active = true;
+    sampleAudition.loop = loop;
+    sampleAudition.startSeconds = start;
+    sampleAudition.endSeconds = end;
+    sampleAudition.positionSeconds = start;
+    sampleAuditionPosition.store(start);
+}
+
+void BoomBapGeneratorAudioProcessor::stopSampleAudition()
+{
+    const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+    sampleAudition.active = false;
+    sampleAuditionPosition.store(-1.0);
+}
+
+bool BoomBapGeneratorAudioProcessor::isSampleAuditionPlaying() const
+{
+    return sampleAuditionPosition.load() >= 0.0;
+}
+
+double BoomBapGeneratorAudioProcessor::getSampleAuditionPositionSeconds() const
+{
+    return sampleAuditionPosition.load();
+}
+
+void BoomBapGeneratorAudioProcessor::setPlaySampleWithPattern(bool enabled)
+{
+    playSampleWithPattern.store(enabled);
+}
+
+bool BoomBapGeneratorAudioProcessor::isPlaySampleWithPattern() const
+{
+    return playSampleWithPattern.load();
+}
+
+void BoomBapGeneratorAudioProcessor::setSamplePlaybackGain(float gain)
+{
+    samplePlaybackGain.store(juce::jlimit(0.0f, 2.0f, gain));
+}
+
+void BoomBapGeneratorAudioProcessor::renderSamplePlayback(juce::AudioBuffer<float>& output, int numSamples)
+{
+    const juce::SpinLock::ScopedTryLockType sourceLock(sampleSourceLock);
+    if (!sourceLock.isLocked())
+        return; // the UI is swapping the sample right now - skip one block
+    if (sampleSource == nullptr || !sampleSource->isLoaded() || numSamples <= 0 || output.getNumChannels() == 0)
+    {
+        if (!sampleAudition.active)
+            sampleAuditionPosition.store(-1.0);
+        return;
+    }
+
+    const auto& source = *sampleSource->getAudio();
+    const double sourceRate = sampleSource->getSampleRate();
+    const int sourceChannels = source.getNumChannels();
+    const int sourceLength = source.getNumSamples();
+    const int outputChannels = output.getNumChannels();
+    const float gain = samplePlaybackGain.load();
+    const double hostRate = currentSampleRate > 0.0 ? currentSampleRate : 44100.0;
+
+    // Linear interpolation at a fractional source position (seconds).
+    const auto mixAt = [&](int outIndex, double seconds, float level)
+    {
+        const double position = seconds * sourceRate;
+        const int i0 = static_cast<int>(position);
+        if (i0 < 0 || i0 + 1 >= sourceLength)
+            return;
+        const float frac = static_cast<float>(position - i0);
+        for (int ch = 0; ch < outputChannels; ++ch)
+        {
+            const int sourceChannel = juce::jmin(ch, sourceChannels - 1);
+            const float a = source.getSample(sourceChannel, i0);
+            const float b = source.getSample(sourceChannel, i0 + 1);
+            output.addSample(ch, outIndex, (a + (b - a) * frac) * level);
+        }
+    };
+
+    // 1. Trim editor / dot audition: plays the region at its own speed, 5 ms fades at the edges.
+    if (sampleAudition.active)
+    {
+        double position = sampleAudition.positionSeconds;
+        const double step = 1.0 / hostRate;
+        constexpr double kFade = 0.005;
+        for (int i = 0; i < numSamples; ++i)
+        {
+            if (position >= sampleAudition.endSeconds)
+            {
+                if (!sampleAudition.loop)
+                {
+                    sampleAudition.active = false;
+                    break;
+                }
+                position = sampleAudition.startSeconds;
+            }
+            const double edge = juce::jmin(position - sampleAudition.startSeconds, sampleAudition.endSeconds - position);
+            const float fade = static_cast<float>(juce::jlimit(0.0, 1.0, edge / kFade));
+            mixAt(i, position, gain * fade);
+            position += step;
+        }
+        sampleAudition.positionSeconds = position;
+        sampleAuditionPosition.store(sampleAudition.active ? position : -1.0);
+    }
+    else
+    {
+        sampleAuditionPosition.store(-1.0);
+    }
+
+    // 2. Play with HPDG: the analyzed fragment follows the pattern bar by bar.
+    const auto& sync = sampleSyncBlock;
+    if (!playSampleWithPattern.load() || !sync.active || !sampleTimeline.valid || sync.patternLength <= 0)
+        return;
+
+    const double projectBpm = sync.projectBpm > 0.0 ? sync.projectBpm : 120.0;
+    const double sampleBpm = sampleTimeline.followsSessionTempo || sampleTimeline.bpm <= 0.0 ? projectBpm : sampleTimeline.bpm;
+    const double samplesPerProjectBar = 240.0 / projectBpm * hostRate;
+    const double sampleBarSeconds = 240.0 / sampleBpm;
+    const double sampleBars = static_cast<double>(juce::jmax(1, sampleTimeline.bars));
+    const double duration = sampleSource->getDurationSeconds();
+
+    for (int i = 0; i < numSamples; ++i)
+    {
+        int patternPosition = sync.patternStart + i;
+        if (sync.loopRange.has_value())
+        {
+            const auto& loop = *sync.loopRange;
+            if (patternPosition < loop.getStart() || patternPosition >= loop.getEnd())
+                patternPosition = loop.getStart() + ((patternPosition - loop.getStart()) % loop.getLength() + loop.getLength()) % loop.getLength();
+        }
+        else
+        {
+            patternPosition = ((patternPosition % sync.patternLength) + sync.patternLength) % sync.patternLength;
+        }
+        const double barPosition = std::fmod(static_cast<double>(patternPosition) / samplesPerProjectBar, sampleBars);
+        const double seconds = sampleTimeline.startSeconds + barPosition * sampleBarSeconds;
+        if (seconds < 0.0 || seconds >= duration)
+            continue;
+        mixAt(i, seconds, gain);
+    }
+}
+
 } // namespace bbg
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

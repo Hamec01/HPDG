@@ -21,5 +21,8 @@ struct SampleAnalysisBundle
     SampleHarmony harmony;
     double harmonyBpm = 0.0;        // tempo the bass segments were cut with
     double harmonyOriginSeconds = 0.0;
+    // true: harmonyBpm / harmonyOriginSeconds were measured from the sample (a confident drum
+    // loop); false: the sample is assumed to play at session tempo with beat 1 at its start.
+    bool harmonyTempoFromSample = false;
 };
 } // namespace bbg

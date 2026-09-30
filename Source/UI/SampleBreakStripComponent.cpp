@@ -35,6 +35,17 @@ SampleBreakStripComponent::SampleBreakStripComponent()
     addAndMakeVisible(clearButton);
     addAndMakeVisible(quantizeLabel);
     addAndMakeVisible(quantizeSlider);
+    addAndMakeVisible(trimButton);
+    addAndMakeVisible(playWithToggle);
+
+    trimButton.setTooltip("Choose the fragment of the file to analyze (zoom, snap to beats / hits, listen).");
+    trimButton.onClick = [this] { if (onTrim) onTrim(); };
+    playWithToggle.setTooltip("Play the analyzed fragment together with the generated drums (bar-locked, varispeed to the session tempo).");
+    playWithToggle.onClick = [this]
+    {
+        if (onPlayWithPatternChanged)
+            onPlayWithPatternChanged(playWithToggle.getToggleState());
+    };
 
     modeCombo.addItem("Copy break (K/S/H)", static_cast<int>(Mode::CopyBreak));
     modeCombo.addItem("Guide generation", static_cast<int>(Mode::Guide));
@@ -76,6 +87,9 @@ void SampleBreakStripComponent::setState(const State& newState)
     analyzeButton.setEnabled(state.file.existsAsFile());
     quantizeSlider.setEnabled(state.mode == Mode::CopyBreak);
     clearButton.setEnabled(state.analysisReady || state.file != juce::File());
+    trimButton.setEnabled(state.source != nullptr && state.source->isLoaded());
+    playWithToggle.setToggleState(state.playWithPattern, juce::dontSendNotification);
+    playWithToggle.setEnabled(state.analysisReady && state.analysis.valid);
     repaint();
 }
 
@@ -142,6 +156,8 @@ void SampleBreakStripComponent::paintTimeline(juce::Graphics& g, juce::Rectangle
 
     constexpr int kLabelWidth = 16;
     auto labels = area.removeFromLeft(kLabelWidth);
+    // The sample itself, muted, behind the grid and the dots.
+    paintWaveform(g, area);
     const float rowHeight = static_cast<float>(area.getHeight()) / 3.0f;
     const std::array<TrackType, 3> lanes { TrackType::Kick, TrackType::Snare, TrackType::HiHat };
     const std::array<const char*, 3> names { "K", "S", "H" };
@@ -186,6 +202,122 @@ void SampleBreakStripComponent::paintTimeline(juce::Graphics& g, juce::Rectangle
         else
             g.fillEllipse(x - radius, y - radius, radius * 2.0f, radius * 2.0f);
     }
+
+    const auto warning = qualityWarning();
+    if (warning.isNotEmpty())
+    {
+        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+        g.setColour(juce::Colours::darkred.withAlpha(0.85f));
+        g.drawText("! " + warning, area.reduced(4, 1), juce::Justification::topRight, true);
+    }
+}
+
+double SampleBreakStripComponent::fragmentStart() const
+{
+    return state.trimEndSeconds > state.trimStartSeconds ? state.trimStartSeconds : 0.0;
+}
+
+double SampleBreakStripComponent::fragmentEnd() const
+{
+    if (state.trimEndSeconds > state.trimStartSeconds)
+        return state.trimEndSeconds;
+    return state.source != nullptr ? state.source->getDurationSeconds() : 0.0;
+}
+
+juce::Rectangle<int> SampleBreakStripComponent::timelineDotsArea() const
+{
+    return timelineBounds.withTrimmedLeft(16);
+}
+
+double SampleBreakStripComponent::timeForTimelineX(float x) const
+{
+    const auto area = timelineDotsArea();
+    const double ratio = juce::jlimit(0.0, 1.0, (static_cast<double>(x) - area.getX()) / juce::jmax(1, area.getWidth()));
+    const auto& a = state.analysis;
+    if (state.analysisReady && a.valid && a.bars > 0 && a.bpm > 0.0)
+    {
+        // Same mapping as the dots: ticks from the analysis origin, at the detected tempo.
+        const double seconds = ratio * a.bars * 240.0 / a.bpm;
+        return fragmentStart() + a.originSeconds + seconds;
+    }
+    return fragmentStart() + ratio * (fragmentEnd() - fragmentStart());
+}
+
+void SampleBreakStripComponent::paintWaveform(juce::Graphics& g, juce::Rectangle<int> area) const
+{
+    if (state.source == nullptr || !state.source->isLoaded() || area.getWidth() <= 0)
+        return;
+    const double t0 = timeForTimelineX(static_cast<float>(area.getX()));
+    const double t1 = timeForTimelineX(static_cast<float>(area.getRight()));
+    if (t1 <= t0)
+        return;
+    state.source->getPeaks(t0, t1, area.getWidth(), wavePeaks);
+    const float mid = static_cast<float>(area.getCentreY());
+    const float halfHeight = area.getHeight() * 0.46f;
+    juce::Path wave;
+    for (int x = 0; x < area.getWidth(); ++x)
+    {
+        const auto& p = wavePeaks[static_cast<size_t>(x)];
+        const float top = mid - juce::jlimit(0.0f, 1.0f, p.second) * halfHeight;
+        const float bottom = mid - juce::jlimit(-1.0f, 0.0f, p.first) * halfHeight;
+        wave.addRectangle(static_cast<float>(area.getX() + x), top, 1.0f, juce::jmax(1.0f, bottom - top));
+    }
+    g.setColour(sketch::Theme::graphiteSoft().withAlpha(0.20f));
+    g.fillPath(wave);
+}
+
+juce::String SampleBreakStripComponent::qualityWarning() const
+{
+    const auto& a = state.analysis;
+    if (!state.analysisReady || !a.valid)
+        return {};
+    if (a.bars < 2)
+        return "under 2 bars - tempo / swing less accurate";
+    if (static_cast<int>(a.hits.size()) < a.bars * 3)
+        return "few hits - tempo / swing may be off";
+    if (a.tempoConfidence < 0.35f)
+        return "unsure tempo - check the grid (Trim...)";
+    return {};
+}
+
+void SampleBreakStripComponent::mouseDown(const juce::MouseEvent& e)
+{
+    const auto area = timelineDotsArea();
+    if (!area.contains(e.getPosition()) || !onAuditionRange || state.source == nullptr)
+        return;
+
+    const auto& a = state.analysis;
+    if (state.analysisReady && a.valid && a.bars > 0 && a.bpm > 0.0)
+    {
+        // Click on a dot plays that hit; anywhere else plays one beat from there.
+        const double totalTicks = static_cast<double>(a.bars * TimingGrid::TicksPerBar4_4);
+        const float rowHeight = static_cast<float>(area.getHeight()) / 3.0f;
+        const BreakDrumHit* nearest = nullptr;
+        float nearestDistance = 7.0f;
+        for (const auto& hit : a.hits)
+        {
+            const int row = hit.lane == TrackType::Kick ? 0 : hit.lane == TrackType::Snare ? 1 : 2;
+            const float x = static_cast<float>(area.getX() + ((hit.gridTick + hit.timingOffsetTicks) / totalTicks) * area.getWidth());
+            const float y = area.getY() + (row + 0.5f) * rowHeight;
+            const float distance = e.position.getDistanceFrom({ x, y });
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearest = &hit;
+            }
+        }
+        if (nearest != nullptr)
+        {
+            const double t = fragmentStart() + nearest->timeSeconds;
+            onAuditionRange(juce::jmax(0.0, t - 0.005), t + 0.25);
+            return;
+        }
+        const double t = timeForTimelineX(e.position.x);
+        onAuditionRange(t, t + 60.0 / a.bpm);
+        return;
+    }
+    const double t = timeForTimelineX(e.position.x);
+    onAuditionRange(t, t + 0.5);
 }
 
 void SampleBreakStripComponent::resized()
@@ -194,16 +326,24 @@ void SampleBreakStripComponent::resized()
     auto top = area.removeFromTop(24);
     top.removeFromLeft(132);
 
+    // Narrow editors drop the "Quantize" caption and shorten the slider before squeezing the drop zone.
+    const bool roomy = top.getWidth() >= 1000;
+    playWithToggle.setBounds(top.removeFromRight(104));
+    top.removeFromRight(4);
     clearButton.setBounds(top.removeFromRight(56));
     top.removeFromRight(6);
     analyzeButton.setBounds(top.removeFromRight(110));
     top.removeFromRight(8);
-    quantizeSlider.setBounds(top.removeFromRight(130));
-    quantizeLabel.setBounds(top.removeFromRight(60));
+    quantizeSlider.setBounds(top.removeFromRight(roomy ? 130 : 96));
+    quantizeLabel.setVisible(roomy);
+    if (roomy)
+        quantizeLabel.setBounds(top.removeFromRight(60));
     top.removeFromRight(8);
-    modeCombo.setBounds(top.removeFromRight(160));
+    modeCombo.setBounds(top.removeFromRight(roomy ? 160 : 140));
     top.removeFromRight(6);
-    openButton.setBounds(top.removeFromRight(70));
+    trimButton.setBounds(top.removeFromRight(56));
+    top.removeFromRight(4);
+    openButton.setBounds(top.removeFromRight(roomy ? 70 : 56));
     top.removeFromRight(6);
     dropZoneBounds = top;
 

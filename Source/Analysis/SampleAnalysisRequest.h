@@ -50,5 +50,12 @@ struct SampleAnalysisRequest
     float breakQuantizeAmount = 0.0f;
 
     juce::File audioFile;
+
+    // Fragment of the file the analyzer reads (seconds). trimEnd <= trimStart = the whole file
+    // (still capped at SampleAnalyzer's maximum). The file itself is never modified.
+    double trimStartSeconds = 0.0;
+    double trimEndSeconds = 0.0;
+
+    bool hasTrim() const { return trimEndSeconds > trimStartSeconds; }
 };
 } // namespace bbg
