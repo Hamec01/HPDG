@@ -2507,12 +2507,29 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         ~SamplePlaybackMix() { processor.renderSamplePlayback(output, output.getNumSamples()); }
     } samplePlaybackMix { *this, buffer };
 
+    // Never block the audio thread on projectMutex: the UI holds it while generating or swapping
+    // the sample bank on a genre change. If it is busy, this block stays silent (MIDI out stays
+    // empty) and the skipped time is caught up on the next block, instead of stalling the host.
+    std::unique_lock<std::mutex> projectLock(projectMutex, std::try_to_lock);
+    if (!projectLock.owns_lock())
+    {
+        samplesSkippedWhileProjectBusy += buffer.getNumSamples();
+        transportSamplePosition += buffer.getNumSamples();
+        return;
+    }
+
+    if (samplesSkippedWhileProjectBusy > 0)
+    {
+        if (previewPlaying)
+            previewSamplePosition += samplesSkippedWhileProjectBusy;
+        samplesSkippedWhileProjectBusy = 0;
+    }
+
     const auto snapshot = TransportSnapshot::fromPlayHead(getPlayHead());
     const auto currentParams = buildParamsFromState(snapshot);
     bool shouldAutoStartPreview = false;
     bool shouldAutoStopPreview = false;
     {
-        std::scoped_lock lock(projectMutex);
         shouldAutoStartPreview = startPlayWithDawEnabled && snapshot.isPlaying && !lastObservedHostPlaying;
         shouldAutoStopPreview = startPlayWithDawEnabled && !snapshot.isPlaying && lastObservedHostPlaying;
         lastObservedHostPlaying = snapshot.isPlaying;
@@ -2564,7 +2581,6 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     if (patternLength <= 0)
         return;
 
-    std::scoped_lock lock(projectMutex);
     bool requiresSeparatedSoundLayerPath = soundLayerNeedsSeparatedRender(project.globalSound);
     if (!requiresSeparatedSoundLayerPath)
     {
@@ -2889,51 +2905,99 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
 
 void BoomBapGeneratorAudioProcessor::generatePattern()
 {
-    std::scoped_lock lock(projectMutex);
-    const auto beforeProject = project;
+    // Everything that notifies the host (seed / bpm / key parameters) happens BEFORE taking
+    // projectMutex: setValueNotifyingHost may re-enter the plugin or wait on the host's audio
+    // thread, which must never happen while the project lock is held.
     advanceSeedForGeneration(std::nullopt);
-    auto generationParams = buildParamsFromState(lastTransport);
-    const auto bpmSelection = resolveGenerationBpm(generationParams,
-                                                   generationParams.bpm,
-                                                   isBpmLocked(apvts),
-                                                   lastTransport.hasHostTempo && lastTransport.bpm > 0.0
-                                                       ? std::optional<double>(lastTransport.bpm)
-                                                       : std::nullopt);
-    if (std::abs(bpmSelection.bpm - generationParams.bpm) > 0.05f)
-        setFloatParameterValue(ParamIds::bpm, bpmSelection.bpm);
 
-    generationParams.bpm = bpmSelection.bpm;
+    TransportSnapshot transport;
+    decltype(currentAnalysisBundle.harmony) harmony {};
+    bool followSampleKey = false;
+    {
+        std::scoped_lock lock(projectMutex);
+        transport = lastTransport;
+        harmony = currentAnalysisBundle.harmony;
+        followSampleKey = analysisReady
+            && analysisMode == AnalysisMode::GenerateFromSample
+            && SampleBassFollower::shouldApplyKey(harmony);
+    }
+
+    const auto initialParams = buildParamsFromState(transport);
+    const auto bpmSelection = resolveGenerationBpm(initialParams,
+                                                   initialParams.bpm,
+                                                   isBpmLocked(apvts),
+                                                   transport.hasHostTempo && transport.bpm > 0.0
+                                                       ? std::optional<double>(transport.bpm)
+                                                       : std::nullopt);
+    if (std::abs(bpmSelection.bpm - initialParams.bpm) > 0.05f)
+        setFloatParameterValue(ParamIds::bpm, bpmSelection.bpm);
 
     // Guide mode with a tonal sample: the 808 plays in the sample's key (set before the engine
     // runs so its own pitch choices are already in key; shown in the key / scale controls).
-    const auto& harmony = currentAnalysisBundle.harmony;
-    if (analysisReady
-        && analysisMode == AnalysisMode::GenerateFromSample
-        && generationParams.genre == GenreType::Trap
-        && SampleBassFollower::shouldApplyKey(harmony))
+    const bool applySampleKey = followSampleKey && initialParams.genre == GenreType::Trap;
+    if (applySampleKey)
     {
-        generationParams.keyRoot = harmony.keyRoot;
-        generationParams.scaleMode = harmony.scaleMode;
         setBassKeyRootChoice(harmony.keyRoot);
         setBassScaleModeChoice(harmony.scaleMode);
     }
 
-    project.params = generationParams;
-    project.sampleContext = currentSampleContext;
-    switch (project.params.genre)
+    const auto resolvedBpm = bpmSelection.bpm;
+    runGenerationPass("Generate Pattern",
+                      std::nullopt,
+                      true,
+                      [&](GeneratorParams& params)
+                      {
+                          params.bpm = resolvedBpm;
+                          if (applySampleKey)
+                          {
+                              params.keyRoot = harmony.keyRoot;
+                              params.scaleMode = harmony.scaleMode;
+                          }
+                      },
+                      [this](PatternProject& working)
+                      {
+                          switch (working.params.genre)
+                          {
+                              case GenreType::Drill: drillEngine.generate(working); break;
+                              case GenreType::Rap: rapEngine.generate(working); break;
+                              case GenreType::Trap: trapEngine.generate(working); break;
+                              case GenreType::BoomBap:
+                              default: boomBapEngine.generate(working); break;
+                          }
+                      });
+}
+
+void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& reportLabel,
+                                                       std::optional<TrackType> focusTrack,
+                                                       bool rotateSamples,
+                                                       const std::function<void(GeneratorParams&)>& adjustParams,
+                                                       const std::function<void(PatternProject&)>& engineStep)
+{
+    PatternProject beforeProject;
+    PatternProject working;
     {
-        case GenreType::Drill: drillEngine.generate(project); break;
-        case GenreType::Rap: rapEngine.generate(project); break;
-        case GenreType::Trap: trapEngine.generate(project); break;
-        case GenreType::BoomBap:
-        default: boomBapEngine.generate(project); break;
+        std::scoped_lock lock(projectMutex);
+        beforeProject = project;
+        working = project;
+        working.params = buildParamsFromState(lastTransport);
+        if (adjustParams)
+            adjustParams(working.params);
+        working.sampleContext = currentSampleContext;
     }
+
+    // The genre engine runs on a private copy without the lock: the audio thread keeps playing
+    // the current pattern meanwhile, and switches to the new one at the swap below.
+    engineStep(working);
+
+    std::scoped_lock lock(projectMutex);
+    project = std::move(working);
     applySampleAwarePostProcessLocked();
-    rotateLaneSamplesForGenerationLocked(beforeProject, std::nullopt);
-    project.generationDebugReport = buildGenerationDebugReport("Generate Pattern",
+    if (rotateSamples)
+        rotateLaneSamplesForGenerationLocked(beforeProject, focusTrack);
+    project.generationDebugReport = buildGenerationDebugReport(reportLabel,
                                                                beforeProject,
                                                                project,
-                                                               std::nullopt,
+                                                               focusTrack,
                                                                sampleAwareModeEnabled,
                                                                analysisReady);
     if (lastSampleApplyDebug.isNotEmpty())
@@ -2944,59 +3008,42 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
 
 void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
 {
-    std::scoped_lock lock(projectMutex);
-    const auto beforeProject = project;
     advanceSeedForGeneration(track);
-    project.params = buildParamsFromState(lastTransport);
-    project.sampleContext = currentSampleContext;
-    switch (project.params.genre)
-    {
-        case GenreType::Drill: drillEngine.generateTrackNew(project, track); break;
-        case GenreType::Rap: rapEngine.generateTrackNew(project, track); break;
-        case GenreType::Trap: trapEngine.generateTrackNew(project, track); break;
-        case GenreType::BoomBap:
-        default: boomBapEngine.generateTrackNew(project, track); break;
-    }
-    applySampleAwarePostProcessLocked();
-    rotateLaneSamplesForGenerationLocked(beforeProject, track);
-    project.generationDebugReport = buildGenerationDebugReport("Generate Track",
-                                                               beforeProject,
-                                                               project,
-                                                               track,
-                                                               sampleAwareModeEnabled,
-                                                               analysisReady);
-    if (lastSampleApplyDebug.isNotEmpty())
-        project.generationDebugReport += "\n" + lastSampleApplyDebug;
-    ++project.generationCounter;
-    rebuildMidiCache();
+    runGenerationPass("Generate Track",
+                      track,
+                      true,
+                      nullptr,
+                      [this, track](PatternProject& working)
+                      {
+                          switch (working.params.genre)
+                          {
+                              case GenreType::Drill: drillEngine.generateTrackNew(working, track); break;
+                              case GenreType::Rap: rapEngine.generateTrackNew(working, track); break;
+                              case GenreType::Trap: trapEngine.generateTrackNew(working, track); break;
+                              case GenreType::BoomBap:
+                              default: boomBapEngine.generateTrackNew(working, track); break;
+                          }
+                      });
 }
 
 void BoomBapGeneratorAudioProcessor::regenerateTrack(TrackType track)
 {
-    std::scoped_lock lock(projectMutex);
-    const auto beforeProject = project;
     advanceSeedForGeneration(track);
-    project.params = buildParamsFromState(lastTransport);
-    project.sampleContext = currentSampleContext;
-    switch (project.params.genre)
-    {
-        case GenreType::Drill: drillEngine.regenerateTrackVariation(project, track); break;
-        case GenreType::Rap: rapEngine.regenerateTrackVariation(project, track); break;
-        case GenreType::Trap: trapEngine.regenerateTrackVariation(project, track); break;
-        case GenreType::BoomBap:
-        default: boomBapEngine.regenerateTrackVariation(project, track); break;
-    }
-    applySampleAwarePostProcessLocked();
-    project.generationDebugReport = buildGenerationDebugReport("Regenerate Variation",
-                                                               beforeProject,
-                                                               project,
-                                                               track,
-                                                               sampleAwareModeEnabled,
-                                                               analysisReady);
-    if (lastSampleApplyDebug.isNotEmpty())
-        project.generationDebugReport += "\n" + lastSampleApplyDebug;
-    ++project.generationCounter;
-    rebuildMidiCache();
+    runGenerationPass("Regenerate Variation",
+                      track,
+                      false,
+                      nullptr,
+                      [this, track](PatternProject& working)
+                      {
+                          switch (working.params.genre)
+                          {
+                              case GenreType::Drill: drillEngine.regenerateTrackVariation(working, track); break;
+                              case GenreType::Rap: rapEngine.regenerateTrackVariation(working, track); break;
+                              case GenreType::Trap: trapEngine.regenerateTrackVariation(working, track); break;
+                              case GenreType::BoomBap:
+                              default: boomBapEngine.regenerateTrackVariation(working, track); break;
+                          }
+                      });
 }
 
 void BoomBapGeneratorAudioProcessor::regenerateTrack(const RuntimeLaneId& laneId)
@@ -3010,58 +3057,42 @@ void BoomBapGeneratorAudioProcessor::regenerateTrack(const RuntimeLaneId& laneId
 
 void BoomBapGeneratorAudioProcessor::mutatePattern()
 {
-    std::scoped_lock lock(projectMutex);
-    const auto beforeProject = project;
     advanceSeedForGeneration(std::nullopt);
-    project.params = buildParamsFromState(lastTransport);
-    project.sampleContext = currentSampleContext;
-    switch (project.params.genre)
-    {
-        case GenreType::Drill: drillEngine.mutatePattern(project); break;
-        case GenreType::Rap: rapEngine.mutatePattern(project); break;
-        case GenreType::Trap: trapEngine.mutatePattern(project); break;
-        case GenreType::BoomBap:
-        default: boomBapEngine.mutatePattern(project); break;
-    }
-    applySampleAwarePostProcessLocked();
-    project.generationDebugReport = buildGenerationDebugReport("Mutate Pattern",
-                                                               beforeProject,
-                                                               project,
-                                                               std::nullopt,
-                                                               sampleAwareModeEnabled,
-                                                               analysisReady);
-    if (lastSampleApplyDebug.isNotEmpty())
-        project.generationDebugReport += "\n" + lastSampleApplyDebug;
-    ++project.generationCounter;
-    rebuildMidiCache();
+    runGenerationPass("Mutate Pattern",
+                      std::nullopt,
+                      false,
+                      nullptr,
+                      [this](PatternProject& working)
+                      {
+                          switch (working.params.genre)
+                          {
+                              case GenreType::Drill: drillEngine.mutatePattern(working); break;
+                              case GenreType::Rap: rapEngine.mutatePattern(working); break;
+                              case GenreType::Trap: trapEngine.mutatePattern(working); break;
+                              case GenreType::BoomBap:
+                              default: boomBapEngine.mutatePattern(working); break;
+                          }
+                      });
 }
 
 void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
 {
-    std::scoped_lock lock(projectMutex);
-    const auto beforeProject = project;
     advanceSeedForGeneration(track);
-    project.params = buildParamsFromState(lastTransport);
-    project.sampleContext = currentSampleContext;
-    switch (project.params.genre)
-    {
-        case GenreType::Drill: drillEngine.mutateTrack(project, track); break;
-        case GenreType::Rap: rapEngine.mutateTrack(project, track); break;
-        case GenreType::Trap: trapEngine.mutateTrack(project, track); break;
-        case GenreType::BoomBap:
-        default: boomBapEngine.mutateTrack(project, track); break;
-    }
-    applySampleAwarePostProcessLocked();
-    project.generationDebugReport = buildGenerationDebugReport("Mutate Track",
-                                                               beforeProject,
-                                                               project,
-                                                               track,
-                                                               sampleAwareModeEnabled,
-                                                               analysisReady);
-    if (lastSampleApplyDebug.isNotEmpty())
-        project.generationDebugReport += "\n" + lastSampleApplyDebug;
-    ++project.generationCounter;
-    rebuildMidiCache();
+    runGenerationPass("Mutate Track",
+                      track,
+                      false,
+                      nullptr,
+                      [this, track](PatternProject& working)
+                      {
+                          switch (working.params.genre)
+                          {
+                              case GenreType::Drill: drillEngine.mutateTrack(working, track); break;
+                              case GenreType::Rap: rapEngine.mutateTrack(working, track); break;
+                              case GenreType::Trap: trapEngine.mutateTrack(working, track); break;
+                              case GenreType::BoomBap:
+                              default: boomBapEngine.mutateTrack(working, track); break;
+                          }
+                      });
 }
 
 void BoomBapGeneratorAudioProcessor::startPreview()
@@ -3213,7 +3244,11 @@ void BoomBapGeneratorAudioProcessor::rescanLaneSamplesLocked()
     sampleLibraryManager.setGenre(project.params.genre);
     sampleLibraryManager.scan();
     laneSampleBank.applyLibrary(sampleLibraryManager);
+    syncTrackSampleSelectionsLocked();
+}
 
+void BoomBapGeneratorAudioProcessor::syncTrackSampleSelectionsLocked()
+{
     for (auto& track : project.tracks)
     {
         const auto desired = track.selectedSampleIndex;
@@ -3221,6 +3256,25 @@ void BoomBapGeneratorAudioProcessor::rescanLaneSamplesLocked()
         track.selectedSampleIndex = laneSampleBank.getSelectedIndex(track.type);
         track.selectedSampleName = laneSampleBank.getSelectedName(track.type);
     }
+}
+
+void BoomBapGeneratorAudioProcessor::reloadLaneSamplesForGenre(GenreType genre)
+{
+    SampleLibraryManager library;
+    {
+        std::scoped_lock lock(projectMutex);
+        library = sampleLibraryManager; // keeps the configured root directory
+    }
+
+    // Disk scan + WAV decoding: the slow part, done while the audio thread keeps playing.
+    library.setGenre(genre);
+    library.scan();
+    auto prepared = LaneSampleBank::prepareLibrary(library);
+
+    std::scoped_lock lock(projectMutex);
+    sampleLibraryManager = library;
+    laneSampleBank.adoptPreparedLibrary(std::move(prepared));
+    syncTrackSampleSelectionsLocked();
 }
 
 void BoomBapGeneratorAudioProcessor::rotateLaneSamplesForGenerationLocked(const PatternProject& previousProject, std::optional<TrackType> focusTrack)
@@ -4347,11 +4401,12 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
     setFloatParameterValue(ParamIds::humanizeAmount, style.humanizeDefault);
     setFloatParameterValue(ParamIds::densityAmount, style.densityDefault);
 
+    if (genreChanged)
+        reloadLaneSamplesForGenre(genreType);
+
     {
         std::scoped_lock lock(projectMutex);
         project.params = buildParamsFromState(lastTransport);
-        if (genreChanged)
-            rescanLaneSamplesLocked();
 
         for (auto& track : project.tracks)
         {

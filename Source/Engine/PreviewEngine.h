@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -36,7 +37,8 @@ public:
 private:
     struct Voice
     {
-        const juce::AudioBuffer<float>* sample = nullptr;
+        // Shared ownership: a genre switch can swap the sample bank while this voice rings out.
+        std::shared_ptr<const juce::AudioBuffer<float>> sample;
         TrackType trackType = TrackType::Kick;
         bool active = false;
         double samplePosition = 0.0;

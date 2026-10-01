@@ -26,6 +26,11 @@ LaneSampleBank::LaneSampleBank()
 
 void LaneSampleBank::applyLibrary(const SampleLibraryManager& library)
 {
+    adoptPreparedLibrary(prepareLibrary(library));
+}
+
+std::unique_ptr<LaneSampleBank::PreparedLibrary> LaneSampleBank::prepareLibrary(const SampleLibraryManager& library)
+{
     const std::array<TrackType, 11> tracks {
         TrackType::HiHat,
         TrackType::HatFX,
@@ -40,15 +45,44 @@ void LaneSampleBank::applyLibrary(const SampleLibraryManager& library)
         TrackType::Perc
     };
 
+    juce::AudioFormatManager localFormatManager;
+    localFormatManager.registerBasicFormats();
+
+    auto prepared = std::make_unique<PreparedLibrary>();
     for (const auto track : tracks)
     {
-        auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
+        auto& state = prepared->states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
         state.infos = library.getSamples(track);
-        state.buffers.clear();
         state.buffers.resize(state.infos.size());
 
         for (size_t i = 0; i < state.infos.size(); ++i)
-            loadWavToBuffer(state.infos[i].file, formatManager, state.buffers[i]);
+            loadWavToBuffer(state.infos[i].file, localFormatManager, state.buffers[i]);
+    }
+
+    return prepared;
+}
+
+void LaneSampleBank::adoptPreparedLibrary(std::unique_ptr<PreparedLibrary> prepared)
+{
+    if (prepared == nullptr)
+        return;
+
+    // Release the buffers retired by the previous swap (this runs on the message thread), then
+    // retire the current ones: voices still playing them hold their own references, and this
+    // list guarantees the last reference is not dropped on the audio thread.
+    retiredBuffers.clear();
+
+    for (size_t laneIndex = 0; laneIndex < states.size(); ++laneIndex)
+    {
+        auto& state = states[laneIndex];
+        for (auto& buffer : state.buffers)
+            if (buffer != nullptr)
+                retiredBuffers.push_back(std::move(buffer));
+
+        auto& incoming = prepared->states[laneIndex];
+        const int previousSelection = state.selectedIndex;
+        state.infos = std::move(incoming.infos);
+        state.buffers = std::move(incoming.buffers);
 
         if (state.infos.empty())
         {
@@ -57,7 +91,7 @@ void LaneSampleBank::applyLibrary(const SampleLibraryManager& library)
             continue;
         }
 
-        state.selectedIndex = juce::jlimit(0, static_cast<int>(state.infos.size()) - 1, state.selectedIndex);
+        state.selectedIndex = juce::jlimit(0, static_cast<int>(state.infos.size()) - 1, previousSelection);
         state.selectedName = state.infos[static_cast<size_t>(state.selectedIndex)].name;
     }
 }
@@ -158,6 +192,16 @@ const juce::AudioBuffer<float>* LaneSampleBank::getSelectedBuffer(TrackType trac
     const int index = juce::jlimit(0, static_cast<int>(state.buffers.size()) - 1, state.selectedIndex);
     const auto& ptr = state.buffers[static_cast<size_t>(index)];
     return ptr != nullptr ? ptr.get() : nullptr;
+}
+
+std::shared_ptr<const juce::AudioBuffer<float>> LaneSampleBank::getSelectedBufferShared(TrackType track) const
+{
+    const auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
+    if (state.buffers.empty())
+        return {};
+
+    const int index = juce::jlimit(0, static_cast<int>(state.buffers.size()) - 1, state.selectedIndex);
+    return state.buffers[static_cast<size_t>(index)];
 }
 
 bool LaneSampleBank::hasSamples(TrackType track) const

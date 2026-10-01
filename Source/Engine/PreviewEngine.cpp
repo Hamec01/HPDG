@@ -61,13 +61,13 @@ void PreviewEngine::noteOn(TrackType trackType, float gain, const LaneSampleBank
 
 void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOffset, const LaneSampleBank& sampleBank, const TriggerOptions& options)
 {
-    const auto* selected = sampleBank.getSelectedBuffer(trackType);
+    auto selected = sampleBank.getSelectedBufferShared(trackType);
     if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == TrackType::HatFX)
-        selected = sampleBank.getSelectedBuffer(TrackType::HiHat);
+        selected = sampleBank.getSelectedBufferShared(TrackType::HiHat);
     if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == TrackType::ClapGhostSnare)
-        selected = sampleBank.getSelectedBuffer(TrackType::Snare);
+        selected = sampleBank.getSelectedBufferShared(TrackType::Snare);
     if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == TrackType::GhostKick)
-        selected = sampleBank.getSelectedBuffer(TrackType::Kick);
+        selected = sampleBank.getSelectedBufferShared(TrackType::Kick);
     if (selected == nullptr || selected->getNumSamples() <= 0)
         return;
 
@@ -202,7 +202,7 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
                 }
             }
 
-            const auto* bufferRef = voice.sample;
+            const auto* bufferRef = voice.sample.get();
             const int length = bufferRef->getNumSamples();
             if (voice.samplePosition >= static_cast<double>(length))
             {
@@ -296,7 +296,7 @@ void PreviewEngine::renderSeparated(std::array<juce::AudioBuffer<float>, kTrackT
                 }
             }
 
-            const auto* bufferRef = voice.sample;
+            const auto* bufferRef = voice.sample.get();
             const int length = bufferRef->getNumSamples();
             if (voice.samplePosition >= static_cast<double>(length))
             {

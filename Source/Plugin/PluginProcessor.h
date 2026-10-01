@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -353,6 +354,17 @@ private:
     void applyHatFxDragDensityLocked();
     void startPreviewFromCurrentStartStepLocked();
     void rescanLaneSamplesLocked();
+    // Message thread, called WITHOUT projectMutex: decodes the genre's WAVs off-lock, then swaps
+    // them in under a short lock so the audio thread never waits on disk I/O.
+    void reloadLaneSamplesForGenre(GenreType genre);
+    void syncTrackSampleSelectionsLocked();
+    // Shared body of Generate / Generate Track / Regenerate / Mutate: the genre engine runs on a
+    // copy of the project without holding projectMutex; only the snapshot and the final swap lock.
+    void runGenerationPass(const juce::String& reportLabel,
+                           std::optional<TrackType> focusTrack,
+                           bool rotateSamples,
+                           const std::function<void(GeneratorParams&)>& adjustParams,
+                           const std::function<void(PatternProject&)>& engineStep);
     void rotateLaneSamplesForGenerationLocked(const PatternProject& previousProject, std::optional<TrackType> focusTrack);
     void updateSampleAwareContextLocked();
     bool applySampleAwarePostProcessLocked();
@@ -384,7 +396,11 @@ private:
     void serializePatternProjectToState(juce::ValueTree& state) const;
     void restorePatternProjectFromState(const juce::ValueTree& state);
 
+    // Guards project / laneSampleBank / preview state. The audio thread only ever TRY-locks it
+    // (processBlock outputs a silent block instead of waiting), so the UI may hold it, but must
+    // never call into the host (setValueNotifyingHost etc.) or touch the disk while holding it.
     mutable std::mutex projectMutex;
+    int samplesSkippedWhileProjectBusy = 0; // audio thread only
     PatternProject project;
     BoomBapEngine boomBapEngine;
     DrillEngine drillEngine;
