@@ -40,6 +40,22 @@ SampleBreakStripComponent::SampleBreakStripComponent()
 
     trimButton.setTooltip("Choose the fragment of the file to analyze (zoom, snap to beats / hits, listen).");
     trimButton.onClick = [this] { if (onTrim) onTrim(); };
+
+    // Pencil: a slanted body with a pointed tip.
+    juce::Path pencil;
+    pencil.startNewSubPath(2.0f, 12.0f);
+    pencil.lineTo(3.0f, 9.0f);
+    pencil.lineTo(10.0f, 2.0f);
+    pencil.lineTo(12.0f, 4.0f);
+    pencil.lineTo(5.0f, 11.0f);
+    pencil.closeSubPath();
+    pencil.addLineSegment({ 9.0f, 3.0f, 11.0f, 5.0f }, 0.8f);
+    bpmEditButton.setShape(pencil, false, true, false);
+    bpmEditButton.setOutline(sketch::Theme::graphite(), 1.0f);
+    bpmEditButton.setColours(sketch::Theme::paperLight(), sketch::Theme::ochre(), sketch::Theme::ochreDeep());
+    bpmEditButton.setTooltip("Type the tempo of the sample (if the detected BPM is off).");
+    bpmEditButton.onClick = [this] { if (onEditBpm) onEditBpm(); };
+    addChildComponent(bpmEditButton);
     playWithToggle.setTooltip("Play the analyzed fragment together with the generated drums (bar-locked, varispeed to the session tempo).");
     playWithToggle.onClick = [this]
     {
@@ -88,6 +104,7 @@ void SampleBreakStripComponent::setState(const State& newState)
     quantizeSlider.setEnabled(state.mode == Mode::CopyBreak);
     clearButton.setEnabled(state.analysisReady || state.file != juce::File());
     trimButton.setEnabled(state.source != nullptr && state.source->isLoaded());
+    updateBpmEditButton();
     playWithToggle.setToggleState(state.playWithPattern, juce::dontSendNotification);
     playWithToggle.setEnabled(state.analysisReady && state.analysis.valid);
     repaint();
@@ -101,7 +118,7 @@ juce::String SampleBreakStripComponent::resultText() const
         return state.file.existsAsFile() ? "Ready - press Analyze" : "Drop a drum break or sample";
 
     const auto& a = state.analysis;
-    return juce::String(a.bpm, 1) + " BPM  |  " + juce::String(a.bars) + (a.bars == 1 ? " bar" : " bars")
+    return juce::String(a.bpm, 1) + (state.manualBpm ? " BPM (typed)" : " BPM") + "      |  " + juce::String(a.bars) + (a.bars == 1 ? " bar" : " bars")
         + "  |  swing " + juce::String(juce::roundToInt(a.swingPercent)) + "%\n"
         + "tempo " + juce::String(juce::roundToInt(a.tempoConfidence * 100.0f)) + "%  |  drum loop "
         + juce::String(juce::roundToInt(a.drumLoopConfidence * 100.0f)) + "%\n"
@@ -141,7 +158,7 @@ void SampleBreakStripComponent::paint(juce::Graphics& g)
     // Result.
     g.setColour(state.error.isNotEmpty() ? juce::Colours::darkred : sketch::Theme::graphite());
     g.setFont(juce::Font(juce::FontOptions(12.0f)));
-    g.drawFittedText(resultText(), resultBounds, juce::Justification::centredLeft, 4);
+    g.drawFittedText(resultText(), resultBounds, juce::Justification::topLeft, 4);
 
     paintTimeline(g, timelineBounds);
 }
@@ -320,6 +337,19 @@ void SampleBreakStripComponent::mouseDown(const juce::MouseEvent& e)
     onAuditionRange(t, t + 0.5);
 }
 
+// The pencil sits right after the "85.4 BPM" at the start of the first result line.
+void SampleBreakStripComponent::updateBpmEditButton()
+{
+    const bool show = state.analysisReady && state.analysis.valid && state.error.isEmpty() && !resultBounds.isEmpty();
+    bpmEditButton.setVisible(show);
+    if (!show)
+        return;
+    const juce::Font font(juce::FontOptions(12.0f));
+    const auto bpmText = juce::String(state.analysis.bpm, 1) + (state.manualBpm ? " BPM (typed)" : " BPM");
+    const int textWidth = juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, bpmText));
+    bpmEditButton.setBounds(resultBounds.getX() + textWidth + 5, resultBounds.getY() + 1, 14, 14);
+}
+
 void SampleBreakStripComponent::resized()
 {
     auto area = getLocalBounds().reduced(8, 6);
@@ -349,6 +379,7 @@ void SampleBreakStripComponent::resized()
 
     area.removeFromTop(6);
     resultBounds = area.removeFromLeft(250).withTrimmedLeft(2);
+    updateBpmEditButton();
     area.removeFromLeft(8);
     timelineBounds = area;
 }

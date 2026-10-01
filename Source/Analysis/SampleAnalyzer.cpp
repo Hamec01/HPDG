@@ -73,6 +73,7 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     DrumBreakOptions breakOptions;
     breakOptions.hostBpm = hostBpm;
     breakOptions.quantizeAmount = request.breakQuantizeAmount;
+    breakOptions.forcedBpm = request.manualBpm > 20.0 ? request.manualBpm : 0.0;
     bundle.breakAnalysis = breakTranscriber.analyze(mono, sampleRate, breakOptions);
 
     // Key + bass line, on the original timeline. Segments are one beat of the tempo the
@@ -84,7 +85,8 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     const auto& breakAnalysis = bundle.breakAnalysis;
     const bool sampleTempoTrusted = breakAnalysis.valid
         && breakAnalysis.bpm > 20.0
-        && ((breakAnalysis.drumLoopConfidence >= 0.75f && breakAnalysis.tempoConfidence >= 0.5f)
+        && (request.manualBpm > 20.0
+            || (breakAnalysis.drumLoopConfidence >= 0.75f && breakAnalysis.tempoConfidence >= 0.5f)
             || breakAnalysis.tempoConfidence >= 0.8f);
     bundle.sampleBpm = sampleTempoTrusted ? breakAnalysis.bpm : 0.0;
     bundle.harmonyBpm = sampleTempoTrusted ? bundle.breakAnalysis.bpm : (hostBpm > 20.0 ? hostBpm : 90.0);

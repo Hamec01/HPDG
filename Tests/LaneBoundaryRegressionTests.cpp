@@ -553,6 +553,11 @@ void testGuideModeAccentKicksAvoidBackbeat()
     const auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
     const auto* sub = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
     expect(kick != nullptr, "kick lane missing");
+    // Not a drum loop, so the tempo is not "trusted" for the key analysis - but generation
+    // still follows the tempo shown for the loaded sample (no lock, no DAW sync).
+    const auto shownBpm = processor.getDrumBreakAnalysis().bpm;
+    expect(shownBpm <= 20.0 || std::abs(project.params.bpm - static_cast<float>(shownBpm)) < 0.6f,
+           "generation ignored the sample tempo " + juce::String(shownBpm, 1) + ": " + juce::String(project.params.bpm, 1));
     const auto debug = processor.getGenerationDebugSummary();
     expect(debug.contains("Sample guide accents"), "guide accent path was not taken");
     std::cout << "    " << debug.fromFirstOccurrenceOf("Sample guide accents", true, false).upToFirstOccurrenceOf("\n", false, false) << std::endl;

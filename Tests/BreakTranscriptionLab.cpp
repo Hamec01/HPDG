@@ -235,6 +235,7 @@ int runSynth(const juce::StringArray& args)
     int trials = 60;
     int seed = 1;
     bool verbose = false;
+    bool pickup = false; // loops that start on a beat other than 1 (only tempo / bars are scored)
     int detailTrials = 6;
     for (int i = 2; i < args.size(); ++i)
     {
@@ -246,6 +247,8 @@ int runSynth(const juce::StringArray& args)
             seed = args[++i].getIntValue();
         else if (args[i] == "--verbose")
             verbose = true;
+        else if (args[i] == "--pickup")
+            pickup = true;
     }
 
     constexpr double rate = 44100.0;
@@ -271,6 +274,7 @@ int runSynth(const juce::StringArray& args)
     DrumBreakTranscriber transcriber;
     std::array<LaneScore, 3> scores {};
     int tempoCorrect = 0;
+    double tempoErrorSum = 0.0, tempoErrorMax = 0.0; // percent, among non-octave results
     int tempoOctave = 0;
     int barsCorrect = 0;
     int gridCorrect = 0;
@@ -340,6 +344,14 @@ int runSynth(const juce::StringArray& args)
             }
         }
 
+        if (pickup)
+        {
+            // Start the file on beat 2, 3 or 4 of the first bar (a loop cut with a pickup).
+            const size_t shift = static_cast<size_t>((1 + rng() % 3) * 4 * sixteenth * rate) % length;
+            std::rotate(audio.begin(), audio.begin() + static_cast<std::ptrdiff_t>(shift), audio.end());
+            truth.clear();
+        }
+
         std::normal_distribution<float> noise(0.0f, 0.002f);
         for (auto& sample : audio)
             sample += noise(rng);
@@ -347,6 +359,12 @@ int runSynth(const juce::StringArray& args)
         const auto analysis = transcriber.analyze(audio, rate, {});
         const bool tempoOk = std::abs(analysis.bpm / bpm - 1.0) < 0.01;
         tempoCorrect += tempoOk ? 1 : 0;
+        if (tempoOk)
+        {
+            const double errorPercent = 100.0 * std::abs(analysis.bpm / bpm - 1.0);
+            tempoErrorSum += errorPercent;
+            tempoErrorMax = std::max(tempoErrorMax, errorPercent);
+        }
         if (!tempoOk && (std::abs(analysis.bpm / (2.0 * bpm) - 1.0) < 0.01 || std::abs(analysis.bpm / (0.5 * bpm) - 1.0) < 0.01))
             ++tempoOctave;
         barsCorrect += analysis.bars == bars ? 1 : 0;
@@ -471,6 +489,7 @@ int runSynth(const juce::StringArray& args)
 
     std::cout << "\nSYNTH trials " << trials
               << " | tempo " << tempoCorrect << "/" << trials << " (octave errors " << tempoOctave << ")"
+              << " | tempo error avg " << (tempoCorrect > 0 ? tempoErrorSum / tempoCorrect : 0.0) << "% max " << tempoErrorMax << "%"
               << " | bars " << barsCorrect << "/" << trials
               << " | grid slot " << gridCorrect << "/" << gridTotal
               << " | onset misses K/S/H " << onsetMissed[0] << "/" << onsetMissed[1] << "/" << onsetMissed[2] << "\n";

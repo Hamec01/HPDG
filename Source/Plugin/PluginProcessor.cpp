@@ -122,7 +122,15 @@ std::vector<juce::String> preferredSampleTagsForProject(const PatternProject& pr
 float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass)
 {
     const auto* info = TrackRegistry::find(track);
-    const int basePitch = (info != nullptr ? info->defaultMidiNote : 36) + juce::jlimit(0, 11, rootPitchClass);
+    const int defaultPitch = info != nullptr ? info->defaultMidiNote : 36;
+    if (track != TrackType::Sub808)
+        return std::pow(2.0f, static_cast<float>(juce::jlimit(0, 127, pitch) - defaultPitch) / 12.0f);
+
+    // The sample sounds its root note in the octave nearest the lane's default note (Sub808
+    // default A#1 -> a "C" sample is C2 = 36). Adding the pitch class to the default note
+    // itself would treat a C sample as A#1 and play every bass note a whole tone sharp.
+    const int defaultPitchClass = defaultPitch % 12;
+    const int basePitch = defaultPitch + ((juce::jlimit(0, 11, rootPitchClass) - defaultPitchClass + 18) % 12 - 6);
     const int clampedPitch = juce::jlimit(0, 127, pitch);
     return std::pow(2.0f, static_cast<float>(clampedPitch - basePitch) / 12.0f);
 }
@@ -500,6 +508,7 @@ private:
         request.audioFile = file;
         request.trimStartSeconds = 0.0;
         request.trimEndSeconds = 0.0;
+        request.manualBpm = 0.0;
         audioProcessor.setSampleAnalysisRequest(request);
         sampleStripError.clear();
 
@@ -549,7 +558,13 @@ private:
         else if (source->getDurationSeconds() <= kAutoTrimSeconds)
             initial = { 0.0, source->getDurationSeconds() };
 
-        auto* trimEditor = new SampleTrimEditorComponent(source, initial, sampleStripMode == SampleBreakStripComponent::Mode::Guide);
+        const auto analysis = audioProcessor.getDrumBreakAnalysis();
+        const bool haveTempo = audioProcessor.isSampleAnalysisReady() && analysis.valid && analysis.bpm > 20.0;
+        auto* trimEditor = new SampleTrimEditorComponent(source, initial, sampleStripMode == SampleBreakStripComponent::Mode::Guide,
+                                                         haveTempo ? analysis.bpm : 0.0,
+                                                         haveTempo ? request.trimStartSeconds + analysis.originSeconds : -1.0,
+                                                         request.manualBpm > 20.0);
+        trimEditor->setLookAndFeel(&sketchLookAndFeel);
         auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
         trimEditor->getPlayheadSeconds = [safeEditor]
         {
@@ -565,13 +580,14 @@ private:
             if (safeEditor != nullptr)
                 safeEditor->audioProcessor.stopSampleAudition();
         };
-        trimEditor->onAnalyzeSelection = [safeEditor](juce::Range<double> range)
+        trimEditor->onAnalyzeSelection = [safeEditor, trimEditor](juce::Range<double> range)
         {
             if (safeEditor == nullptr)
                 return;
             auto trimmed = safeEditor->audioProcessor.getSampleAnalysisRequest();
             trimmed.trimStartSeconds = range.getStart();
             trimmed.trimEndSeconds = range.getEnd();
+            trimmed.manualBpm = trimEditor->getTypedBpm(); // a typed grid tempo becomes the sample tempo
             safeEditor->audioProcessor.setSampleAnalysisRequest(trimmed);
             safeEditor->closeTrimEditor();
             safeEditor->runSampleAnalysis();
@@ -593,6 +609,57 @@ private:
         trimDialog = options.launchAsync();
         if (trimDialog != nullptr)
             trimDialog->setResizeLimits(700, 300, 2600, 1000);
+    }
+
+    // Pencil next to the sample tempo: type the BPM (Auto = detect again). Re-analyses the
+    // sample at that tempo, which generation then follows (unless BPM lock / DAW sync).
+    void openSampleBpmDialog()
+    {
+        const auto request = audioProcessor.getSampleAnalysisRequest();
+        if (!request.audioFile.existsAsFile())
+            return;
+
+        const auto analysis = audioProcessor.getDrumBreakAnalysis();
+        auto* window = new juce::AlertWindow("Sample BPM",
+                                             "Tempo of the sample. Auto = detect it from the audio again.",
+                                             juce::MessageBoxIconType::NoIcon, this);
+        window->setLookAndFeel(&sketchLookAndFeel);
+        window->setColour(juce::AlertWindow::backgroundColourId, sketch::Theme::paperLight());
+        window->setColour(juce::AlertWindow::textColourId, sketch::Theme::graphite());
+        window->setColour(juce::AlertWindow::outlineColourId, sketch::Theme::graphiteSoft());
+        window->addTextEditor("bpm", analysis.bpm > 20.0 ? juce::String(analysis.bpm, 2) : juce::String(), "BPM:");
+        if (auto* editor = window->getTextEditor("bpm"))
+        {
+            editor->setInputRestrictions(7, "0123456789.,");
+            editor->setColour(juce::TextEditor::textColourId, sketch::Theme::graphite());
+            editor->setColour(juce::TextEditor::backgroundColourId, juce::Colours::white);
+            editor->setColour(juce::TextEditor::outlineColourId, sketch::Theme::graphiteSoft());
+            editor->setColour(juce::TextEditor::highlightedTextColourId, sketch::Theme::graphite());
+            editor->setColour(juce::CaretComponent::caretColourId, sketch::Theme::graphite());
+            editor->selectAll();
+        }
+        window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        window->addButton("Auto", 2);
+        window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        window->enterModalState(true, juce::ModalCallbackFunction::create([safeEditor, window](int result)
+        {
+            if (safeEditor == nullptr || result == 0)
+                return;
+            double bpm = 0.0; // Auto
+            if (result == 1)
+            {
+                const auto text = window->getTextEditorContents("bpm").replaceCharacter(',', '.').trim();
+                bpm = text.getDoubleValue();
+                if (text.isNotEmpty() && (bpm < 40.0 || bpm > 250.0))
+                    return; // nonsense: keep the current tempo
+            }
+            auto updated = safeEditor->audioProcessor.getSampleAnalysisRequest();
+            updated.manualBpm = bpm >= 40.0 ? bpm : 0.0;
+            safeEditor->audioProcessor.setSampleAnalysisRequest(updated);
+            safeEditor->runSampleAnalysis();
+        }), true);
     }
 
     void runSampleAnalysis()
@@ -631,6 +698,7 @@ private:
         state.trimStartSeconds = request.trimStartSeconds;
         state.trimEndSeconds = request.trimEndSeconds;
         state.playWithPattern = audioProcessor.isPlaySampleWithPattern();
+        state.manualBpm = request.manualBpm > 20.0;
         const auto harmony = audioProcessor.getSampleHarmony();
         if (harmony.valid)
             state.harmonyText = "key " + harmony.keyName() + " " + juce::String(juce::roundToInt(harmony.keyConfidence * 100.0f)) + "%"
@@ -647,7 +715,8 @@ private:
                                + "|" + juce::String(static_cast<int>(state.analysis.hits.size()))
                                + "|" + juce::String(state.trimStartSeconds, 3) + "-" + juce::String(state.trimEndSeconds, 3)
                                + "|" + juce::String(reinterpret_cast<juce::pointer_sized_int>(state.source.get()))
-                               + "|" + juce::String(state.playWithPattern ? 1 : 0)).hashCode();
+                               + "|" + juce::String(state.playWithPattern ? 1 : 0)
+                               + "|" + juce::String(state.manualBpm ? 1 : 0)).hashCode();
         if (signature == sampleStripSignature)
             return;
         sampleStripSignature = signature;
@@ -695,6 +764,7 @@ private:
 
         sampleStrip.onAnalyze = [this] { runSampleAnalysis(); };
         sampleStrip.onTrim = [this] { openTrimEditor(); };
+        sampleStrip.onEditBpm = [this] { openSampleBpmDialog(); };
         sampleStrip.onPlayWithPatternChanged = [this](bool enabled)
         {
             audioProcessor.setPlaySampleWithPattern(enabled);
@@ -712,6 +782,7 @@ private:
             request.audioFile = juce::File();
             request.trimStartSeconds = 0.0;
             request.trimEndSeconds = 0.0;
+            request.manualBpm = 0.0;
             audioProcessor.setSampleAnalysisRequest(request);
             closeTrimEditor();
             audioProcessor.clearSampleAnalysis();
@@ -2921,7 +2992,11 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
         std::scoped_lock lock(projectMutex);
         transport = lastTransport;
         harmony = currentAnalysisBundle.harmony;
-        sampleBpm = analysisReady ? currentAnalysisBundle.sampleBpm : 0.0;
+        // The tempo shown in the sample panel, whatever its confidence: with a sample loaded the
+        // beat is made for that sample. (bundle.sampleBpm is only the *trusted* tempo, which the
+        // key analysis needs; gating generation on it silently fell back to a random style BPM.)
+        const auto& breakAnalysis = currentAnalysisBundle.breakAnalysis;
+        sampleBpm = analysisReady && breakAnalysis.valid ? breakAnalysis.bpm : 0.0;
         boomBapBassEnabled = genreHasActiveBassLocked(GenreType::BoomBap);
         followSampleKey = analysisReady
             && analysisMode == AnalysisMode::GenerateFromSample
@@ -4245,6 +4320,20 @@ void BoomBapGeneratorAudioProcessor::updateSampleAwareContextLocked()
         && currentAnalysisBundle.transcription.hasDetectedBass
         && sampleLedBass;
     currentSampleContext.enabled = sampleAwareModeEnabled && analysisReady && modeUsesGuidance;
+
+    SampleMood mood;
+    const auto& breakAnalysis = currentAnalysisBundle.breakAnalysis;
+    if (analysisReady && breakAnalysis.valid && breakAnalysis.bars > 0)
+    {
+        mood.valid = true;
+        const float hitsPerBeat = static_cast<float>(breakAnalysis.hits.size()) / static_cast<float>(breakAnalysis.bars * 4);
+        mood.busyness = juce::jlimit(0.0f, 1.0f, (hitsPerBeat - 1.0f) / 3.0f);
+        mood.sustain = juce::jlimit(0.0f, 1.0f, breakAnalysis.sustainRatio);
+        mood.minor = currentAnalysisBundle.harmony.valid && currentAnalysisBundle.harmony.scaleMode != 1;
+        mood.swing = juce::jlimit(0.0f, 1.0f, (breakAnalysis.swingPercent - 52.0f) / 14.0f);
+        mood.bpm = static_cast<float>(breakAnalysis.bpm);
+    }
+    currentSampleContext.mood = mood;
 }
 
 bool BoomBapGeneratorAudioProcessor::genreHasActiveBassLocked(GenreType genre) const

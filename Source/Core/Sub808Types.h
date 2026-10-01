@@ -45,6 +45,7 @@ struct Sub808LaneSettings
     int glideTimeMs = 120;
     Sub808OverlapMode overlapMode = Sub808OverlapMode::Retrigger;
     Sub808ScaleSnapPolicy scaleSnapPolicy = Sub808ScaleSnapPolicy::ForceToScale;
+    int bassAmount = 0; // Boom Bap bass: 0 Low (a few long notes), 1 More, 2 Full (plays all the way)
 };
 
 inline Sub808NoteEvent toSub808NoteEvent(const NoteEvent& note)

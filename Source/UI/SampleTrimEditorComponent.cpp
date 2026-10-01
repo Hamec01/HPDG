@@ -258,7 +258,10 @@ private:
 //==============================================================================
 SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const SampleSourceAudio> sourceToUse,
                                                      juce::Range<double> initialSelection,
-                                                     bool isGuideMode)
+                                                     bool isGuideMode,
+                                                     double knownBpm,
+                                                     double knownAnchorSeconds,
+                                                     bool knownBpmIsManual)
     : source(std::move(sourceToUse))
     , guideMode(isGuideMode)
 {
@@ -290,11 +293,30 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
                            + formatTime(source != nullptr ? source->getDurationSeconds() : 0.0) + ")",
                        juce::dontSendNotification);
 
-    if (source != nullptr && source->getEstimatedBpm() > 0.0)
+    if (knownBpm > 20.0)
+    {
+        gridBpm = knownBpm;
+        gridAnchor = knownAnchorSeconds >= 0.0 ? knownAnchorSeconds
+                   : source != nullptr ? source->getDownbeatSeconds() : 0.0;
+        bpmTypedByUser = knownBpmIsManual;
+    }
+    else if (source != nullptr && source->getEstimatedBpm() > 0.0)
     {
         gridBpm = source->getEstimatedBpm();
         gridAnchor = source->getDownbeatSeconds();
     }
+
+    // The dialog is its own window: give every caption dark text explicitly (the default
+    // look-and-feel draws labels white, unreadable on the paper background).
+    for (auto* label : { &titleLabel, &bpmCaption, &bpmValue, &infoLabel })
+        label->setColour(juce::Label::textColourId, sketch::Theme::graphite());
+    bpmValue.setColour(juce::Label::backgroundColourId, sketch::Theme::paperLight());
+    bpmValue.setColour(juce::Label::textWhenEditingColourId, sketch::Theme::graphite());
+    bpmValue.setColour(juce::TextEditor::textColourId, sketch::Theme::graphite());
+    bpmValue.setColour(juce::TextEditor::backgroundColourId, sketch::Theme::paperLight());
+    hitsToggle.setColour(juce::ToggleButton::textColourId, sketch::Theme::graphite());
+    hitsToggle.setColour(juce::ToggleButton::tickColourId, sketch::Theme::graphite());
+    hitsToggle.setColour(juce::ToggleButton::tickDisabledColourId, sketch::Theme::graphiteSoft());
 
     bpmCaption.setText("Grid BPM", juce::dontSendNotification);
     bpmCaption.setJustificationType(juce::Justification::centredRight);
@@ -302,9 +324,9 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
     bpmValue.setJustificationType(juce::Justification::centred);
     bpmValue.setColour(juce::Label::outlineColourId, sketch::Theme::graphiteSoft().withAlpha(0.5f));
     bpmValue.setTooltip("Detected tempo of the whole file. Type a value if the grid is off.");
-    bpmValue.onTextChange = [this] { setGridBpm(bpmValue.getText().getDoubleValue()); };
-    halfButton.onClick = [this] { setGridBpm(gridBpm * 0.5); };
-    doubleButton.onClick = [this] { setGridBpm(gridBpm * 2.0); };
+    bpmValue.onTextChange = [this] { bpmTypedByUser = true; setGridBpm(bpmValue.getText().getDoubleValue()); };
+    halfButton.onClick = [this] { bpmTypedByUser = true; setGridBpm(gridBpm * 0.5); };
+    doubleButton.onClick = [this] { bpmTypedByUser = true; setGridBpm(gridBpm * 2.0); };
     anchorButton.setTooltip("Move the bar grid so that bar 1 starts at the selection start.");
     anchorButton.onClick = [this]
     {
@@ -340,7 +362,7 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
 
     infoLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
     hintLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
-    hintLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
+    hintLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     hintLabel.setText(guideMode
                           ? "Guide: start the selection on bar 1 - drums and bass are built from this fragment."
                           : "Copy break: select whole bars of the break. Wheel = zoom, Shift+wheel = scroll, double click = one bar.",

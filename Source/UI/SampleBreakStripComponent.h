@@ -38,6 +38,7 @@ public:
         double trimStartSeconds = 0.0;                   // analyzed fragment in the file
         double trimEndSeconds = 0.0;                     // <= start: whole file
         bool playWithPattern = false;
+        bool manualBpm = false;                          // tempo typed by the user
     };
 
     SampleBreakStripComponent();
@@ -62,6 +63,7 @@ public:
     std::function<void()> onAnalyze;
     std::function<void()> onClear;
     std::function<void()> onTrim;
+    std::function<void()> onEditBpm; // pencil next to the tempo: type the sample's BPM
     std::function<void(bool)> onPlayWithPatternChanged;
     std::function<void(double, double)> onAuditionRange; // seconds in the file
 
@@ -90,6 +92,8 @@ private:
     juce::TextButton analyzeButton { "Analyze" };
     juce::TextButton clearButton { "Clear" };
     juce::TextButton trimButton { "Trim..." };
+    juce::ShapeButton bpmEditButton { "Edit BPM", juce::Colours::transparentBlack, juce::Colours::transparentBlack, juce::Colours::transparentBlack };
+    void updateBpmEditButton();
     juce::ToggleButton playWithToggle { "Play w/ HPDG" };
     mutable std::vector<std::pair<float, float>> wavePeaks;
     juce::Label quantizeLabel;

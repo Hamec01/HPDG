@@ -99,13 +99,15 @@ StyleTargetProfile boomBapStyleTarget(BoomBapSubstyle substyle)
     return { target, tolerance, weight };
 }
 
+constexpr int kMaxKicksPerBar = 5;
+
 struct WeightedKick
 {
     int tick = 0;
     float weight = 0.0f;
 };
 
-constexpr std::array<WeightedKick, 12> kKickWeights {{
+constexpr std::array<WeightedKick, 13> kKickWeights {{
     { 0, 1.00f },
     { 8, 0.45f },
     { 12, 0.35f },
@@ -113,6 +115,7 @@ constexpr std::array<WeightedKick, 12> kKickWeights {{
     { 24, 0.50f },
     { 28, 0.20f },
     { 32, 0.70f },
+    { 36, 0.35f },
     { 40, 0.45f },
     { 44, 0.35f },
     { 52, 0.25f },
@@ -219,9 +222,16 @@ BoomBapTiming::TimingBreakdown makeTiming(std::mt19937& rng,
         else if (lane == BoomBapClassicLanes::OpenHat) swingMultiplier = 0.90f;
         else if (lane == BoomBapClassicLanes::ClapGhost) swingMultiplier = 0.65f;
         else if (lane == BoomBapClassicLanes::Perc) swingMultiplier = 0.70f;
-        else if (lane == BoomBapClassicLanes::Kick && role != BoomBapClassicRole::Anchor) swingMultiplier = 0.22f;
     }
     out.structuralSwingPPQ = static_cast<int>(std::lround(BoomBapTiming::getSixteenthSwingOffsetPPQ(params.swing) * swingMultiplier));
+    // Kicks on the weak 16th (the "a" before the snare, the 9 of a 9-10 double, the last 16th)
+    // sit far behind the grid in played boom bap - close to a 16th-triplet - whatever the hat swing.
+    if (weakSixteenth && ((lane == BoomBapClassicLanes::Kick && role != BoomBapClassicRole::Anchor) || lane == BoomBapClassicLanes::KickGhost))
+    {
+        const float hatSwing = static_cast<float>(BoomBapTiming::getSixteenthSwingOffsetPPQ(params.swing));
+        const float tripletSwing = static_cast<float>(BoomBapTiming::PPQ / 12.0); // 1/3 of a 16th
+        out.structuralSwingPPQ = static_cast<int>(std::lround(hatSwing + 0.7f * std::max(0.0f, tripletSwing - hatSwing)));
+    }
 
     BoomBapTiming::TimingDistribution stylePocket = style.pocket.percussion;
     if (lane == BoomBapClassicLanes::Snare)
@@ -513,7 +523,10 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const Boom
         pattern.score = scorer.score(pattern, params, style);
         pattern.features = extractBoomBapFeatures(pattern, params.bars);
         pattern.styleMatch = StyleTargetModel::evaluate(pattern.features, styleTarget);
-        pattern.selectionQuality = pattern.score.quality + 0.16f * (pattern.styleMatch.fit - 0.5f);
+        // Favour candidates that actually play the generation's kick motif: the scorer alone
+        // prefers the sparsest articulation, which made every generation sound alike.
+        pattern.selectionQuality = pattern.score.quality + 0.16f * (pattern.styleMatch.fit - 0.5f)
+            + 0.45f * (pattern.kickMotifFidelity - 1.0f);
         pattern.selectedCandidateIndex=candidate;
         candidates.push_back(std::move(pattern));
     }
@@ -632,10 +645,21 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
     std::vector<int> selectedKickTicks;
     selectedKickTicks.reserve(4);
     // Select a relational motif first; per-position probabilities only articulate that motif.
-    static const std::array<std::array<int,4>,5> kickMotifs{{
-        {{0,24,40,-1}}, {{0,12,32,56}}, {{0,28,-1,-1}}, {{0,8,40,56}}, {{0,24,52,60}}
+    // The last eight are taken from played boom bap loops: the 9-10 double (36,40), the swung
+    // "a" of beat 2 (28), the last 16th pushing into the next bar (60), the "a" before the snare (12).
+    static const std::array<std::array<int,5>,13> kickMotifs{{
+        {{0,24,40,-1,-1}}, {{0,12,32,56,-1}}, {{0,28,-1,-1,-1}}, {{0,8,40,56,-1}}, {{0,24,52,60,-1}},
+        {{0,28,36,40,60}}, {{0,12,28,40,60}}, {{0,24,36,40,60}}, {{0,28,32,40,60}},
+        {{0,36,40,60,-1}}, {{0,8,28,40,60}}, {{0,28,40,44,-1}}, {{0,24,32,40,60}}
     }};
-    const auto& motif=kickMotifs[(static_cast<size_t>(context.archetype)+static_cast<size_t>(candidateIndex))%kickMotifs.size()];
+    // The motif is the generation's identity, picked once from the seed: candidates only differ in
+    // articulation. (Giving every candidate its own motif let the scorer settle on the same few
+    // sparse motifs every time, so consecutive Generates sounded alike.) One candidate in four
+    // still explores a neighbouring motif.
+    const size_t seededMotif=static_cast<size_t>(boomBapHash(context.motifSeed,0x4b49434bULL)%kickMotifs.size());
+    const size_t motifIndex=candidateIndex%4==3?(seededMotif+1+static_cast<size_t>(candidateIndex/4)%(kickMotifs.size()-1))%kickMotifs.size():seededMotif;
+    const auto& motif=kickMotifs[motifIndex];
+    const int motifSize=static_cast<int>(std::count_if(motif.begin(),motif.end(),[](int tick){return tick>=0;}));
     for (const auto& candidate : kKickWeights)
     {
         const bool downbeat = candidate.tick == 0 || candidate.tick == 32;
@@ -672,7 +696,7 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
             selectedKickTicks.push_back(candidate.tick);
     }
 
-    const int maxMainKicks = ending ? std::min(4, profile.mainKickMax + 1) : profile.mainKickMax;
+    const int maxMainKicks = std::min(kMaxKicksPerBar, std::max(ending ? profile.mainKickMax + 1 : profile.mainKickMax, motifSize));
     if (selectedKickTicks.empty())
         selectedKickTicks.push_back(0);
     std::stable_sort(selectedKickTicks.begin(), selectedKickTicks.end(), [](int a, int b)
@@ -683,6 +707,7 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
             if (tick == 32) return 80;
             if (tick == 24 || tick == 56) return 70;
             if (tick == 8 || tick == 40) return 60;
+            if (tick == 28 || tick == 36 || tick == 60) return 50;
             return 40;
         };
         return priority(a) > priority(b);
@@ -695,6 +720,20 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
         selectedKickTicks.push_back(32);
     }
     std::sort(selectedKickTicks.begin(), selectedKickTicks.end());
+
+    if (barIndex == 0)
+    {
+        const auto seeded = kickMotifs[seededMotif];
+        int present = 0, members = 0;
+        for (const int tick : seeded)
+        {
+            if (tick < 0)
+                continue;
+            ++members;
+            present += std::find(selectedKickTicks.begin(), selectedKickTicks.end(), tick) != selectedKickTicks.end();
+        }
+        pattern.kickMotifFidelity = members > 0 ? static_cast<float>(present) / static_cast<float>(members) : 1.0f;
+    }
 
     for (const int tick : selectedKickTicks)
         addTimedNote(pattern, params, style, rng,
@@ -724,13 +763,23 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
         }
     }
 
+    const bool hatsFollowKick = chance(rng, 0.7f);
     for (const int tick : { 0, 8, 16, 24, 32, 40, 48, 56 })
     {
         if (chance(rng, profile.hatEighthDropout * (0.35f + var) * (barIndex % 4 == 1 || ending ? 1.5f : 1.0f)))
             continue;
 
         const bool offbeat = (tick % 16) == 8;
-        const int baseVelocity = (tick % 16) == 0 ? randomInt(rng, 72, 88) : randomInt(rng, 48, 68);
+        int baseVelocity = (tick % 16) == 0 ? randomInt(rng, 72, 88) : randomInt(rng, 48, 68);
+        if (hatsFollowKick)
+        {
+            // Played loops: the hat is hit hard together with the kick, sits at the snare's
+            // level on the backbeat and stays soft everywhere else.
+            const bool withKick = std::find(selectedKickTicks.begin(), selectedKickTicks.end(), tick) != selectedKickTicks.end();
+            baseVelocity = withKick ? randomInt(rng, 96, 118)
+                         : isBackbeatTick(tick) ? randomInt(rng, 60, 76)
+                         : offbeat ? randomInt(rng, 34, 54) : randomInt(rng, 50, 66);
+        }
         addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::HiHat, barIndex, tick, baseVelocity,
                      offbeat ? BoomBapClassicRole::WeakPulse : BoomBapClassicRole::StrongPulse);
     }
@@ -859,7 +908,12 @@ void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebr
             copy.barIndex = targetBar;
             int local = normalizeTickInBar(copy.tick64);
             refreshCopiedPerformance(copy, lane, params, style, rng);
-            const int shiftedLocal = std::clamp(local + (chance(rng, 0.5f) ? 4 : -4), 0, 63);
+            // Shift by a 16th, staying on the 16th grid inside the bar (clamping 60+4 to 63 put
+            // the kick a 1/64 before the next bar, where it rounds into the next bar).
+            int shift = chance(rng, 0.5f) ? 4 : -4;
+            if (local + shift > 60 || local + shift < 0)
+                shift = -shift;
+            const int shiftedLocal = local + shift;
             if (lane == BoomBapClassicLanes::Kick && local % 16 != 0 && !isBackbeatTick(shiftedLocal)
                 && chance(rng, development ? 0.28f : 0.16f))
             {
@@ -884,6 +938,25 @@ void BoomBapClassicAlgebraGenerator::deriveBarFromStatement(BoomBapClassicAlgebr
         if (chance(rng, (sectionEnd ? 0.55f : 0.38f) + params.variation * .2f))
             addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::Kick, targetBar, 56,
                          randomInt(rng, 82, 108), BoomBapClassicRole::Turnaround);
+        // A played fill: soft snare strokes dragging into beat 3 or rolling into the next bar,
+        // sometimes with an extra swung kick after the backbeat.
+        if (chance(rng, (sectionEnd ? 0.50f : 0.32f) + params.variation * .2f))
+        {
+            static const std::array<std::array<int,3>,4> rolls{{ {{26,28,30}}, {{28,30,-1}}, {{54,58,62}}, {{56,60,-1}} }};
+            const auto& roll = rolls[static_cast<size_t>(randomInt(rng, 0, static_cast<int>(rolls.size()) - 1))];
+            int velocity = randomInt(rng, 40, 52);
+            for (const int tick : roll)
+            {
+                if (tick < 0)
+                    continue;
+                addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::Snare, targetBar, tick, velocity, BoomBapClassicRole::Ghost);
+                pattern.notesByLane[BoomBapClassicLanes::Snare].back().priority = 60;
+                velocity += randomInt(rng, 2, 8);
+            }
+            if (chance(rng, 0.5f))
+                addTimedNote(pattern, params, style, rng, BoomBapClassicLanes::Kick, targetBar, 52,
+                             randomInt(rng, 88, 110), BoomBapClassicRole::Turnaround);
+        }
     }
 }
 
@@ -1000,6 +1073,20 @@ void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPatt
             addNote(pattern, BoomBapClassicLanes::Kick, bar, 0, 108, 0, BoomBapClassicRole::Anchor);
             pattern.repairsApplied.add("add_missing_kick_anchor");
         }
+
+        auto& kicks = pattern.notesByLane[BoomBapClassicLanes::Kick];
+        while (std::count_if(kicks.begin(), kicks.end(), [bar](const auto& note) { return note.barIndex == bar; }) > kMaxKicksPerBar)
+        {
+            auto weakest = kicks.end();
+            for (auto it = kicks.begin(); it != kicks.end(); ++it)
+                if (it->barIndex == bar && it->role != BoomBapClassicRole::Anchor
+                    && (weakest == kicks.end() || it->velocity < weakest->velocity))
+                    weakest = it;
+            if (weakest == kicks.end())
+                break;
+            kicks.erase(weakest);
+            pattern.repairsApplied.add("limit_kicks_per_bar");
+        }
     }
 
     auto& supportSnares=pattern.notesByLane[BoomBapClassicLanes::ClapGhost];
@@ -1111,9 +1198,11 @@ void BoomBapClassicAlgebraGenerator::validateAndRepair(BoomBapClassicAlgebraPatt
     {
         for (auto& note : lane)
         {
-            if (std::abs(note.microTimingTicks) > maxPocketPpq)
+            // Only the human part (pocket + jitter) is limited; structural swing is the groove.
+            const int human = note.microTimingTicks - note.timing.structuralSwingPPQ;
+            if (std::abs(human) > maxPocketPpq)
             {
-                note.microTimingTicks = std::clamp(note.microTimingTicks, -maxPocketPpq, maxPocketPpq);
+                note.microTimingTicks = note.timing.structuralSwingPPQ + std::clamp(human, -maxPocketPpq, maxPocketPpq);
                 pattern.repairsApplied.add("clamp_overhumanized_micro");
             }
         }

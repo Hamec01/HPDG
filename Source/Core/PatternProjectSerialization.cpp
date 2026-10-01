@@ -892,6 +892,7 @@ void sanitizeTrackStates(PatternProject& project)
             track.runtimeTrackType = track.type;
 
         track.sub808Settings.glideTimeMs = std::clamp(track.sub808Settings.glideTimeMs, 0, 4000);
+        track.sub808Settings.bassAmount = std::clamp(track.sub808Settings.bassAmount, 0, 2);
         track.sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0,
                                                                                         2,
                                                                                         static_cast<int>(track.sub808Settings.overlapMode)));
@@ -1170,6 +1171,7 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
         track.sub808Settings.mono = safeBool(trackNode, "sub808_mono", true);
         track.sub808Settings.cutItself = safeBool(trackNode, "sub808_cut_itself", true);
         track.sub808Settings.glideTimeMs = safeInt(trackNode, "sub808_glide_time_ms", 120);
+        track.sub808Settings.bassAmount = juce::jlimit(0, 2, safeInt(trackNode, "sub808_bass_amount", 0));
         track.sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0,
                                                   2,
                                                   safeInt(trackNode, "sub808_overlap_mode", 0)));
@@ -1260,6 +1262,7 @@ juce::ValueTree PatternProjectSerialization::serializeTrack(const TrackState& tr
     node.setProperty("sub808_mono", track.sub808Settings.mono, nullptr);
     node.setProperty("sub808_cut_itself", track.sub808Settings.cutItself, nullptr);
     node.setProperty("sub808_glide_time_ms", track.sub808Settings.glideTimeMs, nullptr);
+    node.setProperty("sub808_bass_amount", track.sub808Settings.bassAmount, nullptr);
     node.setProperty("sub808_overlap_mode", static_cast<int>(track.sub808Settings.overlapMode), nullptr);
     node.setProperty("sub808_scale_snap_policy", static_cast<int>(track.sub808Settings.scaleSnapPolicy), nullptr);
     serializeSoundLayer(node, track.sound, "sound");

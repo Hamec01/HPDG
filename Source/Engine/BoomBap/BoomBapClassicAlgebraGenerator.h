@@ -151,6 +151,7 @@ struct BoomBapClassicAlgebraPattern
     PatternFeatureVector features;
     StyleTargetMatch styleMatch;
     float selectionQuality = 0.0f;
+    float kickMotifFidelity = 1.0f; // share of the seeded kick motif played in bar 1
     BoomBapGenerationContext context;
     RarePhraseEvent realizedEvent = RarePhraseEvent::None;
     BoomBapFillType fillType = BoomBapFillType::None;

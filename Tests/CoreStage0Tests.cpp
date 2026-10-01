@@ -2,6 +2,8 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <random>
+#include <set>
 #include <stdexcept>
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -12,6 +14,7 @@
 #include "../Source/Core/ProjectStateController.h"
 #include "../Source/Analysis/SampleApplyWeights.h"
 #include "../Source/Engine/BoomBapEngine.h"
+#include "../Source/Engine/BoomBap/BoomBapBassGenerator.h"
 #include "../Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.h"
 #include "../Source/Engine/DrillEngine.h"
 #include "../Source/Engine/Drill/DrillPatternValidator.h"
@@ -4141,7 +4144,7 @@ void validateBoomBapAlgebraProjectCore(const PatternProject& project, const juce
         expect(hasStep(snare, beat4, true), label + " must keep the main snare on beat 4.");
         expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
                label + " kick should not collide with the main snare backbeat.");
-        expect(countInBar(kick, bar) >= 1 && countInBar(kick, bar) <= 4,
+        expect(countInBar(kick, bar) >= 1 && countInBar(kick, bar) <= 5,
                label + " should keep kick rhetoric focused (bar " + juce::String(bar + 1) + " of "
                    + juce::String(project.params.bars) + " has " + juce::String(countInBar(kick, bar)) + " kicks).");
         expect(countInBar(hat, bar) >= 3 && countInBar(hat, bar) <= 12,
@@ -4521,7 +4524,7 @@ void testBoomBapJazzyPocketGenerationSmoke()
 }
 
 // Boom Bap bass is opt-in: off by default (and then never generated); when enabled it is a
-// line - root on every downbeat, nothing on the snare backbeat, no overlapping notes, in key.
+// line - root on every downbeat, no overlapping notes, in key (bar passing / leading tones).
 void testBoomBapBassOptInAndLine()
 {
     BoomBapEngine engine;
@@ -4540,6 +4543,40 @@ void testBoomBapBassOptInAndLine()
 
     const std::array<int, 7> minorScale { 0, 2, 3, 5, 7, 8, 10 };
     const std::array<int, 7> majorScale { 0, 2, 4, 5, 7, 9, 11 };
+    auto checkLine = [&](const PatternProject& project, const std::vector<NoteEvent>& notes, const juce::String& label)
+    {
+        expect(!notes.empty(), label + "enabled bass produced no notes.");
+        const auto& scale = project.params.scaleMode == 1 ? majorScale : minorScale;
+        auto inKey = [&](int pitch)
+        {
+            const int degree = ((pitch % 12) - project.params.keyRoot + 12) % 12;
+            return std::find(scale.begin(), scale.end(), degree) != scale.end();
+        };
+
+        const int patternTicks = project.params.bars * TimingGrid::TicksPerBar4_4;
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const bool downbeat = std::any_of(notes.begin(), notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.gridTick == bar * TimingGrid::TicksPerBar4_4;
+            });
+            expect(downbeat, label + "bar " + juce::String(bar + 1) + " has no bass note on beat 1.");
+        }
+
+        for (size_t i = 0; i < notes.size(); ++i)
+        {
+            const auto& note = notes[i];
+            expect(note.pitch >= 24 && note.pitch <= 59, label + "bass pitch out of register: " + juce::String(note.pitch));
+            // Kick notes may use the chord fifth, chromatic passing / leading tones are deliberate.
+            if (note.semanticRole != "bass_kick" && note.semanticRole != "bass_chromatic" && note.semanticRole != "bass_approach")
+                expect(inKey(note.pitch), label + "bass note out of key: " + juce::String(note.pitch) + " (" + note.semanticRole + ")");
+            const int end = note.gridTick + note.lengthTicks;
+            const int nextStart = i + 1 < notes.size() ? notes[i + 1].gridTick : patternTicks;
+            expect(end <= nextStart, label + "bass notes overlap at tick " + juce::String(note.gridTick));
+            expect(note.lengthTicks >= TimingGrid::ThirtySecond, label + "bass note too short");
+        }
+    };
+
     for (int seed = 1; seed <= 60; ++seed)
     {
         auto project = createDefaultProject();
@@ -4556,44 +4593,131 @@ void testBoomBapBassOptInAndLine()
 
         engine.generate(project);
         const auto* bass = findTrackByType(project, TrackType::Sub808);
-        const auto* snare = findTrackByType(project, TrackType::Snare);
-        const juce::String label = "seed " + juce::String(seed) + ": ";
-        expect(!bass->notes.empty(), label + "enabled bass produced no notes.");
+        checkLine(project, bass->notes, "seed " + juce::String(seed) + ": ");
 
-        const auto& scale = project.params.scaleMode == 1 ? majorScale : minorScale;
-        auto inKey = [&](int pitch)
+        // Every style, forced, on the same drums.
+        for (int style = 0; style < static_cast<int>(BoomBapBassGenerator::Style::Count); ++style)
         {
-            const int degree = ((pitch % 12) - project.params.keyRoot + 12) % 12;
-            return std::find(scale.begin(), scale.end(), degree) != scale.end()
-                || degree == (scale[4] + 7) % 12; // fifth of a scale chord may be chromatic only via its root's fifth
-        };
-
-        const int patternTicks = project.params.bars * TimingGrid::TicksPerBar4_4;
-        for (int bar = 0; bar < project.params.bars; ++bar)
-        {
-            const bool downbeat = std::any_of(bass->notes.begin(), bass->notes.end(), [bar](const NoteEvent& note)
-            {
-                return note.gridTick == bar * TimingGrid::TicksPerBar4_4;
-            });
-            expect(downbeat, label + "bar " + juce::String(bar + 1) + " has no bass note on beat 1.");
-        }
-
-        for (size_t i = 0; i < bass->notes.size(); ++i)
-        {
-            const auto& note = bass->notes[i];
-            const int step = note.gridTick / TimingGrid::Sixteenth;
-            const bool onBackbeatSnare = (step % 16 == 4 || step % 16 == 12) && snare != nullptr
-                && std::any_of(snare->notes.begin(), snare->notes.end(), [step](const NoteEvent& s) { return !s.isGhost && s.gridTick / TimingGrid::Sixteenth == step; });
-            expect(!onBackbeatSnare, label + "bass note on the snare backbeat at step " + juce::String(step));
-            expect(note.pitch >= 31 && note.pitch <= 59, label + "bass pitch out of register: " + juce::String(note.pitch));
-            if (note.semanticRole != "bass_kick") // kick notes may use the chord fifth
-                expect(inKey(note.pitch), label + "bass note out of key: " + juce::String(note.pitch));
-            const int end = note.gridTick + note.lengthTicks;
-            const int nextStart = i + 1 < bass->notes.size() ? bass->notes[i + 1].gridTick : patternTicks;
-            expect(end <= nextStart, label + "bass notes overlap at tick " + juce::String(note.gridTick));
-            expect(note.lengthTicks >= TimingGrid::ThirtySecond, label + "bass note too short");
+            std::mt19937 rng(static_cast<std::mt19937::result_type>(seed * 101 + style));
+            const auto notes = BoomBapBassGenerator::generate(project, rng, static_cast<BoomBapBassGenerator::Style>(style));
+            checkLine(project, notes, "seed " + juce::String(seed) + " style "
+                                          + BoomBapBassGenerator::styleName(static_cast<BoomBapBassGenerator::Style>(style)) + ": ");
         }
     }
+}
+
+// A calm, sad, sustained sample gets spacious bass: Sparse Low / Classic lead, the busy swung
+// style is rare. A busy swung sample may still get it now and then.
+void testBoomBapBassFollowsSampleMood()
+{
+    SampleMood calm;
+    calm.valid = true;
+    calm.busyness = 0.2f;
+    calm.sustain = 0.6f;
+    calm.minor = true;
+    calm.swing = 0.9f;
+    calm.bpm = 84.0f;
+    std::array<int, static_cast<size_t>(BoomBapBassGenerator::Style::Count)> calmCounts {};     // amount 1 (Low)
+    std::array<int, static_cast<size_t>(BoomBapBassGenerator::Style::Count)> calmMoreCounts {}; // amount 2 (More)
+    std::array<int, static_cast<size_t>(BoomBapBassGenerator::Style::Count)> plainCounts {};    // amount 2, no sample
+    std::mt19937 rng(77);
+    for (int i = 0; i < 2000; ++i)
+    {
+        ++calmCounts[static_cast<size_t>(BoomBapBassGenerator::pickStyle(rng, calm, 0))];
+        ++calmMoreCounts[static_cast<size_t>(BoomBapBassGenerator::pickStyle(rng, calm, 1))];
+        ++plainCounts[static_cast<size_t>(BoomBapBassGenerator::pickStyle(rng, {}, 1))];
+    }
+    const auto share = [](const auto& counts, BoomBapBassGenerator::Style style)
+    {
+        return static_cast<float>(counts[static_cast<size_t>(style)]) / 2000.0f;
+    };
+    expect(share(calmCounts, BoomBapBassGenerator::Style::SwingMelodic) < 0.08f, "calm sample: Swing Melodic too frequent");
+    expect(share(calmCounts, BoomBapBassGenerator::Style::SparseLow) > 0.30f, "calm sample: Sparse Low should lead");
+    expect(share(calmMoreCounts, BoomBapBassGenerator::Style::SparseLow) > share(plainCounts, BoomBapBassGenerator::Style::SparseLow),
+           "More: a calm sample should lean to Sparse Low");
+    expect(share(calmMoreCounts, BoomBapBassGenerator::Style::SwingMelodic) < share(plainCounts, BoomBapBassGenerator::Style::SwingMelodic),
+           "More: a calm sample should swing less");
+    expect(share(plainCounts, BoomBapBassGenerator::Style::SwingMelodic) < 0.14f, "Swing Melodic must stay occasional");
+    for (int style = 0; style < static_cast<int>(BoomBapBassGenerator::Style::Count); ++style)
+        expect(plainCounts[static_cast<size_t>(style)] > 0, "every bass style must stay reachable without a sample");
+}
+
+// RG on the bass lane writes a new line; the [1][2][3] amount sets how much it plays and is
+// saved with the project.
+void testBoomBapBassRegenerateAndAmount()
+{
+    BoomBapEngine engine;
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::BoomBap;
+    project.params.bars = 4;
+    project.params.seed = 321;
+    auto* lane = findTrackByType(project, TrackType::Sub808);
+    lane->enabled = true;
+    engine.generate(project);
+
+    auto lineOf = [&project]
+    {
+        juce::String line;
+        for (const auto& note : findTrackByType(project, TrackType::Sub808)->notes)
+            line << note.gridTick << ":" << note.pitch << " ";
+        return line;
+    };
+    std::set<juce::String> lines { lineOf() };
+    for (int rg = 1; rg <= 6; ++rg)
+    {
+        ++project.generationCounter;
+        project.params.seed += 7;
+        engine.regenerateTrack(project, TrackType::Sub808);
+        expect(!findTrackByType(project, TrackType::Sub808)->notes.empty(), "RG left the bass lane empty");
+        lines.insert(lineOf());
+    }
+    expect(lines.size() >= 5, "RG on the bass did not produce new lines (" + juce::String(static_cast<int>(lines.size())) + " distinct of 7)");
+
+    std::array<int, 3> totalNotes {};
+    for (int amount = 0; amount < 3; ++amount)
+    {
+        findTrackByType(project, TrackType::Sub808)->sub808Settings.bassAmount = amount;
+        for (int seed = 1; seed <= 40; ++seed)
+        {
+            project.generationCounter = seed;
+            engine.generateTrackNew(project, TrackType::Sub808);
+            totalNotes[static_cast<size_t>(amount)] += static_cast<int>(findTrackByType(project, TrackType::Sub808)->notes.size());
+        }
+    }
+    expect(totalNotes[0] < totalNotes[1] && totalNotes[1] < totalNotes[2],
+           "bass amount 1/2/3 must play progressively more notes: " + juce::String(totalNotes[0]) + "/"
+               + juce::String(totalNotes[1]) + "/" + juce::String(totalNotes[2]));
+
+    findTrackByType(project, TrackType::Sub808)->sub808Settings.bassAmount = 2;
+    PatternProject restored;
+    expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), restored), "project round trip failed");
+    expect(findTrackByType(restored, TrackType::Sub808)->sub808Settings.bassAmount == 2, "bass amount not saved with the project");
+}
+
+// Consecutive Generates must not keep producing the same bass: styles and lines vary.
+void testBoomBapBassVariety()
+{
+    BoomBapEngine engine;
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::BoomBap;
+    project.params.bars = 4;
+    project.params.seed = 4242;
+    findTrackByType(project, TrackType::Sub808)->enabled = true;
+
+    std::set<juce::String> styles;
+    std::set<juce::String> lines;
+    for (int generation = 0; generation < 30; ++generation)
+    {
+        project.generationCounter = generation;
+        engine.generate(project);
+        styles.insert(project.generationDebugReport.fromLastOccurrenceOf("bass style: ", false, false).upToFirstOccurrenceOf("\n", false, false));
+        juce::String line;
+        for (const auto& note : findTrackByType(project, TrackType::Sub808)->notes)
+            line << note.gridTick << ":" << note.pitch << " ";
+        lines.insert(line);
+    }
+    expect(styles.size() >= 5, "30 Generates used only " + juce::String(static_cast<int>(styles.size())) + " bass styles.");
+    expect(lines.size() >= 27, "30 Generates gave only " + juce::String(static_cast<int>(lines.size())) + " different bass lines.");
 }
 
 // Derived bars thin notes out at random (dropout / pickup removal). The downbeat kick must
@@ -6556,6 +6680,9 @@ int main()
     failures += runTest("BoomBap Gold pocket generation smoke", testBoomBapGoldPocketGenerationSmoke);
     failures += runTest("BoomBap never leaves a bar without a kick", testBoomBapNoBarWithoutKick);
     failures += runTest("BoomBap bass is opt-in and plays a line", testBoomBapBassOptInAndLine);
+    failures += runTest("BoomBap bass varies between generations", testBoomBapBassVariety);
+    failures += runTest("BoomBap bass follows the sample mood", testBoomBapBassFollowsSampleMood);
+    failures += runTest("BoomBap bass RG and amount [1][2][3]", testBoomBapBassRegenerateAndAmount);
     failures += runTest("BoomBap Russian Underground pocket generation smoke", testBoomBapRussianUndergroundPocketGenerationSmoke);
     failures += runTest("BoomBap LofiRap pocket generation smoke", testBoomBapLofiRapPocketGenerationSmoke);
     return failures == 0 ? 0 : 1;

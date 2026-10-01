@@ -9,6 +9,7 @@
 #include "../Core/RuntimeLaneProfile.h"
 #include "../Core/TrackState.h"
 #include "DragGestureButton.h"
+#include "BassAmountSelector.h"
 #include "HardwareKnob.h"
 
 namespace bbg
@@ -128,6 +129,7 @@ private:
     LaneRackDisplayMode displayMode = LaneRackDisplayMode::Full;
 
     ClickableLabel nameLabel;
+    BassAmountSelector bassAmountSelector; // bass lane only: [1][2][3]
     juce::Label roleLabel;
     juce::TextButton rgButton { "RG" };
     juce::ToggleButton soloButton { "S" };

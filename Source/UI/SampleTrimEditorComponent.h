@@ -28,9 +28,15 @@ public:
         Bar = 3
     };
 
+    // knownBpm / knownAnchorSeconds: the analysed (or typed) tempo and beat 1, so the grid
+    // matches the sample panel instead of a separate rough estimate. knownBpmIsManual: the
+    // tempo was typed by the user (kept on Analyze).
     SampleTrimEditorComponent(std::shared_ptr<const SampleSourceAudio> source,
                               juce::Range<double> initialSelection,
-                              bool guideMode);
+                              bool guideMode,
+                              double knownBpm = 0.0,
+                              double knownAnchorSeconds = -1.0,
+                              bool knownBpmIsManual = false);
     ~SampleTrimEditorComponent() override;
 
     void paint(juce::Graphics& g) override;
@@ -48,6 +54,7 @@ public:
     juce::Range<double> getSelection() const { return selection; }
     void setSelection(juce::Range<double> newSelection);
     double getGridBpm() const { return gridBpm; }
+    double getTypedBpm() const { return bpmTypedByUser ? gridBpm : 0.0; } // 0 = detect on Analyze
     void setGridBpm(double bpm);
     double getGridAnchor() const { return gridAnchor; }
     void setSnap(Snap newSnap);
@@ -83,6 +90,7 @@ private:
     juce::ScrollBar scrollBar { false };
     std::unique_ptr<juce::ScrollBar::Listener> scrollListener;
     bool wasPlaying = false;
+    bool bpmTypedByUser = false;
     juce::Label titleLabel;
     juce::Label bpmCaption;
     juce::Label bpmValue;

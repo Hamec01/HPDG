@@ -56,6 +56,10 @@ struct SampleAnalysisRequest
     double trimStartSeconds = 0.0;
     double trimEndSeconds = 0.0;
 
+    // Tempo typed by the user for this sample (> 0): detection is skipped and this tempo is
+    // used as-is (and trusted for key analysis and generation).
+    double manualBpm = 0.0;
+
     bool hasTrim() const { return trimEndSeconds > trimStartSeconds; }
 };
 } // namespace bbg

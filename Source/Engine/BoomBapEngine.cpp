@@ -310,17 +310,23 @@ void BoomBapEngine::generateWithAlgebra(PatternProject& project, const BoomBapSt
     }
 
     // Bass is opt-in in Boom Bap: only an enabled (and unlocked) bass lane gets a line, written
-    // after the kick so it can lock with it.
+    // after the kick so it can lock with it. The generation counter keeps every Generate different.
+    juce::String bassReport;
     if (auto* bass = findTrack(project, TrackType::Sub808); bass != nullptr && !bass->locked && bass->enabled)
     {
-        std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 7919 + 0x6261));
-        bass->notes = BoomBapBassGenerator::generate(project, rng);
+        std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 7919 + project.generationCounter * 31 + 0x6261));
+        const auto bassStyle = BoomBapBassGenerator::pickStyle(rng, project.sampleContext.mood, BoomBapBassGenerator::bassAmountOf(project));
+        bass->notes = BoomBapBassGenerator::generate(project, rng, bassStyle);
         bass->sub808Notes.clear();
+        bassReport = "\nbass style: " + juce::String(BoomBapBassGenerator::styleName(bassStyle))
+            + " | amount " + juce::String(BoomBapBassGenerator::bassAmountOf(project) + 1);
+        if (project.sampleContext.mood.valid)
+            bassReport += " (sample calmness " + juce::String(project.sampleContext.mood.calmness(), 2) + ")";
     }
 
     project.phraseLengthBars = algebraParams.bars;
     project.phraseRoleSummary = "statement | confirmation | development | turnaround";
-    project.generationDebugReport = "ALGEBRA\n" + pattern.debugSummary;
+    project.generationDebugReport = "ALGEBRA\n" + pattern.debugSummary + bassReport;
     PatternPerformanceTransformEngine::captureBasePatterns(project, mutableTracks);
 }
 
@@ -384,6 +390,13 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
 
 void BoomBapEngine::regenerateTrackVariation(PatternProject& project, TrackType trackType)
 {
+    // The bass is not an algebra lane: RG writes a fresh line (new style / motif) for it.
+    if (trackType == TrackType::Sub808)
+    {
+        generateTrackNew(project, trackType);
+        return;
+    }
+
     auto* target = findTrack(project, trackType);
     if (target == nullptr || target->locked || algebraLaneForTrack(trackType) < 0 || isAlgebraRetiredTrack(trackType))
         return;

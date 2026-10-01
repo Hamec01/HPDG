@@ -47,6 +47,18 @@ if (TARGET HPDG_VST3)
     )
 endif()
 
+# The sample library sits next to the plugin binary (SampleLibraryManager looks for a
+# "Samples" folder beside the executable), so ship it inside the built bundle / app folder.
+foreach(hpdg_format_target HPDG_VST3 HPDG_Standalone)
+    if (TARGET ${hpdg_format_target})
+        add_custom_command(TARGET ${hpdg_format_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_CURRENT_SOURCE_DIR}/Samples"
+                "$<TARGET_FILE_DIR:${hpdg_format_target}>/Samples"
+            VERBATIM)
+    endif()
+endforeach()
+
 target_sources(HPDG
     PRIVATE
         Source/Plugin/PluginProcessor.cpp

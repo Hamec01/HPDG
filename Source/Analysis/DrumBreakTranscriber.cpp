@@ -1283,12 +1283,31 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
     analysis.exactLoop = best.lengthFit >= 0.5f
         && std::abs(analysis.originSeconds - context.leadSilenceEnd) < 0.035;
 
-    // A trimmed loop's length already pins the tempo exactly (and must keep looping seamlessly);
-    // free breaks get the regression polish.
-    if (!analysis.exactLoop && options.forcedBpm <= 20.0)
+    // A trimmed loop's length already pins the tempo exactly (and must keep looping seamlessly):
+    // snap to the whole-bar tempo (the grid search alone lands a few tenths of a BPM off, which
+    // drifts by tens of ms over 4 bars) and count the length as strong evidence. Free breaks get
+    // the regression polish.
+    // A loop file (starts right on a hit) whose length is a whole number of bars at the detected
+    // tempo is a loop even when its beat 1 is not at the start (pickup / anacrusis).
+    const bool startsOnHit = context.firstHit - context.leadSilenceEnd < 0.050 && context.firstHit < 0.3;
+    const bool wholeBarLoop = analysis.exactLoop || (startsOnHit && best.lengthFit >= 0.5f);
+    if (wholeBarLoop && options.forcedBpm <= 20.0 && best.bars > 0 && loopSeconds > 0.0)
+    {
+        const double loopBpm = 240.0 * best.bars / loopSeconds;
+        if (std::abs(loopBpm / analysis.bpm - 1.0) < 0.02)
+        {
+            const double scale = analysis.bpm / loopBpm;
+            analysis.originSeconds = context.leadSilenceEnd + (analysis.originSeconds - context.leadSilenceEnd) * scale;
+            analysis.bpm = loopBpm;
+            analysis.tempoConfidence = std::max(analysis.tempoConfidence, evidence * juce::jlimit(0.0f, 0.9f, 0.45f + 0.5f * best.gridFit));
+        }
+    }
+    else if (options.forcedBpm <= 20.0)
         refineTempoLeastSquares(analysis.hits, analysis.bpm, analysis.originSeconds, best.swing);
+    if (options.forcedBpm > 20.0)
+        analysis.tempoConfidence = 1.0f; // typed by the user
 
-    if (analysis.exactLoop)
+    if (wholeBarLoop && best.bars > 0)
     {
         analysis.bars = best.bars;
     }

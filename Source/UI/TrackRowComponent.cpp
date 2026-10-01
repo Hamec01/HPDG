@@ -206,6 +206,18 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     explicitDependencyUi = hasExplicitDependencyRelation(initialState);
     currentSub808Settings = initialState.sub808Settings;
 
+    // Bass lane: how much bass ([1][2][3]). Clicking stores the setting and generates the line again.
+    bassAmountSelector.setValue(currentSub808Settings.bassAmount, juce::dontSendNotification);
+    bassAmountSelector.onChange = [this](int amount)
+    {
+        currentSub808Settings.bassAmount = amount;
+        if (onSub808SettingsChanged)
+            onSub808SettingsChanged(laneId, currentSub808Settings);
+        if (onRegenerate)
+            onRegenerate(laneId);
+    };
+    addChildComponent(bassAmountSelector);
+
     nameLabel.setText(initialState.laneName, juce::dontSendNotification);
     nameLabel.setJustificationType(juce::Justification::centredLeft);
     nameLabel.setInterceptsMouseClicks(true, false);
@@ -560,6 +572,14 @@ void TrackRowComponent::paint(juce::Graphics& g)
 void TrackRowComponent::resized()
 {
     auto area = getLocalBounds().reduced(6, 4);
+    bassAmountSelector.setVisible(isSub808Lane());
+    const auto placeBassKnob = [this](juce::Rectangle<int>& nameArea)
+    {
+        if (!isSub808Lane())
+            return;
+        auto knobArea = nameArea.removeFromRight(juce::jmin(60, nameArea.getWidth() / 2));
+        bassAmountSelector.setBounds(knobArea.withSizeKeepingCentre(knobArea.getWidth(), juce::jmin(24, getHeight() - 2)));
+    };
     auto layoutKnobColumn = [](juce::Rectangle<int> columnArea,
                                juce::Label& valueLabel,
                                juce::Component& knob)
@@ -594,6 +614,7 @@ void TrackRowComponent::resized()
         auto nameBounds = area.removeFromTop(20);
         if (helperLaneUi)
             nameBounds.removeFromLeft(explicitDependencyUi ? 10 : 8);
+        placeBassKnob(nameBounds);
         nameLabel.setBounds(nameBounds);
         roleLabel.setBounds({});
         return;
@@ -629,6 +650,7 @@ void TrackRowComponent::resized()
         auto nameBounds = area.removeFromTop(18);
         if (helperLaneUi)
             nameBounds.removeFromLeft(explicitDependencyUi ? 10 : 8);
+        placeBassKnob(nameBounds);
         nameLabel.setBounds(nameBounds);
         roleLabel.setBounds({});
         return;
@@ -637,7 +659,9 @@ void TrackRowComponent::resized()
     auto labelArea = area.removeFromLeft(132);
     if (helperLaneUi)
         labelArea.removeFromLeft(explicitDependencyUi ? 10 : 8);
-    nameLabel.setBounds(labelArea.removeFromTop(16));
+    auto nameRow = labelArea.removeFromTop(16);
+    placeBassKnob(nameRow); // [1][2][3] right next to "Sub808"
+    nameLabel.setBounds(nameRow);
     roleLabel.setBounds(labelArea.removeFromTop(14));
 
     const int rgWidth = 36;
@@ -807,6 +831,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
         sampleText = "(none)";
     sampleNameLabel.setText(sampleText, juce::dontSendNotification);
     currentSub808Settings = state.sub808Settings;
+    bassAmountSelector.setValue(currentSub808Settings.bassAmount, juce::dontSendNotification);
 
     rgButton.setEnabled(hasRuntimeTrack());
     soloButton.setEnabled(hasRuntimeTrack());
@@ -860,6 +885,7 @@ void TrackRowComponent::setSub808Settings(const Sub808LaneSettings& settings)
         return;
 
     currentSub808Settings = settings;
+    bassAmountSelector.setValue(settings.bassAmount, juce::dontSendNotification);
 }
 
 void TrackRowComponent::setHatFxDragState(float density, bool locked)
