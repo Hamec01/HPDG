@@ -19,7 +19,7 @@ public:
     BassAmountSelector()
     {
         setTooltip("Bass amount: 1 Low - a few long notes / 2 More / 3 Full - plays all the way.\n"
-                   "Click a number: the bass line is generated again.");
+                   "The choice is used by the next Generate / RG of the bass.");
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
     }
 

@@ -376,6 +376,61 @@ void testPreviewProcessBlockKeepsFirstKickWithNegativeMicrotiming()
 // Renders a 2-bar 90 BPM break (kick / snare / closed hat on eighths) to a WAV and runs it
 // through the plugin's Extract / Exact Copy path: only K/S/H lanes, tick positions from the
 // break itself (the plugin tempo is left at its own value).
+// The bass [1][2][3] amount with a loaded sample, in any sample mode: a click only stores the
+// choice (nothing is regenerated), the choice sticks, RG on the bass writes a line in that mode
+// and leaves the drums alone, and RG on another lane never wipes the rest.
+void checkBassAmountKeepsOtherLanes(BoomBapGeneratorAudioProcessor& processor, const juce::String& mode)
+{
+    auto ticksOf = [&processor](TrackType lane)
+    {
+        std::vector<int> ticks;
+        const auto snapshot = processor.getProjectSnapshot();
+        if (const auto* state = ProjectLaneAccess::findTrackState(snapshot, lane))
+            for (const auto& note : state->notes)
+                ticks.push_back(note.gridTick + note.timingOffsetTicks);
+        std::sort(ticks.begin(), ticks.end());
+        return ticks;
+    };
+    auto settingsOf = [&processor]
+    {
+        const auto snapshot = processor.getProjectSnapshot();
+        const auto* bass = ProjectLaneAccess::findTrackState(snapshot, TrackType::Sub808);
+        return bass != nullptr ? bass->sub808Settings : Sub808LaneSettings {};
+    };
+
+    processor.setTrackEnabled(TrackType::Sub808, true);
+    const juce::String label = mode + ": ";
+    const auto kicks = ticksOf(TrackType::Kick);
+    const auto snares = ticksOf(TrackType::Snare);
+    const auto hats = ticksOf(TrackType::HiHat);
+    expect(!kicks.empty() && !snares.empty(), label + "no drums to start from");
+
+    for (const int amount : { 1, 2, 0 })
+    {
+        const auto bassBefore = ticksOf(TrackType::Sub808);
+        auto settings = settingsOf();
+        settings.bassAmount = amount;
+        processor.setSub808LaneSettings(TrackType::Sub808, settings);
+        const juce::String step = label + "amount " + juce::String(amount + 1) + ": ";
+        expect(settingsOf().bassAmount == amount, step + "the choice did not stick");
+        expect(ticksOf(TrackType::Sub808) == bassBefore && ticksOf(TrackType::Kick) == kicks,
+               step + "choosing the amount must not change the pattern");
+
+        processor.regenerateTrack(TrackType::Sub808);
+        expect(settingsOf().bassAmount == amount, step + "RG reset the choice");
+        expect(!ticksOf(TrackType::Sub808).empty(), step + "RG left the bass empty");
+        expect(ticksOf(TrackType::Kick) == kicks && ticksOf(TrackType::Snare) == snares && ticksOf(TrackType::HiHat) == hats,
+               step + "RG on the bass changed or wiped the drums");
+    }
+
+    processor.regenerateTrack(TrackType::Kick);
+    expect(!ticksOf(TrackType::Kick).empty(), label + "RG on the kick left it empty");
+    expect(!ticksOf(TrackType::Snare).empty() && !ticksOf(TrackType::Sub808).empty(), label + "RG on the kick wiped other lanes");
+    processor.regenerateTrack(TrackType::Snare);
+    expect(!ticksOf(TrackType::Snare).empty() && !ticksOf(TrackType::Kick).empty() && !ticksOf(TrackType::Sub808).empty(),
+           label + "a second RG wiped lanes");
+}
+
 void testDrumBreakExactCopyPath()
 {
     constexpr double rate = 44100.0;
@@ -476,6 +531,8 @@ void testDrumBreakExactCopyPath()
     expect(gridTicks(TrackType::GhostKick).empty() && gridTicks(TrackType::Sub808).empty(),
            "copy must only fill Kick / Snare / HiHat");
 
+    checkBassAmountKeepsOtherLanes(processor, "copy break");
+
     // Tempo priority: with an analysed sample every generation stays at the sample's tempo
     // (instead of re-rolling the style range); BPM lock still wins over the sample.
     processor.setAnalysisMode(AnalysisMode::GenerateFromSample);
@@ -487,6 +544,8 @@ void testDrumBreakExactCopyPath()
         expect(std::abs(generated - static_cast<float>(bpm)) < 0.6f,
                "generation " + juce::String(run + 1) + " left the sample tempo: " + juce::String(generated, 2));
     }
+
+    checkBassAmountKeepsOtherLanes(processor, "guide (drum loop)");
 
     auto& apvts = processor.getApvts();
     apvts.getParameter(ParamIds::bpm)->setValueNotifyingHost(apvts.getParameter(ParamIds::bpm)->convertTo0to1(100.0f));
@@ -570,6 +629,8 @@ void testGuideModeAccentKicksAvoidBackbeat()
     }
     for (const auto& note : sub != nullptr ? sub->notes : std::vector<NoteEvent> {})
         expect(note.semanticRole != "sample_copy", "guide mode must not copy an 808 line out of the sample");
+
+    checkBassAmountKeepsOtherLanes(processor, "guide (musical sample)");
 
     file.deleteFile();
 }

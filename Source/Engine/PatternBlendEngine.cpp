@@ -318,14 +318,20 @@ PatternBlendReport PatternBlendEngine::apply(PatternProject& project,
             continue;
 
         const auto& extractedNotes = extracted.laneNotes[static_cast<size_t>(trackTypeIndex(lane))];
+        // A drum-break copy has no bass: an enabled bass lane keeps its generated line on top of
+        // the copied break instead of being wiped on every Generate / RG.
+        if (weights.exactCopy && lane == TrackType::Sub808 && extractedNotes.empty())
+            continue;
         const auto existingNotes = state->notes;
         const auto blendedNotes = blendLaneNotes(existingNotes, extractedNotes, lane, weights);
 
-        if (weights.exactCopy)
-            clearTrackContent(*state);
-
+        // Unchanged lane: leave it alone. (Clearing it first and then skipping wiped every lane on
+        // the second Generate / RG in copy mode - the next one restored them.)
         if (noteSequencesEqual(existingNotes, blendedNotes) && !(weights.exactCopy && existingNotes.empty() && !extractedNotes.empty()))
             continue;
+
+        if (weights.exactCopy)
+            clearTrackContent(*state);
 
         assignLaneNotes(project, *state, lane, blendedNotes);
         report.changedTracks.insert(lane);

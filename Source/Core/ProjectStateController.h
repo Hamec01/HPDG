@@ -208,6 +208,7 @@ inline void setSub808LaneSettings(PatternProject& project, TrackType trackType, 
     state->sub808Settings.glideTimeMs = juce::jlimit(0, 4000, settings.glideTimeMs);
     state->sub808Settings.overlapMode = static_cast<Sub808OverlapMode>(juce::jlimit(0, 2, static_cast<int>(settings.overlapMode)));
     state->sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0, 2, static_cast<int>(settings.scaleSnapPolicy)));
+    state->sub808Settings.bassAmount = juce::jlimit(0, 2, settings.bassAmount);
 }
 
 inline void setSub808LaneSettings(PatternProject& project, const RuntimeLaneId& laneId, const Sub808LaneSettings& settings)

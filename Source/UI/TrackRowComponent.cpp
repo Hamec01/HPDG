@@ -206,15 +206,14 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     explicitDependencyUi = hasExplicitDependencyRelation(initialState);
     currentSub808Settings = initialState.sub808Settings;
 
-    // Bass lane: how much bass ([1][2][3]). Clicking stores the setting and generates the line again.
+    // Bass lane: how much bass ([1][2][3]). A click only stores the choice for the next Generate / RG.
     bassAmountSelector.setValue(currentSub808Settings.bassAmount, juce::dontSendNotification);
     bassAmountSelector.onChange = [this](int amount)
     {
+        // Only the choice: the next Generate / RG plays it, the current line stays.
         currentSub808Settings.bassAmount = amount;
         if (onSub808SettingsChanged)
             onSub808SettingsChanged(laneId, currentSub808Settings);
-        if (onRegenerate)
-            onRegenerate(laneId);
     };
     addChildComponent(bassAmountSelector);
 
