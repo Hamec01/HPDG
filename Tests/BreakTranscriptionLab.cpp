@@ -488,6 +488,78 @@ int runSynth(const juce::StringArray& args)
     }
     return 0;
 }
+// Root note of one-shot bass samples: YIN on the sustained part (after the attack) plus the
+// harmony analyzer's low-note salience as a cross-check.
+int runRootNote(const juce::StringArray& args)
+{
+    static const char* names[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    for (int i = 1; i < args.size(); ++i)
+    {
+        const juce::File file(args[i]);
+        std::vector<float> mono;
+        double rate = 0.0;
+        if (!loadMono(file, mono, rate))
+        {
+            std::cout << file.getFileName() << ": cannot read\n";
+            continue;
+        }
+
+        // Skip the attack: start 40 ms after the peak, analyse up to 400 ms.
+        size_t peak = 0;
+        for (size_t s = 0; s < mono.size(); ++s)
+            if (std::abs(mono[s]) > std::abs(mono[peak]))
+                peak = s;
+        const size_t start = std::min(mono.size(), peak + static_cast<size_t>(0.04 * rate));
+        const size_t length = std::min(mono.size() - start, static_cast<size_t>(0.4 * rate));
+
+        // YIN, 25-500 Hz.
+        double yinHz = 0.0;
+        const int maxLag = static_cast<int>(rate / 25.0);
+        const int minLag = static_cast<int>(rate / 500.0);
+        const int window = static_cast<int>(std::min<size_t>(length > static_cast<size_t>(maxLag) ? length - static_cast<size_t>(maxLag) : 0, static_cast<size_t>(0.1 * rate)));
+        if (window > 256)
+        {
+            std::vector<double> d(static_cast<size_t>(maxLag + 1), 0.0);
+            for (int lag = 1; lag <= maxLag; ++lag)
+                for (int j = 0; j < window; ++j)
+                {
+                    const double diff = mono[start + static_cast<size_t>(j)] - mono[start + static_cast<size_t>(j + lag)];
+                    d[static_cast<size_t>(lag)] += diff * diff;
+                }
+            double running = 0.0;
+            int best = -1;
+            for (int lag = 1; lag <= maxLag; ++lag)
+            {
+                running += d[static_cast<size_t>(lag)];
+                const double cmnd = running > 0.0 ? d[static_cast<size_t>(lag)] * lag / running : 1.0;
+                if (lag >= minLag && cmnd < 0.15)
+                {
+                    while (lag + 1 <= maxLag && d[static_cast<size_t>(lag + 1)] < d[static_cast<size_t>(lag)])
+                        ++lag;
+                    best = lag;
+                    break;
+                }
+            }
+            if (best > 0)
+                yinHz = rate / best;
+        }
+
+        std::vector<float> body(mono.begin() + static_cast<std::ptrdiff_t>(start), mono.begin() + static_cast<std::ptrdiff_t>(start + length));
+        const auto harmony = SampleHarmonyAnalyzer().analyze(body, rate, length / rate + 0.01, 0.0);
+        const int harmonyNote = harmony.bass.empty() ? -1 : harmony.bass.front().midiNote;
+
+        const int yinNote = yinHz > 0.0 ? static_cast<int>(std::lround(69.0 + 12.0 * std::log2(yinHz / 440.0))) : -1;
+        const double cents = yinHz > 0.0 ? 100.0 * (69.0 + 12.0 * std::log2(yinHz / 440.0) - yinNote) : 0.0;
+        std::cout << file.getFileName().paddedRight(' ', 44)
+                  << " yin " << juce::String(yinHz, 1).paddedLeft(' ', 7) << " Hz -> "
+                  << (yinNote >= 0 ? juce::String(names[yinNote % 12]) + juce::String(yinNote / 12 - 1) : juce::String("?"))
+                  << " (" << juce::String(cents, 0) << " c)"
+                  << " | harmony " << (harmonyNote >= 0 ? juce::String(names[harmonyNote % 12]) + juce::String(harmonyNote / 12 - 1) : juce::String("?"))
+                  << " | " << juce::String(mono.size() / rate, 2) << " s\n";
+    }
+    return 0;
+}
+
 // Random diatonic progressions (one chord per bar) with a bass line on chord roots / fifths and
 // a pad on top. Scores key detection and per-beat bass pitch-class accuracy.
 int runHarmonySynth(const juce::StringArray& args)
@@ -615,6 +687,8 @@ int main(int argc, char** argv)
 
     if (args[0] == "analyze")
         return runAnalyze(args);
+    if (args[0] == "rootnote")
+        return runRootNote(args);
     if (args[0] == "harmony-synth")
         return runHarmonySynth(args);
     if (args[0] == "synth")

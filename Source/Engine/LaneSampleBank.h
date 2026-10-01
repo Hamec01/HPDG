@@ -19,6 +19,7 @@ public:
         std::vector<std::shared_ptr<juce::AudioBuffer<float>>> buffers;
         int selectedIndex = 0;
         juce::String selectedName;
+        int selectedRootPitchClass = 0;
     };
 
     // A fully decoded sample set, built off the audio/project lock (disk I/O lives here).
@@ -27,6 +28,14 @@ public:
         std::array<LaneState, 11> states;
     std::vector<std::shared_ptr<juce::AudioBuffer<float>>> retiredBuffers;
     };
+
+    // Every sample is resampled to this rate when loaded, so pitch and length are right no
+    // matter what rate the file was saved at; the player only compensates for the device rate.
+    static constexpr double kBankSampleRate = 48000.0;
+
+    // Pitch class of a melodic one-shot, read from the "<name> - <note>" convention used by the
+    // bass / 808 kits (e.g. "BoomBap Bass - Puma - C", "Kit 808 - F#"). 0 (C) when absent.
+    static int rootPitchClassFromName(const juce::String& name);
 
     LaneSampleBank();
 
@@ -47,6 +56,7 @@ public:
 
     int getSelectedIndex(TrackType track) const;
     juce::String getSelectedName(TrackType track) const;
+    int getSelectedRootPitchClass(TrackType track) const;
     const juce::AudioBuffer<float>* getSelectedBuffer(TrackType track) const;
     std::shared_ptr<const juce::AudioBuffer<float>> getSelectedBufferShared(TrackType track) const;
     bool hasSamples(TrackType track) const;

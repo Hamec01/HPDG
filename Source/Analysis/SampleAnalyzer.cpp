@@ -78,11 +78,15 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     // Key + bass line, on the original timeline. Segments are one beat of the tempo the
     // generator will use to place them: the sample's own when measured confidently, otherwise
     // the session tempo with beat 1 at the start of the file.
-    // Onset-based tempo is only trusted on drum loops; a tonal sample's onsets (chord changes,
-    // swells) can give a confident but wrong tempo, while the producer plays it at session tempo.
-    const bool sampleTempoTrusted = bundle.breakAnalysis.valid
-        && bundle.breakAnalysis.drumLoopConfidence >= 0.75f
-        && bundle.breakAnalysis.tempoConfidence >= 0.5f;
+    // Onset-based tempo: trusted on drum loops at moderate confidence, on any other sample only
+    // when very confident (a tonal sample's chord changes / swells can mislead a weak estimate).
+    // A trusted tempo also becomes the generation tempo (unless DAW sync or BPM lock win).
+    const auto& breakAnalysis = bundle.breakAnalysis;
+    const bool sampleTempoTrusted = breakAnalysis.valid
+        && breakAnalysis.bpm > 20.0
+        && ((breakAnalysis.drumLoopConfidence >= 0.75f && breakAnalysis.tempoConfidence >= 0.5f)
+            || breakAnalysis.tempoConfidence >= 0.8f);
+    bundle.sampleBpm = sampleTempoTrusted ? breakAnalysis.bpm : 0.0;
     bundle.harmonyBpm = sampleTempoTrusted ? bundle.breakAnalysis.bpm : (hostBpm > 20.0 ? hostBpm : 90.0);
     bundle.harmonyOriginSeconds = sampleTempoTrusted ? bundle.breakAnalysis.originSeconds : 0.0;
     bundle.harmonyTempoFromSample = sampleTempoTrusted;

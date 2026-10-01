@@ -369,6 +369,7 @@ private:
     void updateSampleAwareContextLocked();
     bool applySampleAwarePostProcessLocked();
     bool extractPatternFromAnalyzedSampleLocked();
+    bool genreHasActiveBassLocked(GenreType genre) const;
     void resetEqDisplayAnalyzer();
     void captureEqDisplayAnalyzer(const juce::AudioBuffer<float>& buffer);
     void runEqDisplayAnalyzerFrame();

@@ -88,11 +88,13 @@ void LaneSampleBank::adoptPreparedLibrary(std::unique_ptr<PreparedLibrary> prepa
         {
             state.selectedIndex = 0;
             state.selectedName = "(empty)";
+            state.selectedRootPitchClass = 0;
             continue;
         }
 
         state.selectedIndex = juce::jlimit(0, static_cast<int>(state.infos.size()) - 1, previousSelection);
         state.selectedName = state.infos[static_cast<size_t>(state.selectedIndex)].name;
+        state.selectedRootPitchClass = rootPitchClassFromName(state.selectedName);
     }
 }
 
@@ -103,11 +105,13 @@ bool LaneSampleBank::selectIndex(TrackType track, int index)
     {
         state.selectedIndex = 0;
         state.selectedName = "(empty)";
+        state.selectedRootPitchClass = 0;
         return false;
     }
 
     state.selectedIndex = juce::jlimit(0, static_cast<int>(state.infos.size()) - 1, index);
     state.selectedName = state.infos[static_cast<size_t>(state.selectedIndex)].name;
+    state.selectedRootPitchClass = rootPitchClassFromName(state.selectedName);
     return true;
 }
 
@@ -219,6 +223,44 @@ bool LaneSampleBank::hasSamplesMatchingAnyTag(TrackType track, const std::vector
     });
 }
 
+int LaneSampleBank::rootPitchClassFromName(const juce::String& name)
+{
+    const auto base = juce::File::createFileWithoutCheckingPath(name).getFileNameWithoutExtension().trim();
+    const auto token = base.fromLastOccurrenceOf("-", false, false).trim().toUpperCase();
+    if (token.isEmpty() || token.length() > 4)
+        return 0;
+
+    static constexpr int letterPitch[] { 9, 11, 0, 2, 4, 5, 7 }; // A B C D E F G
+    const auto letter = token[0];
+    if (letter < 'A' || letter > 'G')
+        return 0;
+
+    int pitchClass = letterPitch[letter - 'A'];
+    int index = 1;
+    if (index < token.length() && (token[index] == '#' || token[index] == 'S'))
+    {
+        ++pitchClass;
+        ++index;
+    }
+    else if (index < token.length() && token[index] == 'B')
+    {
+        --pitchClass;
+        ++index;
+    }
+    // Whatever follows may only be an octave number ("C1", "F#2").
+    for (; index < token.length(); ++index)
+        if (!juce::CharacterFunctions::isDigit(token[index]))
+            return 0;
+
+    return (pitchClass % 12 + 12) % 12;
+}
+
+int LaneSampleBank::getSelectedRootPitchClass(TrackType track) const
+{
+    // Cached on selection: this is read on the audio thread, so no string work here.
+    return states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))].selectedRootPitchClass;
+}
+
 bool LaneSampleBank::loadWavToBuffer(const juce::File& file,
                                      juce::AudioFormatManager& formatManager,
                                      std::shared_ptr<juce::AudioBuffer<float>>& outBuffer)
@@ -226,13 +268,60 @@ bool LaneSampleBank::loadWavToBuffer(const juce::File& file,
     outBuffer.reset();
 
     std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
-    if (reader == nullptr)
+    if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
         return false;
 
-    auto buffer = std::make_shared<juce::AudioBuffer<float>>(static_cast<int>(reader->numChannels), static_cast<int>(reader->lengthInSamples));
-    buffer->clear();
-    if (!reader->read(buffer.get(), 0, static_cast<int>(reader->lengthInSamples), 0, true, true))
+    const int channels = static_cast<int>(reader->numChannels);
+    const int sourceLength = static_cast<int>(reader->lengthInSamples);
+    juce::AudioBuffer<float> source(channels, sourceLength);
+    source.clear();
+    if (!reader->read(&source, 0, sourceLength, 0, true, true))
         return false;
+
+    if (std::abs(reader->sampleRate - kBankSampleRate) < 1.0)
+    {
+        outBuffer = std::make_shared<juce::AudioBuffer<float>>(std::move(source));
+        return true;
+    }
+
+    // Lanczos (windowed-sinc, 8 lobes) resampling to the bank rate, zero-latency. When the source
+    // is above the bank rate the kernel is widened to low-pass at the new Nyquist (no aliasing).
+    const double ratio = reader->sampleRate / kBankSampleRate; // source samples per output sample
+    const int targetLength = juce::jmax(1, static_cast<int>(std::ceil(sourceLength / ratio)));
+    const double cutoff = std::min(1.0, 1.0 / ratio);
+    static constexpr int lobes = 8;
+    const double halfWidth = lobes / cutoff;
+    auto lanczos = [](double x)
+    {
+        if (std::abs(x) < 1.0e-9)
+            return 1.0;
+        if (std::abs(x) >= lobes)
+            return 0.0;
+        const double px = juce::MathConstants<double>::pi * x;
+        return lobes * std::sin(px) * std::sin(px / lobes) / (px * px);
+    };
+
+    auto buffer = std::make_shared<juce::AudioBuffer<float>>(channels, targetLength);
+    for (int channel = 0; channel < channels; ++channel)
+    {
+        const float* in = source.getReadPointer(channel);
+        float* out = buffer->getWritePointer(channel);
+        for (int i = 0; i < targetLength; ++i)
+        {
+            const double centre = i * ratio;
+            const int first = juce::jmax(0, static_cast<int>(std::ceil(centre - halfWidth)));
+            const int last = juce::jmin(sourceLength - 1, static_cast<int>(std::floor(centre + halfWidth)));
+            double sum = 0.0;
+            double weightSum = 0.0;
+            for (int j = first; j <= last; ++j)
+            {
+                const double weight = lanczos((j - centre) * cutoff);
+                sum += weight * in[j];
+                weightSum += weight;
+            }
+            out[i] = static_cast<float>(weightSum > 1.0e-9 ? sum / weightSum : 0.0);
+        }
+    }
 
     outBuffer = std::move(buffer);
     return true;

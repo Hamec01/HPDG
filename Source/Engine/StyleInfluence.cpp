@@ -363,6 +363,9 @@ bool StyleInfluenceHelpers::applyToProject(const ResolvedStyleDefinition& defini
 StyleInfluenceApplicationOptions BoomBapStyleInfluence::applicationOptions()
 {
     StyleInfluenceApplicationOptions options;
+    // Lane on/off is the user's choice (defaults are applied when the genre / substyle changes):
+    // re-applying them on every Generate would switch an opted-in bass lane back off.
+    options.applyEnabledState = false;
     options.applyLaneVolume = true;
     options.applySampleSelection = true;
     options.applySoundLayer = true;

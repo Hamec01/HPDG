@@ -16,7 +16,67 @@ bool isCoreLane(TrackType t)
 void PreviewEngine::prepare(double sampleRate)
 {
     currentSampleRate = sampleRate > 1000.0 ? sampleRate : 44100.0;
+    rateScale = LaneSampleBank::kBankSampleRate / currentSampleRate;
     reset();
+}
+
+void PreviewEngine::startFade(Voice& voice, int fadeSamples) const
+{
+    if (voice.fadeTotalSamples > 0 && voice.fadeSamplesRemaining <= fadeSamples)
+        return; // already fading out at least this fast
+    voice.fadeTotalSamples = juce::jmax(1, fadeSamples);
+    voice.fadeSamplesRemaining = voice.fadeTotalSamples;
+}
+
+void PreviewEngine::scheduleCut(TrackType trackType, int sampleOffset)
+{
+    for (auto& voice : voices)
+    {
+        if (!voice.active || voice.trackType != trackType)
+            continue;
+        const int at = std::max(0, sampleOffset);
+        if (voice.cutDelaySamples < 0 || at < voice.cutDelaySamples)
+            voice.cutDelaySamples = at;
+    }
+}
+
+bool PreviewEngine::stepVoice(Voice& voice, float& gain)
+{
+    // The cut clock runs from the start of the block, like startDelaySamples, so a cut lands
+    // exactly where the next hit begins even if this voice itself started inside the block.
+    if (voice.cutDelaySamples > 0)
+    {
+        --voice.cutDelaySamples;
+    }
+    else if (voice.cutDelaySamples == 0)
+    {
+        voice.cutDelaySamples = -1;
+        if (voice.startDelaySamples > 0)
+        {
+            voice.active = false; // cut before it ever sounded
+            return false;
+        }
+        startFade(voice, static_cast<int>(0.003 * currentSampleRate)); // 3 ms choke
+    }
+
+    if (voice.startDelaySamples > 0)
+    {
+        --voice.startDelaySamples;
+        return false;
+    }
+
+    gain = 1.0f;
+    if (voice.fadeTotalSamples > 0)
+    {
+        if (voice.fadeSamplesRemaining <= 0)
+        {
+            voice.active = false;
+            return false;
+        }
+        gain = static_cast<float>(voice.fadeSamplesRemaining) / static_cast<float>(voice.fadeTotalSamples);
+        --voice.fadeSamplesRemaining;
+    }
+    return true;
 }
 
 void PreviewEngine::reset()
@@ -41,6 +101,9 @@ void PreviewEngine::reset()
         voice.pendingRemainingSamples = -1;
         voice.pendingGlide = false;
         voice.pendingGlideDurationSamples = 0;
+        voice.cutDelaySamples = -1;
+        voice.fadeSamplesRemaining = 0;
+        voice.fadeTotalSamples = 0;
     }
 }
 
@@ -89,17 +152,15 @@ void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOf
         }
 
         if (options.mono || options.cutItself)
-        {
-            for (auto& voice : voices)
-            {
-                if (voice.active && voice.trackType == TrackType::Sub808)
-                {
-                    voice.active = false;
-                    voice.samplePosition = 0.0;
-                    voice.hasPendingTransition = false;
-                }
-            }
-        }
+            scheduleCut(TrackType::Sub808, sampleOffset);
+    }
+    else
+    {
+        // Drums behave like FL's "cut itself": a new hit of the same lane chokes the previous
+        // one if it is still ringing (short fade, no click). A closed hat also chokes the open hat.
+        scheduleCut(trackType, sampleOffset);
+        if (trackType == TrackType::HiHat)
+            scheduleCut(TrackType::OpenHat, sampleOffset);
     }
 
     auto* voice = allocateVoice(trackType);
@@ -118,6 +179,9 @@ void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOf
     voice->glideSamplesRemaining = 0;
     voice->remainingSamples = options.maxDurationSamples;
     voice->hasPendingTransition = false;
+    voice->cutDelaySamples = -1;
+    voice->fadeSamplesRemaining = 0;
+    voice->fadeTotalSamples = 0;
 }
 
 void PreviewEngine::applyPendingTransition(Voice& voice)
@@ -144,6 +208,8 @@ void PreviewEngine::applyPendingTransition(Voice& voice)
     }
 
     voice.hasPendingTransition = false;
+    voice.fadeTotalSamples = 0; // a legato / glide continuation cancels the previous note's release
+    voice.fadeSamplesRemaining = 0;
 }
 
 void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, int numSamples)
@@ -184,11 +250,9 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
             if (!voice.active || voice.sample == nullptr)
                 continue;
 
-            if (voice.startDelaySamples > 0)
-            {
-                --voice.startDelaySamples;
+            float envelope = 1.0f;
+            if (!stepVoice(voice, envelope))
                 continue;
-            }
 
             if (voice.hasPendingTransition)
             {
@@ -212,7 +276,7 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
 
             const float src = readSampleAt(*bufferRef, voice.samplePosition);
 
-            mixed += src * voice.velocity;
+            mixed += src * voice.velocity * envelope;
 
             if (voice.glideSamplesRemaining > 0)
             {
@@ -222,13 +286,13 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
                     voice.playbackRate = voice.targetPlaybackRate;
             }
 
-            voice.samplePosition += static_cast<double>(voice.playbackRate);
+            voice.samplePosition += static_cast<double>(voice.playbackRate) * rateScale;
 
             if (voice.remainingSamples > 0)
             {
                 --voice.remainingSamples;
                 if (voice.remainingSamples <= 0)
-                    voice.active = false;
+                    startFade(voice, static_cast<int>(0.006 * currentSampleRate)); // note end: 6 ms release
             }
         }
 
@@ -278,11 +342,9 @@ void PreviewEngine::renderSeparated(std::array<juce::AudioBuffer<float>, kTrackT
             if (!voice.active || voice.sample == nullptr)
                 continue;
 
-            if (voice.startDelaySamples > 0)
-            {
-                --voice.startDelaySamples;
+            float envelope = 1.0f;
+            if (!stepVoice(voice, envelope))
                 continue;
-            }
 
             if (voice.hasPendingTransition)
             {
@@ -305,7 +367,7 @@ void PreviewEngine::renderSeparated(std::array<juce::AudioBuffer<float>, kTrackT
             }
 
             const float src = readSampleAt(*bufferRef, voice.samplePosition);
-            mixedByTrack[static_cast<size_t>(trackTypeIndex(voice.trackType))] += src * voice.velocity;
+            mixedByTrack[static_cast<size_t>(trackTypeIndex(voice.trackType))] += src * voice.velocity * envelope;
 
             if (voice.glideSamplesRemaining > 0)
             {
@@ -315,13 +377,13 @@ void PreviewEngine::renderSeparated(std::array<juce::AudioBuffer<float>, kTrackT
                     voice.playbackRate = voice.targetPlaybackRate;
             }
 
-            voice.samplePosition += static_cast<double>(voice.playbackRate);
+            voice.samplePosition += static_cast<double>(voice.playbackRate) * rateScale;
 
             if (voice.remainingSamples > 0)
             {
                 --voice.remainingSamples;
                 if (voice.remainingSamples <= 0)
-                    voice.active = false;
+                    startFade(voice, static_cast<int>(0.006 * currentSampleRate)); // note end: 6 ms release
             }
         }
 

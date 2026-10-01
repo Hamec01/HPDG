@@ -56,6 +56,12 @@ private:
         int pendingRemainingSamples = -1;
         bool pendingGlide = false;
         int pendingGlideDurationSamples = 0;
+
+        // Choke / release: a cut scheduled at a sample offset (when the next hit of the same
+        // lane starts) and a short linear fade so nothing ends with a click.
+        int cutDelaySamples = -1;
+        int fadeSamplesRemaining = 0;
+        int fadeTotalSamples = 0;
     };
 
     static constexpr int kMaxVoices = 64;
@@ -63,8 +69,14 @@ private:
     Voice* allocateVoice(TrackType incomingTrack);
     Voice* findActiveVoice(TrackType trackType);
     void applyPendingTransition(Voice& voice);
+    void scheduleCut(TrackType trackType, int sampleOffset);
+    void startFade(Voice& voice, int fadeSamples) const;
+    // Advances cut / delay / fade state for one output sample. Returns false while the voice is
+    // silent this sample (not started yet, or just ended); gain is the envelope multiplier.
+    bool stepVoice(Voice& voice, float& gain);
 
     std::array<Voice, kMaxVoices> voices {};
     double currentSampleRate = 44100.0;
+    double rateScale = 1.0; // bank rate / device rate
 };
 } // namespace bbg

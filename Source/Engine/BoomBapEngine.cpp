@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "../Core/TrackRegistry.h"
+#include "BoomBap/BoomBapBassGenerator.h"
 #include "HiResTiming.h"
 #include "PatternPerformanceTransformEngine.h"
 #include "StyleInfluence.h"
@@ -85,6 +86,14 @@ void dedupeAndSortNotes(std::vector<NoteEvent>& notes)
 
         if (a.isGhost != b.isGhost)
             return !a.isGhost;
+
+        // stepIndexOf credits a hit pushed up to 1/64 early to the next step, so the last hit
+        // of a bar can share a step with the next bar's downbeat. Keep the hit closest to the
+        // grid line (the bar's anchor) and drop the early push (a flam), never the downbeat.
+        const int aDistance = std::abs(a.gridTick - stepIndexOf(a) * HiResTiming::kTicks1_16);
+        const int bDistance = std::abs(b.gridTick - stepIndexOf(b) * HiResTiming::kTicks1_16);
+        if (aDistance != bDistance)
+            return aDistance < bDistance;
 
         return a.velocity > b.velocity;
     });
@@ -300,6 +309,15 @@ void BoomBapEngine::generateWithAlgebra(PatternProject& project, const BoomBapSt
         }
     }
 
+    // Bass is opt-in in Boom Bap: only an enabled (and unlocked) bass lane gets a line, written
+    // after the kick so it can lock with it.
+    if (auto* bass = findTrack(project, TrackType::Sub808); bass != nullptr && !bass->locked && bass->enabled)
+    {
+        std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 7919 + 0x6261));
+        bass->notes = BoomBapBassGenerator::generate(project, rng);
+        bass->sub808Notes.clear();
+    }
+
     project.phraseLengthBars = algebraParams.bars;
     project.phraseRoleSummary = "statement | confirmation | development | turnaround";
     project.generationDebugReport = "ALGEBRA\n" + pattern.debugSummary;
@@ -322,6 +340,22 @@ void BoomBapEngine::generateTrackNew(PatternProject& project, TrackType trackTyp
 {
     applyBoomBapStyleInfluence(project);
     auto* track = findTrack(project, trackType);
+    if (trackType == TrackType::Sub808 && track != nullptr && !track->locked)
+    {
+        markFreshLane(*track, getBoomBapProfile(project.params.boombapSubstyle));
+        if (track->enabled)
+        {
+            std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 7919 + project.generationCounter * 31 + 0x6261));
+            track->notes = BoomBapBassGenerator::generate(project, rng);
+        }
+        else
+        {
+            track->notes.clear();
+        }
+        track->sub808Notes.clear();
+        PatternPerformanceTransformEngine::captureBasePatterns(project, { TrackType::Sub808 });
+        return;
+    }
     if (track == nullptr || track->locked || algebraLaneForTrack(trackType) < 0 || isAlgebraRetiredTrack(trackType))
         return;
 

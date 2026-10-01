@@ -1274,7 +1274,10 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
     analysis.bpmMatchesHost = best.host > 0.0f;
     analysis.swingPercent = 50.0f * (1.0f + best.swing);
     const float runnerUp = analysis.tempoCandidates.size() > 1 ? analysis.tempoCandidates[1].score : 0.0f;
-    analysis.tempoConfidence = juce::jlimit(0.0f, 1.0f, 0.5f * best.gridFit + 0.2f * best.backbeat + 0.15f * best.lengthFit + std::min(0.3f, best.score - runnerUp));
+    // A handful of events (chord changes in a pad, a lone stab) fit almost any grid: scale the
+    // confidence by how much rhythmic evidence there is (full credit from 16 hits on).
+    const float evidence = juce::jlimit(0.25f, 1.0f, static_cast<float>(analysis.hits.size()) / 16.0f);
+    analysis.tempoConfidence = evidence * juce::jlimit(0.0f, 1.0f, 0.5f * best.gridFit + 0.2f * best.backbeat + 0.15f * best.lengthFit + std::min(0.3f, best.score - runnerUp));
 
     // An exactly trimmed loop: whole number of bars, starting on its first hit.
     analysis.exactLoop = best.lengthFit >= 0.5f

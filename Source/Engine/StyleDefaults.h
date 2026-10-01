@@ -50,6 +50,7 @@ enum class GenerationBpmSource
 {
     HostSync,
     BpmLock,
+    SampleTempo,          // an analysed sample's own (trusted) tempo
     DeterministicStyleRange
 };
 

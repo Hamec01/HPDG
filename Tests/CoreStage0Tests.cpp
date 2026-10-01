@@ -4142,7 +4142,8 @@ void validateBoomBapAlgebraProjectCore(const PatternProject& project, const juce
         expect(!hasStep(kick, beat2) && !hasStep(kick, beat4),
                label + " kick should not collide with the main snare backbeat.");
         expect(countInBar(kick, bar) >= 1 && countInBar(kick, bar) <= 4,
-               label + " should keep kick rhetoric focused.");
+               label + " should keep kick rhetoric focused (bar " + juce::String(bar + 1) + " of "
+                   + juce::String(project.params.bars) + " has " + juce::String(countInBar(kick, bar)) + " kicks).");
         expect(countInBar(hat, bar) >= 3 && countInBar(hat, bar) <= 12,
                label + " should keep a readable hat carrier without trap noise carpet.");
     }
@@ -4516,6 +4517,129 @@ void testBoomBapJazzyPocketGenerationSmoke()
                "BoomBap Jazzy should add at least one snare comping ghost across a phrase.");
         expect(phraseKickCompHits > 0,
                "BoomBap Jazzy kick should add a small low comping gesture on top of feathering.");
+    }
+}
+
+// Boom Bap bass is opt-in: off by default (and then never generated); when enabled it is a
+// line - root on every downbeat, nothing on the snare backbeat, no overlapping notes, in key.
+void testBoomBapBassOptInAndLine()
+{
+    BoomBapEngine engine;
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.bars = 4;
+        const auto& lane = getLaneStyleDefaults(getGenreStyleDefaults(GenreType::BoomBap, 0), TrackType::Sub808);
+        expect(!lane.enabledByDefault, "Boom Bap bass lane must be off by default.");
+        if (auto* bass = findTrackByType(project, TrackType::Sub808); bass != nullptr)
+            bass->enabled = lane.enabledByDefault;
+        engine.generate(project);
+        const auto* bass = findTrackByType(project, TrackType::Sub808);
+        expect(bass == nullptr || bass->notes.empty(), "A disabled Boom Bap bass lane must stay empty.");
+    }
+
+    const std::array<int, 7> minorScale { 0, 2, 3, 5, 7, 8, 10 };
+    const std::array<int, 7> majorScale { 0, 2, 4, 5, 7, 9, 11 };
+    for (int seed = 1; seed <= 60; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::BoomBap;
+        project.params.boombapSubstyle = seed % 6;
+        project.params.bars = seed % 3 == 0 ? 8 : 4;
+        project.params.seed = seed * 13;
+        project.params.keyRoot = seed % 12;
+        project.params.scaleMode = seed % 2;
+        project.params.densityAmount = 0.2f + 0.1f * static_cast<float>(seed % 7);
+        auto* bassLane = findTrackByType(project, TrackType::Sub808);
+        expect(bassLane != nullptr, "Boom Bap project needs the bass (Sub808) lane.");
+        bassLane->enabled = true;
+
+        engine.generate(project);
+        const auto* bass = findTrackByType(project, TrackType::Sub808);
+        const auto* snare = findTrackByType(project, TrackType::Snare);
+        const juce::String label = "seed " + juce::String(seed) + ": ";
+        expect(!bass->notes.empty(), label + "enabled bass produced no notes.");
+
+        const auto& scale = project.params.scaleMode == 1 ? majorScale : minorScale;
+        auto inKey = [&](int pitch)
+        {
+            const int degree = ((pitch % 12) - project.params.keyRoot + 12) % 12;
+            return std::find(scale.begin(), scale.end(), degree) != scale.end()
+                || degree == (scale[4] + 7) % 12; // fifth of a scale chord may be chromatic only via its root's fifth
+        };
+
+        const int patternTicks = project.params.bars * TimingGrid::TicksPerBar4_4;
+        for (int bar = 0; bar < project.params.bars; ++bar)
+        {
+            const bool downbeat = std::any_of(bass->notes.begin(), bass->notes.end(), [bar](const NoteEvent& note)
+            {
+                return note.gridTick == bar * TimingGrid::TicksPerBar4_4;
+            });
+            expect(downbeat, label + "bar " + juce::String(bar + 1) + " has no bass note on beat 1.");
+        }
+
+        for (size_t i = 0; i < bass->notes.size(); ++i)
+        {
+            const auto& note = bass->notes[i];
+            const int step = note.gridTick / TimingGrid::Sixteenth;
+            const bool onBackbeatSnare = (step % 16 == 4 || step % 16 == 12) && snare != nullptr
+                && std::any_of(snare->notes.begin(), snare->notes.end(), [step](const NoteEvent& s) { return !s.isGhost && s.gridTick / TimingGrid::Sixteenth == step; });
+            expect(!onBackbeatSnare, label + "bass note on the snare backbeat at step " + juce::String(step));
+            expect(note.pitch >= 31 && note.pitch <= 59, label + "bass pitch out of register: " + juce::String(note.pitch));
+            if (note.semanticRole != "bass_kick") // kick notes may use the chord fifth
+                expect(inKey(note.pitch), label + "bass note out of key: " + juce::String(note.pitch));
+            const int end = note.gridTick + note.lengthTicks;
+            const int nextStart = i + 1 < bass->notes.size() ? bass->notes[i + 1].gridTick : patternTicks;
+            expect(end <= nextStart, label + "bass notes overlap at tick " + juce::String(note.gridTick));
+            expect(note.lengthTicks >= TimingGrid::ThirtySecond, label + "bass note too short");
+        }
+    }
+}
+
+// Derived bars thin notes out at random (dropout / pickup removal). The downbeat kick must
+// survive that in every bar, for every substyle and phrase length.
+void testBoomBapNoBarWithoutKick()
+{
+    BoomBapEngine engine;
+    for (int substyle = 0; substyle < 6; ++substyle)
+    {
+        for (const int bars : { 4, 8 })
+        {
+            for (int seed = 1; seed <= 80; ++seed)
+            {
+                auto project = createDefaultProject();
+                project.params.genre = GenreType::BoomBap;
+                project.params.boombapSubstyle = substyle;
+                project.params.bars = bars;
+                project.params.seed = 6200 + seed * 7 + substyle;
+                project.params.bpm = 92.0f;
+                project.params.swingPercent = 58.5f;
+                project.params.densityAmount = 0.25f + 0.1f * static_cast<float>(seed % 6);
+                project.params.timingAmount = 0.38f;
+                project.params.humanizeAmount = 0.28f;
+                engine.generate(project);
+
+                const auto* kick = findTrackByType(project, TrackType::Kick);
+                expect(kick != nullptr, "BoomBap project needs a Kick track.");
+                for (int bar = 0; bar < bars; ++bar)
+                {
+                    const bool hasKick = std::any_of(kick->notes.begin(), kick->notes.end(), [bar](const NoteEvent& note)
+                    {
+                        return stepIndexOf(note) / 16 == bar;
+                    });
+                    if (!hasKick)
+                    {
+                        juce::String kicks;
+                        for (const auto& note : kick->notes)
+                            kicks << stepIndexOf(note) << "[" << note.gridTick << "+" << note.timingOffsetTicks
+                                  << "](" << note.semanticRole << ") ";
+                        expect(false, "BoomBap substyle " + juce::String(substyle) + ", " + juce::String(bars)
+                                          + " bars, seed " + juce::String(project.params.seed)
+                                          + ": bar " + juce::String(bar + 1) + " has no kick. Kick steps: " + kicks);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -6430,6 +6554,8 @@ int main()
     failures += runTest("BoomBap Dusty pocket generation smoke", testBoomBapDustyPocketGenerationSmoke);
     failures += runTest("BoomBap Jazzy pocket generation smoke", testBoomBapJazzyPocketGenerationSmoke);
     failures += runTest("BoomBap Gold pocket generation smoke", testBoomBapGoldPocketGenerationSmoke);
+    failures += runTest("BoomBap never leaves a bar without a kick", testBoomBapNoBarWithoutKick);
+    failures += runTest("BoomBap bass is opt-in and plays a line", testBoomBapBassOptInAndLine);
     failures += runTest("BoomBap Russian Underground pocket generation smoke", testBoomBapRussianUndergroundPocketGenerationSmoke);
     failures += runTest("BoomBap LofiRap pocket generation smoke", testBoomBapLofiRapPocketGenerationSmoke);
     return failures == 0 ? 0 : 1;

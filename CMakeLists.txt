@@ -91,6 +91,7 @@ target_sources(HPDG
     Source/Engine/SubstyleRuleEnforcer.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapBassGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/BoomBap/BoomBapGenerationContext.cpp
     Source/Engine/Rap/RapStyleProfile.cpp
@@ -172,6 +173,7 @@ add_executable(HPDG_CoreTests
     Source/Engine/StyleInfluence.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapBassGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/BoomBap/BoomBapGenerationContext.cpp
     Source/Engine/RapEngine.cpp
@@ -242,6 +244,7 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/StyleInfluence.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapBassGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/BoomBap/BoomBapGenerationContext.cpp
     Source/Engine/RapEngine.cpp
@@ -281,6 +284,7 @@ add_executable(HPDG_BoomBapBatchAudit
     Source/Engine/GenerationModel/CandidateSelectionEngine.cpp
     Source/Engine/GenerationModel/StyleTargetModel.cpp
     Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.cpp
+    Source/Engine/BoomBap/BoomBapBassGenerator.cpp
     Source/Engine/BoomBap/BoomBapClassicPatternScorer.cpp
     Source/Engine/BoomBap/BoomBapGenerationContext.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp

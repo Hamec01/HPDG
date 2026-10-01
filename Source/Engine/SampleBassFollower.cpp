@@ -22,8 +22,6 @@ SampleBassFollowReport SampleBassFollower::apply(PatternProject& project,
     if (!harmony.valid || harmony.bass.empty() || sub == nullptr || sub->locked || sub->notes.empty() || bpm <= 20.0)
         return report;
 
-    const int root = juce::jlimit(0, 11, project.params.keyRoot);
-    const int baseRootPitch = juce::jlimit(24, 60, 36 + root);
     const double secondsPerTick = 60.0 / (bpm * TimingGrid::PPQ);
     const double sampleEnd = harmony.bass.back().endSeconds;
     const double loopLength = sampleEnd - originSeconds;
@@ -42,11 +40,12 @@ SampleBassFollowReport SampleBassFollower::apply(PatternProject& project,
             continue;
         }
 
+        // The sample's pitch class, in the octave nearest to the note the genre engine chose:
+        // keeps each genre's register (Boom Bap bass G1-B2, trap 808 around the key root) and
+        // the engine's octave jumps.
         const int pitchClass = segment->midiNote % 12;
-        int pitch = baseRootPitch + (pitchClass - root + 12) % 12;
-        if (note.pitch - baseRootPitch >= 12) // keep the engine's octave jump
-            pitch += 12;
-        note.pitch = juce::jlimit(24, 60, pitch);
+        const int shift = ((pitchClass - note.pitch % 12) % 12 + 12 + 6) % 12 - 6; // -6..+5 semitones
+        note.pitch = juce::jlimit(24, 60, note.pitch + shift);
         note.semanticRole = note.semanticRole.isEmpty() ? juce::String("sample_bass") : note.semanticRole + "|sample_bass";
         ++report.notesFollowed;
     }

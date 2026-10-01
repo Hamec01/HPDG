@@ -117,10 +117,12 @@ std::vector<juce::String> preferredSampleTagsForProject(const PatternProject& pr
     return {};
 }
 
-float playbackRateForTrackPitch(TrackType track, int pitch)
+// rootPitchClass: the note the selected sample is tuned to (from its "- <note>" name), so a
+// bass sample in D plays a written D2 at its original speed instead of assuming every sample is C.
+float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass)
 {
     const auto* info = TrackRegistry::find(track);
-    const int basePitch = info != nullptr ? info->defaultMidiNote : 36;
+    const int basePitch = (info != nullptr ? info->defaultMidiNote : 36) + juce::jlimit(0, 11, rootPitchClass);
     const int clampedPitch = juce::jlimit(0, 127, pitch);
     return std::pow(2.0f, static_cast<float>(clampedPitch - basePitch) / 12.0f);
 }
@@ -2600,7 +2602,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     for (const auto& audition : pendingPreviewNotes)
     {
         PreviewEngine::TriggerOptions options;
-        options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch);
+        options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch, laneSampleBank.getSelectedRootPitchClass(audition.track));
         if (audition.track == TrackType::Sub808)
         {
             if (const auto* subTrack = findTrackState(TrackType::Sub808); subTrack != nullptr)
@@ -2672,7 +2674,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     PreviewEngine::TriggerOptions options;
                     if (event.track == TrackType::Sub808)
                     {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch);
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track));
                         options.legato = event.legato;
                         options.glide = event.glide;
                         options.mono = event.mono;
@@ -2734,7 +2736,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     PreviewEngine::TriggerOptions options;
                     if (event.track == TrackType::Sub808)
                     {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch);
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track));
                         options.legato = event.legato;
                         options.glide = event.glide;
                         options.mono = event.mono;
@@ -2913,28 +2915,38 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
     TransportSnapshot transport;
     decltype(currentAnalysisBundle.harmony) harmony {};
     bool followSampleKey = false;
+    bool boomBapBassEnabled = false;
+    double sampleBpm = 0.0;
     {
         std::scoped_lock lock(projectMutex);
         transport = lastTransport;
         harmony = currentAnalysisBundle.harmony;
+        sampleBpm = analysisReady ? currentAnalysisBundle.sampleBpm : 0.0;
+        boomBapBassEnabled = genreHasActiveBassLocked(GenreType::BoomBap);
         followSampleKey = analysisReady
             && analysisMode == AnalysisMode::GenerateFromSample
             && SampleBassFollower::shouldApplyKey(harmony);
     }
 
     const auto initialParams = buildParamsFromState(transport);
-    const auto bpmSelection = resolveGenerationBpm(initialParams,
-                                                   initialParams.bpm,
-                                                   isBpmLocked(apvts),
-                                                   transport.hasHostTempo && transport.bpm > 0.0
-                                                       ? std::optional<double>(transport.bpm)
-                                                       : std::nullopt);
+    auto bpmSelection = resolveGenerationBpm(initialParams,
+                                             initialParams.bpm,
+                                             isBpmLocked(apvts),
+                                             transport.hasHostTempo && transport.bpm > 0.0
+                                                 ? std::optional<double>(transport.bpm)
+                                                 : std::nullopt);
+    // Tempo priority: DAW sync > BPM lock > a loaded, analysed sample's own tempo > style range.
+    // With a sample in place every generation stays at the sample's tempo instead of re-rolling.
+    if (bpmSelection.source == GenerationBpmSource::DeterministicStyleRange && sampleBpm > 20.0)
+        bpmSelection = { static_cast<float>(sampleBpm), GenerationBpmSource::SampleTempo };
     if (std::abs(bpmSelection.bpm - initialParams.bpm) > 0.05f)
         setFloatParameterValue(ParamIds::bpm, bpmSelection.bpm);
 
     // Guide mode with a tonal sample: the 808 plays in the sample's key (set before the engine
     // runs so its own pitch choices are already in key; shown in the key / scale controls).
-    const bool applySampleKey = followSampleKey && initialParams.genre == GenreType::Trap;
+    // Trap always has its 808; Boom Bap only when the user enabled the bass lane.
+    const bool applySampleKey = followSampleKey
+        && (initialParams.genre == GenreType::Trap || (initialParams.genre == GenreType::BoomBap && boomBapBassEnabled));
     if (applySampleKey)
     {
         setBassKeyRootChoice(harmony.keyRoot);
@@ -4235,6 +4247,17 @@ void BoomBapGeneratorAudioProcessor::updateSampleAwareContextLocked()
     currentSampleContext.enabled = sampleAwareModeEnabled && analysisReady && modeUsesGuidance;
 }
 
+bool BoomBapGeneratorAudioProcessor::genreHasActiveBassLocked(GenreType genre) const
+{
+    // Trap always has its 808. Boom Bap's bass is opt-in: only when the user enabled the lane.
+    if (genre == GenreType::Trap)
+        return true;
+    if (genre != GenreType::BoomBap)
+        return false;
+    const auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+    return bass != nullptr && bass->enabled;
+}
+
 bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
 {
     lastSampleApplyDebug.clear();
@@ -4262,8 +4285,8 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
         if (report.addedKicks > 0)
             changed.insert(TrackType::Kick);
 
-        // 808 follows the sample's bass (Trap has an 808 lane; Boom Bap has none yet).
-        if (project.params.genre == GenreType::Trap)
+        // The 808 (Trap) / bass line (Boom Bap, when the user enabled it) follows the sample's bass.
+        if (genreHasActiveBassLocked(project.params.genre))
         {
             const auto bassReport = SampleBassFollower::apply(project,
                                                               currentAnalysisBundle.harmony,
