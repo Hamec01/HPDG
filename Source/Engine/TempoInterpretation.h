@@ -13,6 +13,18 @@ enum class TempoBand
     Fast
 };
 
+// The tempo a genre generates at over a loaded sample of `sampleBpm`. Drum & Bass runs at
+// double time over a half-time loop (77 -> 154): one sample bar = two DnB bars, still in sync.
+// Other genres take the sample tempo as it is.
+inline float generationBpmForSample(float sampleBpm, GenreType genre)
+{
+    float bpm = std::clamp(sampleBpm, 40.0f, 240.0f);
+    if (genre == GenreType::DnB)
+        while (bpm < 120.0f)
+            bpm *= 2.0f;
+    return bpm;
+}
+
 inline float interpretedBpmForGenre(float bpm, GenreType genre)
 {
     const float clamped = std::clamp(bpm, 40.0f, 240.0f);
@@ -21,6 +33,10 @@ inline float interpretedBpmForGenre(float bpm, GenreType genre)
     // - Trap/Drill are commonly authored/perceived in double-time at low host tempos (e.g. 70 -> 140).
     // - BoomBap is commonly authored/perceived in half-time at high host tempos (e.g. 140 -> 70).
     if ((genre == GenreType::Trap || genre == GenreType::Drill) && clamped <= 90.0f)
+        return std::clamp(clamped * 2.0f, 40.0f, 240.0f);
+
+    // - DnB is authored at ~174; a half-time host tempo (~87) means the same groove.
+    if (genre == GenreType::DnB && clamped <= 100.0f)
         return std::clamp(clamped * 2.0f, 40.0f, 240.0f);
 
     if (genre == GenreType::BoomBap && clamped >= 120.0f)

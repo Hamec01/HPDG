@@ -13,6 +13,7 @@
 #include "../Core/PatternProjectSerialization.h"
 #include "../Core/ProjectStateController.h"
 #include "../Core/TrackRegistry.h"
+#include "../Engine/TempoInterpretation.h"
 #include "../Engine/ExtractPatternBuilder.h"
 #include "../Engine/SampleGuideAccents.h"
 #include "../Engine/SampleBassFollower.h"
@@ -102,6 +103,7 @@ GenreType genreFromChoice(int choice)
         case 1: return kShowRapAndDrillGenres ? GenreType::Rap : GenreType::BoomBap;
         case 2: return GenreType::Trap;
         case 3: return kShowRapAndDrillGenres ? GenreType::Drill : GenreType::Trap;
+        case 4: return GenreType::DnB;
         default: return GenreType::BoomBap;
     }
 }
@@ -479,6 +481,7 @@ private:
             case 1: choices = getRapSubstyleNames(); substyleParamId = ParamIds::rapSubstyle; break;
             case 2: choices = getTrapSubstyleNames(); substyleParamId = ParamIds::trapSubstyle; break;
             case 3: choices = getDrillSubstyleNames(); substyleParamId = ParamIds::drillSubstyle; break;
+            case 4: choices = getDnBSubstyleNames(); substyleParamId = ParamIds::dnbSubstyle; break;
             case 0:
             default: choices = getBoomBapSubstyleNames(); substyleParamId = ParamIds::boombapSubstyle; break;
         }
@@ -1594,6 +1597,7 @@ juce::String genreDisplayName(GenreType genre)
         case GenreType::Rap: return "Rap";
         case GenreType::Trap: return "Trap";
         case GenreType::Drill: return "Drill";
+        case GenreType::DnB: return "DnB";
         case GenreType::BoomBap:
         default: return "Boom Bap";
     }
@@ -2354,7 +2358,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
                                                                    1));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::genre,
                                                                    "Genre",
-                                                                   juce::StringArray { "Boom Bap", "Rap", "Trap", "Drill" },
+                                                                   juce::StringArray { "Boom Bap", "Rap", "Trap", "Drill", "DnB" },
                                                                    0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::sampleApplyMode,
                                                                    "Sample Apply Mode",
@@ -2380,6 +2384,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::drillSubstyle,
                                                                    "Drill Substyle",
                                                                    getDrillSubstyleNames(),
+                                                                   0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::dnbSubstyle,
+                                                                   "DnB Substyle",
+                                                                   getDnBSubstyleNames(),
                                                                    0));
     params.push_back(std::make_unique<juce::AudioParameterInt>(ParamIds::seed, "Seed", 1, 999999, 1));
     params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::seedLock, "Seed Lock", false));
@@ -2964,6 +2972,8 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
     lastAppliedRapSubstyleChoice = rapSubstyleValue != nullptr ? static_cast<int>(rapSubstyleValue->load()) : 0;
     lastAppliedTrapSubstyleChoice = trapSubstyleValue != nullptr ? static_cast<int>(trapSubstyleValue->load()) : 0;
     lastAppliedDrillSubstyleChoice = drillSubstyleValue != nullptr ? static_cast<int>(drillSubstyleValue->load()) : 0;
+    const auto* dnbSubstyleValue = apvts.getRawParameterValue(ParamIds::dnbSubstyle);
+    lastAppliedDnBSubstyleChoice = dnbSubstyleValue != nullptr ? static_cast<int>(dnbSubstyleValue->load()) : 0;
 
     {
         std::scoped_lock lock(projectMutex);
@@ -2987,6 +2997,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
     decltype(currentAnalysisBundle.harmony) harmony {};
     bool followSampleKey = false;
     bool boomBapBassEnabled = false;
+    bool dnbBassEnabled = false;
     double sampleBpm = 0.0;
     {
         std::scoped_lock lock(projectMutex);
@@ -2998,6 +3009,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
         const auto& breakAnalysis = currentAnalysisBundle.breakAnalysis;
         sampleBpm = analysisReady && breakAnalysis.valid ? breakAnalysis.bpm : 0.0;
         boomBapBassEnabled = genreHasActiveBassLocked(GenreType::BoomBap);
+        dnbBassEnabled = genreHasActiveBassLocked(GenreType::DnB);
         followSampleKey = analysisReady
             && analysisMode == AnalysisMode::GenerateFromSample
             && SampleBassFollower::shouldApplyKey(harmony);
@@ -3013,7 +3025,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
     // Tempo priority: DAW sync > BPM lock > a loaded, analysed sample's own tempo > style range.
     // With a sample in place every generation stays at the sample's tempo instead of re-rolling.
     if (bpmSelection.source == GenerationBpmSource::DeterministicStyleRange && sampleBpm > 20.0)
-        bpmSelection = { static_cast<float>(sampleBpm), GenerationBpmSource::SampleTempo };
+        bpmSelection = { generationBpmForSample(static_cast<float>(sampleBpm), initialParams.genre), GenerationBpmSource::SampleTempo };
     if (std::abs(bpmSelection.bpm - initialParams.bpm) > 0.05f)
         setFloatParameterValue(ParamIds::bpm, bpmSelection.bpm);
 
@@ -3021,7 +3033,8 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
     // runs so its own pitch choices are already in key; shown in the key / scale controls).
     // Trap always has its 808; Boom Bap only when the user enabled the bass lane.
     const bool applySampleKey = followSampleKey
-        && (initialParams.genre == GenreType::Trap || (initialParams.genre == GenreType::BoomBap && boomBapBassEnabled));
+        && (initialParams.genre == GenreType::Trap || (initialParams.genre == GenreType::BoomBap && boomBapBassEnabled)
+            || (initialParams.genre == GenreType::DnB && dnbBassEnabled));
     if (applySampleKey)
     {
         setBassKeyRootChoice(harmony.keyRoot);
@@ -3046,6 +3059,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
                           switch (working.params.genre)
                           {
                               case GenreType::Drill: drillEngine.generate(working); break;
+                              case GenreType::DnB: dnbEngine.generate(working); break;
                               case GenreType::Rap: rapEngine.generate(working); break;
                               case GenreType::Trap: trapEngine.generate(working); break;
                               case GenreType::BoomBap:
@@ -3070,11 +3084,13 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
         if (adjustParams)
             adjustParams(working.params);
         working.sampleContext = currentSampleContext;
+        working.generationDebugReport.clear(); // only this pass's engine report is kept below
     }
 
     // The genre engine runs on a private copy without the lock: the audio thread keeps playing
     // the current pattern meanwhile, and switches to the new one at the swap below.
     engineStep(working);
+    const auto engineReport = working.generationDebugReport;
 
     std::scoped_lock lock(projectMutex);
     project = std::move(working);
@@ -3089,6 +3105,8 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
                                                                analysisReady);
     if (lastSampleApplyDebug.isNotEmpty())
         project.generationDebugReport += "\n" + lastSampleApplyDebug;
+    if (engineReport.isNotEmpty())
+        project.generationDebugReport += "\n" + engineReport; // the genre engine's own summary
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -3105,6 +3123,7 @@ void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
                           switch (working.params.genre)
                           {
                               case GenreType::Drill: drillEngine.generateTrackNew(working, track); break;
+                              case GenreType::DnB: dnbEngine.generateTrackNew(working, track); break;
                               case GenreType::Rap: rapEngine.generateTrackNew(working, track); break;
                               case GenreType::Trap: trapEngine.generateTrackNew(working, track); break;
                               case GenreType::BoomBap:
@@ -3125,6 +3144,7 @@ void BoomBapGeneratorAudioProcessor::regenerateTrack(TrackType track)
                           switch (working.params.genre)
                           {
                               case GenreType::Drill: drillEngine.regenerateTrackVariation(working, track); break;
+                              case GenreType::DnB: dnbEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::Rap: rapEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::Trap: trapEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::BoomBap:
@@ -3154,6 +3174,7 @@ void BoomBapGeneratorAudioProcessor::mutatePattern()
                           switch (working.params.genre)
                           {
                               case GenreType::Drill: drillEngine.mutatePattern(working); break;
+                              case GenreType::DnB: dnbEngine.mutatePattern(working); break;
                               case GenreType::Rap: rapEngine.mutatePattern(working); break;
                               case GenreType::Trap: trapEngine.mutatePattern(working); break;
                               case GenreType::BoomBap:
@@ -3174,6 +3195,7 @@ void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
                           switch (working.params.genre)
                           {
                               case GenreType::Drill: drillEngine.mutateTrack(working, track); break;
+                              case GenreType::DnB: dnbEngine.mutateTrack(working, track); break;
                               case GenreType::Rap: rapEngine.mutateTrack(working, track); break;
                               case GenreType::Trap: trapEngine.mutateTrack(working, track); break;
                               case GenreType::BoomBap:
@@ -4334,6 +4356,9 @@ void BoomBapGeneratorAudioProcessor::updateSampleAwareContextLocked()
         mood.bpm = static_cast<float>(breakAnalysis.bpm);
     }
     currentSampleContext.mood = mood;
+    currentSampleContext.harmony = analysisReady ? currentAnalysisBundle.harmony : SampleHarmony {};
+    currentSampleContext.harmonyBpm = currentAnalysisBundle.harmonyBpm;
+    currentSampleContext.harmonyOriginSeconds = currentAnalysisBundle.harmonyOriginSeconds;
 }
 
 bool BoomBapGeneratorAudioProcessor::genreHasActiveBassLocked(GenreType genre) const
@@ -4341,7 +4366,7 @@ bool BoomBapGeneratorAudioProcessor::genreHasActiveBassLocked(GenreType genre) c
     // Trap always has its 808. Boom Bap's bass is opt-in: only when the user enabled the lane.
     if (genre == GenreType::Trap)
         return true;
-    if (genre != GenreType::BoomBap)
+    if (genre != GenreType::BoomBap && genre != GenreType::DnB)
         return false;
     const auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
     return bass != nullptr && bass->enabled;
@@ -4375,7 +4400,7 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
             changed.insert(TrackType::Kick);
 
         // The 808 (Trap) / bass line (Boom Bap, when the user enabled it) follows the sample's bass.
-        if (genreHasActiveBassLocked(project.params.genre))
+        if (genreHasActiveBassLocked(project.params.genre) && project.params.genre != GenreType::DnB)
         {
             const auto bassReport = SampleBassFollower::apply(project,
                                                               currentAnalysisBundle.harmony,
@@ -4443,6 +4468,7 @@ bool BoomBapGeneratorAudioProcessor::extractPatternFromAnalyzedSampleLocked()
         switch (project.params.genre)
         {
             case GenreType::Drill: drillEngine.generate(project); break;
+            case GenreType::DnB: dnbEngine.generate(project); break;
             case GenreType::Rap: rapEngine.generate(project); break;
             case GenreType::Trap: trapEngine.generate(project); break;
             case GenreType::BoomBap:
@@ -4485,13 +4511,16 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
     const int rapChoice = rapSubstyleValue != nullptr ? static_cast<int>(rapSubstyleValue->load()) : 0;
     const int trapChoice = trapSubstyleValue != nullptr ? static_cast<int>(trapSubstyleValue->load()) : 0;
     const int drillChoice = drillSubstyleValue != nullptr ? static_cast<int>(drillSubstyleValue->load()) : 0;
+    const auto* dnbSubstyleValue = apvts.getRawParameterValue(ParamIds::dnbSubstyle);
+    const int dnbChoice = dnbSubstyleValue != nullptr ? static_cast<int>(dnbSubstyleValue->load()) : 0;
 
     const bool changed = force
         || genreChoice != lastAppliedGenreChoice
         || boombapChoice != lastAppliedBoomBapSubstyleChoice
         || rapChoice != lastAppliedRapSubstyleChoice
         || trapChoice != lastAppliedTrapSubstyleChoice
-        || drillChoice != lastAppliedDrillSubstyleChoice;
+        || drillChoice != lastAppliedDrillSubstyleChoice
+        || dnbChoice != lastAppliedDnBSubstyleChoice;
     if (!changed)
         return;
 
@@ -4505,6 +4534,8 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
         selectedSubstyle = trapChoice;
     else if (genreType == GenreType::Drill)
         selectedSubstyle = drillChoice;
+    else if (genreType == GenreType::DnB)
+        selectedSubstyle = dnbChoice;
     const auto& style = getGenreStyleDefaults(genreType, selectedSubstyle);
 
     setFloatParameterValue(ParamIds::swingPercent, style.swingDefault);
@@ -4534,6 +4565,7 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
     lastAppliedRapSubstyleChoice = rapChoice;
     lastAppliedTrapSubstyleChoice = trapChoice;
     lastAppliedDrillSubstyleChoice = drillChoice;
+    lastAppliedDnBSubstyleChoice = dnbChoice;
 }
 
 GeneratorParams BoomBapGeneratorAudioProcessor::buildParamsFromState(const TransportSnapshot& snapshot) const
@@ -4578,6 +4610,8 @@ GeneratorParams BoomBapGeneratorAudioProcessor::buildParamsFromState(const Trans
     p.rapSubstyle = rapSubstyleValue != nullptr ? static_cast<int>(rapSubstyleValue->load()) : 0;
     p.trapSubstyle = trapSubstyleValue != nullptr ? static_cast<int>(trapSubstyleValue->load()) : 0;
     p.drillSubstyle = drillSubstyleValue != nullptr ? static_cast<int>(drillSubstyleValue->load()) : 0;
+    const auto* dnbSubstyleValue = apvts.getRawParameterValue(ParamIds::dnbSubstyle);
+    p.dnbSubstyle = dnbSubstyleValue != nullptr ? static_cast<int>(dnbSubstyleValue->load()) : 0;
     p.seed = seedValue != nullptr ? static_cast<int>(seedValue->load()) : 1;
     p.seedLock = seedLockValue != nullptr && seedLockValue->load() > 0.5f;
 
@@ -5544,8 +5578,9 @@ void BoomBapGeneratorAudioProcessor::renderSamplePlayback(juce::AudioBuffer<floa
             patternPosition = ((patternPosition % sync.patternLength) + sync.patternLength) % sync.patternLength;
         }
         const double barPosition = std::fmod(static_cast<double>(patternPosition) / samplesPerProjectBar, sampleBars);
-        const double seconds = sampleTimeline.startSeconds + barPosition * sampleBarSeconds;
-        if (seconds < 0.0 || seconds >= duration)
+        const double seconds = SampleSourceAudio::loopPlaybackSeconds(sampleTimeline.startSeconds, barPosition, sampleBarSeconds,
+                                                                       sampleBars, duration);
+        if (seconds < 0.0)
             continue;
         mixAt(i, seconds, gain);
     }

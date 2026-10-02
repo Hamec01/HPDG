@@ -5,6 +5,7 @@
 #include "LaneEvidenceMap.h"
 #include "SampleApplyMode.h"
 #include "SampleApplyWeights.h"
+#include "SampleHarmonyAnalyzer.h"
 #include "SampleTranscription.h"
 
 namespace bbg
@@ -44,5 +45,12 @@ struct SampleAwareGenerationContext
     bool preferCopyDrums = false;
     bool preferCopyBass = false;
     SampleMood mood;
+
+    // Key / bass line of the loaded sample on its own timeline (seconds), with the tempo and
+    // beat-1 origin to map it onto the pattern grid. Used by bass engines that read the
+    // sample's harmony themselves (DnB) instead of re-pitching afterwards.
+    SampleHarmony harmony;
+    double harmonyBpm = 0.0;
+    double harmonyOriginSeconds = 0.0;
 };
 } // namespace bbg

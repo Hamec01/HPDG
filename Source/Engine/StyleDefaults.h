@@ -74,4 +74,5 @@ juce::StringArray getBoomBapSubstyleNames();
 juce::StringArray getRapSubstyleNames();
 juce::StringArray getTrapSubstyleNames();
 juce::StringArray getDrillSubstyleNames();
+juce::StringArray getDnBSubstyleNames();
 } // namespace bbg

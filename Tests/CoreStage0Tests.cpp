@@ -2,6 +2,7 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -16,6 +17,9 @@
 #include "../Source/Engine/BoomBapEngine.h"
 #include "../Source/Engine/BoomBap/BoomBapBassGenerator.h"
 #include "../Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.h"
+#include "../Source/Engine/DnBEngine.h"
+#include "../Source/Engine/DnB/DnBScorer.h"
+#include "../Source/Engine/DnB/DnBBass.h"
 #include "../Source/Engine/DrillEngine.h"
 #include "../Source/Engine/Drill/DrillPatternValidator.h"
 #include "../Source/Engine/Drill/DrillPhrasePlanner.h"
@@ -4694,6 +4698,356 @@ void testBoomBapBassRegenerateAndAmount()
     expect(findTrackByType(restored, TrackType::Sub808)->sub808Settings.bassAmount == 2, "bass amount not saved with the project");
 }
 
+
+
+// Drum & Bass: the backbone is always readable, every ghost belongs to a snare and is quieter
+// than it, kicks never sit on the backbone, and the selected candidate passed the gates.
+void testDnBGrammarInvariants()
+{
+    for (int sub = 0; sub < static_cast<int>(DnBSubstyle::Count); ++sub)
+    {
+        for (const int bars : { 2, 4, 8 })
+        {
+            for (int seed = 1; seed <= 12; ++seed)
+            {
+                DnBGenerationParams params;
+                params.seed = seed * 31 + sub;
+                params.bars = bars;
+                params.substyle = sub;
+                params.density = 0.2f + 0.06f * static_cast<float>(seed);
+                const auto pattern = DnBEngine::search(params);
+                const juce::String label = juce::String(getDnBStyleProfile(sub).name) + " " + juce::String(bars) + " bars seed "
+                                         + juce::String(params.seed) + ": ";
+                expect(pattern.score.passedGates, label + "selected candidate failed gate " + pattern.score.failedGate);
+                expect(pattern.score.quality > 0.8f, label + "low quality " + juce::String(pattern.score.quality, 3));
+                for (int bar = 0; bar < bars; ++bar)
+                {
+                    expect(pattern.has(TrackType::Snare, bar, 16, false) && pattern.has(TrackType::Snare, bar, 48, false),
+                           label + "bar " + juce::String(bar + 1) + " lost the 2 & 4 backbone");
+                    expect(pattern.has(TrackType::Kick, bar, 0, false), label + "bar " + juce::String(bar + 1) + " has no downbeat kick");
+                }
+                for (const auto& e : pattern.events)
+                {
+                    expect(e.tick >= 0 && e.tick < 64 && e.bar >= 0 && e.bar < bars, label + "event outside the loop");
+                    expect(!(e.lane == TrackType::Kick && (e.tick == 16 || e.tick == 48)), label + "kick on the snare backbone");
+                    if ((e.lane == TrackType::Snare && e.ghost) || e.lane == TrackType::GhostKick)
+                    {
+                        const auto anchor = std::find_if(pattern.events.begin(), pattern.events.end(), [&e](const DnBEvent& a)
+                        {
+                            return a.lane == TrackType::Snare && !a.ghost && a.bar == e.bar && a.tick == e.anchorTick;
+                        });
+                        expect(anchor != pattern.events.end(), label + "orphan ghost at tick " + juce::String(e.tick));
+                        if (anchor != pattern.events.end())
+                        {
+                            expect(std::abs(e.tick - e.anchorTick) <= 12, label + "ghost too far from its snare");
+                            expect(e.velocity < anchor->velocity, label + "ghost louder than its snare");
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Same settings -> same loop; consecutive seeds (Generate presses) -> different loops.
+void testDnBDeterministicAndVaried()
+{
+    DnBGenerationParams params;
+    params.seed = 4242;
+    params.bars = 4;
+    const auto first = DnBEngine::search(params);
+    const auto second = DnBEngine::search(params);
+    expect(first.events.size() == second.events.size(), "DnB search is not deterministic");
+    for (size_t i = 0; i < std::min(first.events.size(), second.events.size()); ++i)
+        expect(first.events[i].absoluteTick() == second.events[i].absoluteTick() && first.events[i].lane == second.events[i].lane
+                   && first.events[i].velocity == second.events[i].velocity && first.events[i].micro == second.events[i].micro,
+               "DnB search is not deterministic");
+
+    for (int sub = 0; sub < static_cast<int>(DnBSubstyle::Count); ++sub)
+    {
+        std::set<juce::String> loops;
+        for (int seed = 100; seed < 120; ++seed)
+        {
+            params.seed = seed;
+            params.substyle = sub;
+            juce::String skeleton;
+            for (const auto& e : DnBEngine::search(params).events)
+                if (e.lane == TrackType::Kick || e.lane == TrackType::Snare || e.lane == TrackType::HiHat)
+                    skeleton << static_cast<int>(e.lane) << ":" << e.absoluteTick() << " ";
+            loops.insert(skeleton);
+        }
+        expect(loops.size() >= 15, juce::String(getDnBStyleProfile(sub).name) + ": 20 generations gave only "
+                                       + juce::String(static_cast<int>(loops.size())) + " different loops");
+    }
+}
+
+// The substyles keep their character (measured on the selected loops).
+void testDnBSubstyleCharacter()
+{
+    struct Stats { float sync = 0.0f; float repetition = 0.0f; float ghosts = 0.0f; };
+    auto measure = [](DnBSubstyle substyle)
+    {
+        Stats stats;
+        for (int seed = 1; seed <= 40; ++seed)
+        {
+            DnBGenerationParams params;
+            params.seed = seed * 13;
+            params.bars = 4;
+            params.substyle = static_cast<int>(substyle);
+            const auto p = DnBEngine::search(params);
+            stats.sync += p.score.syncopation / 40.0f;
+            stats.repetition += p.score.repetition / 40.0f;
+            for (const auto& e : p.events)
+                stats.ghosts += ((e.lane == TrackType::Snare && e.ghost) || e.lane == TrackType::GhostKick) ? 1.0f / 160.0f : 0.0f;
+        }
+        return stats;
+    };
+    const auto liquid = measure(DnBSubstyle::Liquid);
+    const auto roller = measure(DnBSubstyle::Roller);
+    const auto jumpUp = measure(DnBSubstyle::JumpUp);
+    const auto breakbeat = measure(DnBSubstyle::Breakbeat);
+    expect(breakbeat.sync > liquid.sync, "Breakbeat must be more syncopated than Liquid");
+    expect(roller.repetition > breakbeat.repetition, "Roller must repeat more than Breakbeat");
+    expect(breakbeat.ghosts > jumpUp.ghosts, "Breakbeat must have more ghost notes than Jump-Up");
+}
+
+// In a project: DnB writes the drum lanes, never the bass, respects locked lanes, and RG on a
+// lane rewrites only that lane's group.
+void testDnBEngineInProject()
+{
+    DnBEngine engine;
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::DnB;
+    project.params.dnbSubstyle = 1;
+    project.params.bars = 4;
+    project.params.seed = 77;
+    for (auto& track : project.tracks)
+        track.enabled = true;
+    auto* bass = findTrackByType(project, TrackType::Sub808);
+    NoteEvent bassNote;
+    bassNote.pitch = 29;
+    bass->notes = { bassNote };
+    bass->locked = true; // a locked bass lane is left alone (the DnB bass itself: testDnBBassInProject)
+
+    engine.generate(project);
+    for (const auto lane : { TrackType::Kick, TrackType::Snare, TrackType::HiHat })
+        expect(!findTrackByType(project, lane)->notes.empty(), juce::String("DnB left a drum lane empty: ") + toString(lane));
+    expect(findTrackByType(project, TrackType::Sub808)->notes.size() == 1, "DnB changed a locked bass lane");
+    expect(findTrackByType(project, TrackType::ClapGhostSnare)->notes.empty(), "DnB ghosts belong on the Snare lane");
+    expect(project.generationDebugReport.contains("DNB ALGEBRA"), "DnB debug report missing");
+
+    const auto hats = findTrackByType(project, TrackType::HiHat)->notes;
+    const auto snares = findTrackByType(project, TrackType::Snare)->notes;
+    findTrackByType(project, TrackType::Snare)->locked = true;
+    auto kickLine = [&project]
+    {
+        juce::String line;
+        for (const auto& n : findTrackByType(project, TrackType::Kick)->notes)
+            line << n.gridTick << " ";
+        return line;
+    };
+    std::set<juce::String> kickLines { kickLine() };
+    for (int rg = 1; rg <= 5; ++rg)
+    {
+        project.generationCounter = rg;
+        engine.regenerateTrack(project, TrackType::Kick);
+        kickLines.insert(kickLine());
+        expect(findTrackByType(project, TrackType::HiHat)->notes.size() == hats.size(), "RG on the kick changed the hats");
+        expect(findTrackByType(project, TrackType::Snare)->notes.size() == snares.size(), "RG changed a locked lane");
+    }
+    expect(kickLines.size() >= 3, "RG on the DnB kick did not give new kick lines");
+
+    project.params.bpm = 90.0f;
+    for (int seed = 1; seed <= 30; ++seed)
+    {
+        project.params.seed = seed;
+        for (int sub = 0; sub < static_cast<int>(DnBSubstyle::Count); ++sub)
+        {
+            project.params.dnbSubstyle = sub;
+            const float bpm = chooseDeterministicStyleBpm(project.params);
+            expect(bpm >= 164.0f && bpm <= 176.0f, "DnB style tempo out of range: " + juce::String(bpm, 1));
+        }
+    }
+}
+
+
+// DnB bass: a root on beat 1, never an attack on the snare backbone, in register, in key
+// (except tension / approach notes), glides only from a note that is still sounding, and the
+// [1][2][3] amount plays progressively more.
+void testDnBBassLine()
+{
+    std::array<float, 3> notesPerAmount {};
+    for (int sub = 0; sub < static_cast<int>(DnBSubstyle::Count); ++sub)
+    {
+        for (int seed = 1; seed <= 10; ++seed)
+        {
+            DnBGenerationParams drumParams;
+            drumParams.seed = seed * 19 + sub;
+            drumParams.bars = 4;
+            drumParams.substyle = sub;
+            const auto frame = DnBDrumFrame::fromPattern(DnBEngine::search(drumParams));
+            for (int amount = 0; amount < 3; ++amount)
+            {
+                DnBBassParams params;
+                params.seed = seed * 3 + amount;
+                params.bars = 4;
+                params.substyle = sub;
+                params.amount = amount;
+                params.keyRoot = (seed + sub) % 12;
+                params.scaleMode = seed % 2;
+                const auto line = DnBBassGenerator::search(params, frame, {});
+                const juce::String label = juce::String(getDnBStyleProfile(sub).name) + " seed " + juce::String(seed) + " amount "
+                                         + juce::String(amount + 1) + " (" + toString(line.archetype) + "): ";
+                notesPerAmount[static_cast<size_t>(amount)] += static_cast<float>(line.notes.size());
+                expect(line.score.passedGates, label + "failed gate " + line.score.failedGate);
+                expect(!line.notes.empty() && line.notes.front().start == 0, label + "no root on the first downbeat");
+                for (size_t i = 0; i < line.notes.size(); ++i)
+                {
+                    const auto& n = line.notes[i];
+                    const int tick = n.start % 64;
+                    expect(tick == 0 || (std::abs(tick - 16) > 1 && std::abs(tick - 48) > 1), label + "bass attack on the snare at " + juce::String(n.start));
+                    expect(n.pitch >= 24 && n.pitch <= 52, label + "bass out of register: " + juce::String(n.pitch));
+                    expect(n.length > 0, label + "zero-length bass note");
+                    const int degree = ((n.pitch - params.keyRoot) % 12 + 12) % 12;
+                    const auto& scale = params.scaleMode == 1 ? std::array<int, 7> { 0, 2, 4, 5, 7, 9, 11 } : std::array<int, 7> { 0, 2, 3, 5, 7, 8, 10 };
+                    if (!n.tension)
+                        expect(std::find(scale.begin(), scale.end(), degree) != scale.end(), label + "bass note out of key: " + juce::String(n.pitch));
+                    if (i + 1 < line.notes.size())
+                    {
+                        const auto& next = line.notes[i + 1];
+                        if (next.glide)
+                            expect(n.start + n.length >= next.start, label + "glide from a note that already stopped");
+                        else
+                            expect(n.start + n.length <= next.start, label + "bass notes overlap");
+                    }
+                }
+            }
+        }
+    }
+    expect(notesPerAmount[0] < notesPerAmount[1] && notesPerAmount[1] < notesPerAmount[2],
+           "bass amount 1/2/3 must play progressively more: " + juce::String(notesPerAmount[0]) + "/" + juce::String(notesPerAmount[1])
+               + "/" + juce::String(notesPerAmount[2]));
+}
+
+// The analyzer is the edge: with a loaded sample the bass plays the sample's chord roots (per
+// half bar, from its own bass notes), and a bass-heavy sample is supported, not fought.
+void testDnBBassFollowsSampleRoots()
+{
+    SampleAwareGenerationContext context;
+    context.enabled = true;
+    context.harmonyBpm = 174.0;
+    context.harmonyOriginSeconds = 0.0;
+    context.harmony.valid = true;
+    context.harmony.keyRoot = 5; // F minor
+    context.harmony.scaleMode = 0;
+    const double beat = 60.0 / 174.0;
+    const std::array<int, 4> barRoots { 29, 27, 25, 25 }; // F1, D#1, C#1, C#1
+    for (int bar = 0; bar < 4; ++bar)
+        for (int b = 0; b < 4; ++b)
+        {
+            SampleBassSegment segment;
+            segment.startSeconds = (bar * 4 + b) * beat;
+            segment.endSeconds = segment.startSeconds + beat;
+            segment.midiNote = barRoots[static_cast<size_t>(bar)];
+            segment.confidence = 0.9f;
+            segment.lowEnergy = 0.8f;
+            context.harmony.bass.push_back(segment);
+        }
+
+    const auto lens = DnBSampleLens::build(context, 4);
+    expect(lens.valid && lens.rootsFromSample, "the lens did not read the sample's roots");
+
+    // Over a half-time loop DnB runs at double time: 77 -> 154, and one sample bar spans two
+    // pattern bars (the lens maps the sample's seconds with the pattern tempo).
+    expect(std::abs(generationBpmForSample(77.0f, GenreType::DnB) - 154.0f) < 0.01f, "DnB must double a 77 BPM sample");
+    expect(std::abs(generationBpmForSample(174.0f, GenreType::DnB) - 174.0f) < 0.01f, "DnB keeps a 174 BPM sample");
+    expect(std::abs(generationBpmForSample(77.0f, GenreType::BoomBap) - 77.0f) < 0.01f, "other genres keep the sample tempo");
+    {
+        auto halfTime = context;
+        halfTime.harmonyBpm = 87.0;
+        halfTime.harmony.bass.clear();
+        const double halfBeat = 60.0 / 87.0;
+        for (int bar = 0; bar < 2; ++bar)
+            for (int b = 0; b < 4; ++b)
+            {
+                SampleBassSegment segment;
+                segment.startSeconds = (bar * 4 + b) * halfBeat;
+                segment.endSeconds = segment.startSeconds + halfBeat;
+                segment.midiNote = bar == 0 ? 29 : 27;
+                segment.confidence = 0.9f;
+                segment.lowEnergy = 0.8f;
+                halfTime.harmony.bass.push_back(segment);
+            }
+        const auto doubled = DnBSampleLens::build(halfTime, 4, 174.0);
+        expect(doubled.halfBarRoot[0] == 5 && doubled.halfBarRoot[3] == 5 && doubled.halfBarRoot[4] == 3 && doubled.halfBarRoot[7] == 3,
+               "at double time one sample bar (F, then D#) must span two DnB bars");
+    }
+    expect(lens.mode == DnBSampleLens::Mode::Support, "a confident, loud sample bass must be supported, not fought");
+
+    DnBGenerationParams drumParams;
+    drumParams.seed = 5;
+    drumParams.bars = 4;
+    const auto frame = DnBDrumFrame::fromPattern(DnBEngine::search(drumParams));
+    for (int seed = 1; seed <= 12; ++seed)
+    {
+        DnBBassParams params;
+        params.seed = seed;
+        params.bars = 4;
+        params.substyle = seed % static_cast<int>(DnBSubstyle::Count);
+        params.keyRoot = 5;
+        const auto line = DnBBassGenerator::search(params, frame, lens);
+        expect(line.sampleLed, "the bass did not take its roots from the sample");
+        for (int bar = 0; bar < 4; ++bar)
+        {
+            const auto downbeat = std::find_if(line.notes.begin(), line.notes.end(), [bar](const DnBBassNote& n) { return n.start == bar * 64; });
+            expect(downbeat != line.notes.end(), "no bass on the downbeat of bar " + juce::String(bar + 1));
+            if (downbeat != line.notes.end())
+                expect(downbeat->pitch % 12 == barRoots[static_cast<size_t>(bar)] % 12,
+                       "bar " + juce::String(bar + 1) + " bass root " + juce::String(downbeat->pitch) + " does not follow the sample's "
+                           + juce::String(barRoots[static_cast<size_t>(bar)]));
+        }
+    }
+}
+
+// In a project: the DnB bass lane is on by default, Generate writes it against the drums, RG on
+// the bass rewrites only the bass, and a locked bass is left alone.
+void testDnBBassInProject()
+{
+    DnBEngine engine;
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::DnB;
+    project.params.bars = 4;
+    project.params.seed = 91;
+    expect(getLaneStyleDefaults(getGenreStyleDefaults(GenreType::DnB, 0), TrackType::Sub808).enabledByDefault, "DnB bass lane must be on by default");
+    for (auto& track : project.tracks)
+        track.enabled = true;
+
+    engine.generate(project);
+    const auto* bass = findTrackByType(project, TrackType::Sub808);
+    expect(!bass->notes.empty(), "DnB Generate wrote no bass");
+    expect(project.generationDebugReport.contains("DNB BASS"), "DnB bass report missing");
+
+    const auto kicks = findTrackByType(project, TrackType::Kick)->notes.size();
+    std::set<juce::String> lines;
+    for (int rg = 1; rg <= 5; ++rg)
+    {
+        project.generationCounter = rg;
+        engine.regenerateTrack(project, TrackType::Sub808);
+        juce::String line;
+        for (const auto& n : findTrackByType(project, TrackType::Sub808)->notes)
+            line << n.gridTick << ":" << n.pitch << " ";
+        lines.insert(line);
+        expect(findTrackByType(project, TrackType::Kick)->notes.size() == kicks, "RG on the bass changed the drums");
+    }
+    expect(lines.size() >= 3, "RG on the DnB bass did not give new lines");
+
+    findTrackByType(project, TrackType::Sub808)->locked = true;
+    const auto locked = findTrackByType(project, TrackType::Sub808)->notes.size();
+    project.generationCounter = 9;
+    engine.generate(project);
+    expect(findTrackByType(project, TrackType::Sub808)->notes.size() == locked, "Generate changed a locked bass lane");
+}
+
 // Consecutive Generates must not keep producing the same bass: styles and lines vary.
 void testBoomBapBassVariety()
 {
@@ -6683,6 +7037,13 @@ int main()
     failures += runTest("BoomBap bass varies between generations", testBoomBapBassVariety);
     failures += runTest("BoomBap bass follows the sample mood", testBoomBapBassFollowsSampleMood);
     failures += runTest("BoomBap bass RG and amount [1][2][3]", testBoomBapBassRegenerateAndAmount);
+    failures += runTest("DnB grammar invariants", testDnBGrammarInvariants);
+    failures += runTest("DnB deterministic and varied", testDnBDeterministicAndVaried);
+    failures += runTest("DnB substyle character", testDnBSubstyleCharacter);
+    failures += runTest("DnB engine in a project", testDnBEngineInProject);
+    failures += runTest("DnB bass line", testDnBBassLine);
+    failures += runTest("DnB bass follows the sample's roots", testDnBBassFollowsSampleRoots);
+    failures += runTest("DnB bass in a project", testDnBBassInProject);
     failures += runTest("BoomBap Russian Underground pocket generation smoke", testBoomBapRussianUndergroundPocketGenerationSmoke);
     failures += runTest("BoomBap LofiRap pocket generation smoke", testBoomBapLofiRapPocketGenerationSmoke);
     return failures == 0 ? 0 : 1;

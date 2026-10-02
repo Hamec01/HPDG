@@ -151,6 +151,27 @@ inline GenrePerformanceProfile getGenrePerformanceProfile(const GeneratorParams&
             profile.lanes[trackTypeIndex(TrackType::HiHat)].supportTimingBoost = 1.08f;
             break;
 
+        case GenreType::DnB:
+            profile.timingScaleAmount = 0.50f;
+            profile.swingTicksPerPercent = 2.4f;
+            profile.zeroTimingTicks = 6.0f;
+            profile.humanizeTimingTicks = 6.0f;
+            profile.humanizeVelocityRange = 5.0f;
+            profile.velocityRange = 10.0f;
+            profile.anchorSwingTightness = 1.0f;
+            profile.anchorTimingTightness = 0.94f;
+            profile.supportLateBias = 0.04f;
+            profile.accentVelocityDepth = 1.0f;
+            profile.lanes[trackTypeIndex(TrackType::Kick)].swingWeight = 0.08f;
+            profile.lanes[trackTypeIndex(TrackType::Snare)].swingWeight = 0.03f;
+            profile.lanes[trackTypeIndex(TrackType::GhostKick)].swingWeight = 0.60f;
+            profile.lanes[trackTypeIndex(TrackType::HiHat)].swingWeight = 0.75f;
+            profile.lanes[trackTypeIndex(TrackType::HatFX)].swingWeight = 0.70f;
+            profile.lanes[trackTypeIndex(TrackType::Ride)].swingWeight = 0.70f;
+            profile.lanes[trackTypeIndex(TrackType::OpenHat)].swingWeight = 0.50f;
+            profile.lanes[trackTypeIndex(TrackType::Cymbal)].swingWeight = 0.0f;
+            break;
+
         case GenreType::Drill:
             profile.timingScaleAmount = 0.56f;
             profile.swingTicksPerPercent = 0.9f;

@@ -63,6 +63,18 @@ int main()
 {
     juce::ScopedJuceInitialiser_GUI juceInit;
 
+    {
+        // Beat 1 before the file start (pickup / typed tempo): playback wraps, never waits.
+        using bbg::SampleSourceAudio;
+        const double bar = 2.0;
+        const double start = SampleSourceAudio::loopPlaybackSeconds(-1.5, 0.0, bar, 4.0, 8.0);
+        check(std::abs(start - 6.5) < 1.0e-9, "pattern start must play the loop's pickup, not silence");
+        check(std::abs(SampleSourceAudio::loopPlaybackSeconds(-1.5, 1.0, bar, 4.0, 8.0) - 0.5) < 1.0e-9, "bar 2 maps into the file");
+        check(std::abs(SampleSourceAudio::loopPlaybackSeconds(0.25, 0.0, bar, 4.0, 8.0) - 0.25) < 1.0e-9, "a normal loop start is unchanged");
+        check(SampleSourceAudio::loopPlaybackSeconds(0.0, 4.5, bar, 5.0, 8.0) < 0.0, "past the file end stays silent");
+        std::cout << "loop playback wrap OK" << std::endl;
+    }
+
     std::cout << "SampleSourceAudio" << std::endl;
     auto source = std::make_shared<bbg::SampleSourceAudio>();
     source->loadFromBuffer(makeSong(), kRate);

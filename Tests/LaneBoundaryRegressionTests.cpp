@@ -637,6 +637,23 @@ void testGuideModeAccentKicksAvoidBackbeat()
 
 // The genre list shows only Boom Bap and Trap. Selecting "Trap" must select the Trap choice
 // (not the last parameter choice, Drill), and a saved hidden Drill genre must come back as Trap.
+// The "DnB" genre entry reaches the DnB engine: genre, DnB tempo range, drum lanes written.
+void testDnBGenreFromProcessor()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    auto& apvts = processor.getApvts();
+    apvts.getParameter(ParamIds::genre)->setValueNotifyingHost(apvts.getParameter(ParamIds::genre)->convertTo0to1(4.0f));
+    apvts.getParameter(ParamIds::dnbSubstyle)->setValueNotifyingHost(apvts.getParameter(ParamIds::dnbSubstyle)->convertTo0to1(1.0f));
+    processor.generatePattern();
+    const auto project = processor.getProjectSnapshot();
+    expect(project.params.genre == GenreType::DnB, "genre choice 4 must be DnB");
+    expect(project.params.dnbSubstyle == 1, "DnB substyle not read from the parameter");
+    expect(project.params.bpm >= 164.0f && project.params.bpm <= 176.0f, "DnB generated at " + juce::String(project.params.bpm, 1) + " BPM");
+    expect(project.generationDebugReport.contains("DNB ALGEBRA"), "the DnB engine did not run");
+    const auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+    expect(kick != nullptr && !kick->notes.empty(), "DnB kick lane empty");
+}
+
 void testGenreComboSelectsTrapNotDrill()
 {
     BoomBapGeneratorAudioProcessor processor;
@@ -1100,6 +1117,7 @@ int main()
     failures += runTest("Drum break exact copy path", testDrumBreakExactCopyPath);
     failures += runTest("Guide mode accent kicks avoid backbeat", testGuideModeAccentKicksAvoidBackbeat);
     failures += runTest("Genre combo selects Trap, not Drill", testGenreComboSelectsTrapNotDrill);
+    failures += runTest("DnB genre from the processor", testDnBGenreFromProcessor);
     failures += runTest("Trap guide 808 follows sample bass and key", testTrapGuide808FollowsSampleBassAndKey);
     failures += runTest("BoomBap guide bass follows sample bass and key", testBoomBapGuideBassFollowsSampleBassAndKey);
     failures += runTest("Sample root note from name", testSampleRootNoteFromName);

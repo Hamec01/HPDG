@@ -1,5 +1,7 @@
 #include "StyleDefaults.h"
 
+#include "DnB/DnBTypes.h"
+
 #include <algorithm>
 #include <cstdint>
 
@@ -640,6 +642,42 @@ const std::array<GenreStyleDefaults, 6>& trapStyles()
     return table;
 }
 
+// Drum & Bass: one entry per DnB substyle (tempo range / feel come from DnBStyleProfile).
+std::array<LaneStyleDefaults, 11> makeBaseDnBLanes()
+{
+    // HiHat, HatFX, OpenHat, Snare, ClapGhost (hidden), Kick, GhostKick, Sub808 (DnB bass), Ride, Cymbal, Perc (hidden)
+    return {
+        lane(true, 0.80f, 1.0f, 0.70f, 0.60f, { "carrier", "rolling", "broken" }, 1.0f, 0.30f, 0.80f, 0.90f, 0.0f, 0.0f),
+        lane(true, 0.62f, 0.50f, 0.80f, 0.70f, { "accent", "pickup", "detail" }, 0.40f, 0.50f, 0.80f, 0.85f, 0.30f, 0.0f),
+        lane(true, 0.66f, 0.40f, 0.80f, 0.70f, { "lift", "air", "response" }, 0.30f, 0.60f, 0.80f, 0.85f, 0.0f, 0.0f),
+        lane(true, 0.92f, 1.0f, 0.50f, 0.40f, { "backbeat", "ghost", "fill" }, 1.0f, 0.40f, 0.80f, 0.90f, 0.0f, 0.0f),
+        lane(false, 0.60f, 0.20f, 0.80f, 0.70f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f),
+        lane(true, 0.94f, 1.0f, 0.50f, 0.40f, { "anchor", "two_step", "syncopated" }, 1.0f, 0.40f, 0.85f, 0.90f, 0.0f, 0.0f),
+        lane(true, 0.60f, 0.30f, 0.80f, 0.70f, { "pickup", "ghost", "support" }, 0.20f, 0.20f, 0.80f, 0.85f, 0.0f, 0.0f),
+        lane(true, 0.90f, 1.0f, 0.50f, 0.40f, { "sub", "reese", "rolling" }, 1.0f, 0.40f, 0.85f, 0.90f, 0.0f, 0.90f),
+        lane(true, 0.62f, 0.40f, 0.80f, 0.70f, { "rolling", "carrier", "bell" }, 0.30f, 0.30f, 0.80f, 0.85f, 0.0f, 0.0f),
+        lane(true, 0.60f, 0.20f, 0.60f, 0.50f, { "marker", "impact", "transition" }, 0.15f, 0.60f, 0.60f, 0.70f, 0.0f, 0.0f),
+        lane(false, 0.60f, 0.20f, 0.80f, 0.70f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f)
+    };
+}
+
+const std::array<GenreStyleDefaults, static_cast<size_t>(DnBSubstyle::Count)>& dnbStyles()
+{
+    static const std::array<GenreStyleDefaults, static_cast<size_t>(DnBSubstyle::Count)> table = []
+    {
+        std::array<GenreStyleDefaults, static_cast<size_t>(DnBSubstyle::Count)> styles;
+        for (int i = 0; i < static_cast<int>(DnBSubstyle::Count); ++i)
+        {
+            const auto& profile = getDnBStyleProfile(i);
+            styles[static_cast<size_t>(i)] = { GenreType::DnB, profile.name, profile.bpmDefault, profile.bpmMin, profile.bpmMax,
+                                               profile.swingDefault, 0.55f, 0.40f, profile.humanizeDefault, profile.densityDefault,
+                                               makeBaseDnBLanes() };
+        }
+        return styles;
+    }();
+    return table;
+}
+
 const std::array<GenreStyleDefaults, 1>& drillStyles()
 {
     static const std::array<GenreStyleDefaults, 1> table = []
@@ -679,6 +717,7 @@ int getSelectedSubstyleIndex(const GeneratorParams& params)
         case GenreType::Rap: return params.rapSubstyle;
         case GenreType::Trap: return params.trapSubstyle;
         case GenreType::Drill: return params.drillSubstyle;
+        case GenreType::DnB: return params.dnbSubstyle;
         case GenreType::BoomBap:
         default: return params.boombapSubstyle;
     }
@@ -686,6 +725,13 @@ int getSelectedSubstyleIndex(const GeneratorParams& params)
 
 const GenreStyleDefaults& getGenreStyleDefaults(GenreType genre, int substyleIndex)
 {
+    if (genre == GenreType::DnB)
+    {
+        const auto& styles = dnbStyles();
+        const int idx = std::clamp(substyleIndex, 0, static_cast<int>(styles.size()) - 1);
+        return styles[static_cast<size_t>(idx)];
+    }
+
     if (genre == GenreType::Drill)
     {
         const auto& styles = drillStyles();
@@ -770,6 +816,11 @@ juce::StringArray getTrapSubstyleNames()
     for (const auto& s : styles)
         names.add(s.substyleName);
     return names;
+}
+
+juce::StringArray getDnBSubstyleNames()
+{
+    return getDnBStyleNames();
 }
 
 juce::StringArray getDrillSubstyleNames()

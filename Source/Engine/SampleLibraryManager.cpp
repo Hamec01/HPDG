@@ -37,7 +37,14 @@ void SampleLibraryManager::scan()
 
     for (const auto track : tracks)
     {
-        const auto genreRoot = resolvedRootDirectory.getChildFile(folderNameForGenre(currentGenre));
+        auto genreRoot = resolvedRootDirectory.getChildFile(folderNameForGenre(currentGenre));
+        // Drum & Bass uses Samples/DnB once it exists; until then (and per missing lane) the Boom Bap kit.
+        if (currentGenre == GenreType::DnB)
+        {
+            const auto own = genreRoot.getChildFile(folderNameForTrack(track));
+            if (!own.isDirectory() || own.findChildFiles(juce::File::findFiles, false, "*.wav").isEmpty())
+                genreRoot = resolvedRootDirectory.getChildFile("BoomBap");
+        }
         auto folder = genreRoot.exists() && genreRoot.isDirectory()
             ? genreRoot.getChildFile(folderNameForTrack(track))
             : resolvedRootDirectory.getChildFile(folderNameForTrack(track));
@@ -95,6 +102,7 @@ juce::String SampleLibraryManager::folderNameForGenre(GenreType genre)
         case GenreType::Rap: return kShowRapAndDrillGenres ? "Rap" : "BoomBap";
         case GenreType::Trap: return "Trap";
         case GenreType::Drill: return kShowRapAndDrillGenres ? "Drill" : "Trap";
+        case GenreType::DnB: return "DnB";
         default: return "BoomBap";
     }
 }

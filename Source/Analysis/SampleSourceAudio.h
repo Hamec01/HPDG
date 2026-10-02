@@ -18,6 +18,26 @@ public:
     static constexpr int kOnsetHop = 512;        // samples per onset-envelope frame
     static constexpr double kMaxLoadSeconds = 600.0;
 
+    // "Play with HPDG": where in the file the sample is at a given pattern position.
+    // loopStartSeconds is the sample's beat 1 - it can lie before the file start when the loop
+    // begins with a pickup (or a typed tempo puts beat 1 there). The analysed bars form a loop,
+    // so a position before the file start wraps to the loop's end instead of playing silence.
+    // Returns < 0 when nothing should sound.
+    static double loopPlaybackSeconds(double loopStartSeconds, double barPosition, double barSeconds,
+                                      double loopBars, double fileDurationSeconds)
+    {
+        const double loopLength = barSeconds * loopBars;
+        double seconds = loopStartSeconds + barPosition * barSeconds;
+        if (loopLength > 0.0)
+        {
+            if (seconds < 0.0)
+                seconds += loopLength;
+            else if (seconds >= fileDurationSeconds && seconds - loopLength >= 0.0)
+                seconds -= loopLength;
+        }
+        return seconds >= 0.0 && seconds < fileDurationSeconds ? seconds : -1.0;
+    }
+
     bool load(const juce::File& file, juce::String* errorMessage = nullptr);
     // Builds everything from a buffer already in memory (tests, generated audio).
     void loadFromBuffer(const juce::AudioBuffer<float>& source, double sampleRate, const juce::File& file = {});

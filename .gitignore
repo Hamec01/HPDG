@@ -37,3 +37,6 @@ Releases/
 # OS
 Thumbs.db
 .DS_Store
+
+# Third-party DnB one-shot kit (sources not owned by this project - keep local, do not publish)
+Samples/DnB/

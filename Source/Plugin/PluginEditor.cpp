@@ -2150,6 +2150,10 @@ void BoomBGeneratorAudioProcessorEditor::refreshSubstyleBindingForGenre()
             choices = getDrillSubstyleNames();
             substyleParamId = ParamIds::drillSubstyle;
             break;
+        case 4:
+            choices = getDnBSubstyleNames();
+            substyleParamId = ParamIds::dnbSubstyle;
+            break;
         case 0:
         default:
             choices = getBoomBapSubstyleNames();
@@ -3250,6 +3254,8 @@ void BoomBGeneratorAudioProcessorEditor::showStyleLabWindow()
                                                                  return getTrapSubstyleNames();
                                                              if (genre.equalsIgnoreCase("Drill"))
                                                                  return getDrillSubstyleNames();
+                                                             if (genre.equalsIgnoreCase("DnB"))
+                                                                 return getDnBSubstyleNames();
                                                              return getBoomBapSubstyleNames();
                                                          });
     component->onStateChanged = [this](const StyleLabState& state)

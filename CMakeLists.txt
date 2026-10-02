@@ -76,6 +76,11 @@ target_sources(HPDG
         Source/Core/PatternProjectSerialization.cpp
         Source/Engine/BoomBapEngine.cpp
     Source/Engine/DrillEngine.cpp
+    Source/Engine/DnBEngine.cpp
+    Source/Engine/DnB/DnBStyleProfile.cpp
+    Source/Engine/DnB/DnBGrammar.cpp
+    Source/Engine/DnB/DnBScorer.cpp
+    Source/Engine/DnB/DnBBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
@@ -166,6 +171,11 @@ add_executable(HPDG_CoreTests
     Source/Engine/GenerationModel/StyleTargetModel.cpp
     Source/Engine/BoomBapEngine.cpp
     Source/Engine/DrillEngine.cpp
+    Source/Engine/DnBEngine.cpp
+    Source/Engine/DnB/DnBStyleProfile.cpp
+    Source/Engine/DnB/DnBGrammar.cpp
+    Source/Engine/DnB/DnBScorer.cpp
+    Source/Engine/DnB/DnBBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
@@ -237,6 +247,11 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/GenerationModel/StyleTargetModel.cpp
     Source/Engine/BoomBapEngine.cpp
     Source/Engine/DrillEngine.cpp
+    Source/Engine/DnBEngine.cpp
+    Source/Engine/DnB/DnBStyleProfile.cpp
+    Source/Engine/DnB/DnBGrammar.cpp
+    Source/Engine/DnB/DnBScorer.cpp
+    Source/Engine/DnB/DnBBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
