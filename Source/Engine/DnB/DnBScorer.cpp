@@ -88,7 +88,12 @@ DnBScore DnBScorer::score(const DnBPattern& p, const DnBStyleProfile& style)
     {
         const auto* s2 = findAt(p, TrackType::Snare, bar, DnBGrid::kSnare2, true);
         const auto* s4 = findAt(p, TrackType::Snare, bar, DnBGrid::kSnare4, true);
-        const bool k0 = findAt(p, TrackType::Kick, bar, 0, true) != nullptr;
+        // A phrase's answer bar may carry the pulse with the 2-step kick alone (K0 K10 | K10).
+        const bool twoStepBar = bar % 2 == 1 && std::any_of(p.events.begin(), p.events.end(), [bar](const DnBEvent& e)
+        {
+            return e.bar == bar && e.lane == TrackType::Kick && e.tick >= 24 && e.tick <= 44;
+        });
+        const bool k0 = findAt(p, TrackType::Kick, bar, 0, true) != nullptr || twoStepBar;
         int dominant = 0;
         int checked = 0;
         for (const auto* snare : { s2, s4 })
@@ -164,7 +169,7 @@ DnBScore DnBScorer::score(const DnBPattern& p, const DnBStyleProfile& style)
             syncSum += (DnBGrid::metricStrength(u) - m) * (static_cast<float>(e.velocity) / 127.0f) * weight;
     }
     s.syncopation = syncSum / static_cast<float>(bars * 4);
-    s.syncopationFit = gaussianFit(s.syncopation, style.syncTarget, 0.05f);
+    s.syncopationFit = gaussianFit(s.syncopation, style.syncTarget, 0.04f);
 
     // --- Forward motion: energy leading into / answering each backbone snare ----------------
     float forwardSum = 0.0f;

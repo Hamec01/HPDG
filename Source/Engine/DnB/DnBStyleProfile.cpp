@@ -66,11 +66,11 @@ DnBStyleProfile makeModern()
     p.name = "Modern";
     p.substyle = DnBSubstyle::Modern;
     // Clean 2-step backbone, medium kick syncopation, low-medium ghosts, low microtiming.
-    p.carrierWeights = { 0.25f, 0.30f, 0.20f, 0.20f, 0.00f, 0.05f };
+    p.carrierWeights = { 0.15f, 0.45f, 0.15f, 0.20f, 0.00f, 0.05f };
     p.topologyWeights = { 0.25f, 0.30f, 0.15f, 0.15f, 0.05f, 0.10f };
-    p.syncTarget = 0.07f;
-    p.negativeSpaceTarget = 0.35f;
-    p.forwardTarget = 0.40f;
+    p.syncTarget = 0.03f;
+    p.negativeSpaceTarget = 0.37f;
+    p.forwardTarget = 0.30f;
     return p;
 }
 
@@ -81,7 +81,8 @@ DnBStyleProfile makeRoller()
     p.substyle = DnBSubstyle::Roller;
     // Continuous forward motion, hypnotic repetition (AAAA is welcome).
     p.kickSyncopation = 0.70f;
-    p.maxKicks = 5;
+    p.maxKicks = 4;
+    p.answerDropsDownbeat = 0.35f;
     p.ghostAmount = 0.50f;
     p.ghostPreBias = 0.70f;
     p.carrierWeights = { 0.10f, 0.25f, 0.35f, 0.20f, 0.10f, 0.00f };
@@ -93,9 +94,9 @@ DnBStyleProfile makeRoller()
     p.microtiming = 0.30f;
     p.repetitionTarget = 0.88f;
     p.topologyWeights = { 0.45f, 0.30f, 0.10f, 0.10f, 0.00f, 0.05f };
-    p.syncTarget = 0.12f;
-    p.negativeSpaceTarget = 0.25f;
-    p.forwardTarget = 0.50f;
+    p.syncTarget = 0.06f;
+    p.negativeSpaceTarget = 0.30f;
+    p.forwardTarget = 0.38f;
     return p;
 }
 
@@ -127,9 +128,9 @@ DnBStyleProfile makeLiquid()
     p.microtiming = 0.35f;
     p.repetitionTarget = 0.78f;
     p.topologyWeights = { 0.25f, 0.35f, 0.15f, 0.15f, 0.05f, 0.05f };
-    p.syncTarget = 0.05f;
-    p.negativeSpaceTarget = 0.37f;
-    p.forwardTarget = 0.35f;
+    p.syncTarget = 0.02f;
+    p.negativeSpaceTarget = 0.38f;
+    p.forwardTarget = 0.28f;
     return p;
 }
 
@@ -142,6 +143,8 @@ DnBStyleProfile makeNeurofunk()
     p.humanizeDefault = 0.15f;
     // Very rigid snare, high kick syncopation, precise and controlled - aggressive != random.
     p.kickSyncopation = 0.80f;
+    p.maxKicks = 4;
+    p.answerDropsDownbeat = 0.30f;
     p.ghostAmount = 0.25f;
     p.ghostPreBias = 0.50f;
     p.ghostRatioMin = 0.30f;
@@ -154,9 +157,9 @@ DnBStyleProfile makeNeurofunk()
     p.microtiming = 0.10f;
     p.repetitionTarget = 0.72f;
     p.topologyWeights = { 0.20f, 0.30f, 0.20f, 0.15f, 0.10f, 0.05f };
-    p.syncTarget = 0.09f;
-    p.negativeSpaceTarget = 0.36f;
-    p.forwardTarget = 0.40f;
+    p.syncTarget = 0.06f;
+    p.negativeSpaceTarget = 0.34f;
+    p.forwardTarget = 0.35f;
     return p;
 }
 
@@ -170,6 +173,7 @@ DnBStyleProfile makeJumpUp()
     // Obvious BANG -> answer -> BANG: clear, repetitive, few ghosts.
     p.kickSyncopation = 0.35f;
     p.maxKicks = 3;
+    p.answerDropsDownbeat = 0.30f;
     p.twoStepAnchor = 0.92f;
     p.ghostAmount = 0.15f;
     p.carrierWeights = { 0.40f, 0.30f, 0.15f, 0.10f, 0.00f, 0.05f };
@@ -183,9 +187,9 @@ DnBStyleProfile makeJumpUp()
     p.microtiming = 0.10f;
     p.repetitionTarget = 0.86f;
     p.topologyWeights = { 0.45f, 0.35f, 0.10f, 0.10f, 0.00f, 0.00f };
-    p.syncTarget = 0.05f;
-    p.negativeSpaceTarget = 0.38f;
-    p.forwardTarget = 0.33f;
+    p.syncTarget = 0.02f;
+    p.negativeSpaceTarget = 0.42f;
+    p.forwardTarget = 0.25f;
     return p;
 }
 
@@ -203,7 +207,8 @@ DnBStyleProfile makeBreakbeat()
     // Jungle-leaning: looser snare, busy kicks, many ghosts, break details, more variation.
     p.snareRigidity = 0.70f;
     p.kickSyncopation = 0.90f;
-    p.maxKicks = 5;
+    p.maxKicks = 6;
+    p.answerDropsDownbeat = 0.25f;
     p.twoStepAnchor = 0.60f;
     p.ghostAmount = 0.80f;
     p.ghostPreBias = 0.55f;
@@ -218,9 +223,9 @@ DnBStyleProfile makeBreakbeat()
     p.microtiming = 0.45f;
     p.repetitionTarget = 0.62f;
     p.topologyWeights = { 0.10f, 0.25f, 0.20f, 0.15f, 0.15f, 0.15f };
-    p.syncTarget = 0.15f;
+    p.syncTarget = 0.08f;
     p.negativeSpaceTarget = 0.25f;
-    p.forwardTarget = 0.58f;
+    p.forwardTarget = 0.48f;
     return p;
 }
 } // namespace

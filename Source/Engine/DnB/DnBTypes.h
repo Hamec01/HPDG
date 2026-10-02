@@ -130,13 +130,15 @@ struct DnBStyleProfile
     float snareRigidity = 1.0f;     // 1 = strict 2 & 4; lower = break-derived extra / displaced snares
     float kickSyncopation = 0.55f;  // drive towards weak-position kicks
     int minKicks = 2;
-    int maxKicks = 4;
+    int maxKicks = 3;               // played loops: ~2 kicks per bar (0 + the 2-step kick)
+    float answerDropsDownbeat = 0.5f; // the phrase's second bar plays only the 2-step kick (K0 K10 | K10)
     float twoStepAnchor = 0.85f;    // chance the bar is built on the classic 2-step second kick
     float ghostAmount = 0.35f;
     float ghostPreBias = 0.65f;     // pre-snare vs post-snare ghosts
     float ghostRatioMin = 0.25f;    // ghost / anchor velocity
     float ghostRatioMax = 0.55f;
     std::array<float, static_cast<size_t>(DnBCarrierMode::Count)> carrierWeights {};
+    float hatPickupRate = 0.40f;    // 16th pickups (16ths 3 / 9) in an eighth carrier
     float hatAccentRate = 0.30f;
     float openHatRate = 0.25f;
     float breakDetail = 0.10f;

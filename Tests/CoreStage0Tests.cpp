@@ -4724,7 +4724,12 @@ void testDnBGrammarInvariants()
                 {
                     expect(pattern.has(TrackType::Snare, bar, 16, false) && pattern.has(TrackType::Snare, bar, 48, false),
                            label + "bar " + juce::String(bar + 1) + " lost the 2 & 4 backbone");
-                    expect(pattern.has(TrackType::Kick, bar, 0, false), label + "bar " + juce::String(bar + 1) + " has no downbeat kick");
+                    const bool twoStepOnly = bar % 2 == 1 && std::any_of(pattern.events.begin(), pattern.events.end(), [bar](const DnBEvent& e)
+                    {
+                        return e.bar == bar && e.lane == TrackType::Kick && e.tick >= 24 && e.tick <= 44;
+                    });
+                    expect(pattern.has(TrackType::Kick, bar, 0, false) || twoStepOnly,
+                           label + "bar " + juce::String(bar + 1) + " has neither a downbeat nor a 2-step kick");
                 }
                 for (const auto& e : pattern.events)
                 {
@@ -4905,7 +4910,10 @@ void testDnBBassLine()
                 {
                     const auto& n = line.notes[i];
                     const int tick = n.start % 64;
-                    expect(tick == 0 || (std::abs(tick - 16) > 1 && std::abs(tick - 48) > 1), label + "bass attack on the snare at " + juce::String(n.start));
+                    const bool sustained = line.archetype == DnBBassArchetype::SubReese || line.archetype == DnBBassArchetype::DubSub
+                        || line.archetype == DnBBassArchetype::MelodicSub;
+                    if (sustained)
+                        expect(tick == 0 || (std::abs(tick - 16) > 1 && std::abs(tick - 48) > 1), label + "sustained bass attack on the snare at " + juce::String(n.start));
                     expect(n.pitch >= 24 && n.pitch <= 52, label + "bass out of register: " + juce::String(n.pitch));
                     expect(n.length > 0, label + "zero-length bass note");
                     const int degree = ((n.pitch - params.keyRoot) % 12 + 12) % 12;
@@ -4999,8 +5007,12 @@ void testDnBBassFollowsSampleRoots()
         expect(line.sampleLed, "the bass did not take its roots from the sample");
         for (int bar = 0; bar < 4; ++bar)
         {
-            const auto downbeat = std::find_if(line.notes.begin(), line.notes.end(), [bar](const DnBBassNote& n) { return n.start == bar * 64; });
-            expect(downbeat != line.notes.end(), "no bass on the downbeat of bar " + juce::String(bar + 1));
+            // The note sounding on the downbeat (a held reese counts).
+            const auto downbeat = std::find_if(line.notes.begin(), line.notes.end(), [bar](const DnBBassNote& n)
+            {
+                return n.start <= bar * 64 && n.start + n.length > bar * 64;
+            });
+            expect(downbeat != line.notes.end(), "no bass sounding on the downbeat of bar " + juce::String(bar + 1));
             if (downbeat != line.notes.end())
                 expect(downbeat->pitch % 12 == barRoots[static_cast<size_t>(bar)] % 12,
                        "bar " + juce::String(bar + 1) + " bass root " + juce::String(downbeat->pitch) + " does not follow the sample's "
@@ -5047,6 +5059,7 @@ void testDnBBassInProject()
     engine.generate(project);
     expect(findTrackByType(project, TrackType::Sub808)->notes.size() == locked, "Generate changed a locked bass lane");
 }
+
 
 // Consecutive Generates must not keep producing the same bass: styles and lines vary.
 void testBoomBapBassVariety()

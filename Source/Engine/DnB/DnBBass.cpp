@@ -187,6 +187,9 @@ struct BarContext
     int rootInterval = 0;    // next half-bar root relative to this one (for approaches)
     std::vector<int> kicks;
     float busy = 1.0f;       // amount x density
+    bool holdFromPrevious = false; // sustained archetypes: the previous note rings on through this downbeat
+    int wobbleVariant = 0;   // 0 octave wub, 1 quarter pulse, 2 running eighths
+    bool neuro = false;      // b2 tension stabs only in neurofunk
 };
 
 int twoStepKick(const BarContext& bar)
@@ -199,12 +202,22 @@ int twoStepKick(const BarContext& bar)
 
 std::vector<Onset> subReese(const BarContext& bar, std::mt19937& rng)
 {
+    // Played reese / sub parts hold one note for one to four bars; the movement is in the sound
+    // and in the occasional bend (F -> A -> F as overlapping, gliding notes).
     std::vector<Onset> out;
-    out.push_back({ 0, 0, 0, randomInt(rng, 110, 120), false, false, true, "dnb_bass_anchor" });
+    if (!bar.holdFromPrevious)
+        out.push_back({ 0, 0, 0, randomInt(rng, 110, 120), false, false, true, "dnb_bass_anchor" });
     if (bar.rootChangesMidBar)
         out.push_back({ 32, 0, 0, randomInt(rng, 104, 114), chance(rng, 0.5f), false, true, "dnb_bass_change" });
+    else if (bar.answerBar && chance(rng, 0.35f))
+    {
+        const int at = bar.holdFromPrevious ? 0 : 8;
+        const int bend = pickWeighted<int>(rng, { { 4, 0.35f }, { 3, 0.25f }, { 5, 0.20f }, { 7, 0.20f } });
+        out.push_back({ at, bend, 0, randomInt(rng, 100, 110), true, false, false, "dnb_bass_bend" });
+        out.push_back({ at + 24, 0, 0, randomInt(rng, 100, 110), true, false, false, "dnb_bass_bend_back" });
+    }
     const int anchor = twoStepKick(bar);
-    if (anchor > 0 && anchor != 32 && chance(rng, 0.55f * bar.busy))
+    if (anchor > 0 && anchor != 32 && bar.busy > 0.9f && chance(rng, 0.35f * bar.busy))
         out.push_back({ anchor, chance(rng, 0.25f) ? 12 : 0, 0, randomInt(rng, 104, 116), false, false, false, "dnb_bass_kick_lock" });
     if (bar.busy > 0.8f && chance(rng, 0.3f * bar.busy))
         out.push_back({ chance(rng, 0.5f) ? 24 : 56, chance(rng, 0.6f) ? 12 : 7, 4, randomInt(rng, 92, 104), false, false, false, "dnb_bass_offbeat" });
@@ -219,6 +232,7 @@ struct RollingMotif
 {
     std::vector<int> ticks;
     std::vector<int> intervals;
+    int length = 5; // 0 = legato
 };
 
 std::vector<Onset> rolling(const BarContext& bar, const RollingMotif& motif, std::mt19937& rng)
@@ -229,7 +243,7 @@ std::vector<Onset> rolling(const BarContext& bar, const RollingMotif& motif, std
         const int tick = motif.ticks[i];
         if (tick != 0 && !chance(rng, std::clamp(0.35f + 0.55f * bar.busy, 0.0f, 1.0f)))
             continue;
-        Onset o { tick, motif.intervals[i % motif.intervals.size()], 5, tick == 0 ? 116 : (tick % 8 == 0 ? 104 : 96), false, false, tick == 0,
+        Onset o { tick, motif.intervals[i % motif.intervals.size()], motif.length, tick == 0 ? 116 : (tick % 8 == 0 ? 104 : 96), false, false, tick == 0,
                   tick == 0 ? "dnb_bass_anchor" : "dnb_bass_roll" };
         out.push_back(o);
     }
@@ -261,7 +275,8 @@ std::vector<Onset> stab(const BarContext& bar, std::mt19937& rng, int seedVarian
         offbeats.erase(std::remove_if(offbeats.begin(), offbeats.end(), [tick](const auto& o) { return std::abs(o.first - tick) < 4; }), offbeats.end());
         if (std::any_of(out.begin(), out.end(), [tick](const Onset& o) { return std::abs(o.tick - tick) < 2; }))
             continue;
-        const int interval = pickWeighted<int>(rng, { { 12, 0.35f }, { 7, 0.15f }, { 1, 0.15f }, { 10, 0.15f }, { 0, 0.20f } });
+        const int interval = pickWeighted<int>(rng, { { 12, 0.35f }, { 7, 0.12f }, { -2, 0.15f }, { 2, 0.10f }, { 10, 0.08f },
+                                                      { 0, 0.20f }, { 1, bar.neuro ? 0.12f : 0.0f } });
         out.push_back({ tick, interval, 3, randomInt(rng, 96, 110), false, interval == 1, false, interval == 1 ? "dnb_bass_tension" : "dnb_bass_answer" });
     }
     // A dive into the next phrase now and then.
@@ -272,6 +287,24 @@ std::vector<Onset> stab(const BarContext& bar, std::mt19937& rng, int seedVarian
 
 std::vector<Onset> wobble(const BarContext& bar, std::mt19937& rng)
 {
+    std::vector<Onset> out;
+    if (bar.wobbleVariant == 1)
+    {
+        // Straight quarter pulse, snares included (the sidechained "drop" bass).
+        for (const int tick : { 0, 16, 32, 48 })
+            out.push_back({ tick, bar.phraseEnd && tick == 48 ? 12 : 0, 13, tick == 0 ? 116 : 108, false, false, tick == 0,
+                            tick == 0 ? "dnb_bass_anchor" : "dnb_bass_pulse" });
+        return out;
+    }
+    if (bar.wobbleVariant == 2)
+    {
+        static const std::array<int, 8> shape { 0, -2, 0, 12, -2, 0, 2, 0 };
+        for (int i = 0; i < 8; ++i)
+            if (i == 0 || chance(rng, std::clamp(0.5f + 0.4f * bar.busy, 0.0f, 1.0f)))
+                out.push_back({ i * 8, shape[static_cast<size_t>(i)], 7, i == 0 ? 114 : 100, false, false, i == 0,
+                                i == 0 ? "dnb_bass_anchor" : "dnb_bass_run" });
+        return out;
+    }
     std::vector<int> ticks { 0, 8, 24, 32, 40, 56 };
     if (bar.busy > 1.2f)
     {
@@ -279,7 +312,6 @@ std::vector<Onset> wobble(const BarContext& bar, std::mt19937& rng)
         ticks.push_back(44);
     }
     std::sort(ticks.begin(), ticks.end());
-    std::vector<Onset> out;
     static const std::array<std::array<int, 4>, 3> shapes {{ { 0, 12, 0, 12 }, { 0, 0, 12, 7 }, { 0, 12, 7, 12 } }};
     const auto& shape = shapes[static_cast<size_t>(randomInt(rng, 0, 2))];
     int index = 0;
@@ -298,10 +330,11 @@ std::vector<Onset> wobble(const BarContext& bar, std::mt19937& rng)
 std::vector<Onset> dubSub(const BarContext& bar, std::mt19937& rng)
 {
     std::vector<Onset> out;
-    out.push_back({ 0, 0, 0, randomInt(rng, 112, 122), false, false, true, "dnb_bass_anchor" });
+    if (!bar.holdFromPrevious)
+        out.push_back({ 0, 0, 0, randomInt(rng, 112, 122), false, false, true, "dnb_bass_anchor" });
     if (bar.rootChangesMidBar)
         out.push_back({ 32, 0, 0, 108, chance(rng, 0.5f), false, true, "dnb_bass_change" });
-    else if (chance(rng, 0.7f * std::min(1.0f, bar.busy)))
+    else if (chance(rng, 0.55f * std::min(1.0f, bar.busy)))
     {
         const int tick = pickWeighted<int>(rng, { { 24, 0.4f }, { 28, 0.2f }, { twoStepKick(bar) > 0 ? twoStepKick(bar) : 40, 0.4f } });
         const int interval = pickWeighted<int>(rng, { { 0, 0.5f }, { -5, 0.25f }, { 7, 0.15f }, { 12, 0.10f } });
@@ -374,11 +407,11 @@ ArchetypeTargets targetsFor(DnBBassArchetype archetype)
 {
     switch (archetype)
     {
-        case DnBBassArchetype::SubReese: return { 0.50f, 2.2f, 0.85f, 0.70f, false };
+        case DnBBassArchetype::SubReese: return { 0.30f, 1.0f, 0.92f, 0.70f, false };
         case DnBBassArchetype::Rolling: return { 0.45f, 6.0f, 0.55f, 0.85f, true };
         case DnBBassArchetype::Stab: return { 0.80f, 4.5f, 0.30f, 0.65f, true };
         case DnBBassArchetype::Wobble: return { 0.60f, 5.5f, 0.50f, 0.75f, true };
-        case DnBBassArchetype::DubSub: return { 0.40f, 1.8f, 0.80f, 0.70f, false };
+        case DnBBassArchetype::DubSub: return { 0.30f, 0.9f, 0.90f, 0.70f, false };
         case DnBBassArchetype::MelodicSub: return { 0.40f, 3.2f, 0.85f, 0.55f, false };
         default: break;
     }
@@ -412,10 +445,27 @@ DnBBassLine buildCandidate(const DnBBassParams& params, const DnBDrumFrame& drum
             std::vector<int> { 0, 0, 0, 12, 0, 0, 7, 0 },
             std::vector<int> { 0, 7, 12, 7, 0, 10, 12, 7 }
         };
-        motif.ticks = motifs[static_cast<size_t>(randomInt(rng, 0, 3))];
-        motif.intervals = shapes[static_cast<size_t>(randomInt(rng, 0, 3))];
+        if (chance(rng, 0.35f))
+        {
+            // Played lines: root / octave on 1, the dotted 8th, 3-and, 4 (snare included) - legato.
+            const bool eighths = chance(rng, 0.4f);
+            motif.ticks = eighths ? std::vector<int> { 0, 8, 16, 24, 32, 40, 48, 56 } : std::vector<int> { 0, 24, 40, 48 };
+            motif.intervals = eighths ? std::vector<int> { 0, -2, 0, 12, -2, 0, 2, 0 } : std::vector<int> { 0, 12, 0, 12 };
+            motif.length = 0;
+        }
+        else
+        {
+            motif.ticks = motifs[static_cast<size_t>(randomInt(rng, 0, 3))];
+            motif.intervals = shapes[static_cast<size_t>(randomInt(rng, 0, 3))];
+        }
     }
     const int stabVariant = randomInt(rng, 0, 9999);
+    const int wobbleVariant = pickWeighted<int>(rng, { { 0, 0.4f }, { 1, 0.35f }, { 2, 0.25f } });
+    const float holdChance = params.amount == 0 ? 0.70f : params.amount == 2 ? 0.20f : 0.45f;
+    const bool sustainedArchetype = line.archetype == DnBBassArchetype::SubReese || line.archetype == DnBBassArchetype::DubSub;
+    const bool rhythmicArchetype = line.archetype == DnBBassArchetype::Rolling || line.archetype == DnBBassArchetype::Wobble
+        || line.archetype == DnBBassArchetype::Stab;
+    int previousRoot = -1;
 
     for (int bar = 0; bar < params.bars; ++bar)
     {
@@ -432,6 +482,10 @@ DnBBassLine buildCandidate(const DnBBassParams& params, const DnBDrumFrame& drum
         if (std::find(ctx.kicks.begin(), ctx.kicks.end(), 0) == ctx.kicks.end())
             ctx.kicks.insert(ctx.kicks.begin(), 0);
         ctx.busy = busy;
+        ctx.wobbleVariant = wobbleVariant;
+        ctx.neuro = params.substyle == static_cast<int>(DnBSubstyle::Neurofunk);
+        ctx.holdFromPrevious = sustainedArchetype && bar > 0 && rootA == previousRoot && chance(rng, holdChance);
+        previousRoot = rootB;
 
         std::vector<Onset> onsets;
         switch (line.archetype)
@@ -445,10 +499,28 @@ DnBBassLine buildCandidate(const DnBBassParams& params, const DnBDrumFrame& drum
             default: break;
         }
 
+        // Phrase shapes from played parts: a run down to close the loop, a flick up at the end of
+        // the 4th bar of an 8-bar loop.
+        const bool lastBar = params.bars >= 4 && bar == params.bars - 1;
+        if (lastBar && rhythmicArchetype && chance(rng, 0.6f))
+        {
+            onsets.erase(std::remove_if(onsets.begin(), onsets.end(), [](const Onset& o) { return o.tick >= 32; }), onsets.end());
+            const bool down = chance(rng, 0.7f);
+            const std::array<int, 4> run = down ? std::array<int, 4> { 12, 10, 7, 5 } : std::array<int, 4> { 0, 3, 5, 7 };
+            for (int i = 0; i < 4; ++i)
+                onsets.push_back({ 32 + i * 8, run[static_cast<size_t>(i)], 0, 100 + i * 2, false, false, false, "dnb_bass_fill" });
+        }
+        else if ((lastBar || (params.bars >= 8 && bar == 3)) && chance(rng, 0.45f)
+                 && std::none_of(onsets.begin(), onsets.end(), [](const Onset& o) { return o.tick >= 56; }))
+        {
+            onsets.push_back({ 56, 12, 4, 104, false, false, false, "dnb_bass_flick" });
+        }
+
         for (const auto& o : onsets)
         {
-            // Bass never starts on the backbone snare: that space belongs to the snare.
-            if (o.tick != 0 && nearSnare(o.tick))
+            // Sustained bass never starts on the backbone snare; rhythmic lines may (played DnB basses
+            // pulse through the snare - the sidechain makes the room).
+            if (o.tick != 0 && nearSnare(o.tick) && !rhythmicArchetype)
                 continue;
 
             // The sample lens: where the sample's own low end is busy, the bass holds back;
@@ -509,7 +581,7 @@ DnBBassLine buildCandidate(const DnBBassParams& params, const DnBDrumFrame& drum
         else
             note.length = std::max(2, std::min(note.length, room - 1));
         // Short-note archetypes duck under the backbone snare.
-        if (targetsFor(line.archetype).shortNotes && !nextGlides)
+        if (line.archetype == DnBBassArchetype::Stab && !nextGlides)
         {
             const int tickInBar = note.start % kBar;
             for (const int snare : { DnBGrid::kSnare2, DnBGrid::kSnare4 })
@@ -820,7 +892,11 @@ DnBBassScore DnBBassGenerator::score(const DnBBassLine& line, const DnBBassParam
         }
     };
     gate(!line.notes.empty() && line.notes.front().start == 0, "no root on the first downbeat");
-    gate(s.snareClash <= 0.12f, "bass attacks on the snare backbone");
+    const bool rhythmic = line.archetype == DnBBassArchetype::Rolling || line.archetype == DnBBassArchetype::Wobble
+        || line.archetype == DnBBassArchetype::Stab;
+    gate(rhythmic || s.snareClash <= 0.12f, "bass attacks on the snare backbone");
+    if (rhythmic && s.snareClash > 0.35f)
+        s.penalties += s.snareClash - 0.35f;
     gate(s.harmonic >= 0.70f, "harmony");
 
     const std::array<std::pair<float, float>, 5> core {

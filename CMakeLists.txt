@@ -52,6 +52,8 @@ endif()
 foreach(hpdg_format_target HPDG_VST3 HPDG_Standalone)
     if (TARGET ${hpdg_format_target})
         add_custom_command(TARGET ${hpdg_format_target} POST_BUILD
+            # Replace (not merge): a sample removed from Samples/ must not linger in the bundle.
+            COMMAND ${CMAKE_COMMAND} -E remove_directory "$<TARGET_FILE_DIR:${hpdg_format_target}>/Samples"
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 "${CMAKE_CURRENT_SOURCE_DIR}/Samples"
                 "$<TARGET_FILE_DIR:${hpdg_format_target}>/Samples"

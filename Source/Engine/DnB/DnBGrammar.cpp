@@ -111,6 +111,7 @@ struct CandidateContext
     const DnBGenerationParams& params;
     DnBCarrierMode carrier = DnBCarrierMode::EighthRolling;
     std::array<bool, 16> brokenMask {};
+    std::vector<int> hatPickups; // 16th pickups of an eighth carrier (ticks 12 / 36), fixed per pattern
     float hatPhase = 0.0f;
 };
 
@@ -142,13 +143,14 @@ void addKicks(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
 
     if (chance(rng, style.twoStepAnchor))
     {
-        const int anchor = pickWeighted<int>(rng, { { 40, 0.62f }, { 36, 0.12f }, { 44, 0.10f }, { 32, 0.10f }, { 42, 0.06f } });
+        const int anchor = pickWeighted<int>(rng, { { 40, 0.60f }, { 24, 0.15f }, { 36, 0.08f }, { 44, 0.07f }, { 32, 0.06f }, { 42, 0.04f } });
         kicks.push_back(anchor);
         bar.push_back(makeEvent(TrackType::Kick, anchor, randomInt(rng, 110, 122), DnBRole::KickAnchor));
     }
 
+    // Played loops sit at ~2 kicks a bar (downbeat + 2-step); density opens up the rest.
     const int budget = std::clamp(style.minKicks
-                                      + static_cast<int>(std::lround((style.maxKicks - style.minKicks) * std::clamp(0.25f + 0.75f * density, 0.0f, 1.0f))),
+                                      + static_cast<int>(std::lround((style.maxKicks - style.minKicks) * std::clamp((density - 0.25f) * 1.3f, 0.0f, 1.0f))),
                                   style.minKicks, style.maxKicks);
 
     std::vector<std::pair<int, float>> scored;
@@ -164,7 +166,7 @@ void addKicks(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
         const float anticipation = std::max(gaussianBump(static_cast<float>(distanceToNextSnare(t)), 8.0f, 2.5f),
                                             0.6f * gaussianBump(static_cast<float>(64 - t), 4.0f, 2.0f)); // pickup into the next downbeat
         const float response = gaussianBump(static_cast<float>(distanceFromPreviousSnare(t)), 7.0f, 3.0f);
-        const float logit = -2.3f + 1.3f * m + 1.6f * anticipation + 1.2f * response
+        const float logit = -2.9f + 1.3f * m + 1.6f * anticipation + 1.2f * response
                           + 1.1f * style.kickSyncopation * (1.0f - m) + 1.6f * (density - 0.5f);
         scored.emplace_back(t, logit);
     }
@@ -247,8 +249,9 @@ void addGhostSnares(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
         count = std::clamp(count, 0, 3);
 
         std::vector<std::pair<int, float>> offsets {
-            { -6, 0.20f * style.ghostPreBias }, { -4, 0.45f * style.ghostPreBias }, { -2, 0.35f * style.ghostPreBias },
-            { 2, 0.30f * (1.0f - style.ghostPreBias) }, { 4, 0.45f * (1.0f - style.ghostPreBias) }, { 6, 0.25f * (1.0f - style.ghostPreBias) }
+            { -8, 0.45f * style.ghostPreBias }, { -6, 0.10f * style.ghostPreBias }, { -4, 0.25f * style.ghostPreBias }, { -2, 0.20f * style.ghostPreBias },
+            { 2, 0.15f * (1.0f - style.ghostPreBias) }, { 4, 0.25f * (1.0f - style.ghostPreBias) }, { 6, 0.10f * (1.0f - style.ghostPreBias) },
+            { 8, 0.50f * (1.0f - style.ghostPreBias) }
         };
         for (int n = 0; n < count && !offsets.empty(); ++n)
         {
@@ -277,8 +280,14 @@ void addCarrier(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
     DnBRole role = DnBRole::HatCarrier;
     switch (ctx.carrier)
     {
-        case DnBCarrierMode::EighthOffbeat: ticks = { 8, 24, 40, 56 }; break;
-        case DnBCarrierMode::EighthRolling: for (int t = 0; t < 64; t += 8) ticks.push_back(t); break;
+        case DnBCarrierMode::EighthOffbeat:
+            ticks = { 8, 24, 40, 56 };
+            for (const int t : ctx.hatPickups) ticks.push_back(t);
+            break;
+        case DnBCarrierMode::EighthRolling:
+            for (int t = 0; t < 64; t += 8) ticks.push_back(t);
+            for (const int t : ctx.hatPickups) ticks.push_back(t);
+            break;
         case DnBCarrierMode::SixteenthShaker: for (int t = 0; t < 64; t += 4) ticks.push_back(t); break;
         case DnBCarrierMode::BrokenSixteenth:
             for (int i = 0; i < 16; ++i)
@@ -313,7 +322,7 @@ void addCarrier(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
         if (t == DnBGrid::kSnare2 || t == DnBGrid::kSnare4)
         {
             // Yield to the backbone: drop or duck under the snare.
-            if (lane == TrackType::HiHat && ticks.size() > 4 && chance(rng, 0.55f))
+            if (lane == TrackType::HiHat && ticks.size() > 4 && chance(rng, 0.25f))
                 continue;
             v *= 0.78f;
         }
@@ -670,6 +679,9 @@ DnBPattern DnBGrammar::generateCandidate(const DnBGenerationParams& params,
     ctx.carrier = pickWeighted(rng, carriers);
     pattern.carrier = ctx.carrier;
     ctx.hatPhase = uniform01(rng) * 6.2831853f;
+    for (const int t : { 12, 36 })
+        if (chance(rng, style.hatPickupRate))
+            ctx.hatPickups.push_back(t);
     // Broken 16ths: offbeat eighths always, the rest with gaps (never three empty 16ths in a row).
     for (int i = 0; i < 16; ++i)
         ctx.brokenMask[static_cast<size_t>(i)] = (i % 4 == 2) || chance(rng, 0.55f);
@@ -740,6 +752,24 @@ DnBPattern DnBGrammar::generateCandidate(const DnBGenerationParams& params,
         }
     }
     pattern.topology = usedTopology;
+
+    std::map<char, bool> dropsDownbeat;
+    for (int bar = 1; bar < pattern.bars; bar += 2)
+    {
+        const char letter = pattern.barLetters[static_cast<size_t>(bar)];
+        if (dropsDownbeat.count(letter) == 0)
+            dropsDownbeat[letter] = chance(rng, style.answerDropsDownbeat);
+        auto& events = bars[static_cast<size_t>(bar)];
+        const bool hasTwoStep = std::any_of(events.begin(), events.end(), [](const DnBEvent& e)
+        {
+            return e.lane == TrackType::Kick && e.tick >= 24 && e.tick <= 44;
+        });
+        if (dropsDownbeat[letter] && hasTwoStep)
+            events.erase(std::remove_if(events.begin(), events.end(), [](const DnBEvent& e)
+            {
+                return (e.lane == TrackType::Kick || e.lane == TrackType::HiHat) && e.tick == 0 && e.role != DnBRole::HatCarrier;
+            }), events.end());
+    }
 
     // Fills: a probability at phrase edges (never a fixed rule), not twice in a row.
     bool previousFill = false;
