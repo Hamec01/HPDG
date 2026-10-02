@@ -45,7 +45,7 @@ MainHeaderComponent::MainHeaderComponent()
 
     bpmLabel.setText("BPM", juce::dontSendNotification);
     addAndMakeVisible(bpmLabel);
-    setupSlider(bpmSlider, 60.0, 180.0, 0.1, " BPM");
+    setupSlider(bpmSlider, 60.0, 240.0, 0.1, " BPM");
     bpmLockToggle.setTooltip("Lock BPM from auto style changes");
     bpmLockToggle.setClickingTogglesState(true);
     addAndMakeVisible(bpmLockToggle);
@@ -267,6 +267,8 @@ MainHeaderComponent::MainHeaderComponent()
     addAndMakeVisible(exportFullButton);
     addAndMakeVisible(exportLoopWavButton);
     addAndMakeVisible(dragFullButton);
+    addAndMakeVisible(presetsButton);
+    presetsButton.setTooltip("Save / load presets (settings, pattern and the loaded sample's path)");
     addAndMakeVisible(generateButton);
     addAndMakeVisible(startPlayWithDawToggle);
     startPlayWithDawToggle.setClickingTogglesState(true);
@@ -289,6 +291,7 @@ MainHeaderComponent::MainHeaderComponent()
     exportFullButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
     exportLoopWavButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
     dragFullButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    presetsButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(214, 200, 160));
 
     transportStepBackButton.setRepeatSpeed(300, 75, 50);
     transportStepForwardButton.setRepeatSpeed(300, 75, 50);
@@ -305,10 +308,23 @@ MainHeaderComponent::MainHeaderComponent()
             onExportFullPressed();
     };
 
-    exportLoopWavButton.onClick = [this]
+    // Click: save the loop WAV with a file dialog. Press and drag: drop the WAV into the DAW.
+    exportLoopWavButton.setTooltip("Click: save loop WAV. Drag: drop the loop WAV into the DAW");
+    exportLoopWavButton.onClickAction = [this]
     {
         if (onExportLoopWavPressed)
             onExportLoopWavPressed();
+    };
+    exportLoopWavButton.onDragAction = [this]
+    {
+        if (onExportLoopWavDragged)
+            onExportLoopWavDragged();
+    };
+
+    presetsButton.onClick = [this]
+    {
+        if (onPresetsPressed)
+            onPresetsPressed();
     };
 
     dragFullButton.onClickAction = [this]
@@ -456,6 +472,7 @@ void MainHeaderComponent::resized()
     exportFullButton.setBounds(fixedRow.removeFromLeft(92).reduced(2));
     exportLoopWavButton.setBounds(fixedRow.removeFromLeft(118).reduced(2));
     dragFullButton.setBounds(fixedRow.removeFromLeft(82).reduced(2));
+    presetsButton.setBounds(fixedRow.removeFromLeft(76).reduced(2));
     transportToStartButton.setBounds(fixedRow.removeFromLeft(40).reduced(2));
     transportStepBackButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));
     transportStepForwardButton.setBounds(fixedRow.removeFromLeft(42).reduced(2));

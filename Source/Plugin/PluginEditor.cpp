@@ -969,6 +969,11 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
         exportLoopWav();
     };
 
+    header.onExportLoopWavDragged = [this]
+    {
+        commandController.dragFullWavExternal(this, logDrag);
+    };
+
     header.onDragFullPressed = [this]
     {
         dragFullPatternTempMidi();
@@ -2226,6 +2231,16 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
     trackList.onDragTrackGesture = [this](const RuntimeLaneId& laneId)
     {
         dragTrackExternal(laneId);
+    };
+
+    trackList.onDragWavTrack = [this](const RuntimeLaneId& laneId)
+    {
+        commandController.dragTrackWav(laneId, logDrag);
+    };
+
+    trackList.onDragWavTrackGesture = [this](const RuntimeLaneId& laneId)
+    {
+        commandController.dragTrackWavExternal(laneId, this, logDrag);
     };
 
     trackList.onDragDensityTrack = [this](const RuntimeLaneId& laneId, float density)

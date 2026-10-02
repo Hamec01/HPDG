@@ -16,7 +16,6 @@ bool isCoreLane(TrackType t)
 void PreviewEngine::prepare(double sampleRate)
 {
     currentSampleRate = sampleRate > 1000.0 ? sampleRate : 44100.0;
-    rateScale = LaneSampleBank::kBankSampleRate / currentSampleRate;
     reset();
 }
 
@@ -124,13 +123,19 @@ void PreviewEngine::noteOn(TrackType trackType, float gain, const LaneSampleBank
 
 void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOffset, const LaneSampleBank& sampleBank, const TriggerOptions& options)
 {
+    auto sourceTrack = trackType;
     auto selected = sampleBank.getSelectedBufferShared(trackType);
-    if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == TrackType::HatFX)
-        selected = sampleBank.getSelectedBufferShared(TrackType::HiHat);
-    if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == TrackType::ClapGhostSnare)
-        selected = sampleBank.getSelectedBufferShared(TrackType::Snare);
-    if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == TrackType::GhostKick)
-        selected = sampleBank.getSelectedBufferShared(TrackType::Kick);
+    const auto fallBackTo = [&](TrackType from, TrackType to)
+    {
+        if ((selected == nullptr || selected->getNumSamples() <= 0) && trackType == from)
+        {
+            selected = sampleBank.getSelectedBufferShared(to);
+            sourceTrack = to;
+        }
+    };
+    fallBackTo(TrackType::HatFX, TrackType::HiHat);
+    fallBackTo(TrackType::ClapGhostSnare, TrackType::Snare);
+    fallBackTo(TrackType::GhostKick, TrackType::Kick);
     if (selected == nullptr || selected->getNumSamples() <= 0)
         return;
 
@@ -182,6 +187,7 @@ void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOf
     voice->cutDelaySamples = -1;
     voice->fadeSamplesRemaining = 0;
     voice->fadeTotalSamples = 0;
+    voice->rateScale = sampleBank.getSelectedSampleRate(sourceTrack) / currentSampleRate;
 }
 
 void PreviewEngine::applyPendingTransition(Voice& voice)
@@ -286,7 +292,7 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
                     voice.playbackRate = voice.targetPlaybackRate;
             }
 
-            voice.samplePosition += static_cast<double>(voice.playbackRate) * rateScale;
+            voice.samplePosition += static_cast<double>(voice.playbackRate) * voice.rateScale;
 
             if (voice.remainingSamples > 0)
             {
@@ -377,7 +383,7 @@ void PreviewEngine::renderSeparated(std::array<juce::AudioBuffer<float>, kTrackT
                     voice.playbackRate = voice.targetPlaybackRate;
             }
 
-            voice.samplePosition += static_cast<double>(voice.playbackRate) * rateScale;
+            voice.samplePosition += static_cast<double>(voice.playbackRate) * voice.rateScale;
 
             if (voice.remainingSamples > 0)
             {

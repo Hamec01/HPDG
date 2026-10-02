@@ -33,7 +33,7 @@ juce_add_plugin(HPDG
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
     PLUGIN_MANUFACTURER_CODE BBLB
     PLUGIN_CODE BBG1
@@ -71,6 +71,7 @@ target_sources(HPDG
     Source/Analysis/SampleSourceAudio.cpp
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
+    Source/Analysis/SampleLineTranscriber.cpp
     Source/Analysis/FeatureExtractor.cpp
     Source/Analysis/SampleApplyWeights.cpp
     Source/Core/TrackRegistry.cpp
@@ -106,6 +107,7 @@ target_sources(HPDG
     Source/Engine/ExtractPatternBuilder.cpp
     Source/Engine/SampleGuideAccents.cpp
     Source/Engine/SampleBassFollower.cpp
+    Source/Engine/SampleBassLineComposer.cpp
     Source/Engine/PatternBlendEngine.cpp
     Source/Engine/SubstyleRuleEnforcer.cpp
     Source/Engine/BoomBap/BoomBapStyleProfile.cpp
@@ -351,6 +353,7 @@ add_executable(HPDG_BreakLab
     Tests/BreakTranscriptionLab.cpp
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
+    Source/Analysis/SampleLineTranscriber.cpp
 )
 
 target_include_directories(HPDG_BreakLab PRIVATE Source)

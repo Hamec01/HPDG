@@ -72,6 +72,34 @@ const SampleBassSegment* SampleHarmony::segmentAt(double seconds) const
     return nullptr;
 }
 
+void SampleHarmony::refineBassFromLines()
+{
+    for (auto& segment : bass)
+    {
+        const double length = segment.endSeconds - segment.startSeconds;
+        if (length <= 0.0)
+            continue;
+        std::array<double, 128> heard {};
+        std::array<float, 128> confidence {};
+        for (const auto& note : lines.bass)
+        {
+            const double overlap = std::min(segment.endSeconds, note.endSeconds) - std::max(segment.startSeconds, note.startSeconds);
+            if (overlap <= 0.0 || note.midiNote < 0 || note.midiNote > 127)
+                continue;
+            heard[static_cast<size_t>(note.midiNote)] += overlap;
+            confidence[static_cast<size_t>(note.midiNote)] = std::max(confidence[static_cast<size_t>(note.midiNote)], note.confidence);
+        }
+        const auto best = std::distance(heard.begin(), std::max_element(heard.begin(), heard.end()));
+        const double share = heard[static_cast<size_t>(best)] / length;
+        if (share < 0.35)
+            continue;
+        segment.midiNote = static_cast<int>(best);
+        segment.confidence = std::max(segment.confidence,
+                                      juce::jlimit(0.0f, 1.0f, 0.45f + 0.55f * static_cast<float>(std::min(1.0, share)) * confidence[static_cast<size_t>(best)]));
+        segment.lowEnergy = std::max(segment.lowEnergy, 0.2f);
+    }
+}
+
 juce::String SampleHarmony::keyName() const
 {
     if (!valid)
@@ -100,8 +128,10 @@ juce::String SampleHarmony::describe() const
 SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
                                              double sampleRate,
                                              double segmentSeconds,
-                                             double originSeconds) const
+                                             double originSeconds,
+                                             double tuningCents) const
 {
+    const double tuning = juce::jlimit(-50.0, 50.0, tuningCents) / 100.0;
     SampleHarmony harmony;
     if (mono.size() < static_cast<size_t>(kFrameSize / 2) || sampleRate < 8000.0 || segmentSeconds <= 0.05)
         return harmony;
@@ -149,7 +179,7 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
         auto& salience = frameSalience[static_cast<size_t>(frame)];
         for (int note = kLowestBassNote; note <= kHighestBassNote; ++note)
         {
-            const double f0 = midiToHz(note);
+            const double f0 = midiToHz(note + tuning);
             float value = 0.0f;
             for (size_t harmonic = 0; harmonic < kHarmonicWeights.size(); ++harmonic)
                 value += kHarmonicWeights[harmonic] * magnitudeNear(f0 * static_cast<double>(harmonic + 1));
@@ -167,7 +197,7 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
         for (int bin = static_cast<int>(65.0 / binHz); bin <= std::min(kFrameSize / 2 - 1, static_cast<int>(2100.0 / binHz)); ++bin)
         {
             const double hz = bin * binHz;
-            const int pc = (static_cast<int>(std::lround(12.0 * std::log2(hz / 440.0) + 69.0)) % 12 + 12) % 12;
+            const int pc = (static_cast<int>(std::lround(12.0 * std::log2(hz / 440.0) + 69.0 - tuning)) % 12 + 12) % 12;
             chroma[static_cast<size_t>(pc)] += data[static_cast<size_t>(bin)];
         }
     }

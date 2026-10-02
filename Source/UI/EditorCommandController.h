@@ -181,6 +181,48 @@ public:
         file.revealToUser();
     }
 
+    // Lane audio: rendered offline to a WAV named after the lane, then revealed / dragged out.
+    void dragTrackWav(const RuntimeLaneId& laneId, const std::function<void(const juce::String&)>& logDrag) const
+    {
+        const auto file = audioProcessor.createTemporaryTrackWavFile(laneId);
+        if (!file.existsAsFile())
+        {
+            logDrag("dragTrackWav no file lane=" + laneId);
+            return;
+        }
+        file.revealToUser();
+    }
+
+    // Export Loop WAV dragged instead of clicked: the whole pattern as a WAV, dropped into the DAW.
+    void dragFullWavExternal(juce::Component* parent, const std::function<void(const juce::String&)>& logDrag) const
+    {
+        const auto file = audioProcessor.createTemporaryWavFile(std::nullopt);
+        if (!file.existsAsFile())
+        {
+            logDrag("dragFullWavExternal no file");
+            return;
+        }
+        logDrag("dragFullWavExternal " + file.getFullPathName());
+        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() }, false, parent, nullptr);
+        if (!started)
+            file.revealToUser();
+    }
+
+    void dragTrackWavExternal(const RuntimeLaneId& laneId,
+                              juce::Component* parent,
+                              const std::function<void(const juce::String&)>& logDrag) const
+    {
+        const auto file = audioProcessor.createTemporaryTrackWavFile(laneId);
+        if (!file.existsAsFile())
+        {
+            logDrag("dragTrackWavExternal no file lane=" + laneId);
+            return;
+        }
+        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() }, false, parent, nullptr);
+        if (!started)
+            file.revealToUser();
+    }
+
     void dragTrackExternal(TrackType type, juce::Component* parent, const std::function<void(const juce::String&)>& logDrag) const
     {
         logDrag("dragTrackExternal gesture start type=" + juce::String(static_cast<int>(type)));

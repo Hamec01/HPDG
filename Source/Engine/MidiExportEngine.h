@@ -33,5 +33,9 @@ public:
     static bool saveMultiTrackMidiFile(const PatternProject& project,
                                        const juce::File& file,
                                        int ppq = 960);
+
+    // Ticks per quarter the MIDI file declares: ppq, or ppq * 2 / ppq / 2 when the pattern tempo
+    // is double / half the host tempo (see PatternProject::exportHostBpm).
+    static int fileTicksPerQuarter(const PatternProject& project, int ppq);
 };
 } // namespace bbg

@@ -154,6 +154,10 @@ struct PatternProject
     // PatternProject owns generated musical content and per-track musical state.
     // APVTS owns plugin parameter state (tempo sync, knobs, genre choices, seed).
     GeneratorParams params;
+    // Transient (never saved): the host tempo when a MIDI export is made. If the pattern runs at
+    // exactly double / half of it (DnB at 172 in an 86 BPM session), the exported file declares
+    // 2x / 0.5x ticks per quarter so the notes keep their real-time speed in the DAW.
+    double exportHostBpm = 0.0;
     StyleInfluenceState styleInfluence;
     RuntimeLaneProfile runtimeLaneProfile;
     std::vector<RuntimeLaneId> runtimeLaneOrder;

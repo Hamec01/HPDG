@@ -2,6 +2,8 @@
 #include <array>
 #include <functional>
 #include <iostream>
+#include <map>
+#include <set>
 #include <stdexcept>
 
 #include <juce_events/juce_events.h>
@@ -693,6 +695,243 @@ void testGenreComboSelectsTrapNotDrill()
 // Guide mode + Trap with a tonal sample: A minor, one chord per bar (Am F C G) with the bass on
 // the chord root. The key controls must switch to A minor and every 808 note that lands in a
 // bar must take that bar's bass pitch class.
+// Bass mode [2] over a musical sample with drums: the transcriber hears the sample's bass line
+// (A1 / C2 / E2 per bar, plus kicks and snares that must not read as bass) and its melody, and
+// the composed line takes its pitches from them: sample-bass notes on the bass's own notes,
+// kick notes on what the bass plays there, melody notes from the melody's pitch classes.
+void runSampleLineBass(GenreType genre)
+{
+    constexpr double rate = 44100.0;
+    constexpr double bpm = 90.0;
+    const double sixteenth = 15.0 / bpm;
+    const int bars = 4;
+    const int length = static_cast<int>(bars * 16 * sixteenth * rate);
+    juce::AudioBuffer<float> audio(1, length);
+    audio.clear();
+    auto tone = [&](double startStep, double steps, int midi, double level, int harmonics)
+    {
+        const double hz = 440.0 * std::pow(2.0, (midi - 69) / 12.0);
+        const int start = static_cast<int>(startStep * sixteenth * rate);
+        const int end = std::min(length, static_cast<int>((startStep + steps) * sixteenth * rate));
+        for (int i = start; i < end; ++i)
+        {
+            const double t = (i - start) / rate;
+            const double env = std::min(1.0, t / 0.008) * std::min(1.0, (end - i) / (0.01 * rate)) * std::exp(-t / 1.5);
+            double value = 0.0;
+            for (int h = 1; h <= harmonics; ++h)
+                value += std::sin(juce::MathConstants<double>::twoPi * hz * h * t) / h;
+            audio.addSample(0, i, static_cast<float>(level * env * value));
+        }
+    };
+    const std::array<std::pair<int, int>, 3> bassFigure { { { 0, 33 }, { 6, 36 }, { 10, 40 } } };  // A1, C2, E2
+    const std::array<int, 8> melody { 64, 67, 69, 67, 64, 62, 60, 62 };                          // E4 G4 A4 G4 E4 D4 C4 D4
+    juce::Random noise(7);
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        const int base = bar * 16;
+        for (size_t i = 0; i < bassFigure.size(); ++i)
+        {
+            const int end = i + 1 < bassFigure.size() ? bassFigure[i + 1].first : 16;
+            tone(base + bassFigure[i].first, end - bassFigure[i].first - 0.3, bassFigure[i].second, 0.35, 4);
+        }
+        for (size_t i = 0; i < melody.size(); ++i)
+            tone(base + 2.0 * static_cast<double>(i), 1.8, melody[i], 0.12, 3);
+        for (const int step : { 0, 10 }) // kick: a 55 Hz thump
+        {
+            const int start = static_cast<int>((base + step) * sixteenth * rate);
+            for (int i = 0; i < static_cast<int>(0.12 * rate) && start + i < length; ++i)
+            {
+                const double t = i / rate;
+                audio.addSample(0, start + i, static_cast<float>(0.6 * std::sin(juce::MathConstants<double>::twoPi * (55.0 + 90.0 * std::exp(-t / 0.02)) * t) * std::exp(-t / 0.05)));
+            }
+        }
+        for (const int step : { 4, 12 }) // snare: noise burst
+        {
+            const int start = static_cast<int>((base + step) * sixteenth * rate);
+            for (int i = 0; i < static_cast<int>(0.1 * rate) && start + i < length; ++i)
+                audio.addSample(0, start + i, static_cast<float>(0.35 * (noise.nextFloat() * 2.0f - 1.0f) * std::exp(-i / rate / 0.03)));
+        }
+    }
+
+    const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_sample_line_bass.wav");
+    file.deleteFile();
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(file), rate, 1, 24, {}, 0));
+        expect(writer != nullptr, "could not create test wav");
+        writer->writeFromAudioSampleBuffer(audio, 0, length);
+    }
+
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(44100.0, 512);
+    auto& apvts = processor.getApvts();
+    apvts.getParameter(ParamIds::genre)->setValueNotifyingHost(apvts.getParameter(ParamIds::genre)->convertTo0to1(genre == GenreType::Trap ? 2.0f : 0.0f));
+    processor.setTrackEnabled(TrackType::Sub808, true);
+    auto* barsParam = apvts.getParameter(ParamIds::bars);
+    barsParam->setValueNotifyingHost(barsParam->convertTo0to1(2.0f)); // "4" bars
+    processor.syncBarsFromState();
+    processor.generatePattern();
+
+    processor.setAnalysisMode(AnalysisMode::GenerateFromSample);
+    processor.setSampleApplyMode(SampleApplyMode::Blend);
+    auto request = processor.getSampleAnalysisRequest();
+    request.source = SampleAnalysisRequest::SourceType::AudioFile;
+    request.audioFile = file;
+    processor.setSampleAnalysisRequest(request);
+    request = processor.getSampleAnalysisRequest();
+    request.manualBpm = bpm;
+    processor.setSampleAnalysisRequest(request);
+    juce::String error;
+    expect(processor.loadSampleSource(file, &error), "load failed: " + error);
+    expect(processor.analyzeCurrentSampleSource(&error), "analysis failed: " + error);
+
+    // The transcription itself: the bass figure, not the kicks; the melody's notes.
+    const auto harmony = processor.getSampleHarmony();
+    std::cout << "    " << harmony.lines.describe().replace("\n", "\n    ").substring(0, 600) << std::endl;
+    int bassRight = 0;
+    for (const auto& n : harmony.lines.bass)
+        bassRight += (n.midiNote == 33 || n.midiNote == 36 || n.midiNote == 40) ? 1 : 0;
+    expect(harmony.lines.bass.size() >= 8 && bassRight >= static_cast<int>(harmony.lines.bass.size()) - 1,
+           "bass line not transcribed: " + juce::String(bassRight) + "/" + juce::String(static_cast<int>(harmony.lines.bass.size())));
+    int melodyRight = 0;
+    for (const auto& n : harmony.lines.melody)
+        melodyRight += std::find(melody.begin(), melody.end(), n.midiNote) != melody.end() ? 1 : 0;
+    expect(harmony.lines.melody.size() >= 16 && melodyRight >= static_cast<int>(harmony.lines.melody.size() * 0.85),
+           "melody not transcribed: " + juce::String(melodyRight) + "/" + juce::String(static_cast<int>(harmony.lines.melody.size())));
+
+    auto settings = ProjectLaneAccess::findTrackState(processor.getProjectSnapshot(), TrackType::Sub808)->sub808Settings;
+    settings.bassAmount = 1; // mode [2]
+    processor.setSub808LaneSettings(TrackType::Sub808, settings);
+
+    const std::set<int> bassClasses { 9, 0, 4 };       // A C E
+    const std::set<int> melodyClasses { 4, 7, 9, 2, 0 }; // E G A D C
+    std::set<char> rolesSeen;
+    for (int run = 0; run < 8; ++run)
+    {
+        if (run % 2 == 0)
+            processor.generatePattern();
+        else
+            processor.regenerateTrack(TrackType::Sub808);
+        const auto project = processor.getProjectSnapshot();
+        const auto debug = processor.getGenerationDebugSummary();
+        expect(debug.contains("Sample bass line [2]: bars"), "mode [2] did not compose from the sample (run " + juce::String(run) + ")");
+        const auto plan = debug.fromFirstOccurrenceOf("Sample bass line [2]: bars ", false, false).upToFirstOccurrenceOf(" |", false, false);
+        for (const auto c : plan)
+            if (c != ' ')
+                rolesSeen.insert(static_cast<char>(c));
+        const auto* sub = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+        expect(sub != nullptr && sub->notes.size() >= 4, "too few bass notes");
+        for (const auto& note : sub->notes)
+        {
+            const int pc = note.pitch % 12;
+            const juce::String where = "run " + juce::String(run) + " note at step " + juce::String(note.gridTick / 240) + " (" + note.semanticRole + ")";
+            expect(note.semanticRole.contains("sample_line"), where + ": not composed from the sample");
+            if (note.semanticRole.contains("|bass") || note.semanticRole.contains("|kick"))
+                expect(bassClasses.count(pc) > 0, where + ": pitch " + juce::String(note.pitch) + " is not the sample's bass");
+            if (note.semanticRole.contains("|melody"))
+                expect(melodyClasses.count(pc) > 0, where + ": pitch " + juce::String(note.pitch) + " is not from the melody");
+            expect(note.pitch >= 19 && note.pitch <= 60, where + ": out of bass register " + juce::String(note.pitch));
+        }
+        if (run == 0)
+            std::cout << "    " << debug.fromFirstOccurrenceOf("Sample bass line [2]", true, false).upToFirstOccurrenceOf("\n", false, false) << std::endl;
+    }
+    expect(rolesSeen.size() >= 2, "every generation used the same single role");
+    file.deleteFile();
+}
+
+// Dev probe (runs only with HPDG_PROBE_SAMPLE=<file>[|startSeconds|endSeconds]): prints the
+// transcribed lines and the [2] bass Boom Bap / Trap compose over a real sample.
+void probeRealSampleBass()
+{
+    const auto spec = juce::SystemStats::getEnvironmentVariable("HPDG_PROBE_SAMPLE", {});
+    if (spec.isEmpty())
+        return;
+    const auto parts = juce::StringArray::fromTokens(spec, "|", {});
+    const juce::File file(parts[0]);
+    for (const auto genre : { GenreType::BoomBap, GenreType::Trap })
+    {
+        BoomBapGeneratorAudioProcessor processor;
+        processor.prepareToPlay(44100.0, 512);
+        auto& apvts = processor.getApvts();
+        apvts.getParameter(ParamIds::genre)->setValueNotifyingHost(apvts.getParameter(ParamIds::genre)->convertTo0to1(genre == GenreType::Trap ? 2.0f : 0.0f));
+        processor.setTrackEnabled(TrackType::Sub808, true);
+        processor.generatePattern();
+        processor.setAnalysisMode(AnalysisMode::GenerateFromSample);
+        processor.setSampleApplyMode(SampleApplyMode::Blend);
+        auto request = processor.getSampleAnalysisRequest();
+        request.source = SampleAnalysisRequest::SourceType::AudioFile;
+        request.audioFile = file;
+        processor.setSampleAnalysisRequest(request);
+        request = processor.getSampleAnalysisRequest();
+        if (parts.size() >= 3)
+        {
+            request.trimStartSeconds = parts[1].getDoubleValue();
+            request.trimEndSeconds = parts[2].getDoubleValue();
+        }
+        if (parts.size() >= 4)
+            request.manualBpm = parts[3].getDoubleValue();
+        processor.setSampleAnalysisRequest(request);
+        juce::String error;
+        processor.loadSampleSource(file, &error);
+        const auto started = juce::Time::getMillisecondCounterHiRes();
+        processor.analyzeCurrentSampleSource(&error);
+        const auto harmony = processor.getSampleHarmony();
+        if (genre == GenreType::BoomBap)
+            std::cout << "    analysis " << juce::String(juce::Time::getMillisecondCounterHiRes() - started, 0) << " ms | bpm "
+                      << juce::String(processor.getDrumBreakAnalysis().bpm, 1) << " | key " << harmony.keyName()
+                      << " | tuning " << juce::String(harmony.tuningCents, 0) << "c\n    " << harmony.lines.describe().replace("\n", "\n    ") << std::endl;
+
+        auto settings = ProjectLaneAccess::findTrackState(processor.getProjectSnapshot(), TrackType::Sub808)->sub808Settings;
+        settings.bassAmount = 1;
+        processor.setSub808LaneSettings(TrackType::Sub808, settings);
+        for (int run = 0; run < 3; ++run)
+        {
+            processor.generatePattern();
+            const auto project = processor.getProjectSnapshot();
+            std::cout << "    " << (genre == GenreType::Trap ? "TRAP" : "BOOMBAP") << " " << juce::String(project.params.bpm, 1) << " bpm | "
+                      << processor.getGenerationDebugSummary().fromFirstOccurrenceOf("Sample bass line [2]", true, false).upToFirstOccurrenceOf("\n", false, false) << "\n      ";
+            static const char* names[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+            if (const auto* sub = ProjectLaneAccess::findTrackState(project, TrackType::Sub808))
+                for (const auto& n : sub->notes)
+                    std::cout << names[n.pitch % 12] << (n.pitch / 12 - 1) << "@" << n.gridTick / 240 << "+" << n.lengthTicks / 240
+                              << n.semanticRole.fromLastOccurrenceOf("|", false, false).substring(0, 1) << (n.glideToNext ? "~" : "") << " ";
+            std::cout << std::endl;
+        }
+    }
+}
+
+// RG on the bass lane re-applies the Boom Bap style to the project; the lanes' selected sample
+// names (what the rows show) must survive it, not turn into "(none)" until the next Generate.
+void testLaneRegenerateKeepsSampleNames()
+{
+    for (const auto genre : { GenreType::BoomBap, GenreType::Trap })
+    {
+        BoomBapGeneratorAudioProcessor processor;
+        auto& apvts = processor.getApvts();
+        apvts.getParameter(ParamIds::genre)->setValueNotifyingHost(apvts.getParameter(ParamIds::genre)->convertTo0to1(genre == GenreType::Trap ? 2.0f : 0.0f));
+        processor.setTrackEnabled(TrackType::Sub808, true);
+        processor.generatePattern();
+        std::map<TrackType, juce::String> before;
+        for (const auto& track : processor.getProjectSnapshot().tracks)
+            if (track.selectedSampleName.isNotEmpty())
+                before[track.type] = track.selectedSampleName;
+        expect(!before.empty(), "no lane sample names to start from (sample library missing?)");
+
+        for (const auto lane : { TrackType::Sub808, TrackType::HiHat, TrackType::Kick })
+        {
+            processor.regenerateTrack(lane);
+            for (const auto& track : processor.getProjectSnapshot().tracks)
+                if (const auto it = before.find(track.type); it != before.end())
+                    expect(track.selectedSampleName == it->second,
+                           "RG " + juce::String(static_cast<int>(lane)) + " changed / dropped the sample name of lane "
+                               + juce::String(static_cast<int>(track.type)) + ": '" + track.selectedSampleName + "'");
+        }
+    }
+}
+
+void testBoomBapSampleLineBass() { runSampleLineBass(GenreType::BoomBap); }
+void testTrapSampleLineBass() { runSampleLineBass(GenreType::Trap); }
+
 void runGuideBassFollowsSample(GenreType genre)
 {
     constexpr double rate = 44100.0;
@@ -773,6 +1012,287 @@ void runGuideBassFollowsSample(GenreType genre)
     file.deleteFile();
 }
 
+// DnB over a half-tempo sample runs at double time. Accent kicks taken from the sample's peaks
+// must sound at the same real-time moment as the peak (not at the half-tempo tick).
+void testDnBGuideAccentsLandOnSamplePeaksAtDoubleTime()
+{
+    constexpr double rate = 44100.0;
+    constexpr double sampleBpm = 86.0;
+    BoomBapGeneratorAudioProcessor processor;
+    auto& apvts = processor.getApvts();
+    auto* genre = apvts.getParameter(ParamIds::genre);
+    const int dnbChoice = 4; // genre parameter choice index of Drum & Bass
+    genre->setValueNotifyingHost(genre->convertTo0to1(static_cast<float>(dnbChoice)));
+    apvts.getParameter(ParamIds::bpm)->setValueNotifyingHost(apvts.getParameter(ParamIds::bpm)->convertTo0to1(static_cast<float>(sampleBpm)));
+
+    const double beat = 60.0 / sampleBpm;
+    const int length = static_cast<int>(8 * beat * rate); // 2 sample bars = 4 DnB bars
+    juce::AudioBuffer<float> audio(1, length);
+    for (int i = 0; i < length; ++i)
+    {
+        const double t = i / rate;
+        audio.setSample(0, i, static_cast<float>(0.1 * (std::sin(juce::MathConstants<double>::twoPi * 220.0 * t)
+                                                        + std::sin(juce::MathConstants<double>::twoPi * 329.6 * t))));
+    }
+    // Low thumps on sample 16ths 0, 5, 11, 16, 21, 27 (off the DnB snares).
+    std::vector<double> thumpSeconds;
+    for (const int sixteenth : { 0, 5, 11, 16, 21, 27 })
+    {
+        const double at = sixteenth * beat / 4.0;
+        thumpSeconds.push_back(at);
+        const int start = static_cast<int>(at * rate);
+        double phase = 0.0;
+        for (int i = 0; i < static_cast<int>(0.25 * rate) && start + i < length; ++i)
+        {
+            const double t = i / rate;
+            phase += juce::MathConstants<double>::twoPi * (55.0 + 60.0 * std::exp(-t / 0.03)) / rate;
+            audio.addSample(0, start + i, static_cast<float>(0.8 * std::sin(phase) * std::exp(-t / 0.1)));
+        }
+    }
+
+    const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_dnb_accent_test.wav");
+    file.deleteFile();
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(file), rate, 1, 24, {}, 0));
+        expect(writer != nullptr, "could not create test wav");
+        writer->writeFromAudioSampleBuffer(audio, 0, length);
+    }
+
+    processor.setAnalysisMode(AnalysisMode::GenerateFromSample);
+    processor.setSampleApplyMode(SampleApplyMode::Blend);
+    juce::String error;
+    expect(processor.analyzeAudioFile(file, &error), "analysis failed: " + error);
+
+    for (int run = 0; run < 4; ++run)
+    {
+        processor.generatePattern();
+        const auto project = processor.getProjectSnapshot();
+        expect(project.params.genre == GenreType::DnB, "genre is not DnB");
+        const double patternBpm = project.params.bpm;
+        const double loopSeconds = length / rate;
+        const auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
+        expect(kick != nullptr, "no kick lane");
+        for (const auto& note : kick->notes)
+        {
+            if (note.semanticRole != "sample_accent")
+                continue;
+            double seconds = note.gridTick / static_cast<double>(TimingGrid::PPQ) * 60.0 / patternBpm;
+            seconds = std::fmod(seconds, loopSeconds);
+            double nearest = 1.0e9;
+            for (const double thump : thumpSeconds)
+                nearest = std::min(nearest, std::abs(seconds - thump));
+            if (nearest >= 60.0 / patternBpm / 8.0)
+            {
+                const auto analysis = processor.getDrumBreakAnalysis();
+                juce::String onsets;
+                for (size_t i = 0; i < analysis.onsetTimes.size(); ++i)
+                    onsets << juce::String(analysis.onsetTimes[i], 3) << "(K" << juce::String(analysis.onsetLaneLevels[i][0], 2) << ") ";
+                const auto debug = processor.getGenerationDebugSummary();
+                expect(false, "accent kick at " + juce::String(seconds, 3) + " s is " + juce::String(nearest * 1000.0, 1)
+                                  + " ms from any sample peak (pattern " + juce::String(patternBpm, 1) + " BPM)\n onsets: " + onsets
+                                  + "\n " + debug.fromFirstOccurrenceOf("Sample guide accents", true, false).upToFirstOccurrenceOf("\n", false, false)
+                                  + "\n sample bpm " + juce::String(analysis.bpm, 2) + " conf " + juce::String(analysis.tempoConfidence, 2)
+                                  + " origin " + juce::String(analysis.originSeconds, 3));
+            }
+        }
+    }
+    file.deleteFile();
+}
+
+// Export Loop WAV and the per-lane WAV drag render the pattern offline: a file of exactly one
+// pattern length with real audio in it.
+// A preset stores the state plus only the path (fragment, tempo, mode) of the loaded sample.
+// Loading it restores parameters and pattern, hands the sample reference to the editor, and
+// re-analysing that sample leaves the restored pattern alone. A missing file is reported.
+void testPresetKeepsSampleReference()
+{
+    constexpr double rate = 44100.0;
+    const int length = static_cast<int>(4.0 * rate);
+    juce::AudioBuffer<float> audio(1, length);
+    audio.clear();
+    for (int beat = 0; beat < 8; ++beat)
+    {
+        const int start = static_cast<int>(beat * 0.5 * rate);
+        for (int i = 0; i < static_cast<int>(0.2 * rate) && start + i < length; ++i)
+        {
+            const double t = i / rate;
+            audio.addSample(0, start + i, static_cast<float>(0.8 * std::sin(juce::MathConstants<double>::twoPi * 60.0 * t) * std::exp(-t / 0.08)));
+        }
+    }
+
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_preset_test");
+    dir.deleteRecursively();
+    dir.createDirectory();
+    const auto sampleFile = dir.getChildFile("loop.wav");
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(sampleFile), rate, 1, 24, {}, 0));
+        expect(writer != nullptr, "could not create test wav");
+        writer->writeFromAudioSampleBuffer(audio, 0, length);
+    }
+
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(48000.0, 512);
+    processor.setAnalysisMode(AnalysisMode::GenerateFromSample);
+    processor.setSampleApplyMode(SampleApplyMode::Blend);
+    auto request = processor.getSampleAnalysisRequest();
+    request.source = SampleAnalysisRequest::SourceType::AudioFile;
+    request.audioFile = sampleFile;
+    processor.setSampleAnalysisRequest(request);
+    request = processor.getSampleAnalysisRequest();
+    request.trimStartSeconds = 0.0;
+    request.trimEndSeconds = 2.0;
+    request.manualBpm = 120.0;
+    processor.setSampleAnalysisRequest(request);
+    juce::String error;
+    expect(processor.loadSampleSource(sampleFile, &error), "load failed: " + error);
+    expect(processor.analyzeCurrentSampleSource(&error), "analysis failed: " + error);
+    processor.setPlaySampleWithPattern(true);
+    processor.generatePattern();
+    const auto saved = processor.getProjectSnapshot();
+
+    const auto presetFile = dir.getChildFile("test.hpdgpreset");
+    expect(processor.savePresetToFile(presetFile), "preset not written");
+    const auto presetText = presetFile.loadFileAsString();
+    expect(presetText.contains(sampleFile.getFullPathName()), "preset must reference the sample path");
+    expect(!presetText.contains("vst3_editor_width"), "preset must not carry the window size");
+    expect(presetFile.getSize() < 2 * 1024 * 1024, "preset must not embed audio");
+
+    BoomBapGeneratorAudioProcessor other;
+    other.prepareToPlay(48000.0, 512);
+    auto& apvts = other.getApvts();
+    apvts.getParameter(ParamIds::bpm)->setValueNotifyingHost(apvts.getParameter(ParamIds::bpm)->convertTo0to1(150.0f));
+    other.generatePattern();
+    expect(other.loadPresetFromFile(presetFile, &error), "preset load failed: " + error);
+
+    const auto countNotes = [](const PatternProject& p)
+    {
+        size_t n = 0;
+        for (const auto& track : p.tracks)
+            n += track.notes.size();
+        return n;
+    };
+    const auto loaded = other.getProjectSnapshot();
+    expect(std::abs(loaded.params.bpm - saved.params.bpm) < 0.01f,
+           "bpm not restored: " + juce::String(loaded.params.bpm) + " vs " + juce::String(saved.params.bpm));
+    expect(countNotes(loaded) == countNotes(saved), "pattern not restored");
+
+    const auto reference = other.takePendingSampleRestore();
+    expect(reference.has_value(), "loaded preset must hand over the sample reference");
+    expect(!other.takePendingSampleRestore().has_value(), "the reference is taken once");
+    expect(reference->file == sampleFile, "wrong sample path");
+    expect(std::abs(reference->trimEndSeconds - 2.0) < 1.0e-6 && std::abs(reference->manualBpm - 120.0) < 1.0e-6, "fragment / tempo lost");
+    expect(reference->mode == AnalysisMode::GenerateFromSample && reference->playWithPattern, "mode lost");
+
+    expect(other.restoreSampleSource(*reference, {}, &error), "restore failed: " + error);
+    const auto restored = other.getSampleAnalysisRequest();
+    expect(restored.audioFile == sampleFile && std::abs(restored.trimEndSeconds - 2.0) < 1.0e-6
+               && std::abs(restored.manualBpm - 120.0) < 1.0e-6, "sample request not restored");
+    expect(other.getSampleSource() != nullptr && other.isSampleAnalysisReady(), "sample not reloaded");
+    expect(other.isPlaySampleWithPattern(), "play-with-pattern not restored");
+    expect(countNotes(other.getProjectSnapshot()) == countNotes(saved), "re-analysis changed the restored pattern");
+
+    // Missing sample: still a reference (the editor asks: load another / skip), restore fails.
+    sampleFile.deleteFile();
+    BoomBapGeneratorAudioProcessor third;
+    expect(third.loadPresetFromFile(presetFile, &error), "preset load failed: " + error);
+    const auto missing = third.takePendingSampleRestore();
+    expect(missing.has_value() && !missing->file.existsAsFile(), "missing sample must still be referenced");
+    expect(!third.restoreSampleSource(*missing, {}, &error), "restoring a missing file must fail");
+
+    dir.deleteRecursively();
+}
+
+// DnB follows the sample tempo (octave up into the DnB range): 94 -> 188, 87 -> 174, 172 -> 172.
+void testDnBFollowsSampleTempo()
+{
+    constexpr double rate = 44100.0;
+    const int length = static_cast<int>(6.0 * rate);
+    juce::AudioBuffer<float> audio(1, length);
+    audio.clear();
+    for (int i = 0; i < length; ++i)
+        audio.setSample(0, i, static_cast<float>(0.2 * std::sin(juce::MathConstants<double>::twoPi * 220.0 * i / rate)));
+
+    const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_dnb_tempo_test.wav");
+    file.deleteFile();
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(file), rate, 1, 24, {}, 0));
+        expect(writer != nullptr, "could not create test wav");
+        writer->writeFromAudioSampleBuffer(audio, 0, length);
+    }
+
+    for (const auto& [typed, expected] : std::vector<std::pair<double, float>> { { 94.0, 188.0f }, { 87.0, 174.0f }, { 172.0, 172.0f } })
+    {
+        for (const auto mode : { AnalysisMode::GenerateFromSample, AnalysisMode::ExtractFromSample })
+        {
+            BoomBapGeneratorAudioProcessor processor;
+            processor.prepareToPlay(48000.0, 512);
+            auto& apvts = processor.getApvts();
+            apvts.getParameter(ParamIds::genre)->setValueNotifyingHost(apvts.getParameter(ParamIds::genre)->convertTo0to1(4.0f));
+            processor.generatePattern();
+            processor.setAnalysisMode(mode);
+            processor.setSampleApplyMode(mode == AnalysisMode::ExtractFromSample ? SampleApplyMode::ExactCopy : SampleApplyMode::Blend);
+            auto request = processor.getSampleAnalysisRequest();
+            request.source = SampleAnalysisRequest::SourceType::AudioFile;
+            request.audioFile = file;
+            processor.setSampleAnalysisRequest(request);
+            request = processor.getSampleAnalysisRequest();
+            request.manualBpm = typed;
+            processor.setSampleAnalysisRequest(request);
+            juce::String error;
+            expect(processor.loadSampleSource(file, &error), "load failed: " + error);
+            processor.analyzeCurrentSampleSource(&error);
+            processor.generatePattern();
+            const auto bpm = processor.getProjectSnapshot().params.bpm;
+            std::cout << "    typed " << typed << " mode " << static_cast<int>(mode) << " -> " << bpm << std::endl;
+            expect(std::abs(bpm - expected) < 0.6f,
+                   "DnB ignored the sample tempo " + juce::String(typed) + ": " + juce::String(bpm, 1));
+        }
+    }
+    file.deleteFile();
+}
+
+void testLoopAndLaneWavExport()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(48000.0, 512);
+    processor.generatePattern();
+    const auto project = processor.getProjectSnapshot();
+
+    auto readWav = [](const juce::File& file, juce::AudioBuffer<float>& audio, double& rate)
+    {
+        juce::AudioFormatManager manager;
+        manager.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> reader(manager.createReaderFor(file));
+        if (reader == nullptr)
+            return false;
+        audio.setSize(static_cast<int>(reader->numChannels), static_cast<int>(reader->lengthInSamples));
+        reader->read(&audio, 0, audio.getNumSamples(), 0, true, true);
+        rate = reader->sampleRate;
+        return true;
+    };
+
+    const auto loopFile = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_loop_export_test.wav");
+    loopFile.deleteFile();
+    expect(processor.exportLoopWavToFile(loopFile), "Export Loop WAV returned false");
+    juce::AudioBuffer<float> audio;
+    double rate = 0.0;
+    expect(readWav(loopFile, audio, rate), "exported WAV cannot be read");
+    const double expectedSeconds = project.params.bars * 4 * 60.0 / project.params.bpm;
+    expect(std::abs(audio.getNumSamples() / rate - expectedSeconds) < 0.01,
+           "loop length " + juce::String(audio.getNumSamples() / rate, 3) + " s, pattern " + juce::String(expectedSeconds, 3) + " s");
+    expect(audio.getMagnitude(0, audio.getNumSamples()) > 0.01f, "exported loop is silent");
+    loopFile.deleteFile();
+
+    const auto kickFile = processor.createTemporaryWavFile(TrackType::Kick);
+    expect(kickFile.existsAsFile(), "kick lane WAV was not created");
+    expect(readWav(kickFile, audio, rate) && audio.getMagnitude(0, audio.getNumSamples()) > 0.01f, "kick lane WAV is silent");
+    expect(kickFile.getFileName().contains("Kick"), "lane WAV should be named after the lane: " + kickFile.getFileName());
+    kickFile.deleteFile();
+}
+
 // --- Sample playback correctness -------------------------------------------------------------
 juce::File writeSineWav(const juce::File& file, double rate, double hz, double seconds, float amplitude)
 {
@@ -809,8 +1329,9 @@ void testSampleRootNoteFromName()
     expect(LaneSampleBank::rootPitchClassFromName("Deep Sub.wav") == 0, "no note");
 }
 
-// A 44.1 kHz sample must keep its length and pitch after the bank brings it to 48 kHz, and the
-// player must compensate for the device rate (here 44.1 kHz) so it plays at the original speed.
+// A 44.1 kHz sample played on a 48 kHz device: the bank keeps the file as it is (no slow
+// resampling at load) and the player reads it at fileRate / deviceRate, so it lasts its real
+// 0.5 s and keeps its 110 Hz pitch.
 void testBankResamplingKeepsPitchAndLength()
 {
     const auto root = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_bank_rate_test");
@@ -820,28 +1341,29 @@ void testBankResamplingKeepsPitchAndLength()
     loadBankFrom(bank, root);
     const auto buffer = bank.getSelectedBufferShared(TrackType::Sub808);
     expect(buffer != nullptr, "bass sample not loaded");
-    expect(std::abs(buffer->getNumSamples() - 24000) <= 2, "resampled length " + juce::String(buffer->getNumSamples()));
+    expect(buffer->getNumSamples() == 22050, "the file must be kept at its own rate: " + juce::String(buffer->getNumSamples()));
+    expect(std::abs(bank.getSelectedSampleRate(TrackType::Sub808) - 44100.0) < 1.0, "file rate not recorded");
     expect(bank.getSelectedRootPitchClass(TrackType::Sub808) == 9, "root A not read from the name");
 
-    // Zero crossings over the first 0.4 s at 48 kHz: 110 Hz -> ~88.
-    int crossings = 0;
-    for (int i = 1; i < 19200; ++i)
-        if ((buffer->getSample(0, i - 1) < 0.0f) != (buffer->getSample(0, i) < 0.0f))
-            ++crossings;
-    expect(std::abs(crossings - 88) <= 2, "pitch changed by resampling: crossings " + juce::String(crossings));
-
     PreviewEngine engine;
-    engine.prepare(44100.0);
+    engine.prepare(48000.0);
     PreviewEngine::TriggerOptions options;
     engine.noteOnAtSample(TrackType::Sub808, 1.0f, 0, bank, options);
-    juce::AudioBuffer<float> out(1, 44100);
+    juce::AudioBuffer<float> out(1, 48000);
     out.clear();
     engine.render(out, 0, out.getNumSamples());
     int lastSound = 0;
+    int crossings = 0;
     for (int i = 0; i < out.getNumSamples(); ++i)
+    {
         if (std::abs(out.getSample(0, i)) > 1.0e-4f)
             lastSound = i;
-    expect(std::abs(lastSound - 22050) < 200, "0.5 s sample played for " + juce::String(lastSound) + " samples at 44.1 kHz");
+        if (i > 0 && i < 19200 && (out.getSample(0, i - 1) < 0.0f) != (out.getSample(0, i) < 0.0f))
+            ++crossings;
+    }
+    expect(std::abs(lastSound - 24000) < 200, "0.5 s sample played for " + juce::String(lastSound) + " samples at 48 kHz");
+    // 0.4 s of 110 Hz: ~88 zero crossings.
+    expect(std::abs(crossings - 88) <= 2, "pitch changed: crossings " + juce::String(crossings));
     root.deleteRecursively();
 }
 
@@ -1123,11 +1645,20 @@ int main()
     failures += runTest("Sample root note from name", testSampleRootNoteFromName);
     failures += runTest("Bank resampling keeps pitch and length", testBankResamplingKeepsPitchAndLength);
     failures += runTest("Drum choke and bass note length", testDrumChokeAndBassNoteLength);
+    failures += runTest("Loop and lane WAV export", testLoopAndLaneWavExport);
+    failures += runTest("DnB guide accents land on sample peaks at double time", testDnBGuideAccentsLandOnSamplePeaksAtDoubleTime);
     failures += runTest("BoomBap lane actions keep locked lanes", testBoomBapLaneActionsKeepLockedLanes);
     failures += runTest("Trap lane actions keep locked coupled lanes", testTrapLaneActionsKeepLockedCoupledLanes);
     failures += runTest("Trap double-time kicks avoid snares", testTrapDoubleTimeKicksAvoidSnares);
     failures += runTest("BoomBap kicks never land on the backbeat", testBoomBapKicksNeverLandOnBackbeat);
     failures += runTest("BoomBap derived bars are not carbon copies", testBoomBapDerivedBarsAreNotCarbonCopies);
+    failures += runTest("Preset keeps the sample reference", testPresetKeepsSampleReference);
+    failures += runTest("DnB follows the sample tempo", testDnBFollowsSampleTempo);
+    failures += runTest("Lane RG keeps the lanes' sample names", testLaneRegenerateKeepsSampleNames);
+    failures += runTest("Boom Bap bass [2] composed from the sample", testBoomBapSampleLineBass);
+    failures += runTest("Trap 808 [2] composed from the sample", testTrapSampleLineBass);
+    if (juce::SystemStats::getEnvironmentVariable("HPDG_PROBE_SAMPLE", {}).isNotEmpty())
+        failures += runTest("Probe real sample bass", probeRealSampleBass);
 
     if (failures == 0)
     {

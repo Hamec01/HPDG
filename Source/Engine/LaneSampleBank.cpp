@@ -54,9 +54,10 @@ std::unique_ptr<LaneSampleBank::PreparedLibrary> LaneSampleBank::prepareLibrary(
         auto& state = prepared->states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
         state.infos = library.getSamples(track);
         state.buffers.resize(state.infos.size());
+        state.sampleRates.assign(state.infos.size(), 44100.0);
 
         for (size_t i = 0; i < state.infos.size(); ++i)
-            loadWavToBuffer(state.infos[i].file, localFormatManager, state.buffers[i]);
+            loadWavToBuffer(state.infos[i].file, localFormatManager, state.buffers[i], state.sampleRates[i]);
     }
 
     return prepared;
@@ -83,6 +84,7 @@ void LaneSampleBank::adoptPreparedLibrary(std::unique_ptr<PreparedLibrary> prepa
         const int previousSelection = state.selectedIndex;
         state.infos = std::move(incoming.infos);
         state.buffers = std::move(incoming.buffers);
+        state.sampleRates = std::move(incoming.sampleRates);
 
         if (state.infos.empty())
         {
@@ -261,9 +263,19 @@ int LaneSampleBank::getSelectedRootPitchClass(TrackType track) const
     return states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))].selectedRootPitchClass;
 }
 
+double LaneSampleBank::getSelectedSampleRate(TrackType track) const
+{
+    const auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];
+    if (state.sampleRates.empty())
+        return 44100.0;
+    const int index = juce::jlimit(0, static_cast<int>(state.sampleRates.size()) - 1, state.selectedIndex);
+    return state.sampleRates[static_cast<size_t>(index)];
+}
+
 bool LaneSampleBank::loadWavToBuffer(const juce::File& file,
                                      juce::AudioFormatManager& formatManager,
-                                     std::shared_ptr<juce::AudioBuffer<float>>& outBuffer)
+                                     std::shared_ptr<juce::AudioBuffer<float>>& outBuffer,
+                                     double& outSampleRate)
 {
     outBuffer.reset();
 
@@ -271,58 +283,12 @@ bool LaneSampleBank::loadWavToBuffer(const juce::File& file,
     if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
         return false;
 
-    const int channels = static_cast<int>(reader->numChannels);
-    const int sourceLength = static_cast<int>(reader->lengthInSamples);
-    juce::AudioBuffer<float> source(channels, sourceLength);
-    source.clear();
-    if (!reader->read(&source, 0, sourceLength, 0, true, true))
+    auto buffer = std::make_shared<juce::AudioBuffer<float>>(static_cast<int>(reader->numChannels), static_cast<int>(reader->lengthInSamples));
+    buffer->clear();
+    if (!reader->read(buffer.get(), 0, static_cast<int>(reader->lengthInSamples), 0, true, true))
         return false;
 
-    if (std::abs(reader->sampleRate - kBankSampleRate) < 1.0)
-    {
-        outBuffer = std::make_shared<juce::AudioBuffer<float>>(std::move(source));
-        return true;
-    }
-
-    // Lanczos (windowed-sinc, 8 lobes) resampling to the bank rate, zero-latency. When the source
-    // is above the bank rate the kernel is widened to low-pass at the new Nyquist (no aliasing).
-    const double ratio = reader->sampleRate / kBankSampleRate; // source samples per output sample
-    const int targetLength = juce::jmax(1, static_cast<int>(std::ceil(sourceLength / ratio)));
-    const double cutoff = std::min(1.0, 1.0 / ratio);
-    static constexpr int lobes = 8;
-    const double halfWidth = lobes / cutoff;
-    auto lanczos = [](double x)
-    {
-        if (std::abs(x) < 1.0e-9)
-            return 1.0;
-        if (std::abs(x) >= lobes)
-            return 0.0;
-        const double px = juce::MathConstants<double>::pi * x;
-        return lobes * std::sin(px) * std::sin(px / lobes) / (px * px);
-    };
-
-    auto buffer = std::make_shared<juce::AudioBuffer<float>>(channels, targetLength);
-    for (int channel = 0; channel < channels; ++channel)
-    {
-        const float* in = source.getReadPointer(channel);
-        float* out = buffer->getWritePointer(channel);
-        for (int i = 0; i < targetLength; ++i)
-        {
-            const double centre = i * ratio;
-            const int first = juce::jmax(0, static_cast<int>(std::ceil(centre - halfWidth)));
-            const int last = juce::jmin(sourceLength - 1, static_cast<int>(std::floor(centre + halfWidth)));
-            double sum = 0.0;
-            double weightSum = 0.0;
-            for (int j = first; j <= last; ++j)
-            {
-                const double weight = lanczos((j - centre) * cutoff);
-                sum += weight * in[j];
-                weightSum += weight;
-            }
-            out[i] = static_cast<float>(weightSum > 1.0e-9 ? sum / weightSum : 0.0);
-        }
-    }
-
+    outSampleRate = reader->sampleRate;
     outBuffer = std::move(buffer);
     return true;
 }

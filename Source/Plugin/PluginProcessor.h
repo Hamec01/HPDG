@@ -183,7 +183,11 @@ public:
     bool exportFullPatternToFile(const juce::File& targetFile) const;
     bool exportTrackToFile(TrackType track, const juce::File& targetFile) const;
     bool exportTrackToFile(const RuntimeLaneId& laneId, const juce::File& targetFile) const;
-    bool exportLoopWavToFile(const juce::File& targetFile) const;
+    // Audio export: the pattern rendered offline through the same voices / FX as playback.
+    // onlyLane: one lane on its own (per-lane WAV drag), otherwise the full mix.
+    bool exportLoopWavToFile(const juce::File& targetFile);
+    juce::File createTemporaryWavFile(std::optional<TrackType> onlyLane);
+    juce::File createTemporaryTrackWavFile(const RuntimeLaneId& laneId);
     juce::File createTemporaryFullPatternMidiFile() const;
     juce::File createTemporaryTrackMidiFile(TrackType track) const;
     juce::File createTemporaryTrackMidiFile(const RuntimeLaneId& laneId) const;
@@ -197,7 +201,9 @@ public:
     SampleAnalysisRequest getSampleAnalysisRequest() const;
 
     bool analyzeCurrentSampleSource(juce::String* errorMessage = nullptr);
-    bool analyzeAudioFile(const juce::File& file, juce::String* errorMessage = nullptr);
+    // applyToPattern = false re-analyzes without touching the pattern (restoring a saved session
+    // / preset, whose pattern was already restored from the state).
+    bool analyzeAudioFile(const juce::File& file, juce::String* errorMessage = nullptr, bool applyToPattern = true);
     bool extractPatternFromAnalyzedSample();
     void clearSampleAnalysis();
 
@@ -245,6 +251,29 @@ public:
 
     // "Play sample with HPDG": while the pattern plays, the analyzed fragment plays along,
     // bar-locked to the pattern (time-stretched by varispeed when the tempos differ).
+    // The loaded sample is saved in the state / presets only as a reference (path, fragment,
+    // tempo, mode); the audio stays where it is. After setStateInformation the editor takes the
+    // pending reference and reloads it (or asks the user when the file is missing).
+    struct SampleSourceReference
+    {
+        juce::File file;
+        double trimStartSeconds = 0.0;
+        double trimEndSeconds = 0.0;
+        double manualBpm = 0.0;
+        float breakQuantizeAmount = 0.0f;
+        AnalysisMode mode = AnalysisMode::GenerateFromSample;
+        bool playWithPattern = false;
+    };
+    std::optional<SampleSourceReference> takePendingSampleRestore();
+    // Loads + analyzes the referenced sample (replacementFile, when given, stands in for a
+    // missing one: its fragment / tempo start fresh). The pattern is left as it is.
+    bool restoreSampleSource(const SampleSourceReference& reference, const juce::File& replacementFile = {},
+                             juce::String* errorMessage = nullptr);
+
+    static juce::File getPresetsDirectory();
+    bool savePresetToFile(const juce::File& file);
+    bool loadPresetFromFile(const juce::File& file, juce::String* errorMessage = nullptr);
+
     void setPlaySampleWithPattern(bool enabled);
     bool isPlaySampleWithPattern() const;
     void setSamplePlaybackGain(float gain);
@@ -369,7 +398,9 @@ private:
                            const std::function<void(PatternProject&)>& engineStep);
     void rotateLaneSamplesForGenerationLocked(const PatternProject& previousProject, std::optional<TrackType> focusTrack);
     void updateSampleAwareContextLocked();
-    bool applySampleAwarePostProcessLocked();
+    // focusTrack: the lane a lane-RG regenerated (nullopt = a whole generation); a sample-composed
+    // bass line is rebuilt only for the whole pattern or for the bass lane itself.
+    bool applySampleAwarePostProcessLocked(std::optional<TrackType> focusTrack = std::nullopt);
     bool extractPatternFromAnalyzedSampleLocked();
     bool genreHasActiveBassLocked(GenreType genre) const;
     void resetEqDisplayAnalyzer();
@@ -386,6 +417,10 @@ private:
     void applyMasterFx(juce::AudioBuffer<float>& buffer);
     void applyMasterFx(juce::AudioBuffer<float>& buffer, MasterFxRuntimeState& runtime, float masterVol, float compAmount, float lofiAmount) const;
     std::vector<PreviewEvent> buildPreviewEventsForProject(const PatternProject& sourceProject, double sampleRate) const;
+    PreviewEngine::TriggerOptions triggerOptionsFor(const PreviewEvent& event) const;
+    bool renderPatternAudio(const PatternProject& snapshot, std::optional<TrackType> onlyLane,
+                            juce::AudioBuffer<float>& out, double sampleRate);
+    bool writeWav(const juce::AudioBuffer<float>& audio, double sampleRate, const juce::File& file) const;
     int getPatternLengthSamples() const;
     int getPatternLengthSamples(const PatternProject& sourceProject, double sampleRate) const;
     SoundLayerState sanitizeSoundLayer(const SoundLayerState& state) const;
@@ -451,6 +486,7 @@ private:
 
     SampleAnalyzer sampleAnalyzer;
     SampleAnalysisRequest currentAnalysisRequest;
+    std::optional<SampleSourceReference> pendingSampleRestore; // guarded by projectMutex
     SampleAnalysisBundle currentAnalysisBundle;
     SampleAnalysisResult currentAnalysisResult;
     AudioFeatureMap currentFeatureMap;

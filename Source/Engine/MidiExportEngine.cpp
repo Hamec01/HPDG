@@ -1,6 +1,7 @@
 #include "MidiExportEngine.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 #include "../Core/TrackRegistry.h"
@@ -244,6 +245,18 @@ juce::MidiMessageSequence MidiExportEngine::patternToSequence(const PatternProje
     return sequence;
 }
 
+int MidiExportEngine::fileTicksPerQuarter(const PatternProject& project, int ppq)
+{
+    const double host = project.exportHostBpm;
+    const double pattern = static_cast<double>(project.params.bpm);
+    if (host <= 20.0 || pattern <= 20.0)
+        return ppq;
+    for (const double factor : { 2.0, 0.5, 4.0, 0.25 })
+        if (std::abs(pattern / host / factor - 1.0) < 0.02)
+            return juce::jmax(1, static_cast<int>(std::lround(ppq * factor)));
+    return ppq;
+}
+
 bool MidiExportEngine::saveMidiFile(const PatternProject& project,
                                     const juce::File& file,
                                     std::optional<TrackType> onlyTrack,
@@ -256,7 +269,7 @@ bool MidiExportEngine::saveMidiFile(const PatternProject& project,
         auto sequence = patternToSequence(project, onlyTrack, ppq, honorMute, honorSolo);
 
         juce::MidiFile midi;
-        midi.setTicksPerQuarterNote(ppq);
+        midi.setTicksPerQuarterNote(fileTicksPerQuarter(project, ppq));
         midi.addTrack(sequence);
 
         if (auto stream = file.createOutputStream())
@@ -281,7 +294,7 @@ bool MidiExportEngine::saveMultiTrackMidiFile(const PatternProject& project,
     try
     {
         juce::MidiFile midi;
-        midi.setTicksPerQuarterNote(ppq);
+        midi.setTicksPerQuarterNote(fileTicksPerQuarter(project, ppq));
         const auto hatChokeStarts = collectHatChokeStartsAll(project, project.params.bars, ppq);
 
         for (const auto& info : TrackRegistry::all())

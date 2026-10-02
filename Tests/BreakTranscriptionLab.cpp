@@ -15,9 +15,11 @@
 #include <random>
 
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_dsp/juce_dsp.h>
 
 #include "../Source/Analysis/DrumBreakTranscriber.h"
 #include "../Source/Analysis/SampleHarmonyAnalyzer.h"
+#include "../Source/Analysis/SampleLineTranscriber.h"
 #include "../Source/Core/TimingGrid.h"
 
 using namespace bbg;
@@ -581,6 +583,195 @@ int runRootNote(const juce::StringArray& args)
 
 // Random diatonic progressions (one chord per bar) with a bass line on chord roots / fifths and
 // a pad on top. Scores key detection and per-beat bass pitch-class accuracy.
+// Pitch class sounding most (by duration) inside [from, to), -1 when nothing does.
+int dominantPitchClass(const std::vector<SampleLineNote>& line, double from, double to, double minShare = 0.3)
+{
+    std::array<double, 12> share {};
+    for (const auto& n : line)
+        share[static_cast<size_t>(n.midiNote % 12)] += std::max(0.0, std::min(to, n.endSeconds) - std::max(from, n.startSeconds));
+    const auto best = std::max_element(share.begin(), share.end());
+    return *best >= minShare * (to - from) ? static_cast<int>(std::distance(share.begin(), best)) : -1;
+}
+
+int noteAt(const std::vector<SampleLineNote>& line, double t)
+{
+    for (const auto& n : line)
+        if (t >= n.startSeconds && t < n.endSeconds)
+            return n.midiNote;
+    return -1;
+}
+
+// lines <mix | stems folder> [--ref <bass stem>] [--print]
+//   Transcribes the bass / melody lines. With a stems folder the stems are summed into the
+//   mix and the "(Bass)" stem's own transcription is the reference: frame-wise pitch accuracy
+//   and per-half-second pitch-class accuracy of the new line vs the old per-beat analyzer.
+int runLines(const juce::StringArray& args)
+{
+    if (args.size() < 2)
+        return 1;
+    const juce::File input(args[1]);
+    juce::File refFile;
+    bool print = false;
+    juce::StringArray only;
+    for (int i = 2; i < args.size(); ++i)
+    {
+        if (args[i] == "--ref" && i + 1 < args.size())
+            refFile = juce::File(args[++i]);
+        else if (args[i] == "--print")
+            print = true;
+        else if (args[i] == "--only" && i + 1 < args.size())
+            only = juce::StringArray::fromTokens(args[++i], ",", {});
+    }
+
+    std::vector<float> mix;
+    double rate = 44100.0;
+    if (input.isDirectory())
+    {
+        for (const auto& stem : input.findChildFiles(juce::File::findFiles, false, "*.wav;*.mp3"))
+        {
+            std::vector<float> audio;
+            double stemRate = 0.0;
+            if (!loadMono(stem, audio, stemRate))
+                continue;
+            if (stem.getFileName().containsIgnoreCase("Bass") && !stem.getFileName().containsIgnoreCase("Backing"))
+                refFile = stem;
+            if (stem.getFileName().containsIgnoreCase("Vocals"))
+                continue; // a beat sample has no lead vocal
+            if (!only.isEmpty() && std::none_of(only.begin(), only.end(), [&](const juce::String& part) { return stem.getFileName().containsIgnoreCase(part); }))
+                continue;
+            double rms = 0.0;
+            for (const float v : audio)
+                rms += static_cast<double>(v) * v;
+            std::cout << "  stem " << stem.getFileName() << " rms " << juce::String(std::sqrt(rms / std::max<size_t>(1, audio.size())), 4) << "\n";
+            rate = stemRate;
+            if (mix.size() < audio.size())
+                mix.resize(audio.size(), 0.0f);
+            for (size_t i = 0; i < audio.size(); ++i)
+                mix[i] += audio[i];
+        }
+    }
+    else if (!loadMono(input, mix, rate))
+    {
+        std::cout << "cannot read " << input.getFullPathName() << "\n";
+        return 1;
+    }
+
+    const double seconds = std::min(40.0, static_cast<double>(mix.size()) / rate);
+    mix.resize(static_cast<size_t>(seconds * rate));
+    const auto started = juce::Time::getMillisecondCounterHiRes();
+    const double tuning = SampleLineTranscriber::estimateTuningCents(mix, rate);
+    const auto tTuning = juce::Time::getMillisecondCounterHiRes();
+    const auto harmony = SampleHarmonyAnalyzer().analyze(mix, rate, 0.5, 0.0, tuning);
+    const auto tHarmony = juce::Time::getMillisecondCounterHiRes();
+    const auto lines = SampleLineTranscriber().transcribe(mix, rate, harmony.keyRoot, harmony.scaleMode, harmony.keyConfidence >= 0.4f);
+    std::cout << "  timing: tuning " << juce::String(tTuning - started, 0) << " ms | harmony " << juce::String(tHarmony - tTuning, 0)
+              << " ms | lines (incl. tuning again) " << juce::String(juce::Time::getMillisecondCounterHiRes() - tHarmony, 0) << " ms\n";
+    std::cout << "MIX " << input.getFileName() << " | " << juce::String(seconds, 1) << " s | key " << harmony.keyName()
+              << " | transcribe " << juce::String(juce::Time::getMillisecondCounterHiRes() - started, 0) << " ms\n";
+    if (print)
+        std::cout << lines.describe() << "\n";
+    else
+        std::cout << "  bass notes " << lines.bass.size() << " | melody notes " << lines.melody.size() << "\n";
+
+    if (!refFile.existsAsFile())
+        return 0;
+
+    std::vector<float> refAudio;
+    double refRate = 0.0;
+    if (!loadMono(refFile, refAudio, refRate))
+        return 1;
+    refAudio.resize(std::min(refAudio.size(), static_cast<size_t>(seconds * refRate)));
+    const auto refLines = SampleLineTranscriber().transcribe(refAudio, refRate);
+    if (print)
+        std::cout << "REF " << refLines.describe().upToFirstOccurrenceOf("\n", false, false) << "\n";
+
+    // Frame-wise (20 ms).
+    int refVoiced = 0, mixVoiced = 0, both = 0, exact = 0, pitchClass = 0;
+    for (double t = 0.0; t < seconds; t += 0.02)
+    {
+        const int r = noteAt(refLines.bass, t);
+        const int m = noteAt(lines.bass, t);
+        refVoiced += r >= 0 ? 1 : 0;
+        mixVoiced += m >= 0 ? 1 : 0;
+        if (r >= 0 && m >= 0)
+        {
+            ++both;
+            exact += r == m ? 1 : 0;
+            pitchClass += r % 12 == m % 12 ? 1 : 0;
+        }
+    }
+    // Half-second windows: the old per-beat analyzer vs the new line.
+    int windows = 0, oldClaimed = 0, oldRight = 0, newClaimed = 0, newRight = 0;
+    for (const auto& segment : harmony.bass)
+    {
+        const int truth = dominantPitchClass(refLines.bass, segment.startSeconds, segment.endSeconds, 0.5);
+        if (truth < 0)
+            continue;
+        ++windows;
+        if (segment.midiNote >= 0 && segment.confidence >= 0.35f)
+        {
+            ++oldClaimed;
+            oldRight += segment.midiNote % 12 == truth ? 1 : 0;
+        }
+        const int mine = dominantPitchClass(lines.bass, segment.startSeconds, segment.endSeconds, 0.3);
+        if (mine >= 0)
+        {
+            ++newClaimed;
+            newRight += mine == truth ? 1 : 0;
+        }
+    }
+    auto pct = [](int a, int b) { return b > 0 ? juce::String(100.0 * a / b, 0) + "%" : juce::String("-"); };
+    std::cout << "  REF " << refFile.getFileName() << " | ref bass notes " << refLines.bass.size() << "\n"
+              << "  frames: ref voiced " << refVoiced << " | mix voiced " << mixVoiced << " | recall " << pct(both, refVoiced)
+              << " | precision " << pct(both, mixVoiced) << " | exact " << pct(exact, both) << " | pitch class " << pct(pitchClass, both) << "\n"
+              << "  0.5 s windows " << windows << ": OLD claimed " << oldClaimed << " right " << pct(oldRight, oldClaimed)
+              << " | NEW claimed " << newClaimed << " right " << pct(newRight, newClaimed) << "\n";
+    return 0;
+}
+
+// peaks <file> <fromSeconds> <toSeconds>: averaged long-FFT spectrum, strongest peaks below 1 kHz.
+int runPeaks(const juce::StringArray& args)
+{
+    if (args.size() < 4)
+        return 1;
+    std::vector<float> audio;
+    double rate = 0.0;
+    if (!loadMono(juce::File(args[1]), audio, rate))
+        return 1;
+    constexpr int order = 15;
+    constexpr int size = 1 << order;
+    juce::dsp::FFT fft(order);
+    std::vector<double> sum(size / 2, 0.0);
+    std::vector<float> data(size * 2);
+    const auto from = static_cast<size_t>(args[2].getDoubleValue() * rate);
+    const auto to = std::min(audio.size(), static_cast<size_t>(args[3].getDoubleValue() * rate));
+    for (size_t start = from; start + size <= to; start += size / 4)
+    {
+        std::fill(data.begin(), data.end(), 0.0f);
+        for (int i = 0; i < size; ++i)
+            data[static_cast<size_t>(i)] = audio[start + static_cast<size_t>(i)] * (0.5f - 0.5f * std::cos(juce::MathConstants<float>::twoPi * i / size));
+        fft.performFrequencyOnlyForwardTransform(data.data(), true);
+        for (int k = 0; k < size / 2; ++k)
+            sum[static_cast<size_t>(k)] += data[static_cast<size_t>(k)];
+    }
+    const double binHz = rate / size;
+    std::vector<std::pair<double, int>> peaks;
+    for (int k = 2; k < static_cast<int>(1000.0 / binHz); ++k)
+        if (sum[static_cast<size_t>(k)] > sum[static_cast<size_t>(k - 1)] && sum[static_cast<size_t>(k)] >= sum[static_cast<size_t>(k + 1)])
+            peaks.push_back({ sum[static_cast<size_t>(k)], k });
+    std::sort(peaks.rbegin(), peaks.rend());
+    static const char* names[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    for (size_t i = 0; i < std::min<size_t>(12, peaks.size()); ++i)
+    {
+        const double hz = peaks[i].second * binHz;
+        const double midi = 69.0 + 12.0 * std::log2(hz / 440.0);
+        const int nearest = static_cast<int>(std::lround(midi));
+        std::cout << "  " << juce::String(hz, 1) << " Hz  " << names[(nearest % 12 + 12) % 12] << (nearest / 12 - 1)
+                  << " (" << juce::String((midi - nearest) * 100.0, 0) << "c)  level " << juce::String(20.0 * std::log10(peaks[i].first / peaks[0].first), 1) << " dB\n";
+    }
+    return 0;
+}
+
 int runHarmonySynth(const juce::StringArray& args)
 {
     int trials = 40;
@@ -708,6 +899,10 @@ int main(int argc, char** argv)
         return runAnalyze(args);
     if (args[0] == "rootnote")
         return runRootNote(args);
+    if (args[0] == "peaks")
+        return runPeaks(args);
+    if (args[0] == "lines")
+        return runLines(args);
     if (args[0] == "harmony-synth")
         return runHarmonySynth(args);
     if (args[0] == "synth")

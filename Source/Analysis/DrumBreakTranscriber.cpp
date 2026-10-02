@@ -1307,6 +1307,24 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
     if (options.forcedBpm > 20.0)
         analysis.tempoConfidence = 1.0f; // typed by the user
 
+    // Loops and samples are made at whole BPM; an estimate a few hundredths / tenths off (86.94,
+    // a file a few samples longer than its bars) shows up as 85.9 / 173.9. Snap to the whole BPM
+    // when it is close and the hits fit its grid as well.
+    if (options.forcedBpm <= 20.0)
+    {
+        const double whole = std::round(analysis.bpm);
+        if (std::abs(whole - analysis.bpm) <= 0.25 && whole > 20.0)
+        {
+            const float fitHere = bestPhasedFit(analysis.hits, analysis.bpm, true).fit;
+            const float fitWhole = bestPhasedFit(analysis.hits, whole, true).fit;
+            if (fitWhole >= fitHere * 0.97f)
+            {
+                analysis.originSeconds = context.leadSilenceEnd + (analysis.originSeconds - context.leadSilenceEnd) * (analysis.bpm / whole);
+                analysis.bpm = whole;
+            }
+        }
+    }
+
     if (wholeBarLoop && best.bars > 0)
     {
         analysis.bars = best.bars;

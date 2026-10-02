@@ -58,7 +58,13 @@ if "%DO_CLEAN%"=="1" (
 
 REM ---------- Configure ----------
 echo [2/4] Configuring CMake...
-cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -A x64
+REM The platform can only be chosen when the build folder is created: an existing folder
+REM keeps its own generator / platform (passing -A to it again is an error).
+if exist "%BUILD_DIR%\CMakeCache.txt" (
+    cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%"
+) else (
+    cmake -S "%PROJECT_DIR%" -B "%BUILD_DIR%" -A x64
+)
 if errorlevel 1 (
     echo [ERROR] CMake configure failed.
     goto :fail

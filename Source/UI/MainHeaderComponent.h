@@ -43,6 +43,8 @@ public:
     std::function<void(bool)> onPlayToggled;
     std::function<void()> onExportFullPressed;
     std::function<void()> onExportLoopWavPressed;
+    std::function<void()> onExportLoopWavDragged;
+    std::function<void()> onPresetsPressed;
     std::function<void()> onDragFullPressed;
     std::function<void()> onDragFullGesture;
     std::function<void()> onTransportToStart;
@@ -84,8 +86,9 @@ public:
     juce::TextButton mutateButton { "Mutate" };
     juce::TextButton clearAllButton { "Clear All" };
     juce::TextButton exportFullButton { "Export Full" };
-    juce::TextButton exportLoopWavButton { "Export Loop WAV" };
+    DragGestureButton exportLoopWavButton { "Export Loop WAV" };
     DragGestureButton dragFullButton { "Drag Full" };
+    juce::TextButton presetsButton { "Presets" };
     juce::TextButton generateButton { "Generate Pattern" };
     juce::ToggleButton startPlayWithDawToggle { "Start play with DAW" };
 

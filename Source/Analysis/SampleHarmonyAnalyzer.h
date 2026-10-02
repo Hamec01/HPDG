@@ -5,6 +5,8 @@
 
 #include <juce_core/juce_core.h>
 
+#include "SampleLineTranscriber.h"
+
 namespace bbg
 {
 // Key and bass-line estimate for a musical sample, so a generated 808 can play "in the
@@ -31,11 +33,20 @@ struct SampleHarmony
     float keyConfidence = 0.0f;
     std::array<float, 12> chroma {};
     std::vector<SampleBassSegment> bass;
+    // Note-level bass line and lead melody (SampleLineTranscriber), same timeline; the
+    // segments above take their bass note from this line where it clearly sounds.
+    SampleLines lines;
+    double tuningCents = 0.0;
 
     int confidentBassNotes(float minConfidence = 0.35f) const;
     const SampleBassSegment* segmentAt(double seconds) const;
     juce::String keyName() const;
     juce::String describe() const;
+
+    // Takes each segment's bass note from the transcribed bass line where that line sounds for
+    // a good part of the segment (the line is drum-free and note-accurate; the per-segment
+    // estimate is kept elsewhere).
+    void refineBassFromLines();
 };
 
 class SampleHarmonyAnalyzer
@@ -43,9 +54,12 @@ class SampleHarmonyAnalyzer
 public:
     // segmentSeconds: bass segmentation step (normally one beat); originSeconds: where beat 1
     // is, so segments line up with the musical grid.
+    // tuningCents: the sample's offset from A440 (SampleLineTranscriber::estimateTuningCents),
+    // so a detuned record still lands on the right semitones.
     SampleHarmony analyze(const std::vector<float>& mono,
                           double sampleRate,
                           double segmentSeconds,
-                          double originSeconds) const;
+                          double originSeconds,
+                          double tuningCents = 0.0) const;
 };
 } // namespace bbg

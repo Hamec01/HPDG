@@ -90,9 +90,39 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
             || breakAnalysis.tempoConfidence >= 0.8f);
     bundle.sampleBpm = sampleTempoTrusted ? breakAnalysis.bpm : 0.0;
     bundle.harmonyBpm = sampleTempoTrusted ? bundle.breakAnalysis.bpm : (hostBpm > 20.0 ? hostBpm : 90.0);
-    bundle.harmonyOriginSeconds = sampleTempoTrusted ? bundle.breakAnalysis.originSeconds : 0.0;
+    // Where beat 1 sits. The sample's own phase inside a beat is kept, but bar 1 never starts
+    // before the file: producers put the start of a sample on a downbeat. A drum loop keeps its
+    // measured bar phase (its backbeat says which beat is 1); for a tonal sample that guess is
+    // unreliable (no snares), so beat 1 is the beat nearest to the start of the file.
+    bundle.harmonyOriginSeconds = 0.0;
+    if (sampleTempoTrusted)
+    {
+        const double beatSeconds = 60.0 / breakAnalysis.bpm;
+        const double barSeconds = 4.0 * beatSeconds;
+        double origin = breakAnalysis.originSeconds;
+        if (breakAnalysis.drumLoopConfidence >= 0.75f)
+        {
+            while (origin < -0.030)
+                origin += barSeconds;
+        }
+        else
+        {
+            origin -= std::round(origin / beatSeconds) * beatSeconds;
+        }
+        bundle.harmonyOriginSeconds = origin;
+    }
     bundle.harmonyTempoFromSample = sampleTempoTrusted;
-    bundle.harmony = harmonyAnalyzer.analyze(mono, sampleRate, 60.0 / bundle.harmonyBpm, bundle.harmonyOriginSeconds);
+    // Records are often off A440: the sample's tuning first, so notes land on semitones. Then
+    // the bass line and lead melody note by note (drum-free), which also settle each beat's bass.
+    const double tuningCents = SampleLineTranscriber::estimateTuningCents(mono, sampleRate);
+    bundle.harmony = harmonyAnalyzer.analyze(mono, sampleRate, 60.0 / bundle.harmonyBpm, bundle.harmonyOriginSeconds, tuningCents);
+    if (bundle.harmony.valid)
+    {
+        bundle.harmony.lines = SampleLineTranscriber().transcribe(mono, sampleRate, bundle.harmony.keyRoot, bundle.harmony.scaleMode,
+                                                                  bundle.harmony.keyConfidence >= 0.4f);
+        bundle.harmony.tuningCents = bundle.harmony.lines.tuningCents;
+        bundle.harmony.refineBassFromLines();
+    }
 
     // Every step-grid stage below counts sixteenths from sample 0, so start the signal on the
     // detected beat 1 (drop a lead-in, or pad a pickup) to keep those steps on the real grid.

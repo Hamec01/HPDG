@@ -17,6 +17,7 @@
 #include "../Engine/ExtractPatternBuilder.h"
 #include "../Engine/SampleGuideAccents.h"
 #include "../Engine/SampleBassFollower.h"
+#include "../Engine/SampleBassLineComposer.h"
 #include "../Engine/MidiExportEngine.h"
 #include "../Engine/PatternPerformanceTransformEngine.h"
 #include "../Engine/PatternBlendEngine.h"
@@ -42,6 +43,7 @@ namespace bbg
 namespace
 {
 constexpr auto kStateType = "BoomBapState";
+constexpr auto kSampleSourceType = "SAMPLE_SOURCE";
 constexpr auto kRootSchemaVersion = 4;
 constexpr double kEqAnalyzerMinFrequencyHz = 20.0;
 constexpr double kEqAnalyzerMaxFrequencyHz = 20000.0;
@@ -208,6 +210,8 @@ void writeSampleAnalysisLog(const juce::File& source, const SampleAnalysisBundle
          << " | bars " << bundle.summary.analyzedBars
          << " | drum events " << static_cast<int>(bundle.transcription.drumEvents.size()) << "\n"
          << bundle.harmony.describe() << " | grid " << juce::String(bundle.harmonyBpm, 2) << " bpm\n"
+         << "tuning " << juce::String(bundle.harmony.tuningCents, 0) << " cents\n"
+         << bundle.harmony.lines.describe() << "\n"
          << bundle.breakAnalysis.describe(true) << "\n";
     file.replaceWithText(text);
 }
@@ -343,11 +347,55 @@ public:
         wireCallbacks();
         refreshFromProcessor(true);
         startTimerHz(10);
+
+        // Space = Play / Pause while the plugin window is in front. The editor keeps keyboard
+        // focus: buttons do not take it (they would swallow / misuse Space), a click anywhere
+        // gives it back, and text fields keep it while typing.
+        setWantsKeyboardFocus(true);
+        disableButtonKeyboardFocus(*this);
+        addMouseListener(this, true);
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (key == juce::KeyPress::spaceKey)
+        {
+            const bool start = !audioProcessor.isPreviewPlaying();
+            if (header.onPlayToggled)
+                header.onPlayToggled(start);
+            return true;
+        }
+        return juce::AudioProcessorEditor::keyPressed(key);
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        if (dynamic_cast<juce::TextEditor*>(event.eventComponent) == nullptr
+            && event.eventComponent->findParentComponentOfClass<juce::TextEditor>() == nullptr
+            && dynamic_cast<juce::Label*>(event.eventComponent) == nullptr)
+            grabKeyboardFocus();
+    }
+
+    void visibilityChanged() override
+    {
+        if (isShowing())
+            grabKeyboardFocus();
+    }
+
+    static void disableButtonKeyboardFocus(juce::Component& root)
+    {
+        for (auto* child : root.getChildren())
+        {
+            if (dynamic_cast<juce::Button*>(child) != nullptr || dynamic_cast<juce::Slider*>(child) != nullptr)
+                child->setWantsKeyboardFocus(false);
+            disableButtonKeyboardFocus(*child);
+        }
     }
 
     ~Vst3SafeHeaderEditor() override
     {
         shutdownTrace("editor destructor begin");
+        removeMouseListener(this);
         stopTimer();
         closeTrimEditor();
         audioProcessor.setVst3EditorSize(getWidth(), getHeight());
@@ -419,6 +467,10 @@ private:
 
     void timerCallback() override
     {
+        if (juce::ModalComponentManager::getInstance()->getNumModalComponents() == 0)
+            if (auto pending = audioProcessor.takePendingSampleRestore())
+                restoreSampleReference(*pending);
+
         const bool previewPlaying = audioProcessor.isPreviewPlaying();
         const auto transport = audioProcessor.getLastTransportSnapshot();
         header.setPreviewPlaying(previewPlaying);
@@ -612,6 +664,180 @@ private:
         trimDialog = options.launchAsync();
         if (trimDialog != nullptr)
             trimDialog->setResizeLimits(700, 300, 2600, 1000);
+    }
+
+    // ---- Presets -------------------------------------------------------------------------
+    // A preset is the whole plugin state as XML; a loaded sample is stored only by its path.
+
+    void showPresetsMenu()
+    {
+        const auto folder = BoomBapGeneratorAudioProcessor::getPresetsDirectory();
+        auto presets = folder.findChildFiles(juce::File::findFiles, false, "*.hpdgpreset");
+        std::sort(presets.begin(), presets.end(), [](const juce::File& a, const juce::File& b)
+        {
+            return a.getFileNameWithoutExtension().compareNatural(b.getFileNameWithoutExtension()) < 0;
+        });
+
+        juce::PopupMenu load;
+        for (int i = 0; i < presets.size(); ++i)
+            load.addItem(100 + i, presets[i].getFileNameWithoutExtension());
+
+        juce::PopupMenu menu;
+        menu.addItem(1, "Save preset...");
+        menu.addSubMenu("Load preset", load, !presets.isEmpty());
+        menu.addItem(2, "Load preset from file...");
+        menu.addSeparator();
+        menu.addItem(3, "Open presets folder");
+
+        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&header.presetsButton),
+                           [safeEditor, presets](int result)
+                           {
+                               if (safeEditor == nullptr || result == 0)
+                                   return;
+                               if (result == 1)
+                                   safeEditor->savePresetAs();
+                               else if (result == 2)
+                                   safeEditor->choosePresetToLoad();
+                               else if (result == 3)
+                               {
+                                   const auto dir = BoomBapGeneratorAudioProcessor::getPresetsDirectory();
+                                   dir.createDirectory();
+                                   dir.startAsProcess();
+                               }
+                               else if (result >= 100 && result - 100 < presets.size())
+                                   safeEditor->loadPreset(presets[result - 100]);
+                           });
+    }
+
+    void savePresetAs()
+    {
+        const auto folder = BoomBapGeneratorAudioProcessor::getPresetsDirectory();
+        folder.createDirectory();
+        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        presetFileChooser = std::make_shared<juce::FileChooser>("Save preset", folder.getChildFile("My preset.hpdgpreset"), "*.hpdgpreset");
+        presetFileChooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                           | juce::FileBrowserComponent::warnAboutOverwriting,
+                                       [safeEditor](const juce::FileChooser& chooser)
+                                       {
+                                           auto file = chooser.getResult();
+                                           if (safeEditor == nullptr || file == juce::File())
+                                               return;
+                                           file = file.withFileExtension(".hpdgpreset");
+                                           const bool ok = safeEditor->audioProcessor.savePresetToFile(file);
+                                           logDrag("vst3 preset save | " + file.getFullPathName() + " | " + (ok ? "ok" : "FAILED"));
+                                           if (!ok)
+                                               juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Preset",
+                                                                                      "Could not save " + file.getFullPathName(),
+                                                                                      "OK", safeEditor.getComponent());
+                                       });
+    }
+
+    void choosePresetToLoad()
+    {
+        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        presetFileChooser = std::make_shared<juce::FileChooser>("Load preset", BoomBapGeneratorAudioProcessor::getPresetsDirectory(), "*.hpdgpreset");
+        presetFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                       [safeEditor](const juce::FileChooser& chooser)
+                                       {
+                                           const auto file = chooser.getResult();
+                                           if (safeEditor != nullptr && file.existsAsFile())
+                                               safeEditor->loadPreset(file);
+                                       });
+    }
+
+    void loadPreset(const juce::File& file)
+    {
+        juce::String error;
+        const bool ok = audioProcessor.loadPresetFromFile(file, &error);
+        logDrag("vst3 preset load | " + file.getFullPathName() + " | " + (ok ? juce::String("ok") : error));
+        if (!ok)
+        {
+            juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Preset", error, "OK", this);
+            return;
+        }
+        refreshFromProcessor(true);
+        // The preset's sample (if any) is picked up by the timer: restoreSampleReference.
+    }
+
+    // Reloads the sample a session / preset referenced. A missing file asks: locate it
+    // (another place or a substitute) or go on without a sample.
+    void restoreSampleReference(const BoomBapGeneratorAudioProcessor::SampleSourceReference& reference)
+    {
+        if (reference.file.existsAsFile())
+        {
+            applySampleReference(reference, {});
+            return;
+        }
+
+        logDrag("vst3 preset sample missing | " + reference.file.getFullPathName());
+        auto* window = new juce::AlertWindow("Sample not found",
+                                             "The preset uses a sample that is no longer there:\n" + reference.file.getFullPathName()
+                                                 + "\n\nLoad the sample from another place, or skip it (pattern and settings are loaded anyway).",
+                                             juce::MessageBoxIconType::WarningIcon, this);
+        window->setLookAndFeel(&sketchLookAndFeel);
+        window->setColour(juce::AlertWindow::backgroundColourId, sketch::Theme::paperLight());
+        window->setColour(juce::AlertWindow::textColourId, sketch::Theme::graphite());
+        window->setColour(juce::AlertWindow::outlineColourId, sketch::Theme::graphiteSoft());
+        window->addButton("Load sample...", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        window->addButton("Skip", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        window->enterModalState(true, juce::ModalCallbackFunction::create([safeEditor, reference](int result)
+        {
+            if (safeEditor == nullptr)
+                return;
+            if (result != 1)
+            {
+                safeEditor->clearSampleAfterSkip();
+                return;
+            }
+
+            auto start = reference.file.getParentDirectory();
+            while (!start.isDirectory() && start.getParentDirectory() != start)
+                start = start.getParentDirectory();
+            if (!start.isDirectory())
+                start = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+            safeEditor->sampleFileChooser = std::make_shared<juce::FileChooser>(
+                "Locate " + reference.file.getFileName(), start, "*.wav;*.aif;*.aiff;*.flac;*.mp3");
+            safeEditor->sampleFileChooser->launchAsync(
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                [safeEditor, reference](const juce::FileChooser& chooser)
+                {
+                    if (safeEditor == nullptr)
+                        return;
+                    const auto selected = chooser.getResult();
+                    if (selected.existsAsFile())
+                        safeEditor->applySampleReference(reference, selected);
+                    else
+                        safeEditor->clearSampleAfterSkip();
+                });
+        }), true);
+    }
+
+    void applySampleReference(const BoomBapGeneratorAudioProcessor::SampleSourceReference& reference, const juce::File& replacement)
+    {
+        sampleStripMode = reference.mode == AnalysisMode::ExtractFromSample ? SampleBreakStripComponent::Mode::CopyBreak
+                                                                           : SampleBreakStripComponent::Mode::Guide;
+        juce::String error;
+        const bool ok = audioProcessor.restoreSampleSource(reference, replacement, &error);
+        sampleStripError = ok ? juce::String() : (error.isNotEmpty() ? error : juce::String("Analysis failed"));
+        logDrag("vst3 sample restore | " + (replacement != juce::File() ? replacement : reference.file).getFullPathName()
+                + " | " + (ok ? juce::String("ok") : sampleStripError));
+        refreshFromProcessor(true);
+    }
+
+    // "Skip": the preset is used without a sample (the previous one is not kept either).
+    void clearSampleAfterSkip()
+    {
+        auto request = audioProcessor.getSampleAnalysisRequest();
+        request.audioFile = juce::File();
+        request.source = SampleAnalysisRequest::SourceType::None;
+        audioProcessor.setSampleAnalysisRequest(request);
+        audioProcessor.clearSampleSource();
+        audioProcessor.clearSampleAnalysis();
+        sampleStripError.clear();
+        refreshFromProcessor(true);
     }
 
     // Pencil next to the sample tempo: type the BPM (Auto = detect again). Re-analyses the
@@ -871,6 +1097,8 @@ private:
 
         header.onExportFullPressed = [this] { commandController.exportFullPattern(this); };
         header.onExportLoopWavPressed = [this] { commandController.exportLoopWav(this, logUiAction); };
+        header.onExportLoopWavDragged = [this] { commandController.dragFullWavExternal(this, logUiAction); };
+        header.onPresetsPressed = [this] { showPresetsMenu(); };
         header.onDragFullPressed = [this] { commandController.dragFullPatternTempMidi(logUiAction); };
         header.onDragFullGesture = [this] { commandController.dragFullPatternExternal(this, logUiAction); };
         header.onToggleStandaloneWindow = [] {};
@@ -944,6 +1172,8 @@ private:
 
         trackList.onDragTrack = [this](const RuntimeLaneId& laneId) { commandController.dragTrackTempMidi(laneId, logUiAction); };
         trackList.onDragTrackGesture = [this](const RuntimeLaneId& laneId) { commandController.dragTrackExternal(laneId, this, logUiAction); };
+        trackList.onDragWavTrack = [this](const RuntimeLaneId& laneId) { commandController.dragTrackWav(laneId, logUiAction); };
+        trackList.onDragWavTrackGesture = [this](const RuntimeLaneId& laneId) { commandController.dragTrackWavExternal(laneId, this, logUiAction); };
         trackList.onExportTrack = [this](const RuntimeLaneId& laneId) { commandController.exportTrack(laneId, this); };
 
         trackList.onDragDensityTrack = [this](const RuntimeLaneId& laneId, float density)
@@ -1478,6 +1708,7 @@ private:
     SampleBreakStripComponent::Mode sampleStripMode = SampleBreakStripComponent::Mode::CopyBreak;
     juce::String sampleStripError;
     std::shared_ptr<juce::FileChooser> sampleFileChooser;
+    std::shared_ptr<juce::FileChooser> presetFileChooser;
     int sampleStripSignature = 0;
     juce::Component::SafePointer<juce::DialogWindow> trimDialog;
     SoundModuleComponent soundModule;
@@ -2340,7 +2571,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::bpm, "BPM", juce::NormalisableRange<float>(60.0f, 180.0f, 0.1f), 90.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::bpm, "BPM", juce::NormalisableRange<float>(60.0f, 240.0f, 0.1f), 90.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::bpmLock, "BPM Lock", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::syncDawTempo, "Sync DAW Tempo", false));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::swingPercent, "Swing %", juce::NormalisableRange<float>(50.0f, 75.0f, 0.1f), 56.0f));
@@ -2927,6 +3158,21 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
         std::scoped_lock lock(projectMutex);
         PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, buildParamsFromState(lastTransport));
         serializePatternProjectToState(state);
+
+        // The sample itself is never embedded: only where it is and how it was used.
+        const auto& request = currentAnalysisRequest;
+        if (request.source == SampleAnalysisRequest::SourceType::AudioFile && request.audioFile.getFullPathName().isNotEmpty())
+        {
+            juce::ValueTree sample(kSampleSourceType);
+            sample.setProperty("path", request.audioFile.getFullPathName(), nullptr);
+            sample.setProperty("trim_start", request.trimStartSeconds, nullptr);
+            sample.setProperty("trim_end", request.trimEndSeconds, nullptr);
+            sample.setProperty("manual_bpm", request.manualBpm, nullptr);
+            sample.setProperty("quantize", request.breakQuantizeAmount, nullptr);
+            sample.setProperty("mode", static_cast<int>(analysisMode), nullptr);
+            sample.setProperty("play_with_pattern", playSampleWithPattern.load(), nullptr);
+            state.appendChild(sample, nullptr);
+        }
     }
 
     if (auto xml = state.createXml())
@@ -2983,7 +3229,107 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
 
         project.params = buildParamsFromState(lastTransport);
         rebuildMidiCache();
+
+        pendingSampleRestore.reset();
+        const auto sample = loaded.getChildWithName(kSampleSourceType);
+        if (sample.isValid() && sample["path"].toString().isNotEmpty())
+        {
+            SampleSourceReference reference;
+            reference.file = juce::File(sample["path"].toString());
+            reference.trimStartSeconds = static_cast<double>(sample.getProperty("trim_start", 0.0));
+            reference.trimEndSeconds = static_cast<double>(sample.getProperty("trim_end", 0.0));
+            reference.manualBpm = static_cast<double>(sample.getProperty("manual_bpm", 0.0));
+            reference.breakQuantizeAmount = static_cast<float>(static_cast<double>(sample.getProperty("quantize", 0.0)));
+            const int mode = static_cast<int>(sample.getProperty("mode", static_cast<int>(AnalysisMode::GenerateFromSample)));
+            reference.mode = mode == static_cast<int>(AnalysisMode::ExtractFromSample) ? AnalysisMode::ExtractFromSample
+                                                                                       : AnalysisMode::GenerateFromSample;
+            reference.playWithPattern = static_cast<bool>(sample.getProperty("play_with_pattern", false));
+            pendingSampleRestore = reference;
+        }
     }
+}
+
+std::optional<BoomBapGeneratorAudioProcessor::SampleSourceReference> BoomBapGeneratorAudioProcessor::takePendingSampleRestore()
+{
+    std::scoped_lock lock(projectMutex);
+    auto pending = pendingSampleRestore;
+    pendingSampleRestore.reset();
+    return pending;
+}
+
+bool BoomBapGeneratorAudioProcessor::restoreSampleSource(const SampleSourceReference& reference,
+                                                         const juce::File& replacementFile,
+                                                         juce::String* errorMessage)
+{
+    const bool replaced = replacementFile != juce::File() && replacementFile != reference.file;
+    const auto file = replaced ? replacementFile : reference.file;
+    if (!file.existsAsFile())
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Sample not found: " + file.getFullPathName();
+        return false;
+    }
+
+    setAnalysisMode(reference.mode);
+    setSampleApplyMode(reference.mode == AnalysisMode::ExtractFromSample ? SampleApplyMode::ExactCopy : SampleApplyMode::Blend);
+
+    auto request = getSampleAnalysisRequest();
+    request.source = SampleAnalysisRequest::SourceType::AudioFile;
+    request.audioFile = file;
+    request.breakQuantizeAmount = reference.breakQuantizeAmount;
+    setSampleAnalysisRequest(request);
+    {
+        // The fragment and the typed tempo belong to the referenced file only.
+        std::scoped_lock lock(projectMutex);
+        currentAnalysisRequest.trimStartSeconds = replaced ? 0.0 : reference.trimStartSeconds;
+        currentAnalysisRequest.trimEndSeconds = replaced ? 0.0 : reference.trimEndSeconds;
+        currentAnalysisRequest.manualBpm = replaced ? 0.0 : reference.manualBpm;
+    }
+
+    if (!loadSampleSource(file, errorMessage))
+        return false;
+    setPlaySampleWithPattern(reference.playWithPattern);
+    return analyzeAudioFile(file, errorMessage, false);
+}
+
+juce::File BoomBapGeneratorAudioProcessor::getPresetsDirectory()
+{
+    return juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("DRUMENGINE").getChildFile("Presets");
+}
+
+bool BoomBapGeneratorAudioProcessor::savePresetToFile(const juce::File& file)
+{
+    juce::MemoryBlock data;
+    getStateInformation(data);
+    auto xml = getXmlFromBinary(data.getData(), static_cast<int>(data.getSize()));
+    if (xml == nullptr)
+        return false;
+
+    // A preset carries the sound, not the window.
+    xml->removeAttribute("vst3_editor_width");
+    xml->removeAttribute("vst3_editor_height");
+    xml->setAttribute("preset_name", file.getFileNameWithoutExtension());
+    file.getParentDirectory().createDirectory();
+    return xml->writeTo(file);
+}
+
+bool BoomBapGeneratorAudioProcessor::loadPresetFromFile(const juce::File& file, juce::String* errorMessage)
+{
+    auto xml = juce::XmlDocument::parse(file);
+    if (xml == nullptr || !xml->hasTagName(kStateType))
+    {
+        if (errorMessage != nullptr)
+            *errorMessage = "Not an HPDG preset: " + file.getFileName();
+        return false;
+    }
+
+    // Keep the current window size.
+    xml->setAttribute("vst3_editor_width", vst3EditorWidth.load());
+    xml->setAttribute("vst3_editor_height", vst3EditorHeight.load());
+    juce::MemoryBlock data;
+    copyXmlToBinary(*xml, data);
+    setStateInformation(data.getData(), static_cast<int>(data.getSize()));
+    return true;
 }
 
 void BoomBapGeneratorAudioProcessor::generatePattern()
@@ -3094,9 +3440,37 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
 
     std::scoped_lock lock(projectMutex);
     project = std::move(working);
-    applySampleAwarePostProcessLocked();
+    applySampleAwarePostProcessLocked(focusTrack);
     if (rotateSamples)
         rotateLaneSamplesForGenerationLocked(beforeProject, focusTrack);
+    // Engines may rebuild lane states (a lane RG re-applies the style, which rewrote / dropped
+    // the sample names of every lane while the bank kept playing the same samples). Only a
+    // rotating pass changes samples: otherwise each lane keeps what it had; a lane left without
+    // a name takes the bank's (what actually plays).
+    for (auto& track : project.tracks)
+    {
+        if (!rotateSamples)
+            if (const auto* previous = ProjectLaneAccess::findTrackState(beforeProject, track.type);
+                previous != nullptr && previous->selectedSampleName.isNotEmpty())
+            {
+                track.selectedSampleIndex = previous->selectedSampleIndex;
+                track.selectedSampleName = previous->selectedSampleName;
+                continue;
+            }
+        if (track.selectedSampleName.isNotEmpty())
+            continue;
+        if (const auto* previous = ProjectLaneAccess::findTrackState(beforeProject, track.type);
+            previous != nullptr && previous->selectedSampleName.isNotEmpty())
+        {
+            track.selectedSampleIndex = previous->selectedSampleIndex;
+            track.selectedSampleName = previous->selectedSampleName;
+        }
+        else if (laneSampleBank.hasSamples(track.type))
+        {
+            track.selectedSampleIndex = laneSampleBank.getSelectedIndex(track.type);
+            track.selectedSampleName = laneSampleBank.getSelectedName(track.type);
+        }
+    }
     project.generationDebugReport = buildGenerationDebugReport(reportLabel,
                                                                beforeProject,
                                                                project,
@@ -3955,6 +4329,7 @@ bool BoomBapGeneratorAudioProcessor::exportFullPatternToFile(const juce::File& t
     {
         std::scoped_lock lock(projectMutex);
         snapshot = project;
+            snapshot.exportHostBpm = lastTransport.hasHostTempo ? lastTransport.bpm : 0.0;
     }
 
     const bool ok = MidiExportEngine::saveMultiTrackMidiFile(snapshot, targetFile, 960);
@@ -3969,6 +4344,7 @@ bool BoomBapGeneratorAudioProcessor::exportTrackToFile(TrackType track, const ju
     {
         std::scoped_lock lock(projectMutex);
         snapshot = project;
+            snapshot.exportHostBpm = lastTransport.hasHostTempo ? lastTransport.bpm : 0.0;
     }
 
     const bool ok = MidiExportEngine::saveMidiFile(snapshot, targetFile, track, 960, false, false);
@@ -3982,10 +4358,168 @@ bool BoomBapGeneratorAudioProcessor::exportTrackToFile(const RuntimeLaneId& lane
     return type.has_value() ? exportTrackToFile(*type, targetFile) : false;
 }
 
-bool BoomBapGeneratorAudioProcessor::exportLoopWavToFile(const juce::File& targetFile) const
+PreviewEngine::TriggerOptions BoomBapGeneratorAudioProcessor::triggerOptionsFor(const PreviewEvent& event) const
 {
-    juce::ignoreUnused(targetFile);
-    return false;
+    PreviewEngine::TriggerOptions options;
+    if (event.track == TrackType::Sub808)
+    {
+        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track));
+        options.legato = event.legato;
+        options.glide = event.glide;
+        options.mono = event.mono;
+        options.cutItself = event.cutItself;
+        options.glideDurationSamples = juce::jmax(0, event.glideDurationSamples);
+        if (event.endSample > event.sample)
+            options.maxDurationSamples = juce::jmax(1, event.endSample - event.sample);
+    }
+    return options;
+}
+
+bool BoomBapGeneratorAudioProcessor::renderPatternAudio(const PatternProject& source,
+                                                        std::optional<TrackType> onlyLane,
+                                                        juce::AudioBuffer<float>& out,
+                                                        double sampleRate)
+{
+    auto snapshot = source;
+    if (onlyLane.has_value())
+    {
+        // One lane on its own, whatever the mute / solo state of the rack.
+        for (auto& track : snapshot.tracks)
+        {
+            track.solo = false;
+            track.muted = track.type != *onlyLane;
+        }
+    }
+
+    const auto events = buildPreviewEventsForProject(snapshot, sampleRate);
+    const int length = getPatternLengthSamples(snapshot, sampleRate);
+    if (length <= 0 || events.empty())
+        return false;
+
+    PreviewEngine engine;
+    engine.prepare(sampleRate);
+
+    std::array<SoundFxRuntimeState, kTrackTypeCount> laneFx;
+    for (auto& fx : laneFx)
+        prepareSoundFxRuntimeState(fx);
+    SoundFxRuntimeState globalFx;
+    prepareSoundFxRuntimeState(globalFx);
+
+    const auto* volParam = apvts.getRawParameterValue(ParamIds::masterVolume);
+    const float masterVol = juce::jlimit(0.0f, 1.5f, volParam != nullptr ? volParam->load() : 1.0f);
+    const double bpm = snapshot.params.bpm > 0.0f ? static_cast<double>(snapshot.params.bpm) : 120.0;
+    const double samplesPerQuarter = 60.0 / bpm * sampleRate;
+
+    constexpr int kChannels = 2;
+    constexpr int kBlock = 512;
+    out.setSize(kChannels, length);
+    out.clear();
+    std::array<juce::AudioBuffer<float>, kTrackTypeCount> laneBuffers;
+    juce::AudioBuffer<float> mix(kChannels, kBlock);
+
+    // Two passes, keep the second: tails of the end of the loop (a held bass, a crash) ring into
+    // its start exactly as they do when the loop repeats, so the file loops seamlessly.
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        for (int position = 0; position < length; position += kBlock)
+        {
+            const int count = juce::jmin(kBlock, length - position);
+            for (const auto& event : events)
+                if (event.sample >= position && event.sample < position + count)
+                    engine.noteOnAtSample(event.track, event.gain, event.sample - position, laneSampleBank, triggerOptionsFor(event));
+
+            for (auto& laneBuffer : laneBuffers)
+            {
+                laneBuffer.setSize(kChannels, count, false, false, true);
+                laneBuffer.clear();
+            }
+            engine.renderSeparated(laneBuffers, 0, count);
+
+            MonstaFxTimelineContext timeline;
+            timeline.bpm = bpm;
+            timeline.blockStartSample = static_cast<std::int64_t>(pass) * length + position;
+            timeline.blockStartQuarter = static_cast<double>(timeline.blockStartSample) / samplesPerQuarter;
+
+            mix.setSize(kChannels, count, false, false, true);
+            mix.clear();
+            for (int trackIndex = 0; trackIndex < kTrackTypeCount; ++trackIndex)
+            {
+                auto& laneBuffer = laneBuffers[static_cast<size_t>(trackIndex)];
+                const auto trackType = static_cast<TrackType>(trackIndex);
+                if (const auto* trackState = ProjectLaneAccess::findTrackState(snapshot, trackType); trackState != nullptr)
+                    applySoundLayerFx(laneBuffer, trackState->sound, laneFx[static_cast<size_t>(trackIndex)], timeline);
+                for (int channel = 0; channel < kChannels; ++channel)
+                    mix.addFrom(channel, 0, laneBuffer, channel, 0, count);
+            }
+            applySoundLayerFx(mix, snapshot.globalSound, globalFx, timeline);
+            for (int channel = 0; channel < kChannels; ++channel)
+            {
+                auto* data = mix.getWritePointer(channel);
+                for (int i = 0; i < count; ++i)
+                    data[i] = std::tanh(data[i] * 0.85f) * masterVol;
+            }
+
+            if (pass == 1)
+                for (int channel = 0; channel < kChannels; ++channel)
+                    out.copyFrom(channel, position, mix, channel, 0, count);
+        }
+    }
+    return true;
+}
+
+bool BoomBapGeneratorAudioProcessor::writeWav(const juce::AudioBuffer<float>& audio, double sampleRate, const juce::File& file) const
+{
+    file.getParentDirectory().createDirectory();
+    file.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(file),
+                                                                        sampleRate,
+                                                                        static_cast<unsigned int>(audio.getNumChannels()),
+                                                                        24, {}, 0));
+    return writer != nullptr && writer->writeFromAudioSampleBuffer(audio, 0, audio.getNumSamples());
+}
+
+bool BoomBapGeneratorAudioProcessor::exportLoopWavToFile(const juce::File& targetFile)
+{
+    PatternProject snapshot;
+    {
+        std::scoped_lock lock(projectMutex);
+        snapshot = project;
+    }
+    const double rate = currentSampleRate > 1000.0 ? currentSampleRate : 44100.0;
+    juce::AudioBuffer<float> audio;
+    if (!renderPatternAudio(snapshot, std::nullopt, audio, rate))
+        return false;
+    const auto file = targetFile.hasFileExtension(".wav") ? targetFile : targetFile.withFileExtension(".wav");
+    return writeWav(audio, rate, file);
+}
+
+juce::File BoomBapGeneratorAudioProcessor::createTemporaryWavFile(std::optional<TrackType> onlyLane)
+{
+    PatternProject snapshot;
+    {
+        std::scoped_lock lock(projectMutex);
+        snapshot = project;
+    }
+    const double rate = currentSampleRate > 1000.0 ? currentSampleRate : 44100.0;
+    juce::AudioBuffer<float> audio;
+    if (!renderPatternAudio(snapshot, onlyLane, audio, rate))
+        return {};
+
+    // A readable name in the DAW: "HPDG Kick 174bpm.wav".
+    juce::String laneName = "Full";
+    if (onlyLane.has_value())
+        if (const auto* info = TrackRegistry::find(*onlyLane); info != nullptr)
+            laneName = info->displayName;
+    const auto dir = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("DRUMENGINE").getChildFile("TempAudio");
+    const auto file = dir.getNonexistentChildFile("HPDG " + laneName + " " + juce::String(juce::roundToInt(snapshot.params.bpm)) + "bpm", ".wav", false);
+    return writeWav(audio, rate, file) ? file : juce::File {};
+}
+
+juce::File BoomBapGeneratorAudioProcessor::createTemporaryTrackWavFile(const RuntimeLaneId& laneId)
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    return type.has_value() ? createTemporaryWavFile(*type) : juce::File {};
 }
 
 juce::File BoomBapGeneratorAudioProcessor::createTemporaryFullPatternMidiFile() const
@@ -3997,6 +4531,7 @@ juce::File BoomBapGeneratorAudioProcessor::createTemporaryFullPatternMidiFile() 
         {
             std::scoped_lock lock(projectMutex);
             snapshot = project;
+            snapshot.exportHostBpm = lastTransport.hasHostTempo ? lastTransport.bpm : 0.0;
         }
 
         logDrag("createTemporaryFullPatternMidiFile snapshot tracks=" + juce::String(static_cast<int>(snapshot.tracks.size())));
@@ -4021,6 +4556,7 @@ juce::File BoomBapGeneratorAudioProcessor::createTemporaryTrackMidiFile(TrackTyp
         {
             std::scoped_lock lock(projectMutex);
             snapshot = project;
+            snapshot.exportHostBpm = lastTransport.hasHostTempo ? lastTransport.bpm : 0.0;
         }
 
         logDrag("createTemporaryTrackMidiFile snapshot tracks=" + juce::String(static_cast<int>(snapshot.tracks.size()))
@@ -4101,7 +4637,7 @@ bool BoomBapGeneratorAudioProcessor::analyzeCurrentSampleSource(juce::String* er
     return false;
 }
 
-bool BoomBapGeneratorAudioProcessor::analyzeAudioFile(const juce::File& file, juce::String* errorMessage)
+bool BoomBapGeneratorAudioProcessor::analyzeAudioFile(const juce::File& file, juce::String* errorMessage, bool applyToPattern)
 {
     SampleAnalysisRequest request;
     double hostBpm = 0.0;
@@ -4136,7 +4672,7 @@ bool BoomBapGeneratorAudioProcessor::analyzeAudioFile(const juce::File& file, ju
     writeSampleAnalysisLog(file, bundle);
     const int extractedBars = bundle.summary.valid ? juce::jlimit(1, 16, bundle.summary.analyzedBars) : 0;
 
-    if (mode == AnalysisMode::ExtractFromSample && extractedBars > 0)
+    if (applyToPattern && mode == AnalysisMode::ExtractFromSample && extractedBars > 0)
         setFloatParameterValue(ParamIds::bars, static_cast<float>(choiceIndexFromBars(extractedBars)));
 
     {
@@ -4158,7 +4694,7 @@ bool BoomBapGeneratorAudioProcessor::analyzeAudioFile(const juce::File& file, ju
     analysisReady = bundle.summary.valid;
     updateSampleAwareContextLocked();
 
-    if (analysisReady && mode == AnalysisMode::ExtractFromSample)
+    if (applyToPattern && analysisReady && mode == AnalysisMode::ExtractFromSample)
         extractPatternFromAnalyzedSampleLocked();
 
     return bundle.summary.valid;
@@ -4372,7 +4908,7 @@ bool BoomBapGeneratorAudioProcessor::genreHasActiveBassLocked(GenreType genre) c
     return bass != nullptr && bass->enabled;
 }
 
-bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
+bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::optional<TrackType> focusTrack)
 {
     lastSampleApplyDebug.clear();
 
@@ -4386,11 +4922,22 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
     // beat stays, and the sample's strong low peaks may add a kick where the genre allows one.
     const auto& breakAnalysis = currentAnalysisBundle.breakAnalysis;
     const bool drumLoop = breakAnalysis.valid && breakAnalysis.drumLoopConfidence >= 0.75f;
+    // The pattern may run at double / half the sample's tempo (DnB at 172 over an 86 BPM loop):
+    // map sample time onto pattern ticks with that octave relation so a sample peak lands on the
+    // pattern position that sounds at the same moment.
+    const double sampleGridBpm = [&]
+    {
+        const double base = currentAnalysisBundle.harmonyBpm;
+        const double pattern = static_cast<double>(project.params.bpm);
+        if (base <= 0.0 || pattern <= 0.0)
+            return base;
+        return base * std::pow(2.0, std::round(std::log2(pattern / base)));
+    }();
     if (analysisMode == AnalysisMode::GenerateFromSample && !drumLoop)
     {
         const auto report = SampleGuideAccents::apply(project,
                                                       breakAnalysis,
-                                                      currentAnalysisBundle.harmonyBpm,
+                                                      sampleGridBpm,
                                                       currentAnalysisBundle.harmonyOriginSeconds,
                                                       currentSampleContext.reactivity);
         lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext) + "\n" + describeSampleGuideAccentReport(report);
@@ -4399,12 +4946,29 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked()
         if (report.addedKicks > 0)
             changed.insert(TrackType::Kick);
 
+        // Bass mode [2] (Boom Bap / Trap): the line is composed from the sample itself - its bass
+        // line, its melody brought down, the kicks pitched on its bass, a touch of snare.
+        if (genreHasActiveBassLocked(project.params.genre)
+            && (!focusTrack.has_value() || *focusTrack == TrackType::Sub808)
+            && SampleBassLineComposer::wants(project, currentAnalysisBundle.harmony))
+        {
+            std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 4241 + project.generationCounter * 17 + 0x5b));
+            const auto lineReport = SampleBassLineComposer::compose(project,
+                                                                    currentAnalysisBundle.harmony,
+                                                                    sampleGridBpm,
+                                                                    currentAnalysisBundle.harmonyOriginSeconds,
+                                                                    rng);
+            lastSampleApplyDebug += "\n" + describeSampleBassLineReport(lineReport);
+            if (lineReport.applied)
+                changed.insert(TrackType::Sub808);
+        }
+
         // The 808 (Trap) / bass line (Boom Bap, when the user enabled it) follows the sample's bass.
         if (genreHasActiveBassLocked(project.params.genre) && project.params.genre != GenreType::DnB)
         {
             const auto bassReport = SampleBassFollower::apply(project,
                                                               currentAnalysisBundle.harmony,
-                                                              currentAnalysisBundle.harmonyBpm,
+                                                              sampleGridBpm,
                                                               currentAnalysisBundle.harmonyOriginSeconds);
             lastSampleApplyDebug += "\n" + describeSampleBassFollowReport(bassReport, currentAnalysisBundle.harmony);
             if (bassReport.notesFollowed > 0)
@@ -4712,9 +5276,18 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
     normalized.updateMatchedPairs();
     midiCache = normalized;
 
-    for (const auto& track : project.tracks)
+    previewEvents = buildPreviewEventsForProject(project, currentSampleRate);
+}
+
+// Note -> voice trigger list for a project at a sample rate: used by live playback (the cached
+// previewEvents) and by the offline WAV export, so both sound the same.
+std::vector<BoomBapGeneratorAudioProcessor::PreviewEvent> BoomBapGeneratorAudioProcessor::buildPreviewEventsForProject(
+    const PatternProject& sourceProject, double sampleRate) const
+{
+    std::vector<PreviewEvent> events;
+    for (const auto& track : sourceProject.tracks)
     {
-        if (!shouldIncludeTrackForPlayback(project, track))
+        if (!shouldIncludeTrackForPlayback(sourceProject, track))
             continue;
 
         const auto sub808Notes = track.type == TrackType::Sub808 ? sub808NotesForRead(track) : std::vector<Sub808NoteEvent> {};
@@ -4725,13 +5298,13 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
                 ? toLegacyNoteEvent(sub808Notes[static_cast<size_t>(noteIndex)])
                 : track.notes[static_cast<size_t>(noteIndex)];
             PreviewEvent event;
-            const int noteTicks = clampTickToPattern(note.startTick(), project.params.bars);
-            event.sample = ticksToSamples(noteTicks, currentSampleRate, project.params.bpm);
+            const int noteTicks = clampTickToPattern(note.startTick(), sourceProject.params.bars);
+            event.sample = ticksToSamples(noteTicks, sampleRate, sourceProject.params.bpm);
             event.track = track.type;
             event.pitch = juce::jlimit(0, 127, note.pitch);
             event.mono = track.sub808Settings.mono;
             event.cutItself = track.sub808Settings.cutItself;
-            event.glideDurationSamples = static_cast<int>((static_cast<double>(track.sub808Settings.glideTimeMs) / 1000.0) * currentSampleRate);
+            event.glideDurationSamples = static_cast<int>((static_cast<double>(track.sub808Settings.glideTimeMs) / 1000.0) * sampleRate);
             if (track.type == TrackType::Sub808)
             {
                 event.legato = track.sub808Settings.overlapMode == Sub808OverlapMode::Legato || note.isLegato;
@@ -4745,7 +5318,7 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
             if (track.type == TrackType::Sub808)
             {
                 const int endTick = noteTicks + juce::jmax(1, note.lengthTicks);
-                event.endSample = ticksToSamples(endTick, currentSampleRate, project.params.bpm);
+                event.endSample = ticksToSamples(endTick, sampleRate, sourceProject.params.bpm);
             }
 
             const float velNorm = juce::jlimit(0.0f, 1.0f, static_cast<float>(note.velocity) / 127.0f);
@@ -4768,14 +5341,21 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
             }
 
             event.gain = juce::jlimit(0.0f, 1.0f, gain);
-            previewEvents.push_back(event);
+            events.push_back(event);
         }
     }
 
-    std::sort(previewEvents.begin(), previewEvents.end(), [](const PreviewEvent& a, const PreviewEvent& b)
+    std::sort(events.begin(), events.end(), [](const PreviewEvent& a, const PreviewEvent& b)
     {
         return a.sample < b.sample;
     });
+    return events;
+}
+
+int BoomBapGeneratorAudioProcessor::getPatternLengthSamples(const PatternProject& sourceProject, double sampleRate) const
+{
+    const int totalSteps = juce::jmax(1, sourceProject.params.bars * 16);
+    return stepToSamples(totalSteps, sampleRate, sourceProject.params.bpm);
 }
 
 void BoomBapGeneratorAudioProcessor::DrumReverbBlock::prepare(const juce::dsp::ProcessSpec& spec)
@@ -5557,9 +6137,12 @@ void BoomBapGeneratorAudioProcessor::renderSamplePlayback(juce::AudioBuffer<floa
     if (!playSampleWithPattern.load() || !sync.active || !sampleTimeline.valid || sync.patternLength <= 0)
         return;
 
+    // The sample is never re-timed or re-pitched: it plays in real time (one second of audio per
+    // second) from bar 1 of the fragment and loops over the fragment's bars. The generation adapts
+    // to the sample's tempo, not the other way round (a grid of 1/2 or x2 in Trim only changes how
+    // the bars are counted, never the playback speed).
     const double projectBpm = sync.projectBpm > 0.0 ? sync.projectBpm : 120.0;
     const double sampleBpm = sampleTimeline.followsSessionTempo || sampleTimeline.bpm <= 0.0 ? projectBpm : sampleTimeline.bpm;
-    const double samplesPerProjectBar = 240.0 / projectBpm * hostRate;
     const double sampleBarSeconds = 240.0 / sampleBpm;
     const double sampleBars = static_cast<double>(juce::jmax(1, sampleTimeline.bars));
     const double duration = sampleSource->getDurationSeconds();
@@ -5577,7 +6160,8 @@ void BoomBapGeneratorAudioProcessor::renderSamplePlayback(juce::AudioBuffer<floa
         {
             patternPosition = ((patternPosition % sync.patternLength) + sync.patternLength) % sync.patternLength;
         }
-        const double barPosition = std::fmod(static_cast<double>(patternPosition) / samplesPerProjectBar, sampleBars);
+        const double patternSeconds = static_cast<double>(patternPosition) / hostRate;
+        const double barPosition = std::fmod(patternSeconds / sampleBarSeconds, sampleBars);
         const double seconds = SampleSourceAudio::loopPlaybackSeconds(sampleTimeline.startSeconds, barPosition, sampleBarSeconds,
                                                                        sampleBars, duration);
         if (seconds < 0.0)

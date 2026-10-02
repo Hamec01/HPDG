@@ -18,6 +18,10 @@ constexpr int kKeepAwayTicks = TimingGrid::Sixteenth / 2;
 
 bool isBackbeatSlot(GenreType genre, int stepInBar)
 {
+    // Drum & Bass: the snare on 2 / 4 and the 16th right after it (a kick there stumbles the
+    // 2-step at 170+ BPM).
+    if (genre == GenreType::DnB)
+        return stepInBar == 4 || stepInBar == 5 || stepInBar == 12 || stepInBar == 13;
     // Trap / Drill: half-time snare on beat 3. Boom Bap / Rap: snare on beats 2 and 4.
     if (genre == GenreType::Trap || genre == GenreType::Drill)
         return stepInBar == 8;

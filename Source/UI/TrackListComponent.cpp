@@ -405,6 +405,16 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
             if (onDragTrackGesture)
                 onDragTrackGesture(laneId);
         };
+        row->onDragWav = [this](const RuntimeLaneId& laneId)
+        {
+            if (onDragWavTrack)
+                onDragWavTrack(laneId);
+        };
+        row->onDragWavGesture = [this](const RuntimeLaneId& laneId)
+        {
+            if (onDragWavTrackGesture)
+                onDragWavTrackGesture(laneId);
+        };
         row->onDragDensityChanged = [this](const RuntimeLaneId& laneId, float density)
         {
             if (onDragDensityTrack)

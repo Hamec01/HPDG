@@ -79,6 +79,9 @@ public:
     std::function<void(const RuntimeLaneId&, bool)> onEnableChanged;
     std::function<void(const RuntimeLaneId&)> onDrag;
     std::function<void(const RuntimeLaneId&)> onDragGesture;
+    // Audio of this lane alone (rendered WAV): click reveals the file, drag drops it in the DAW.
+    std::function<void(const RuntimeLaneId&)> onDragWav;
+    std::function<void(const RuntimeLaneId&)> onDragWavGesture;
     std::function<void(const RuntimeLaneId&, float)> onDragDensityChanged;
     std::function<void(const RuntimeLaneId&, bool)> onDragDensityLockChanged;
     std::function<void(const RuntimeLaneId&)> onExport;
@@ -154,6 +157,7 @@ private:
     juce::Label bassScaleLabel;
     juce::ComboBox bassScaleCombo;
     DragGestureButton dragButton { "Drag" };
+    DragGestureButton wavDragButton { "WAV" };
     juce::Slider dragDensitySlider;
     juce::Label dragDensityLabel;
     juce::Label dragDensityValueLabel;

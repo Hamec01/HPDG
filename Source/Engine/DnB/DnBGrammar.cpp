@@ -133,6 +133,12 @@ void addSnareBackbone(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
     }
 }
 
+// The 16th right after a backbone snare (ticks 20 / 52 on the 64 lattice).
+bool isStumbleAfterSnare(int tick)
+{
+    return tick == DnBGrid::kSnare2 + 4 || tick == DnBGrid::kSnare4 + 4;
+}
+
 // 2. Kick answers the snare: anticipation / response fields + meter + syncopation drive.
 void addKicks(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
 {
@@ -143,7 +149,8 @@ void addKicks(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
 
     if (chance(rng, style.twoStepAnchor))
     {
-        const int anchor = pickWeighted<int>(rng, { { 40, 0.60f }, { 24, 0.15f }, { 36, 0.08f }, { 44, 0.07f }, { 32, 0.06f }, { 42, 0.04f } });
+        // The 2-step anchor always sits on the 16th grid (a 32nd-off anchor sounds like a miss).
+        const int anchor = pickWeighted<int>(rng, { { 40, 0.64f }, { 24, 0.15f }, { 36, 0.08f }, { 44, 0.07f }, { 32, 0.06f } });
         kicks.push_back(anchor);
         bar.push_back(makeEvent(TrackType::Kick, anchor, randomInt(rng, 110, 122), DnBRole::KickAnchor));
     }
@@ -158,8 +165,12 @@ void addKicks(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
     {
         if (t == DnBGrid::kSnare2 || t == DnBGrid::kSnare4)
             continue;
-        // 32nd-position kicks only for the syncopated styles.
-        if (t % 4 != 0 && style.kickSyncopation < 0.7f)
+        // 32nd-position kicks only in Breakbeat (chopped breaks). At 160-180 BPM a kick a 32nd
+        // off the 16th grid reads as out of time in every other style.
+        if (t % 4 != 0 && style.substyle != DnBSubstyle::Breakbeat)
+            continue;
+        // A kick a 16th right after the backbone snare stumbles the 2-step (chopped-break move only).
+        if (isStumbleAfterSnare(t) && style.substyle != DnBSubstyle::Breakbeat)
             continue;
 
         const float m = DnBGrid::metricStrength(t);
@@ -248,11 +259,20 @@ void addGhostSnares(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
         int count = static_cast<int>(expected) + (chance(rng, expected - std::floor(expected)) ? 1 : 0);
         count = std::clamp(count, 0, 3);
 
+        // Ghosts a 16th / eighth from their snare. A 32nd from it (+-2, +-6) is a flam / drag:
+        // right for chopped breaks, a sloppy double snare everywhere else.
+        const bool drags = style.substyle == DnBSubstyle::Breakbeat;
         std::vector<std::pair<int, float>> offsets {
-            { -8, 0.45f * style.ghostPreBias }, { -6, 0.10f * style.ghostPreBias }, { -4, 0.25f * style.ghostPreBias }, { -2, 0.20f * style.ghostPreBias },
-            { 2, 0.15f * (1.0f - style.ghostPreBias) }, { 4, 0.25f * (1.0f - style.ghostPreBias) }, { 6, 0.10f * (1.0f - style.ghostPreBias) },
-            { 8, 0.50f * (1.0f - style.ghostPreBias) }
+            { -8, 0.45f * style.ghostPreBias }, { -4, 0.25f * style.ghostPreBias },
+            { 4, 0.25f * (1.0f - style.ghostPreBias) }, { 8, 0.50f * (1.0f - style.ghostPreBias) }
         };
+        if (drags)
+        {
+            offsets.push_back({ -6, 0.10f * style.ghostPreBias });
+            offsets.push_back({ -2, 0.20f * style.ghostPreBias });
+            offsets.push_back({ 2, 0.15f * (1.0f - style.ghostPreBias) });
+            offsets.push_back({ 6, 0.10f * (1.0f - style.ghostPreBias) });
+        }
         for (int n = 0; n < count && !offsets.empty(); ++n)
         {
             const int offset = pickWeighted<int>(rng, offsets);
@@ -413,6 +433,7 @@ Bar deriveResponse(const Bar& source, const CandidateContext& ctx, std::mt19937&
             auto& kick = bar[movable[static_cast<size_t>(randomInt(rng, 0, static_cast<int>(movable.size()) - 1))]];
             const int target = kick.tick + (chance(rng, 0.5f) ? 4 : -4);
             if (target <= 0 || target >= 64 || target == DnBGrid::kSnare2 || target == DnBGrid::kSnare4
+                || (isStumbleAfterSnare(target) && ctx.style.substyle != DnBSubstyle::Breakbeat)
                 || barHas(bar, TrackType::Kick, target) || barHas(bar, TrackType::Snare, target))
                 continue;
             kick.tick = target;
@@ -428,7 +449,8 @@ Bar deriveResponse(const Bar& source, const CandidateContext& ctx, std::mt19937&
         else if (kind == 2)
         {
             // One more ghost before the second snare.
-            const int tick = DnBGrid::kSnare4 - (chance(rng, 0.5f) ? 2 : 4);
+            const bool drag = ctx.style.substyle == DnBSubstyle::Breakbeat && chance(rng, 0.5f);
+            const int tick = DnBGrid::kSnare4 - (drag ? 2 : 4);
             if (!barHas(bar, TrackType::Snare, tick) && !barHas(bar, TrackType::Kick, tick))
             {
                 const float ratio = ctx.style.ghostRatioMin + (ctx.style.ghostRatioMax - ctx.style.ghostRatioMin) * betaSample(rng, 2.0f, 4.0f);

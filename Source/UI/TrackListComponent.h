@@ -68,6 +68,8 @@ public:
     std::function<void(const RuntimeLaneId&, bool)> onEnableTrack;
     std::function<void(const RuntimeLaneId&)> onDragTrack;
     std::function<void(const RuntimeLaneId&)> onDragTrackGesture;
+    std::function<void(const RuntimeLaneId&)> onDragWavTrack;
+    std::function<void(const RuntimeLaneId&)> onDragWavTrackGesture;
     std::function<void(const RuntimeLaneId&, float)> onDragDensityTrack;
     std::function<void(const RuntimeLaneId&, bool)> onDragDensityLockTrack;
     std::function<void(const RuntimeLaneId&)> onExportTrack;

@@ -20,6 +20,7 @@ public:
         int selectedIndex = 0;
         juce::String selectedName;
         int selectedRootPitchClass = 0;
+        std::vector<double> sampleRates; // each file's own rate (no resampling on load)
     };
 
     // A fully decoded sample set, built off the audio/project lock (disk I/O lives here).
@@ -28,10 +29,6 @@ public:
         std::array<LaneState, 11> states;
     std::vector<std::shared_ptr<juce::AudioBuffer<float>>> retiredBuffers;
     };
-
-    // Every sample is resampled to this rate when loaded, so pitch and length are right no
-    // matter what rate the file was saved at; the player only compensates for the device rate.
-    static constexpr double kBankSampleRate = 48000.0;
 
     // Pitch class of a melodic one-shot, read from the "<name> - <note>" convention used by the
     // bass / 808 kits (e.g. "BoomBap Bass - Puma - C", "Kit 808 - F#"). 0 (C) when absent.
@@ -57,6 +54,9 @@ public:
     int getSelectedIndex(TrackType track) const;
     juce::String getSelectedName(TrackType track) const;
     int getSelectedRootPitchClass(TrackType track) const;
+    // Rate the selected file was recorded at; the player scales its read speed by
+    // fileRate / deviceRate so pitch and length are right for 44.1 / 48 / 96 / 192 kHz files.
+    double getSelectedSampleRate(TrackType track) const;
     const juce::AudioBuffer<float>* getSelectedBuffer(TrackType track) const;
     std::shared_ptr<const juce::AudioBuffer<float>> getSelectedBufferShared(TrackType track) const;
     bool hasSamples(TrackType track) const;
@@ -65,7 +65,8 @@ public:
 private:
     static bool loadWavToBuffer(const juce::File& file,
                                 juce::AudioFormatManager& formatManager,
-                                std::shared_ptr<juce::AudioBuffer<float>>& outBuffer);
+                                std::shared_ptr<juce::AudioBuffer<float>>& outBuffer,
+                                double& outSampleRate);
 
     std::array<LaneState, 11> states;
     std::vector<std::shared_ptr<juce::AudioBuffer<float>>> retiredBuffers;

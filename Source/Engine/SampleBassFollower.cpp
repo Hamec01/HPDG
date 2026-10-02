@@ -29,6 +29,12 @@ SampleBassFollowReport SampleBassFollower::apply(PatternProject& project,
     auto notes = sub->notes;
     for (auto& note : notes)
     {
+        // Composed from the sample already (bass mode [2]): its pitch is the sample's.
+        if (note.semanticRole.contains("sample_line"))
+        {
+            ++report.notesFollowed;
+            continue;
+        }
         double seconds = originSeconds + note.gridTick * secondsPerTick;
         if (seconds >= sampleEnd && loopLength > 0.1) // pattern longer than the sample: it loops
             seconds = originSeconds + std::fmod(seconds - originSeconds, loopLength);

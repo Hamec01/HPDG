@@ -260,6 +260,7 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     addAndMakeVisible(bassScaleLabel);
     addAndMakeVisible(bassScaleCombo);
     addAndMakeVisible(dragButton);
+    addAndMakeVisible(wavDragButton);
     addAndMakeVisible(dragDensityLabel);
     addAndMakeVisible(dragDensitySlider);
     addAndMakeVisible(dragDensityValueLabel);
@@ -269,7 +270,12 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
 
     rgButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
     clearButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
-    dragButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blueWash());
+    dragButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(86, 112, 150));
+    dragButton.setIcon(DragGestureButton::Icon::Midi);
+    dragButton.setTooltip("Drag this lane as MIDI into the DAW (click: show the file)");
+    wavDragButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(176, 118, 58));
+    wavDragButton.setIcon(DragGestureButton::Icon::Wave);
+    wavDragButton.setTooltip("Drag this lane as audio (WAV) into the DAW (click: show the file)");
     dragDensityLabel.setText("HFX", juce::dontSendNotification);
     dragDensityLabel.setJustificationType(juce::Justification::centredLeft);
     dragDensityLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(188, 196, 210));
@@ -489,6 +495,22 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
             onDragGesture(laneId);
     };
 
+    wavDragButton.onClickAction = [this]
+    {
+        if (onDragWav)
+            onDragWav(laneId);
+    };
+
+    wavDragButton.onDragAction = [this]
+    {
+        if (onDragWavGesture)
+            onDragWavGesture(laneId);
+    };
+
+    // The lane menu (samples, import MIDI, Sub808 settings...) lives on a right click of the row
+    // or its name now; its "..." button gave its place to the WAV drag.
+    nameLabel.addMouseListener(this, false);
+
     dragDensitySlider.onValueChange = [this]
     {
         dragDensityValue = static_cast<float>(dragDensitySlider.getValue());
@@ -592,9 +614,10 @@ void TrackRowComponent::resized()
     if (displayMode == LaneRackDisplayMode::Minimal)
     {
         auto actions = area.removeFromRight(98);
-        dragButton.setBounds(actions.removeFromLeft(62).reduced(1));
+        dragButton.setBounds(actions.removeFromLeft(46).reduced(1));
         actions.removeFromLeft(2);
-        overflowMenuButton.setBounds(actions.removeFromLeft(32).reduced(1));
+        wavDragButton.setBounds(actions.removeFromLeft(46).reduced(1));
+        overflowMenuButton.setBounds({});
 
         auto sampleArea = area.removeFromRight(154);
         prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
@@ -622,9 +645,10 @@ void TrackRowComponent::resized()
     if (displayMode == LaneRackDisplayMode::Compact)
     {
         auto actions = area.removeFromRight(98);
-        dragButton.setBounds(actions.removeFromLeft(62).reduced(1));
+        dragButton.setBounds(actions.removeFromLeft(46).reduced(1));
         actions.removeFromLeft(2);
-        overflowMenuButton.setBounds(actions.removeFromLeft(32).reduced(1));
+        wavDragButton.setBounds(actions.removeFromLeft(46).reduced(1));
+        overflowMenuButton.setBounds({});
 
         area.removeFromRight(4);
         auto sampleArea = area.removeFromRight(154);
@@ -709,9 +733,10 @@ void TrackRowComponent::resized()
     dragDensitySlider.setBounds({});
 
     area.removeFromLeft(6);
-    dragButton.setBounds(area.removeFromLeft(62).reduced(1));
+    dragButton.setBounds(area.removeFromLeft(46).reduced(1));
     area.removeFromLeft(4);
-    overflowMenuButton.setBounds(area.removeFromLeft(32).reduced(1));
+    wavDragButton.setBounds(area.removeFromLeft(46).reduced(1));
+    overflowMenuButton.setBounds({});
 }
 
 void TrackRowComponent::mouseDown(const juce::MouseEvent& event)
@@ -722,6 +747,12 @@ void TrackRowComponent::mouseDown(const juce::MouseEvent& event)
     {
         if (onSampleMenuRequested)
             onSampleMenuRequested(laneId);
+        return;
+    }
+
+    if (event.mods.isPopupMenu())
+    {
+        showOverflowMenu();
         return;
     }
 
@@ -779,7 +810,8 @@ void TrackRowComponent::applyDisplayModeVisibility()
     nameLabel.setVisible(true);
     rgButton.setVisible(true);
     dragButton.setVisible(true);
-    overflowMenuButton.setVisible(true);
+    wavDragButton.setVisible(true);
+    overflowMenuButton.setVisible(false);
     prevSampleButton.setVisible(true);
     nextSampleButton.setVisible(true);
     exportButton.setVisible(false);
@@ -841,6 +873,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     prevSampleButton.setEnabled(hasRuntimeTrack());
     nextSampleButton.setEnabled(hasRuntimeTrack());
     dragButton.setEnabled(hasRuntimeTrack() && supportsDragExport);
+    wavDragButton.setEnabled(hasRuntimeTrack() && supportsDragExport);
     overflowMenuButton.setEnabled(true);
     volumeSlider.setEnabled(hasRuntimeTrack());
     panSlider.setEnabled(hasRuntimeTrack());
@@ -977,7 +1010,7 @@ void TrackRowComponent::showOverflowMenu()
         menu.addSubMenu("Sub808 Settings", settingsMenu, true);
     }
 
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(&overflowMenuButton),
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(this).withMousePosition(),
                        [safe = juce::Component::SafePointer<TrackRowComponent>(this)](int choice)
                        {
                            if (safe == nullptr || choice <= 0)
