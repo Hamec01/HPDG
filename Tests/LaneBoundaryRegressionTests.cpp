@@ -10,6 +10,7 @@
 
 #include "../Source/Core/ProjectLaneAccess.h"
 #include "../Source/Core/RuntimeLaneLifecycle.h"
+#include "../Source/Core/TrackRegistry.h"
 #include "../Source/Engine/BoomBapEngine.h"
 #include "../Source/Engine/MidiExportEngine.h"
 #include "../Source/Engine/PreviewEngine.h"
@@ -929,6 +930,94 @@ void testLaneRegenerateKeepsSampleNames()
     }
 }
 
+// The "Techno" genre entry reaches the Techno engine: tempo in the style range, every drum lane
+// (Perc included) and the bass written, RG / [1][2][3] bass work, and the grid is printed.
+void testTechnoGenreInPlugin()
+{
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(44100.0, 512);
+    auto& apvts = processor.getApvts();
+    auto* genre = apvts.getParameter(ParamIds::genre);
+    genre->setValueNotifyingHost(genre->convertTo0to1(5.0f));
+    auto* bars = apvts.getParameter(ParamIds::bars);
+    bars->setValueNotifyingHost(bars->convertTo0to1(2.0f)); // 4 bars
+    processor.syncBarsFromState();
+
+    for (int sub = 0; sub < static_cast<int>(TechnoSubstyle::Count); ++sub)
+    {
+        auto* substyle = apvts.getParameter(ParamIds::technoSubstyle);
+        substyle->setValueNotifyingHost(substyle->convertTo0to1(static_cast<float>(sub)));
+        processor.applySelectedStylePreset(false); // what the editor does on a genre / substyle change
+        processor.generatePattern();
+        const auto project = processor.getProjectSnapshot();
+        const auto& style = getTechnoStyleProfile(sub);
+        const juce::String label = juce::String("Techno ") + style.name + ": ";
+        expect(project.params.genre == GenreType::Techno, label + "genre not Techno");
+        expect(project.params.bpm >= style.bpmMin - 0.5f && project.params.bpm <= style.bpmMax + 0.5f,
+               label + "tempo " + juce::String(project.params.bpm, 1) + " outside " + juce::String(style.bpmMin) + "-" + juce::String(style.bpmMax));
+        const auto debug = processor.getGenerationDebugSummary();
+        expect(debug.contains("TECHNO ALGEBRA") && debug.contains("TECHNO BASS"), label + "engine report missing: algebra " + juce::String(debug.contains("TECHNO ALGEBRA") ? 1 : 0) + " bass " + juce::String(debug.contains("TECHNO BASS") ? 1 : 0) + " | " + debug.fromFirstOccurrenceOf("TECHNO", true, false).substring(0, 300));
+        for (const auto lane : { TrackType::Kick, TrackType::HiHat, TrackType::Sub808 })
+        {
+            const auto* state = ProjectLaneAccess::findTrackState(project, lane);
+            expect(state != nullptr && !state->notes.empty(), label + "lane " + juce::String(static_cast<int>(lane)) + " empty");
+        }
+        if (sub == 0 || sub == 1 || sub == 5)
+        {
+            std::cout << "    " << style.name << " " << juce::String(project.params.bpm, 1) << " bpm | "
+                      << debug.fromFirstOccurrenceOf("bars: ", false, false).upToFirstOccurrenceOf("\n", false, false) << "\n";
+            for (const auto lane : { TrackType::Cymbal, TrackType::OpenHat, TrackType::HiHat, TrackType::HatFX, TrackType::Ride,
+                                     TrackType::Perc, TrackType::Snare, TrackType::GhostKick, TrackType::Kick, TrackType::Sub808 })
+            {
+                const auto* state = ProjectLaneAccess::findTrackState(project, lane);
+                juce::String row;
+                for (int step = 0; step < 32; ++step)
+                {
+                    bool hit = false;
+                    if (state != nullptr)
+                        for (const auto& n : state->notes)
+                            hit = hit || n.gridTick / 240 == step;
+                    row << (hit ? "x" : (step % 4 == 0 ? "|" : "."));
+                }
+                const auto* info = TrackRegistry::find(lane);
+                std::cout << "      " << (info != nullptr ? info->displayName : juce::String("?")).paddedRight(' ', 11) << row
+                          << "  " << (state != nullptr ? state->selectedSampleName : juce::String()) << "\n";
+            }
+            std::cout << "      " << debug.fromFirstOccurrenceOf("TECHNO BASS\n", false, false).upToFirstOccurrenceOf("\n", false, false) << std::endl;
+        }
+    }
+
+    // Bass RG with each amount button keeps the drums; amount [3] plays more than [1].
+    auto ticksOf = [&processor](TrackType lane)
+    {
+        std::vector<int> ticks;
+        const auto snapshot = processor.getProjectSnapshot(); // keep it alive while reading
+        if (const auto* state = ProjectLaneAccess::findTrackState(snapshot, lane))
+            for (const auto& n : state->notes)
+                ticks.push_back(n.gridTick + n.timingOffsetTicks);
+        return ticks;
+    };
+    const auto kicks = ticksOf(TrackType::Kick);
+    const auto hats = ticksOf(TrackType::HiHat);
+    std::array<size_t, 3> notesPerAmount {};
+    for (const int amount : { 0, 1, 2 })
+    {
+        auto settings = ProjectLaneAccess::findTrackState(processor.getProjectSnapshot(), TrackType::Sub808)->sub808Settings;
+        settings.bassAmount = amount;
+        processor.setSub808LaneSettings(TrackType::Sub808, settings);
+        size_t total = 0;
+        for (int run = 0; run < 6; ++run)
+        {
+            processor.regenerateTrack(TrackType::Sub808);
+            expect(ticksOf(TrackType::Kick) == kicks && ticksOf(TrackType::HiHat) == hats, "techno bass RG changed the drums");
+            total += ticksOf(TrackType::Sub808).size();
+        }
+        notesPerAmount[static_cast<size_t>(amount)] = total;
+    }
+    expect(notesPerAmount[2] > notesPerAmount[0], "techno bass [3] is not busier than [1]: "
+           + juce::String(static_cast<int>(notesPerAmount[0])) + " vs " + juce::String(static_cast<int>(notesPerAmount[2])));
+}
+
 void testBoomBapSampleLineBass() { runSampleLineBass(GenreType::BoomBap); }
 void testTrapSampleLineBass() { runSampleLineBass(GenreType::Trap); }
 
@@ -1655,6 +1744,7 @@ int main()
     failures += runTest("Preset keeps the sample reference", testPresetKeepsSampleReference);
     failures += runTest("DnB follows the sample tempo", testDnBFollowsSampleTempo);
     failures += runTest("Lane RG keeps the lanes' sample names", testLaneRegenerateKeepsSampleNames);
+    failures += runTest("Techno genre in the plugin", testTechnoGenreInPlugin);
     failures += runTest("Boom Bap bass [2] composed from the sample", testBoomBapSampleLineBass);
     failures += runTest("Trap 808 [2] composed from the sample", testTrapSampleLineBass);
     if (juce::SystemStats::getEnvironmentVariable("HPDG_PROBE_SAMPLE", {}).isNotEmpty())

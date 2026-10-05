@@ -120,7 +120,8 @@ void sanitizeGeneratorParams(GeneratorParams& params)
     params.trapSubstyle = std::max(0, params.trapSubstyle);
     params.drillSubstyle = std::max(0, params.drillSubstyle);
     params.dnbSubstyle = std::max(0, params.dnbSubstyle);
-    params.genre = static_cast<GenreType>(juce::jlimit(0, 4, static_cast<int>(params.genre)));
+    params.technoSubstyle = std::max(0, params.technoSubstyle);
+    params.genre = static_cast<GenreType>(juce::jlimit(0, 5, static_cast<int>(params.genre)));
 }
 
 void serializePerformanceBaseParams(juce::ValueTree& node, const TrackState& track)
@@ -144,6 +145,7 @@ void serializePerformanceBaseParams(juce::ValueTree& node, const TrackState& tra
     node.setProperty("performance_base_trap_substyle", params.trapSubstyle, nullptr);
     node.setProperty("performance_base_drill_substyle", params.drillSubstyle, nullptr);
     node.setProperty("performance_base_dnb_substyle", params.dnbSubstyle, nullptr);
+    node.setProperty("performance_base_techno_substyle", params.technoSubstyle, nullptr);
 }
 
 void deserializePerformanceBaseParams(const juce::ValueTree& node, TrackState& track)
@@ -167,6 +169,7 @@ void deserializePerformanceBaseParams(const juce::ValueTree& node, TrackState& t
     params.trapSubstyle = safeInt(node, "performance_base_trap_substyle", params.trapSubstyle);
     params.drillSubstyle = safeInt(node, "performance_base_drill_substyle", params.drillSubstyle);
     params.dnbSubstyle = safeInt(node, "performance_base_dnb_substyle", params.dnbSubstyle);
+    params.technoSubstyle = safeInt(node, "performance_base_techno_substyle", params.technoSubstyle);
     sanitizeGeneratorParams(params);
 }
 

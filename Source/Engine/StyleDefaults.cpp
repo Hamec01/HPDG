@@ -1,6 +1,7 @@
 #include "StyleDefaults.h"
 
 #include "DnB/DnBTypes.h"
+#include "Techno/TechnoTypes.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -678,6 +679,43 @@ const std::array<GenreStyleDefaults, static_cast<size_t>(DnBSubstyle::Count)>& d
     return table;
 }
 
+// Techno: one entry per substyle (tempo / feel from TechnoStyleProfile). The Perc lane is on:
+// Euclidean / polymeter percussion is part of the genre.
+std::array<LaneStyleDefaults, 11> makeBaseTechnoLanes()
+{
+    // HiHat, HatFX (rolls), OpenHat (offbeat), Snare (clap), ClapGhost (hidden), Kick, GhostKick (rumble), Sub808 (bass), Ride, Cymbal, Perc
+    return {
+        lane(true, 0.72f, 1.0f, 0.70f, 0.60f, { "carrier", "sixteenths", "offbeat" }, 1.0f, 0.30f, 0.70f, 0.80f, 0.0f, 0.0f),
+        lane(true, 0.60f, 0.40f, 0.80f, 0.70f, { "roll", "pickup", "detail" }, 0.30f, 0.50f, 0.70f, 0.80f, 0.30f, 0.0f),
+        lane(true, 0.70f, 0.60f, 0.80f, 0.70f, { "offbeat", "tchak", "lift" }, 0.90f, 0.40f, 0.60f, 0.70f, 0.0f, 0.0f),
+        lane(true, 0.86f, 1.0f, 0.50f, 0.40f, { "clap", "backbeat", "displaced" }, 1.0f, 0.40f, 0.70f, 0.80f, 0.0f, 0.0f),
+        lane(false, 0.60f, 0.20f, 0.80f, 0.70f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f),
+        lane(true, 0.96f, 1.0f, 0.30f, 0.20f, { "four_floor", "axis", "pickup" }, 1.0f, 0.30f, 0.50f, 0.60f, 0.0f, 0.0f),
+        lane(true, 0.62f, 0.50f, 0.60f, 0.50f, { "rumble", "tail", "ghost" }, 0.50f, 0.20f, 0.70f, 0.80f, 0.0f, 0.0f),
+        lane(true, 0.88f, 1.0f, 0.50f, 0.40f, { "offbeat", "rolling", "acid" }, 1.0f, 0.40f, 0.80f, 0.90f, 0.0f, 0.90f),
+        lane(true, 0.60f, 0.40f, 0.80f, 0.70f, { "ride", "eighths", "bell" }, 0.30f, 0.30f, 0.70f, 0.80f, 0.0f, 0.0f),
+        lane(true, 0.58f, 0.20f, 0.60f, 0.50f, { "crash", "marker", "transition" }, 0.20f, 0.60f, 0.60f, 0.70f, 0.0f, 0.0f),
+        lane(true, 0.66f, 0.60f, 0.80f, 0.70f, { "euclid", "polymeter", "rim" }, 0.70f, 0.40f, 0.80f, 0.85f, 0.0f, 0.0f)
+    };
+}
+
+const std::array<GenreStyleDefaults, static_cast<size_t>(TechnoSubstyle::Count)>& technoStyles()
+{
+    static const std::array<GenreStyleDefaults, static_cast<size_t>(TechnoSubstyle::Count)> table = []
+    {
+        std::array<GenreStyleDefaults, static_cast<size_t>(TechnoSubstyle::Count)> styles;
+        for (int i = 0; i < static_cast<int>(TechnoSubstyle::Count); ++i)
+        {
+            const auto& profile = getTechnoStyleProfile(i);
+            styles[static_cast<size_t>(i)] = { GenreType::Techno, profile.name, profile.bpmDefault, profile.bpmMin, profile.bpmMax,
+                                               profile.swingDefault, 0.50f, 0.30f, profile.humanizeDefault, profile.densityDefault,
+                                               makeBaseTechnoLanes() };
+        }
+        return styles;
+    }();
+    return table;
+}
+
 const std::array<GenreStyleDefaults, 1>& drillStyles()
 {
     static const std::array<GenreStyleDefaults, 1> table = []
@@ -718,6 +756,7 @@ int getSelectedSubstyleIndex(const GeneratorParams& params)
         case GenreType::Trap: return params.trapSubstyle;
         case GenreType::Drill: return params.drillSubstyle;
         case GenreType::DnB: return params.dnbSubstyle;
+        case GenreType::Techno: return params.technoSubstyle;
         case GenreType::BoomBap:
         default: return params.boombapSubstyle;
     }
@@ -725,6 +764,13 @@ int getSelectedSubstyleIndex(const GeneratorParams& params)
 
 const GenreStyleDefaults& getGenreStyleDefaults(GenreType genre, int substyleIndex)
 {
+    if (genre == GenreType::Techno)
+    {
+        const auto& styles = technoStyles();
+        const int idx = std::clamp(substyleIndex, 0, static_cast<int>(styles.size()) - 1);
+        return styles[static_cast<size_t>(idx)];
+    }
+
     if (genre == GenreType::DnB)
     {
         const auto& styles = dnbStyles();
@@ -821,6 +867,11 @@ juce::StringArray getTrapSubstyleNames()
 juce::StringArray getDnBSubstyleNames()
 {
     return getDnBStyleNames();
+}
+
+juce::StringArray getTechnoSubstyleNames()
+{
+    return getTechnoStyleNames();
 }
 
 juce::StringArray getDrillSubstyleNames()

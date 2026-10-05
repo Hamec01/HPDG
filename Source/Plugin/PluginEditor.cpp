@@ -1896,7 +1896,13 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
     {
         trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
         trackList.setLaneDisplayOrder(buildTrackListLaneOrder(project, laneDisplayOrder));
-        trackList.setTracks(project.runtimeLaneProfile,
+        // Techno shows its Perc lane (Euclidean / polymeter percussion); other genres keep it hidden.
+        auto laneProfile = project.runtimeLaneProfile;
+        if (project.params.genre == GenreType::Techno)
+            for (auto& lane : laneProfile.lanes)
+                if (lane.runtimeTrackType == TrackType::Perc)
+                    lane.isVisibleInEditor = true;
+        trackList.setTracks(laneProfile,
                             project.tracks,
                             audioProcessor.getBassKeyRootChoice(),
                             audioProcessor.getBassScaleModeChoice());
@@ -2158,6 +2164,10 @@ void BoomBGeneratorAudioProcessorEditor::refreshSubstyleBindingForGenre()
         case 4:
             choices = getDnBSubstyleNames();
             substyleParamId = ParamIds::dnbSubstyle;
+            break;
+        case 5:
+            choices = getTechnoSubstyleNames();
+            substyleParamId = ParamIds::technoSubstyle;
             break;
         case 0:
         default:
@@ -3271,6 +3281,8 @@ void BoomBGeneratorAudioProcessorEditor::showStyleLabWindow()
                                                                  return getDrillSubstyleNames();
                                                              if (genre.equalsIgnoreCase("DnB"))
                                                                  return getDnBSubstyleNames();
+                                                             if (genre.equalsIgnoreCase("Techno"))
+                                                                 return getTechnoSubstyleNames();
                                                              return getBoomBapSubstyleNames();
                                                          });
     component->onStateChanged = [this](const StyleLabState& state)

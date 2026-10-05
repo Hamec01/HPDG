@@ -75,4 +75,5 @@ juce::StringArray getRapSubstyleNames();
 juce::StringArray getTrapSubstyleNames();
 juce::StringArray getDrillSubstyleNames();
 juce::StringArray getDnBSubstyleNames();
+juce::StringArray getTechnoSubstyleNames();
 } // namespace bbg

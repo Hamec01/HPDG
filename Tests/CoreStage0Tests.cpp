@@ -20,6 +20,7 @@
 #include "../Source/Engine/DnBEngine.h"
 #include "../Source/Engine/DnB/DnBScorer.h"
 #include "../Source/Engine/DnB/DnBBass.h"
+#include "../Source/Engine/TechnoEngine.h"
 #include "../Source/Engine/DrillEngine.h"
 #include "../Source/Engine/Drill/DrillPatternValidator.h"
 #include "../Source/Engine/Drill/DrillPhrasePlanner.h"
@@ -4754,6 +4755,130 @@ void testDnBGrammarInvariants()
     }
 }
 
+// Techno (docs/techno-engine.md): the four-on-the-floor axis in every non-fill bar, the clap
+// never on 1 / 3, percussion never masking the kick, every search inside the gates.
+void testTechnoGrammarInvariants()
+{
+    for (int sub = 0; sub < static_cast<int>(TechnoSubstyle::Count); ++sub)
+        for (const int bars : { 1, 2, 4, 8 })
+            for (int seed = 1; seed <= 12; ++seed)
+            {
+                TechnoGenerationParams params;
+                params.seed = seed * 97 + sub;
+                params.bars = bars;
+                params.substyle = sub;
+                params.density = 0.25f + 0.05f * static_cast<float>(seed % 10);
+                const auto pattern = TechnoEngine::search(params);
+                const juce::String label = juce::String(getTechnoStyleProfile(sub).name) + " " + juce::String(bars) + " bars seed " + juce::String(seed);
+                expect(pattern.score.passedGates, label + ": failed gate " + pattern.score.failedGate);
+                for (int bar = 0; bar < bars; ++bar)
+                {
+                    const bool fill = pattern.barRoles[static_cast<size_t>(bar)] == TechnoBarRole::Fill;
+                    for (int beat = 0; beat < (fill ? 3 : 4); ++beat)
+                        expect(pattern.has(TrackType::Kick, bar, beat * 4), label + ": no kick on beat " + juce::String(beat + 1) + " of bar " + juce::String(bar + 1));
+                }
+                for (const auto& e : pattern.events)
+                {
+                    if (e.lane == TrackType::Snare)
+                        expect(e.step != 0 && e.step != 8, label + ": clap on beat 1 / 3");
+                    if (e.lane == TrackType::Perc)
+                        expect(!pattern.has(TrackType::Kick, e.bar, e.step), label + ": perc masks the kick");
+                    if (e.lane == TrackType::HiHat)
+                        expect(!pattern.has(TrackType::OpenHat, e.bar, e.step), label + ": closed hat under the open hat (no choke)");
+                    if (e.lane == TrackType::Kick && e.role == TechnoRole::KickAxis)
+                        expect(std::abs(e.micro) <= 2, label + ": the axis drifts off the grid");
+                }
+            }
+}
+
+// The bass never attacks with the kick (sidechain gate), stays in its register and in key.
+void testTechnoBassRules()
+{
+    for (int sub = 0; sub < static_cast<int>(TechnoSubstyle::Count); ++sub)
+        for (int amount = 0; amount < 3; ++amount)
+            for (int seed = 1; seed <= 8; ++seed)
+            {
+                TechnoGenerationParams params;
+                params.seed = seed * 31 + amount;
+                params.bars = 4;
+                params.substyle = sub;
+                const auto drums = TechnoEngine::search(params);
+                std::vector<std::vector<int>> kicks(4);
+                for (const auto& e : drums.events)
+                    if (e.lane == TrackType::Kick)
+                        kicks[static_cast<size_t>(e.bar)].push_back(e.step);
+
+                TechnoBassParams bassParams;
+                bassParams.seed = seed * 7 + sub;
+                bassParams.bars = 4;
+                bassParams.substyle = sub;
+                bassParams.keyRoot = 9;   // A minor
+                bassParams.amount = amount;
+                juce::String report;
+                const auto line = TechnoBassGenerator::search(bassParams, kicks, {}, &report);
+                const auto& style = getTechnoStyleProfile(sub);
+                const juce::String label = juce::String(style.name) + " amount " + juce::String(amount + 1) + " seed " + juce::String(seed)
+                    + " (" + toString(line.archetype) + ")";
+                expect(!line.notes.empty(), label + ": no bass");
+                static const std::set<int> aMinorWithB2 { 9, 11, 0, 2, 4, 5, 7, 10 }; // A natural minor + b2 (Bb)
+                for (const auto& n : line.notes)
+                {
+                    const auto& barKicks = kicks[static_cast<size_t>(n.step / 16)];
+                    expect(std::find(barKicks.begin(), barKicks.end(), n.step % 16) == barKicks.end(), label + ": bass attacks with the kick");
+                    expect(n.pitch >= style.bassLow && n.pitch <= style.bassHigh, label + ": out of register " + juce::String(n.pitch));
+                    expect(aMinorWithB2.count(n.pitch % 12) > 0, label + ": out of key " + juce::String(n.pitch));
+                }
+            }
+}
+
+// Same settings -> same loop; Generate presses -> different loops. Prints the grammar's own
+// distribution of S / D / R per style (the scorer targets are calibrated on it).
+void testTechnoDeterministicVariedAndCalibration()
+{
+    TechnoGenerationParams params;
+    params.seed = 4242;
+    params.bars = 4;
+    const auto a = TechnoEngine::search(params);
+    const auto b = TechnoEngine::search(params);
+    expect(a.events.size() == b.events.size(), "techno search is not deterministic");
+
+    for (int sub = 0; sub < static_cast<int>(TechnoSubstyle::Count); ++sub)
+    {
+        const auto& style = getTechnoStyleProfile(sub);
+        std::vector<float> s, d, r;
+        for (int i = 0; i < 300; ++i)
+        {
+            std::mt19937 rng(static_cast<std::mt19937::result_type>(i * 7919 + sub));
+            TechnoGenerationParams p;
+            p.bars = 4;
+            p.substyle = sub;
+            p.density = style.densityDefault;
+            const auto pattern = TechnoGrammar::generateCandidate(p, style, rng);
+            const auto score = TechnoScorer::score(pattern, style);
+            s.push_back(score.syncopation);
+            d.push_back(score.density);
+            r.push_back(score.repetition);
+        }
+        auto q = [](std::vector<float> v, float f) { std::sort(v.begin(), v.end()); return v[static_cast<size_t>(f * (v.size() - 1))]; };
+        std::cout << "    " << style.name << ": S p25/50/75 " << q(s, 0.25f) << " " << q(s, 0.5f) << " " << q(s, 0.75f)
+                  << " | D " << q(d, 0.25f) << " " << q(d, 0.5f) << " " << q(d, 0.75f)
+                  << " | R " << q(r, 0.25f) << " " << q(r, 0.5f) << " " << q(r, 0.75f)
+                  << " | targets S " << style.syncTarget << " D " << style.densityTarget << " R " << style.repetitionTarget << std::endl;
+        std::set<juce::String> loops;
+        for (int seed = 1; seed <= 20; ++seed)
+        {
+            params.seed = seed * 131;
+            params.substyle = sub;
+            juce::String key;
+            for (const auto& e : TechnoEngine::search(params).events)
+                key << static_cast<int>(e.lane) << ":" << e.bar << ":" << e.step << ":" << e.subTick << " ";
+            loops.insert(key);
+        }
+        expect(loops.size() >= 12, juce::String(style.name) + ": 20 generations gave only " + juce::String(static_cast<int>(loops.size())) + " loops");
+
+    }
+}
+
 // Same settings -> same loop; consecutive seeds (Generate presses) -> different loops.
 void testDnBDeterministicAndVaried()
 {
@@ -7053,6 +7178,9 @@ int main()
     failures += runTest("DnB grammar invariants", testDnBGrammarInvariants);
     failures += runTest("DnB deterministic and varied", testDnBDeterministicAndVaried);
     failures += runTest("DnB substyle character", testDnBSubstyleCharacter);
+    failures += runTest("Techno grammar invariants", testTechnoGrammarInvariants);
+    failures += runTest("Techno bass rules", testTechnoBassRules);
+    failures += runTest("Techno deterministic, varied, calibration", testTechnoDeterministicVariedAndCalibration);
     failures += runTest("DnB engine in a project", testDnBEngineInProject);
     failures += runTest("DnB bass line", testDnBBassLine);
     failures += runTest("DnB bass follows the sample's roots", testDnBBassFollowsSampleRoots);

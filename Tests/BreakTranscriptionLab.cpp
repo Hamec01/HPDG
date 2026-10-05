@@ -729,6 +729,42 @@ int runLines(const juce::StringArray& args)
     return 0;
 }
 
+// retune <in> <out> <cents>: varispeed re-pitch (Lagrange interpolation), e.g. a C# bass -100 c -> C.
+int runRetune(const juce::StringArray& args)
+{
+    if (args.size() < 4)
+        return 1;
+    juce::AudioFormatManager manager;
+    manager.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(manager.createReaderFor(juce::File(args[1])));
+    if (reader == nullptr)
+        return 1;
+    const int channels = static_cast<int>(reader->numChannels);
+    const int length = static_cast<int>(reader->lengthInSamples);
+    juce::AudioBuffer<float> input(channels, length);
+    reader->read(&input, 0, length, 0, true, true);
+
+    const double ratio = std::pow(2.0, args[3].getDoubleValue() / 1200.0); // > 1: higher and shorter
+    const int outLength = static_cast<int>(std::floor((length - 4) / ratio));
+    juce::AudioBuffer<float> output(channels, outLength);
+    for (int c = 0; c < channels; ++c)
+    {
+        juce::LagrangeInterpolator interpolator;
+        interpolator.process(ratio, input.getReadPointer(c), output.getWritePointer(c), outLength);
+    }
+
+    const juce::File out(args[2]);
+    out.deleteFile();
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(new juce::FileOutputStream(out), reader->sampleRate,
+                                                                         static_cast<unsigned int>(channels), 24, {}, 0));
+    if (writer == nullptr)
+        return 1;
+    writer->writeFromAudioSampleBuffer(output, 0, outLength);
+    std::cout << out.getFileName() << " | " << args[3] << " c | " << juce::String(outLength / reader->sampleRate, 2) << " s\n";
+    return 0;
+}
+
 // peaks <file> <fromSeconds> <toSeconds>: averaged long-FFT spectrum, strongest peaks below 1 kHz.
 int runPeaks(const juce::StringArray& args)
 {
@@ -899,6 +935,8 @@ int main(int argc, char** argv)
         return runAnalyze(args);
     if (args[0] == "rootnote")
         return runRootNote(args);
+    if (args[0] == "retune")
+        return runRetune(args);
     if (args[0] == "peaks")
         return runPeaks(args);
     if (args[0] == "lines")

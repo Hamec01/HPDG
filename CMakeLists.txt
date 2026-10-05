@@ -84,6 +84,10 @@ target_sources(HPDG
     Source/Engine/DnB/DnBGrammar.cpp
     Source/Engine/DnB/DnBScorer.cpp
     Source/Engine/DnB/DnBBass.cpp
+    Source/Engine/TechnoEngine.cpp
+    Source/Engine/Techno/TechnoStyleProfile.cpp
+    Source/Engine/Techno/TechnoGrammar.cpp
+    Source/Engine/Techno/TechnoBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
@@ -180,6 +184,10 @@ add_executable(HPDG_CoreTests
     Source/Engine/DnB/DnBGrammar.cpp
     Source/Engine/DnB/DnBScorer.cpp
     Source/Engine/DnB/DnBBass.cpp
+    Source/Engine/TechnoEngine.cpp
+    Source/Engine/Techno/TechnoStyleProfile.cpp
+    Source/Engine/Techno/TechnoGrammar.cpp
+    Source/Engine/Techno/TechnoBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
@@ -256,6 +264,10 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/DnB/DnBGrammar.cpp
     Source/Engine/DnB/DnBScorer.cpp
     Source/Engine/DnB/DnBBass.cpp
+    Source/Engine/TechnoEngine.cpp
+    Source/Engine/Techno/TechnoStyleProfile.cpp
+    Source/Engine/Techno/TechnoGrammar.cpp
+    Source/Engine/Techno/TechnoBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp

@@ -45,6 +45,19 @@ void SampleLibraryManager::scan()
             if (!own.isDirectory() || own.findChildFiles(juce::File::findFiles, false, "*.wav").isEmpty())
                 genreRoot = resolvedRootDirectory.getChildFile("BoomBap");
         }
+        // Techno uses Samples/Techno once it exists; until then (and per missing lane) the
+        // electronic DnB kit, then the Boom Bap kit.
+        if (currentGenre == GenreType::Techno)
+        {
+            auto hasWavs = [&](const juce::File& genreFolder)
+            {
+                const auto own = genreFolder.getChildFile(folderNameForTrack(track));
+                return own.isDirectory() && !own.findChildFiles(juce::File::findFiles, false, "*.wav").isEmpty();
+            };
+            if (!hasWavs(genreRoot))
+                genreRoot = hasWavs(resolvedRootDirectory.getChildFile("DnB")) ? resolvedRootDirectory.getChildFile("DnB")
+                                                                               : resolvedRootDirectory.getChildFile("BoomBap");
+        }
         auto folder = genreRoot.exists() && genreRoot.isDirectory()
             ? genreRoot.getChildFile(folderNameForTrack(track))
             : resolvedRootDirectory.getChildFile(folderNameForTrack(track));
@@ -103,6 +116,7 @@ juce::String SampleLibraryManager::folderNameForGenre(GenreType genre)
         case GenreType::Trap: return "Trap";
         case GenreType::Drill: return kShowRapAndDrillGenres ? "Drill" : "Trap";
         case GenreType::DnB: return "DnB";
+        case GenreType::Techno: return "Techno";
         default: return "BoomBap";
     }
 }

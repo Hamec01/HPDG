@@ -22,6 +22,10 @@ inline float generationBpmForSample(float sampleBpm, GenreType genre)
     if (genre == GenreType::DnB)
         while (bpm < 120.0f)
             bpm *= 2.0f;
+    // Techno over a half-time loop (65 -> 130) runs at double time as well.
+    if (genre == GenreType::Techno)
+        while (bpm < 100.0f)
+            bpm *= 2.0f;
     return bpm;
 }
 
@@ -37,6 +41,10 @@ inline float interpretedBpmForGenre(float bpm, GenreType genre)
 
     // - DnB is authored at ~174; a half-time host tempo (~87) means the same groove.
     if (genre == GenreType::DnB && clamped <= 100.0f)
+        return std::clamp(clamped * 2.0f, 40.0f, 240.0f);
+
+    // - Techno is authored at 120-150; a half-time host tempo (~65) means the same groove.
+    if (genre == GenreType::Techno && clamped <= 80.0f)
         return std::clamp(clamped * 2.0f, 40.0f, 240.0f);
 
     if (genre == GenreType::BoomBap && clamped >= 120.0f)

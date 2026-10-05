@@ -138,6 +138,7 @@ MainHeaderComponent::MainHeaderComponent()
     if (kShowRapAndDrillGenres)
         genreCombo.addItem("Drill", 4);
     genreCombo.addItem("DnB", 5);
+    genreCombo.addItem("Techno", 6);
     addAndMakeVisible(genreCombo);
 
     substyleLabel.setText("Substyle", juce::dontSendNotification);

@@ -172,6 +172,29 @@ inline GenrePerformanceProfile getGenrePerformanceProfile(const GeneratorParams&
             profile.lanes[trackTypeIndex(TrackType::Cymbal)].swingWeight = 0.0f;
             break;
 
+        case GenreType::Techno:
+            // Machine-tight axis; the carriers (hats / perc) take the swing, set in the engine.
+            profile.timingScaleAmount = 0.40f;
+            profile.swingTicksPerPercent = 1.6f;
+            profile.zeroTimingTicks = 4.0f;
+            profile.humanizeTimingTicks = 4.0f;
+            profile.humanizeVelocityRange = 4.0f;
+            profile.velocityRange = 8.0f;
+            profile.anchorSwingTightness = 1.0f;
+            profile.anchorTimingTightness = 0.97f;
+            profile.supportLateBias = 0.02f;
+            profile.accentVelocityDepth = 1.0f;
+            profile.lanes[trackTypeIndex(TrackType::Kick)].swingWeight = 0.0f;
+            profile.lanes[trackTypeIndex(TrackType::Snare)].swingWeight = 0.05f;
+            profile.lanes[trackTypeIndex(TrackType::GhostKick)].swingWeight = 0.40f;
+            profile.lanes[trackTypeIndex(TrackType::HiHat)].swingWeight = 0.70f;
+            profile.lanes[trackTypeIndex(TrackType::HatFX)].swingWeight = 0.30f;
+            profile.lanes[trackTypeIndex(TrackType::Ride)].swingWeight = 0.60f;
+            profile.lanes[trackTypeIndex(TrackType::OpenHat)].swingWeight = 0.0f;
+            profile.lanes[trackTypeIndex(TrackType::Perc)].swingWeight = 0.60f;
+            profile.lanes[trackTypeIndex(TrackType::Cymbal)].swingWeight = 0.0f;
+            break;
+
         case GenreType::Drill:
             profile.timingScaleAmount = 0.56f;
             profile.swingTicksPerPercent = 0.9f;

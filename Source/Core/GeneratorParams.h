@@ -8,7 +8,8 @@ enum class GenreType
     Rap,
     Trap,
     Drill,
-    DnB // Drum & Bass (appended: saved projects / parameter indices of the others are unchanged)
+    DnB, // Drum & Bass (appended: saved projects / parameter indices of the others are unchanged)
+    Techno // appended after DnB for the same reason
 };
 
 // Temporary product decision: Rap and Drill are hidden from genre selection while those
@@ -32,6 +33,7 @@ struct GeneratorParams
     int trapSubstyle = 0;
     int drillSubstyle = 0;
     int dnbSubstyle = 0;
+    int technoSubstyle = 0;
     int keyRoot = 0; // 0=C, 1=C#, ... 11=B
     int scaleMode = 0; // 0=Minor, 1=Major, 2=Harmonic Minor
     int tempoInterpretationMode = 0; // 0=Auto, 1=Original, 2=Half-time Aware

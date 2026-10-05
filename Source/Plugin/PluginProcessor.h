@@ -20,6 +20,7 @@
 #include "../Core/TransportSnapshot.h"
 #include "../Engine/BoomBapEngine.h"
 #include "../Engine/DnBEngine.h"
+#include "../Engine/TechnoEngine.h"
 #include "../Engine/DrillEngine.h"
 #include "../Engine/RapEngine.h"
 #include "../Engine/TrapEngine.h"
@@ -57,6 +58,7 @@ static constexpr auto rapSubstyle = "rap_substyle";
 static constexpr auto trapSubstyle = "trap_substyle";
 static constexpr auto drillSubstyle = "drill_substyle";
 static constexpr auto dnbSubstyle = "dnb_substyle";
+static constexpr auto technoSubstyle = "techno_substyle";
 static constexpr auto seed = "seed";
 static constexpr auto seedLock = "seed_lock";
 static constexpr auto masterVolume = "master_volume";
@@ -443,6 +445,7 @@ private:
     BoomBapEngine boomBapEngine;
     DrillEngine drillEngine;
     DnBEngine dnbEngine;
+    TechnoEngine technoEngine;
     RapEngine rapEngine;
     TrapEngine trapEngine;
     juce::AudioProcessorValueTreeState apvts;
@@ -478,6 +481,7 @@ private:
     int lastAppliedTrapSubstyleChoice = -1;
     int lastAppliedDrillSubstyleChoice = -1;
     int lastAppliedDnBSubstyleChoice = -1;
+    int lastAppliedTechnoSubstyleChoice = -1;
 
     float hatFxDragDensity = 1.0f;
     bool hatFxDragDensityLocked = false;
