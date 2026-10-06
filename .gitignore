@@ -29,7 +29,9 @@ Logs/*.png
 drag.log
 contract-out.txt
 contract-err.txt
-Releases/
+/Releases/*
+!/Releases/HPDG_VST3_Setup_0.1.0-beta.1.exe
+!/Releases/HPDG_VST3_Setup_0.1.0-beta.1.exe.sha256
 /Release/
 /Installer/Output/
 /Vst3ViewerTmp/
