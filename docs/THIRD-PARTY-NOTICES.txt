@@ -7,7 +7,9 @@ Neucha font: its original OFL notice is distributed under
 Documentation/ThirdParty/Neucha/OFL.txt.
 
 Factory audio library: contains third-party sounds, including the
-Ghosthack Free Techno Sounds 2024 kit and source packs identified
+Ghosthack Free Techno Sounds 2024 kit, Sample Magic "Deep Melodic
+Tech-House 2" drum hits, Production Music Live "Overdrive" bass
+one-shots (re-pitched to C) and source packs identified
 by original filenames in each sample-names.json. These filenames and
 original text notices in Samples/Rap/Dirty South Drum Kit are retained.
 Techno bass additions preserve their original names in

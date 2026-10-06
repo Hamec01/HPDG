@@ -38,7 +38,13 @@ grammar writes its clap backbeat to Snare, the loader uses Techno/ClapGhost for
 that lane when Techno/Snare is absent. GhostKick similarly uses Techno/Kick when
 no separate ghost-kick kit exists. Dedicated lane folders always take priority.
 
-Other missing lanes still use the existing DnB, then BoomBap fallback. This pack
-does not supply separate open hats, rides, cymbals or bass one shots.
+A second Techno kit sits next to it: Sample Magic "Deep Melodic Tech-House 2" drum
+hits (Kick TKk31+, Snare/claps TSN, HiHat THH26+, OpenHat TOH, Cymbal TCY, Perc
+TPC26+, HatFX shakers THF, GhostKick soft low kicks TGK) and three Production
+Music Live "Overdrive" bass one-shots re-pitched to C (TSB4-TSB6, measured
+C2 / C1 / C1). Original names are kept in each sample-names.json.
+
+Ride still uses the existing DnB, then BoomBap fallback (neither Techno kit has
+rides).
 The CMake post-build step copies the whole Samples tree, including metadata,
 into both VST3 and Standalone outputs.
