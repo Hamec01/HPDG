@@ -40,3 +40,6 @@ contract-err.txt
 # OS
 Thumbs.db
 .DS_Store
+
+# Quality-lab per-pattern dumps are regenerable (large); summaries stay in git.
+docs/audit/baseline/*_patterns.csv

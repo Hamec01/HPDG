@@ -1,0 +1,26 @@
+boombap / Classic / density 0.46 / 4 bars: failures 0/1000 | exact dup 0 | near dup 42 | kick dup 21 | determinism 0 | kicks/bar 3.42 | backbeat 1.000 | events/bar 13.5 | p50 7.9 ms p95 10.5 ms
+boombap / Dusty / density 0.38 / 4 bars: failures 0/1000 | exact dup 0 | near dup 9 | kick dup 22 | determinism 0 | kicks/bar 3.41 | backbeat 1.000 | events/bar 13.1 | p50 7.4 ms p95 13.8 ms
+boombap / Jazzy / density 0.58 / 4 bars: failures 0/1000 | exact dup 0 | near dup 10 | kick dup 16 | determinism 0 | kicks/bar 3.61 | backbeat 1.000 | events/bar 13.6 | p50 7.5 ms p95 11.9 ms
+boombap / BoomBapGold / density 0.52 / 4 bars: failures 0/1000 | exact dup 0 | near dup 27 | kick dup 19 | determinism 0 | kicks/bar 3.62 | backbeat 1.000 | events/bar 13.7 | p50 7.4 ms p95 9.9 ms
+boombap / RussianUnderground / density 0.32 / 4 bars: failures 0/1000 | exact dup 0 | near dup 22 | kick dup 28 | determinism 0 | kicks/bar 3.23 | backbeat 1.000 | events/bar 12.5 | p50 6.9 ms p95 9.3 ms
+boombap / LofiRap / density 0.30 / 4 bars: failures 0/1000 | exact dup 0 | near dup 35 | kick dup 23 | determinism 0 | kicks/bar 3.19 | backbeat 1.000 | events/bar 12.5 | p50 6.9 ms p95 9.6 ms
+trap / ATLClassic / density 0.58 / 4 bars: failures 0/1000 | exact dup 0 | near dup 0 | kick dup 991 | determinism 0 | kicks/bar 1.67 | backbeat 1.000 | events/bar 15.1 | p50 28.6 ms p95 35.5 ms
+trap / DarkTrap / density 0.40 / 4 bars: failures 0/1000 | exact dup 0 | near dup 0 | kick dup 991 | determinism 0 | kicks/bar 1.67 | backbeat 1.000 | events/bar 14.7 | p50 26.7 ms p95 32.5 ms
+trap / CloudTrap / density 0.48 / 4 bars: failures 0/1000 | exact dup 0 | near dup 11 | kick dup 991 | determinism 0 | kicks/bar 1.67 | backbeat 1.000 | events/bar 14.1 | p50 25.8 ms p95 34.6 ms
+trap / RageTrap / density 0.74 / 4 bars: failures 0/1000 | exact dup 0 | near dup 0 | kick dup 991 | determinism 0 | kicks/bar 1.73 | backbeat 1.000 | events/bar 16.4 | p50 32.3 ms p95 42.0 ms
+trap / MemphisTrap / density 0.44 / 4 bars: failures 0/1000 | exact dup 0 | near dup 0 | kick dup 991 | determinism 0 | kicks/bar 1.67 | backbeat 1.000 | events/bar 15.3 | p50 29.8 ms p95 40.3 ms
+trap / LuxuryTrap / density 0.52 / 4 bars: failures 0/1000 | exact dup 0 | near dup 1 | kick dup 991 | determinism 0 | kicks/bar 1.68 | backbeat 1.000 | events/bar 14.4 | p50 28.4 ms p95 35.3 ms
+dnb / Modern / density 0.50 / 4 bars: failures 0/1000 | exact dup 2 | near dup 29 | kick dup 794 | determinism 0 | kicks/bar 1.87 | backbeat 1.000 | events/bar 15.5 | p50 9.9 ms p95 12.1 ms
+dnb / Roller / density 0.50 / 4 bars: failures 0/1000 | exact dup 7 | near dup 120 | kick dup 857 | determinism 0 | kicks/bar 2.87 | backbeat 1.000 | events/bar 18.2 | p50 11.1 ms p95 13.4 ms
+dnb / Liquid / density 0.50 / 4 bars: failures 0/1000 | exact dup 6 | near dup 113 | kick dup 857 | determinism 0 | kicks/bar 1.86 | backbeat 1.000 | events/bar 15.5 | p50 8.9 ms p95 10.2 ms
+dnb / Neurofunk / density 0.50 / 4 bars: failures 0/1000 | exact dup 1 | near dup 108 | kick dup 693 | determinism 0 | kicks/bar 2.89 | backbeat 1.000 | events/bar 17.5 | p50 10.5 ms p95 12.6 ms
+dnb / Jump-Up / density 0.50 / 4 bars: failures 0/1000 | exact dup 33 | near dup 285 | kick dup 938 | determinism 0 | kicks/bar 1.97 | backbeat 1.000 | events/bar 14.2 | p50 8.8 ms p95 12.0 ms
+dnb / Breakbeat / density 0.60 / 4 bars: failures 0/1000 | exact dup 0 | near dup 4 | kick dup 351 | determinism 0 | kicks/bar 3.89 | backbeat 1.000 | events/bar 20.0 | p50 20.4 ms p95 24.4 ms
+techno / Peak Time / density 0.55 / 4 bars: failures 0/1000 | exact dup 573 | near dup 951 | kick dup 990 | determinism 0 | kicks/bar 3.95 | backbeat 0.941 | events/bar 20.1 | p50 2.6 ms p95 4.0 ms
+techno / Hypnotic / density 0.55 / 4 bars: failures 0/1000 | exact dup 204 | near dup 753 | kick dup 990 | determinism 0 | kicks/bar 3.95 | backbeat 0.505 | events/bar 26.5 | p50 3.4 ms p95 8.2 ms
+techno / Minimal / density 0.55 / 4 bars: failures 0/1000 | exact dup 682 | near dup 951 | kick dup 991 | determinism 0 | kicks/bar 4.02 | backbeat 0.415 | events/bar 14.2 | p50 2.3 ms p95 4.0 ms
+techno / Detroit / density 0.55 / 4 bars: failures 0/1000 | exact dup 437 | near dup 949 | kick dup 990 | determinism 0 | kicks/bar 3.99 | backbeat 0.848 | events/bar 23.6 | p50 3.0 ms p95 4.8 ms
+techno / Dub / density 0.55 / 4 bars: failures 0/1000 | exact dup 608 | near dup 937 | kick dup 992 | determinism 0 | kicks/bar 4.00 | backbeat 0.554 | events/bar 17.1 | p50 2.7 ms p95 5.2 ms
+techno / Acid / density 0.55 / 4 bars: failures 0/1000 | exact dup 528 | near dup 936 | kick dup 990 | determinism 0 | kicks/bar 3.99 | backbeat 0.863 | events/bar 19.1 | p50 2.5 ms p95 3.8 ms
+techno / Hard / density 0.55 / 4 bars: failures 0/1000 | exact dup 318 | near dup 875 | kick dup 990 | determinism 0 | kicks/bar 3.94 | backbeat 0.955 | events/bar 25.4 | p50 3.1 ms p95 4.8 ms
+wrote C:\Users\ham\Documents\DRUMENGINE\docs\audit\baseline\baseline_default_4bars_summary.json
