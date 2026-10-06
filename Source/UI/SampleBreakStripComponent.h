@@ -42,6 +42,7 @@ public:
     };
 
     SampleBreakStripComponent();
+    juce::Slider volumeSlider;
 
     void setState(const State& state);
 
@@ -97,6 +98,7 @@ private:
     juce::ToggleButton playWithToggle { "Play w/ HPDG" };
     mutable std::vector<std::pair<float, float>> wavePeaks;
     juce::Label quantizeLabel;
+    juce::Label volumeLabel;
     juce::Slider quantizeSlider;
 };
 } // namespace bbg

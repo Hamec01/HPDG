@@ -11,7 +11,7 @@ bool sampleInfoMatchesAnyTag(const LaneSampleInfo& info, const std::vector<juce:
     if (preferredTags.empty())
         return false;
 
-    const auto haystack = info.name + " " + info.file.getFullPathName();
+    const auto haystack = info.name + " " + info.sourceName + " " + info.file.getFullPathName();
     return std::any_of(preferredTags.begin(), preferredTags.end(), [&haystack](const juce::String& tag)
     {
         return tag.isNotEmpty() && haystack.containsIgnoreCase(tag);
@@ -96,7 +96,8 @@ void LaneSampleBank::adoptPreparedLibrary(std::unique_ptr<PreparedLibrary> prepa
 
         state.selectedIndex = juce::jlimit(0, static_cast<int>(state.infos.size()) - 1, previousSelection);
         state.selectedName = state.infos[static_cast<size_t>(state.selectedIndex)].name;
-        state.selectedRootPitchClass = rootPitchClassFromName(state.selectedName);
+        const auto& selected = state.infos[static_cast<size_t>(state.selectedIndex)];
+        state.selectedRootPitchClass = rootPitchClassFromName(selected.sourceName.isNotEmpty() ? selected.sourceName : selected.name);
     }
 }
 
@@ -113,7 +114,8 @@ bool LaneSampleBank::selectIndex(TrackType track, int index)
 
     state.selectedIndex = juce::jlimit(0, static_cast<int>(state.infos.size()) - 1, index);
     state.selectedName = state.infos[static_cast<size_t>(state.selectedIndex)].name;
-    state.selectedRootPitchClass = rootPitchClassFromName(state.selectedName);
+    const auto& selected = state.infos[static_cast<size_t>(state.selectedIndex)];
+    state.selectedRootPitchClass = rootPitchClassFromName(selected.sourceName.isNotEmpty() ? selected.sourceName : selected.name);
     return true;
 }
 

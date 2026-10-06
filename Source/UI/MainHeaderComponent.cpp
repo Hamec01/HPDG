@@ -10,7 +10,7 @@ namespace bbg
 {
 namespace
 {
-constexpr auto kUiBuildVersion = "0.004V";
+constexpr auto kUiBuildVersion = "0.1.0 Beta 1";
 
 double parseKnobText(const juce::String& text)
 {
@@ -31,7 +31,7 @@ MainHeaderComponent::MainHeaderComponent()
     titleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     addAndMakeVisible(titleLabel);
 
-    subtitleLabel.setText("HamloProdDrumGenerator " + juce::String(kUiBuildVersion), juce::dontSendNotification);
+    subtitleLabel.setText("HamloProd " + juce::String(kUiBuildVersion), juce::dontSendNotification);
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
     subtitleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
     subtitleLabel.setFont(juce::Font(juce::FontOptions(10.5f)));

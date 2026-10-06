@@ -62,6 +62,7 @@ static constexpr auto technoSubstyle = "techno_substyle";
 static constexpr auto seed = "seed";
 static constexpr auto seedLock = "seed_lock";
 static constexpr auto masterVolume = "master_volume";
+static constexpr auto sampleVolume = "sample_volume";
 static constexpr auto masterCompressor = "master_compressor";
 static constexpr auto masterLofi = "master_lofi";
 } // namespace ParamIds
@@ -542,7 +543,6 @@ private:
     SampleSyncBlock sampleSyncBlock;
     std::atomic<double> sampleAuditionPosition { -1.0 };
     std::atomic<bool> playSampleWithPattern { false };
-    std::atomic<float> samplePlaybackGain { 0.8f };
 
     juce::AudioBuffer<float> liveCaptureBuffer;
     bool isCapturingInput = false;

@@ -513,6 +513,8 @@ private:
         seedAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::seed, header.seedSlider);
         seedLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::seedLock, header.seedLockToggle);
         masterVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, header.masterVolumeSlider);
+        rackVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, trackList.volumeSlider);
+        sampleVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::sampleVolume, sampleStrip.volumeSlider);
 
         refreshSubstyleBindingForGenre();
     }
@@ -1748,6 +1750,8 @@ private:
     std::unique_ptr<SliderAttachment> seedAttachment;
     std::unique_ptr<ButtonAttachment> seedLockAttachment;
     std::unique_ptr<SliderAttachment> masterVolumeAttachment;
+    std::unique_ptr<SliderAttachment> rackVolumeAttachment;
+    std::unique_ptr<SliderAttachment> sampleVolumeAttachment;
     int lastGenreChoice = -1;
 };
 
@@ -2637,6 +2641,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::masterVolume, "Master Volume", juce::NormalisableRange<float>(0.0f, 1.5f, 0.01f), 1.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::masterCompressor, "Master Compressor", juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.2f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::masterLofi, "Master LoFi", juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::sampleVolume, "Sample Volume", juce::NormalisableRange<float>(0.0f, 2.0f, 0.01f), 0.8f));
 
     return { params.begin(), params.end() };
 }
@@ -6099,7 +6104,8 @@ bool BoomBapGeneratorAudioProcessor::isPlaySampleWithPattern() const
 
 void BoomBapGeneratorAudioProcessor::setSamplePlaybackGain(float gain)
 {
-    samplePlaybackGain.store(juce::jlimit(0.0f, 2.0f, gain));
+    if (auto* parameter = apvts.getParameter(ParamIds::sampleVolume))
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(juce::jlimit(0.0f, 2.0f, gain)));
 }
 
 void BoomBapGeneratorAudioProcessor::renderSamplePlayback(juce::AudioBuffer<float>& output, int numSamples)
@@ -6119,7 +6125,7 @@ void BoomBapGeneratorAudioProcessor::renderSamplePlayback(juce::AudioBuffer<floa
     const int sourceChannels = source.getNumChannels();
     const int sourceLength = source.getNumSamples();
     const int outputChannels = output.getNumChannels();
-    const float gain = samplePlaybackGain.load();
+    const float gain = apvts.getRawParameterValue(ParamIds::sampleVolume)->load();
     const double hostRate = currentSampleRate > 0.0 ? currentSampleRate : 44100.0;
 
     // Linear interpolation at a fractional source position (seconds).

@@ -27,7 +27,7 @@ juce_add_binary_data(HPDG_ImageAssets
 )
 
 juce_add_plugin(HPDG
-    COMPANY_NAME "BoomBap Labs"
+    COMPANY_NAME "HamloProd"
     BUNDLE_ID com.boombaplabs.boombapgenerator
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE

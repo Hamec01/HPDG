@@ -1398,6 +1398,88 @@ juce::File writeSineWav(const juce::File& file, double rate, double hz, double s
     return file;
 }
 
+void testIndependentSampleAndRackVolume()
+{
+    const auto file = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("HPDG_Volume_" + juce::Uuid().toString() + ".wav");
+    writeSineWav(file, 44100.0, 220.0, 1.0, 0.4f);
+    BoomBapGeneratorAudioProcessor processor;
+    processor.prepareToPlay(44100.0, 1024);
+    juce::String error;
+    expect(processor.loadSampleSource(file, &error), "Load volume test sample: " + error);
+    const auto setRack = [&processor](float gain)
+    {
+        auto* parameter = processor.getApvts().getParameter(ParamIds::masterVolume);
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(gain));
+    };
+    const auto samplePeak = [&processor, &setRack](float sampleGain, float rackGain)
+    {
+        processor.setSamplePlaybackGain(sampleGain);
+        setRack(rackGain);
+        processor.auditionSampleRegion(0.0, 1.0, false);
+        juce::AudioBuffer<float> buffer(2, 1024);
+        juce::MidiBuffer midi;
+        processor.processBlock(buffer, midi);
+        processor.stopSampleAudition();
+        return maxAbsSample(buffer);
+    };
+    const float full = samplePeak(1.0f, 1.0f);
+    expect(full > 0.1f, "Sample audition must have audible output.");
+    expect(std::abs(samplePeak(0.5f, 1.0f) / full - 0.5f) < 0.01f, "Sample knob scales sample playback.");
+    expect(samplePeak(0.0f, 1.0f) < 1.0e-6f, "Zero sample volume mutes sample audition.");
+    expect(std::abs(samplePeak(1.0f, 0.0f) - full) < 0.001f, "Rack volume does not mute the separate sample bus.");
+    processor.setSamplePlaybackGain(0.37f);
+    setRack(0.61f);
+    juce::MemoryBlock saved;
+    processor.getStateInformation(saved);
+    processor.setSamplePlaybackGain(1.0f);
+    setRack(1.0f);
+    processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    expect(std::abs(processor.getApvts().getRawParameterValue(ParamIds::sampleVolume)->load() - 0.37f) < 0.001f
+           && std::abs(processor.getApvts().getRawParameterValue(ParamIds::masterVolume)->load() - 0.61f) < 0.001f,
+           "Both volume controls survive session state restoration.");
+    cleanupFile(file);
+}
+
+void testVst3VolumeControls()
+{
+    juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_VST3);
+    BoomBapGeneratorAudioProcessor processor;
+    juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
+    std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    std::function<juce::Slider*(juce::Component&, const juce::String&)> findSlider;
+    findSlider = [&findSlider](juce::Component& component, const juce::String& name) -> juce::Slider*
+    {
+        if (component.getName() == name)
+            if (auto* slider = dynamic_cast<juce::Slider*>(&component))
+                return slider;
+        for (auto* child : component.getChildren())
+            if (auto* found = findSlider(*child, name))
+                return found;
+        return nullptr;
+    };
+    auto* sample = findSlider(*editor, "Sample Volume");
+    auto* rack = findSlider(*editor, "Drums and Bass Volume");
+    expect(sample != nullptr && rack != nullptr, "VST3 editor exposes both volume knobs.");
+    sample->setValue(0.55, juce::sendNotificationSync);
+    rack->setValue(0.65, juce::sendNotificationSync);
+    expect(std::abs(processor.getApvts().getRawParameterValue(ParamIds::sampleVolume)->load() - 0.55f) < 0.001f
+           && std::abs(processor.getApvts().getRawParameterValue(ParamIds::masterVolume)->load() - 0.65f) < 0.001f,
+           "VST3 volume knobs are attached to their independent host parameters.");
+    for (const int width : { 820, 1100, 1460 })
+    {
+        editor->setSize(width, 800);
+        expect(!sample->getBounds().isEmpty() && !rack->getBounds().isEmpty(), "Volume knobs retain usable bounds.");
+    }
+    const auto snapshotPath = juce::SystemStats::getEnvironmentVariable("HPDG_VOLUME_UI_SNAPSHOT", {});
+    if (snapshotPath.isNotEmpty())
+    {
+        const auto snapshot = editor->createComponentSnapshot(editor->getLocalBounds());
+        juce::FileOutputStream output { juce::File(snapshotPath) };
+        expect(output.openedOk() && juce::PNGImageFormat().writeImageToStream(snapshot, output), "Write VST3 UI snapshot.");
+    }
+}
+
 void loadBankFrom(LaneSampleBank& bank, const juce::File& root)
 {
     SampleLibraryManager library;
@@ -1717,6 +1799,8 @@ int main()
     using namespace bbg;
 
     int failures = 0;
+    failures += runTest("Independent sample and rack volume", testIndependentSampleAndRackVolume);
+    failures += runTest("VST3 volume controls", testVst3VolumeControls);
     failures += runTest("Lane-aware export path", testLaneAwareExportTrackPath);
     failures += runTest("Lane-aware temporary MIDI path", testLaneAwareTemporaryMidiPath);
     failures += runTest("MIDI export keeps negative first Kick", testMidiExportKeepsFirstKickWithNegativeMicrotiming);

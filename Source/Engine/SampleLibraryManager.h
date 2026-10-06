@@ -14,6 +14,8 @@ struct LaneSampleInfo
 {
     juce::File file;
     juce::String name;
+    // Original filename metadata survives compact display/file renaming.
+    juce::String sourceName;
 };
 
 class SampleLibraryManager

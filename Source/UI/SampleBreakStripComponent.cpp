@@ -37,6 +37,20 @@ SampleBreakStripComponent::SampleBreakStripComponent()
     addAndMakeVisible(quantizeSlider);
     addAndMakeVisible(trimButton);
     addAndMakeVisible(playWithToggle);
+    volumeLabel.setText("Vol", juce::dontSendNotification);
+    volumeLabel.setJustificationType(juce::Justification::centredRight);
+    volumeLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    addAndMakeVisible(volumeLabel);
+    volumeSlider.setName("Sample Volume");
+    volumeSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    volumeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 18);
+    volumeSlider.setRange(0.0, 2.0, 0.01);
+    volumeSlider.setNumDecimalPlacesToDisplay(2);
+    volumeSlider.setTextValueSuffix("x");
+    volumeSlider.setValue(0.8, juce::dontSendNotification);
+    volumeSlider.setDoubleClickReturnValue(true, 0.8);
+    volumeSlider.setTooltip("Sample playback volume (including Trim and hit audition). Double-click: 0.80x.");
+    addAndMakeVisible(volumeSlider);
 
     trimButton.setTooltip("Choose the fragment of the file to analyze (zoom, snap to beats / hits, listen).");
     trimButton.onClick = [this] { if (onTrim) onTrim(); };
@@ -136,8 +150,9 @@ void SampleBreakStripComponent::paint(juce::Graphics& g)
     sketch::drawFrame(g, panel, sketch::Theme::graphiteSoft(), 1.15f, 913, 4.0f);
 
     g.setColour(sketch::Theme::graphite());
-    g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
-    g.drawText("SAMPLE ANALYSIS", juce::Rectangle<int>(10, 6, 130, 22), juce::Justification::centredLeft, true);
+    const bool narrow = getWidth() < 1000;
+    g.setFont(juce::Font(juce::FontOptions(narrow ? 10.0f : 12.0f, juce::Font::bold)));
+    g.drawText("SAMPLE ANALYSIS", juce::Rectangle<int>(10, 6, narrow ? 98 : 130, 22), juce::Justification::centredLeft, true);
 
     // Drop zone with the file name.
     const auto drop = dropZoneBounds.toFloat();
@@ -354,26 +369,31 @@ void SampleBreakStripComponent::resized()
 {
     auto area = getLocalBounds().reduced(8, 6);
     auto top = area.removeFromTop(24);
-    top.removeFromLeft(132);
+    top.removeFromLeft(getWidth() < 1000 ? 100 : 132);
 
     // Narrow editors drop the "Quantize" caption and shorten the slider before squeezing the drop zone.
     const bool roomy = top.getWidth() >= 1000;
-    playWithToggle.setBounds(top.removeFromRight(104));
+    const bool compact = top.getWidth() < 760;
+    playWithToggle.setBounds(top.removeFromRight(compact ? 90 : 104));
     top.removeFromRight(4);
-    clearButton.setBounds(top.removeFromRight(56));
+    volumeSlider.setBounds(top.removeFromRight(72));
+    volumeLabel.setBounds(top.removeFromRight(26));
     top.removeFromRight(6);
-    analyzeButton.setBounds(top.removeFromRight(110));
+    clearButton.setBounds(top.removeFromRight(compact ? 44 : 56));
+    top.removeFromRight(6);
+    analyzeButton.setBounds(top.removeFromRight(compact ? 90 : 110));
     top.removeFromRight(8);
-    quantizeSlider.setBounds(top.removeFromRight(roomy ? 130 : 96));
+    quantizeSlider.setVisible(!compact);
+    quantizeSlider.setBounds(compact ? juce::Rectangle<int>() : top.removeFromRight(roomy ? 130 : 96));
     quantizeLabel.setVisible(roomy);
     if (roomy)
         quantizeLabel.setBounds(top.removeFromRight(60));
     top.removeFromRight(8);
-    modeCombo.setBounds(top.removeFromRight(roomy ? 160 : 140));
+    modeCombo.setBounds(top.removeFromRight(compact ? 104 : (roomy ? 160 : 140)));
     top.removeFromRight(6);
-    trimButton.setBounds(top.removeFromRight(56));
+    trimButton.setBounds(top.removeFromRight(compact ? 46 : 56));
     top.removeFromRight(4);
-    openButton.setBounds(top.removeFromRight(roomy ? 70 : 56));
+    openButton.setBounds(top.removeFromRight(compact ? 46 : (roomy ? 70 : 56)));
     top.removeFromRight(6);
     dropZoneBounds = top;
 

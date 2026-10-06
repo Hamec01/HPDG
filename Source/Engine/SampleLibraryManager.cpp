@@ -38,6 +38,7 @@ void SampleLibraryManager::scan()
     for (const auto track : tracks)
     {
         auto genreRoot = resolvedRootDirectory.getChildFile(folderNameForGenre(currentGenre));
+        auto laneFolderName = folderNameForTrack(track);
         // Drum & Bass uses Samples/DnB once it exists; until then (and per missing lane) the Boom Bap kit.
         if (currentGenre == GenreType::DnB)
         {
@@ -51,15 +52,30 @@ void SampleLibraryManager::scan()
         {
             auto hasWavs = [&](const juce::File& genreFolder)
             {
-                const auto own = genreFolder.getChildFile(folderNameForTrack(track));
+                const auto own = genreFolder.getChildFile(laneFolderName);
                 return own.isDirectory() && !own.findChildFiles(juce::File::findFiles, false, "*.wav").isEmpty();
             };
+            // The Techno grammar writes its clap/backbeat to Snare. Use the own
+            // clap kit before falling back to another genre's snare samples.
+            if (!hasWavs(genreRoot) && track == TrackType::Snare)
+            {
+                laneFolderName = "ClapGhost";
+                if (!hasWavs(genreRoot))
+                    laneFolderName = folderNameForTrack(track);
+            }
+            // Ghost kicks are the same drum voiced at a lower velocity.
+            if (!hasWavs(genreRoot) && track == TrackType::GhostKick)
+            {
+                laneFolderName = "Kick";
+                if (!hasWavs(genreRoot))
+                    laneFolderName = folderNameForTrack(track);
+            }
             if (!hasWavs(genreRoot))
                 genreRoot = hasWavs(resolvedRootDirectory.getChildFile("DnB")) ? resolvedRootDirectory.getChildFile("DnB")
                                                                                : resolvedRootDirectory.getChildFile("BoomBap");
         }
         auto folder = genreRoot.exists() && genreRoot.isDirectory()
-            ? genreRoot.getChildFile(folderNameForTrack(track))
+            ? genreRoot.getChildFile(laneFolderName)
             : resolvedRootDirectory.getChildFile(folderNameForTrack(track));
 
         if ((!folder.exists() || !folder.isDirectory()) && (genreRoot.exists() && genreRoot.isDirectory()))
@@ -69,16 +85,28 @@ void SampleLibraryManager::scan()
             continue;
 
         auto files = folder.findChildFiles(juce::File::findFiles, false, "*.wav");
-        std::sort(files.begin(), files.end(), [](const juce::File& a, const juce::File& b)
+        const auto aliases = juce::JSON::parse(folder.getChildFile("sample-names.json").loadFileAsString());
+        const auto sourceNameFor = [&aliases](const juce::File& file)
         {
-            return a.getFileNameWithoutExtension().compareIgnoreCase(b.getFileNameWithoutExtension()) < 0;
+            if (const auto* names = aliases.getDynamicObject())
+            {
+                const auto original = names->getProperty(juce::Identifier(file.getFileName())).toString();
+                if (original.isNotEmpty())
+                    return original;
+            }
+            return file.getFileNameWithoutExtension();
+        };
+        // Preserve sample indices saved in existing projects, even after renaming.
+        std::sort(files.begin(), files.end(), [&sourceNameFor](const juce::File& a, const juce::File& b)
+        {
+            return sourceNameFor(a).compareIgnoreCase(sourceNameFor(b)) < 0;
         });
 
         auto& out = laneSamples[static_cast<size_t>(trackIndex(track))];
         out.reserve(files.size());
 
         for (const auto& file : files)
-            out.push_back({ file, file.getFileNameWithoutExtension() });
+            out.push_back({ file, file.getFileNameWithoutExtension(), sourceNameFor(file) });
     }
 }
 

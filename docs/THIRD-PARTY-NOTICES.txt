@@ -1,0 +1,19 @@
+﻿HPDG 0.1.0 Beta 1 — third-party notices
+
+JUCE: copyright its contributors; its original LICENSE.md is distributed
+under Documentation/ThirdParty/JUCE. See that file for applicable terms.
+
+Neucha font: its original OFL notice is distributed under
+Documentation/ThirdParty/Neucha/OFL.txt.
+
+Factory audio library: contains third-party sounds, including the
+Ghosthack Free Techno Sounds 2024 kit and source packs identified
+by original filenames in each sample-names.json. These filenames and
+original text notices in Samples/Rap/Dirty South Drum Kit are retained.
+Techno bass additions preserve their original names in
+Samples/Techno/Sub808/sample-names.json.
+
+Audio filenames were shortened for HPDG's interface. Renaming does not
+change authorship, ownership or the terms of the original assets.
+HamloProd's copyright notice applies to HPDG's original work and does
+not replace third-party notices or claim ownership of these sounds.

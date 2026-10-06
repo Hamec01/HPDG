@@ -227,6 +227,7 @@ private:
     std::unique_ptr<SliderAttachment> seedAttachment;
     std::unique_ptr<ButtonAttachment> seedLockAttachment;
     std::unique_ptr<SliderAttachment> masterVolumeAttachment;
+    std::unique_ptr<SliderAttachment> rackVolumeAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BoomBGeneratorAudioProcessorEditor)
 };

@@ -19,6 +19,7 @@ class TrackListComponent : public juce::Component
 {
 public:
     TrackListComponent();
+    juce::Slider volumeSlider;
     void paint(juce::Graphics& g) override;
 
     void resized() override;
@@ -107,6 +108,7 @@ private:
     std::vector<std::unique_ptr<LaneHeaderComponent>> rows;
     std::vector<RuntimeLaneId> laneDisplayOrder;
     juce::TextButton addLaneButton { "+ Lane" };
+    juce::Label volumeLabel;
     bool showAnalysisPanel = true;
     int rowHeight = 30;
     int rulerHeight = 24;

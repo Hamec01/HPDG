@@ -6756,6 +6756,52 @@ void testRapGermanStreetControlsInfluenceSmoke()
            "Rap GermanStreet Velocity should lift dry backbeat accents when raised.");
 }
 
+void testCompactSampleNamesAndTechnoKit()
+{
+    const auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("HPDG_CompactSamples_" + juce::Uuid().toString());
+    const auto kick = root.getChildFile("Techno/Kick");
+    const auto clap = root.getChildFile("Techno/ClapGhost");
+    const auto ride = root.getChildFile("DnB/Ride");
+    expect(kick.createDirectory() && clap.createDirectory() && ride.createDirectory(), "Create sample test directories.");
+    juce::DynamicObject::Ptr aliases = new juce::DynamicObject();
+    for (int index = 1; index <= 12; ++index)
+    {
+        const auto name = "TKk" + juce::String(index) + ".wav";
+        expect(kick.getChildFile(name).replaceWithText("placeholder"), "Create renamed kick fixture.");
+        aliases->setProperty(juce::Identifier(name), "Dirty_South_" + juce::String(index).paddedLeft('0', 3) + " - F#");
+    }
+    expect(kick.getChildFile("sample-names.json").replaceWithText(juce::JSON::toString(juce::var(aliases.get()))), "Write original sample metadata.");
+    expect(clap.getChildFile("TCG1.wav").replaceWithText("placeholder")
+           && ride.getChildFile("DRD1.wav").replaceWithText("placeholder"), "Create own clap and fallback ride.");
+    SampleLibraryManager library;
+    library.setRootDirectory(root);
+    library.setGenre(GenreType::Techno);
+    library.scan();
+    const auto& kicks = library.getSamples(TrackType::Kick);
+    expect(kicks.size() == 12 && kicks[1].name == "TKk2" && kicks[11].name == "TKk12",
+           "Renamed files retain the original sample index order past index nine.");
+    expect(library.getSamples(TrackType::Snare).front().file == clap.getChildFile("TCG1.wav"),
+           "Techno backbeat uses its own clap kit.");
+    expect(library.getSamples(TrackType::GhostKick).front().file == kick.getChildFile("TKk1.wav"),
+           "Techno ghost kick uses its own kick kit.");
+    expect(library.getSamples(TrackType::Ride).front().file == ride.getChildFile("DRD1.wav"),
+           "Missing Techno instruments retain the existing fallback.");
+    LaneSampleBank bank;
+    bank.applyLibrary(library);
+    expect(bank.getSelectedName(TrackType::Kick) == "TKk1" && bank.getSelectedRootPitchClass(TrackType::Kick) == 6,
+           "Compact labels preserve the sample's original tuning.");
+    expect(bank.hasSamplesMatchingAnyTag(TrackType::Kick, { "Dirty_South" }), "Original style tags survive renaming.");
+    expect(bank.selectIndex(TrackType::Kick, 11) && bank.getSelectedRootPitchClass(TrackType::Kick) == 6,
+           "Changing compact sample selection preserves tuning.");
+    const auto snare = root.getChildFile("Techno/Snare");
+    expect(snare.createDirectory() && snare.getChildFile("TSN1.wav").replaceWithText("placeholder"), "Create dedicated Techno snare.");
+    library.scan();
+    expect(library.getSamples(TrackType::Snare).front().file == snare.getChildFile("TSN1.wav"),
+           "Dedicated Techno snare samples take precedence over clap aliases.");
+    root.deleteRecursively();
+}
+
 void testLaneSampleBankPreferredTagRotationSmoke()
 {
     const auto root = juce::File::getSpecialLocation(juce::File::tempDirectory)
@@ -7109,6 +7155,7 @@ int main()
     using namespace bbg;
 
     int failures = 0;
+    failures += runTest("Compact sample names and own Techno kit", testCompactSampleNamesAndTechnoKit);
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);
     failures += runTest("EQ state serialization and legacy migration smoke", testEqStateSerializationAndLegacyMigrationSmoke);
     failures += runTest("Compressor state serialization and legacy migration smoke", testCompressorStateSerializationAndLegacyMigrationSmoke);

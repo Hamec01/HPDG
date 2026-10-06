@@ -2131,6 +2131,7 @@ void BoomBGeneratorAudioProcessorEditor::setupAttachments()
     seedAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::seed, header.seedSlider);
     seedLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::seedLock, header.seedLockToggle);
     masterVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, header.masterVolumeSlider);
+    rackVolumeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::masterVolume, trackList.volumeSlider);
 
     refreshSubstyleBindingForGenre();
 }

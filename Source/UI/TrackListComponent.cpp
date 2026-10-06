@@ -73,6 +73,20 @@ TrackListComponent::TrackListComponent()
             onAddLaneRequested();
     };
     addAndMakeVisible(addLaneButton);
+    volumeLabel.setText("Rack Vol", juce::dontSendNotification);
+    volumeLabel.setJustificationType(juce::Justification::centredRight);
+    volumeLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    addAndMakeVisible(volumeLabel);
+    volumeSlider.setName("Drums and Bass Volume");
+    volumeSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    volumeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 18);
+    volumeSlider.setRange(0.0, 1.5, 0.01);
+    volumeSlider.setNumDecimalPlacesToDisplay(2);
+    volumeSlider.setTextValueSuffix("x");
+    volumeSlider.setValue(1.0, juce::dontSendNotification);
+    volumeSlider.setDoubleClickReturnValue(true, 1.0);
+    volumeSlider.setTooltip("Combined drums and bass volume. Double-click: 1.00x.");
+    addAndMakeVisible(volumeSlider);
     setupAnalysisPanel();
 }
 
@@ -210,7 +224,7 @@ void TrackListComponent::paint(juce::Graphics& g)
     g.drawText("RG: regenerate | S: solo | M: mute | C: clear | < / >: samples | Drag: render",
                176,
                0,
-               juce::jmax(0, getWidth() - 266),
+               juce::jmax(0, getWidth() - 400),
                rulerHeight,
                juce::Justification::centredLeft,
                false);
@@ -512,6 +526,8 @@ void TrackListComponent::resized()
 {
     auto area = getLocalBounds();
     addLaneButton.setBounds(juce::jmax(10, getWidth() - 82), 2, 72, juce::jmax(18, rulerHeight - 4));
+    volumeSlider.setBounds(juce::jmax(10, getWidth() - 160), 0, 72, rulerHeight);
+    volumeLabel.setBounds(juce::jmax(10, getWidth() - 218), 0, 54, rulerHeight);
     area.removeFromTop(rulerHeight);
 
     for (auto& row : rows)

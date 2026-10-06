@@ -1,127 +1,85 @@
-# HPDG — Frequently Asked Questions
+# HPDG — FAQ и первое знакомство
 
-**HamloProd Drum Generator** — a VST3 / Standalone drum pattern generator by BoomBap Labs.
+**Версия: 0.1.0 Beta 1. Разработчик: HamloProd. Windows x64, VST3.**
 
-For a visual, control-by-control walkthrough of the interface, see the HPDG Field Guide.
+## Как установить?
 
----
+Закройте DAW. Запустите HPDG_VST3_Setup_0.1.0-beta.1.exe и разрешите установку от администратора. Установщик содержит плагин, всю фабричную библиотеку и Visual C++ Runtime; скачивать семплы отдельно не нужно.
 
-## General
+Стандартная папка: C:\Program Files\Common Files\VST3\HPDG.vst3.
+Семплы: Contents\x86_64-win\Samples внутри этого пакета.
+Руководство: меню **Пуск → HamloProd → HPDG FAQ**, либо Documentation\FAQ.html внутри пакета.
 
-### What is HPDG?
+После установки откройте 64-битную DAW и выполните повторное сканирование VST3. Добавьте **HPDG** на инструментальную дорожку. Требуются Windows 10/11 x64 и DAW с поддержкой VST3. Standalone в этой бете не поставляется.
 
-HPDG generates complete drum patterns — kick, snare, hats, ghost lanes, texture layers — from a genre and a feel, rather than a fixed set of loops. Each genre runs its own generation engine tuned to that style's pocket, and the result is real MIDI you can drag straight into your DAW, not audio.
+## Нужны ли аккаунт, интернет или ключ?
 
-### What genres are available right now?
+Нет. Эта бета работает локально без аккаунта и ключа активации.
 
-**Boom Bap** and **Trap**, each with several substyles (for example Boom Bap's Classic, Dusty, Jazzy, Boom Bap Gold, Russian Underground and Lofi Rap pockets).
+## Как получить первый паттерн?
 
-**Rap** and **Drill** exist in the engine but are held back from the interface in this release while they get more tuning. They are not deleted or degraded — a future update re-enables them for everyone on the same install, no reinstall or repurchase needed.
+1. Выберите жанр и подстиль. В текущем интерфейсе доступны Boom Bap, Trap, DnB и Techno.
+2. Установите BPM и длину в тактах (Bars).
+3. Нажмите **Generate Pattern**.
+4. Нажмите **Play** для прослушивания. Опция **Start play with DAW** связывает запуск с транспортом хоста; **Sync** синхронизирует темп.
+5. Настройте инструменты в **Instrument Rack**, затем экспортируйте MIDI или WAV.
 
-### Is this a sample player or a MIDI generator?
+Библиотека также содержит материалы Rap и Drill для дальнейшей работы проекта; наличие папки не означает, что соответствующий режим доступен в этой бете.
 
-Both, layered. HPDG assigns a sample to every lane so you can preview and print audio directly from the plugin, but the underlying pattern is MIDI. You're free to mute the built-in sounds and drag the MIDI onto your own drum rack, sampler or kit instead.
+## Generate Pattern, Mutate и RG — в чём разница?
 
-### Does it work outside a DAW?
+**Generate Pattern** создаёт паттерн по текущим настройкам. **Mutate** изменяет существующий вариант. **RG** в строке инструмента перегенерирует его партию. Используйте Lock, чтобы защитить нужные партии от изменений. Seed позволяет повторять генерацию при одинаковых остальных настройках.
 
-Yes — a Standalone build is included alongside the VST3, for auditioning patterns or building ideas without a host loaded.
+## Что означают элементы Instrument Rack?
 
----
+Каждая строка относится к одному инструменту. **S** — Solo, **M** — Mute, **L** — Lock. Флажок включает дорожку. Стрелки рядом с названием семпла переключают звук. У каждой дорожки есть свой уровень, а сетка паттерна позволяет вручную редактировать события. Кнопки MIDI и аудио позволяют перетащить соответствующую партию в DAW.
 
-## Installation
+## Как настроить громкость семпла и ударных?
 
-### What do I need to run it?
+**Vol** в полосе **SAMPLE ANALYSIS**, рядом с Play w/ HPDG, регулирует загруженный исходный семпл: от 0x до 2x, по умолчанию 0.80x.
 
-- Windows 10 or later, 64-bit
-- A VST3-compatible host (FL Studio, Ableton, Reaper, Cubase, Studio One, etc.) for the plugin, and/or nothing at all for the Standalone app
-- No separate sample packs to install — the factory kits ship with the plugin
+**Rack Vol** в заголовке **Instrument Rack** регулирует весь рэк: ударные и бас вместе, от 0x до 1.50x, по умолчанию 1x. Общий Vol в верхней панели связан с этим же уровнем. Громкость исходного семпла настраивается отдельно. Двойной щелчок по ручке возвращает значение по умолчанию. Параметры сохраняются в проекте DAW и доступны для автоматизации.
 
-### Where does the installer put things?
+## Как использовать свой луп или семпл?
 
-- The VST3 goes to the shared `Common Files\VST3` folder so every VST3 host on the machine can see it
-- The Standalone app goes to `Program Files\HPDG`
-- Your own generated patterns, exports and Style Lab captures are never touched by install or uninstall — they live under your Documents folder
+Нажмите **Open** в SAMPLE ANALYSIS и выберите аудиофайл. **Trim** позволяет выбрать нужный фрагмент. Проверьте BPM: его можно задать вручную. Выберите режим и нажмите **Analyze**.
 
-### My DAW doesn't see the plugin after installing
+**Guide generation** использует результат анализа как ориентир для генерации. **Copy break (K/S/H)** пытается перенести ритм kick/snare/hat в паттерн. Это оценка по аудио: сложный микс может потребовать ручной правки. **Quantize** задаёт привязку результата к сетке. **Play w/ HPDG** включает прослушивание исходного фрагмента вместе с HPDG. **Clear** очищает источник анализа.
 
-Rescan your plugin folders (most hosts have a "rescan" or "find new plugins" action) — most VST3 hosts only pick up new plugins in the shared VST3 folder automatically, but a small number cache their scan results and need an explicit rescan. If you installed while your DAW was open, close and reopen it first.
+## Как включить бас? Какие звуки использует Techno?
 
-### Can I install it without admin rights?
+Включите **Sub808** в рэке. Кнопки **1 / 2 / 3** задают количество баса при следующей генерации. Выберите звук стрелками возле его названия.
 
-Installing into the shared VST3 folder needs administrator rights, since that folder is shared across all users on the machine. If you don't have them, install for your Windows user account only when the installer offers that option.
+Techno использует собственные Kick, ClapGhost, HiHat, Perc и три басовых семпла TSB1–TSB3. Для отсутствующих в техно-наборе инструментов используются резервные звуки других наборов. Имена Trap и Techno могут иметь одинаковый префикс T: это разные файлы в разных жанровых папках.
 
----
+## Как перенести результат в DAW?
 
-## Using HPDG
+**Export Full** сохраняет весь паттерн в MIDI; **Drag Full** позволяет перетащить его на MIDI-дорожку. **Export Loop WAV** сохраняет аудиолуп. Кнопка Drag в строке инструмента переносит отдельную партию. MIDI содержит ноты и события, поэтому на принимающей дорожке нужен подходящий инструмент; WAV содержит уже звучащее аудио.
 
-### Why does the plugin look different in FL Studio than in other hosts?
+## Как сохранить настройки?
 
-FL Studio has a known scanning quirk with certain plugin UI patterns that can hang the scan step. HPDG detects this and falls back to a streamlined header-only view when it's loaded there, to guarantee it always loads reliably. Every generation feature — genre, substyle, swing, density, seed, per-lane controls — is still there; only the layout is more compact. In hosts without that quirk, you get the full rack-and-grid view shown in the field guide.
+Сохраните проект в DAW: состояние HPDG хранится вместе с ним. Для отдельных настроек используйте меню **Presets**. После изменения исходного аудиофайла или переноса проекта его может понадобиться открыть заново; храните исходники рядом со своим проектом.
 
-### What does Seed actually control?
+## Плагин не появился в списке — что делать?
 
-Seed makes generation reproducible. The same Genre, Substyle, Swing, Density and Seed will always produce the exact same pattern — useful for coming back to an idea later, or for comparing two settings fairly, without the randomness that "Generate" normally introduces each time.
+Проверьте поддержку VST3 и разрядность DAW, затем пересканируйте стандартную папку VST3. Если HPDG попал в список заблокированных плагинов, сбросьте запись о нём и повторите сканирование после перезапуска DAW. Если установщик запросил перезагрузку для Runtime, выполните её.
 
-### What's the difference between Generate and Mutate?
+## Нет звука — что проверить?
 
-**Generate** replaces the pattern from scratch. **Mutate** takes what's already in the rack and nudges it — new fills, slightly different accents — while keeping the overall shape, which is usually what you want once you've found a pocket you like.
+Проверьте транспорт, включение дорожек, Solo/Mute, уровни Rack Vol и громкость инструментальной дорожки DAW. Для исходного аудио также проверьте Vol в SAMPLE ANALYSIS и Play w/ HPDG. В пакете должна остаться папка Contents\x86_64-win\Samples со всеми вложенными папками и sample-names.json. При повреждении библиотеки переустановите бету при закрытой DAW.
 
-### How do Swing and Density interact with substyle?
+## Можно ли переименовать или переместить фабричные семплы?
 
-Each substyle already has its own baseline feel — Boom Bap Dusty sits further behind the beat than Boom Bap Classic, for instance. Swing and Density are applied on top of that baseline, so the same knob position reads differently from one substyle to another by design.
+Сохраняйте установленную структуру. Файлы sample-names.json нужны для исходных имён, тегов и настройки баса. Для собственного аудио используйте Open; не заменяйте фабричные файлы. Удаление HPDG удаляет установленную библиотеку, поэтому не храните свои проекты и исходники внутри HPDG.vst3.
 
-### Can I edit a generated pattern by hand?
+## Как обновить или удалить бету?
 
-Yes. Every lane is a normal step grid — click to add or remove hits, drag to move them, use Snap to change the grid resolution you're editing against. Regenerating a single lane (the per-lane RG button) only touches that lane, leaving your manual edits elsewhere untouched.
+Закройте DAW и запустите новый установщик для обновления. Для удаления используйте **Параметры Windows → Приложения → HPDG VST3** или ярлык удаления в Пуск → HamloProd. Сохраняйте проекты и экспортированные файлы отдельно от папки плагина.
 
-### How do I get a pattern out of HPDG?
+## Как сообщить об ошибке?
 
-Drag-and-drop is the fastest path: **Drag Full** exports the whole pattern as MIDI directly onto a track, and each lane has its own **Drag** for just that instrument. **Export Full** and **Export Loop WAV** write files to disk instead, as MIDI or rendered audio, if you'd rather work from the file system.
+Передайте HamloProd версию HPDG, Windows, название и версию DAW, жанр, подстиль, BPM, Seed и точные шаги воспроизведения. Приложите скриншот и пример исходного аудио, если проблема связана с анализом. Для ошибки установки сохраните журнал: запуск установщика с /LOG создаёт лог в пользовательской временной папке.
 
-### Does HPDG sync to my DAW's tempo?
+## Кому принадлежат права?
 
-Yes, when **Sync** is enabled the plugin follows your host's tempo and transport. Turn on **Lock** if you want to pin HPDG's BPM independently of host tempo changes, and **Start play with DAW** if you want HPDG's preview playback to start and stop with your host transport automatically.
-
-### What's Style Lab?
-
-Style Lab lets HPDG learn from a reference — you feed it an existing pattern or recording, and it captures the hi-hat and kick placement, density and feel to influence future generations in that substyle. It's a way to steer the generator toward a specific reference without hand-tuning every parameter yourself.
-
----
-
-## Sound & Samples
-
-### Can I use my own samples?
-
-Yes — each lane's sample browser isn't locked to the factory kit; point it at your own one-shots and HPDG generates around them exactly as it would around the built-in sounds.
-
-### The generated audio sounds quiet or clipped
-
-Check the **Output** trim in the top bar first — it's a master gain stage across every lane. If individual lanes fight each other, each lane also carries its own level knob in the instrument rack.
-
----
-
-## Troubleshooting
-
-### Generation feels slow the first time I click it
-
-The first "Generate" after loading the plugin (or after switching to a substyle you haven't used yet) does a bit of one-time setup work reading that substyle's saved reference data; it's cached immediately afterward, so every following generation on the same substyle is fast. Switching substyles pays that cost again the first time, not on every click.
-
-### A pattern looks different from what I remember at the same settings
-
-Generation is seeded randomness unless you fix the **Seed** field — without a fixed seed, Generate intentionally produces a new variation each time, even with identical Genre/Substyle/Swing/Density. Set a Seed if you need exact repeatability.
-
-### The plugin won't load / my host reports an error
-
-Confirm you're running a 64-bit host — HPDG is 64-bit only. If the problem is specific to one host, try the Standalone app to confirm the plugin itself is working, then rescan plugins in the host.
-
----
-
-## Licensing & Support
-
-### Who makes HPDG?
-
-BoomBap Labs.
-
-### Where do I report a bug or request a feature?
-
-Include your HPDG build number (shown under the logo in the top-left of the plugin) and, if possible, the Genre/Substyle/Seed that reproduces the issue — that combination alone is usually enough for us to reproduce a pattern exactly on our end.
+© 2026 HamloProd. Права на оригинальный код и оформление HPDG принадлежат HamloProd. Права сторонних библиотек, шрифтов и семплов остаются у их правообладателей. Подробности — в **RIGHTS.txt** и **THIRD-PARTY-NOTICES.txt**, включённых в установку.
