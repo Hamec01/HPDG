@@ -8,6 +8,7 @@
 
 #include <juce_events/juce_events.h>
 
+#include "../Source/Analysis/DrumBreakTranscriber.h"
 #include "../Source/Core/ProjectLaneAccess.h"
 #include "../Source/Core/RuntimeLaneLifecycle.h"
 #include "../Source/Core/TrackRegistry.h"
@@ -1018,6 +1019,76 @@ void testTechnoGenreInPlugin()
            + juce::String(static_cast<int>(notesPerAmount[0])) + " vs " + juce::String(static_cast<int>(notesPerAmount[2])));
 }
 
+// A loop rendered from a DAW at 80 BPM (file = exactly 4 bars at 80) whose drums are played at
+// 79.4, K S K S + eighth hats. Auto: the stated tempo is the whole 80 (slots read on 79.4, the
+// drift kept as timing). Typed 80: beat 1 stays on the first hit - a symmetric K S K S groove
+// must not be read from beat 3 with half a bar of silence (Copy Break bug, Oct 2026).
+void testBreakTempoRenderedAtWholeBpm()
+{
+    constexpr double rate = 44100.0;
+    const double played = 79.4;
+    const int length = static_cast<int>(16.0 * 60.0 / 80.0 * rate); // 12.0 s
+    std::vector<float> mono(static_cast<size_t>(length), 0.0f);
+    juce::Random noise(3);
+    const double beat = 60.0 / played;
+    auto hit = [&](double t, int kind)
+    {
+        const int start = static_cast<int>(t * rate);
+        for (int i = 0; i < static_cast<int>(0.2 * rate) && start + i < length; ++i)
+        {
+            const double x = i / rate;
+            double v = 0.0;
+            if (kind == 0) // kick: pitched-down sine thump
+                v = 0.9 * std::sin(juce::MathConstants<double>::twoPi * (50.0 + 110.0 * std::exp(-x / 0.03)) * x) * std::exp(-x / 0.09);
+            else if (kind == 1) // snare: noise + body
+                v = (0.55 * (noise.nextFloat() * 2.0 - 1.0) + 0.3 * std::sin(juce::MathConstants<double>::twoPi * 190.0 * x)) * std::exp(-x / 0.06);
+            else // hat: short bright noise
+                v = 0.25 * (noise.nextFloat() * 2.0 - 1.0) * std::exp(-x / 0.012) * (i % 2 == 0 ? 1.0 : -1.0);
+            mono[static_cast<size_t>(start + i)] += static_cast<float>(v);
+        }
+    };
+    for (int b = 0; b < 16; ++b)
+    {
+        const double t = b * beat;
+        if (t >= 12.0)
+            break;
+        hit(t, b % 2 == 0 ? 0 : 1);
+        hit(t, 2);
+        if (t + 0.5 * beat < 12.0)
+            hit(t + 0.5 * beat, 2);
+    }
+
+    DrumBreakTranscriber transcriber;
+    const auto check = [&](const DrumBreakAnalysis& a, const juce::String& label)
+    {
+        expect(a.valid, label + ": invalid");
+        expect(std::abs(a.bpm - 80.0) < 0.01, label + ": bpm " + juce::String(a.bpm, 2));
+        expect(a.originSeconds > -0.03 && a.originSeconds < 0.03, label + ": origin " + juce::String(a.originSeconds, 3) + " s (beat 1 must be the first hit)");
+        int snares = 0;
+        for (const auto& h : a.hits)
+            if (h.lane == TrackType::Snare)
+            {
+                ++snares;
+                const int inBar = h.gridTick % TimingGrid::TicksPerBar4_4;
+                expect(inBar == TimingGrid::Quarter || inBar == 3 * TimingGrid::Quarter,
+                       label + ": snare read off beat 2 / 4 at tick " + juce::String(h.gridTick));
+            }
+        expect(snares >= 6, label + ": snares " + juce::String(snares));
+    };
+
+    DrumBreakOptions automatic;
+    const auto a = transcriber.analyze(mono, rate, automatic);
+    std::cout << "    auto: " << a.describe(false).upToFirstOccurrenceOf("\n", false, false) << std::endl;
+    check(a, "auto");
+    expect(a.gridBpm > 79.0 && a.gridBpm < 79.8, "auto: slots should be read on the played tempo, got " + juce::String(a.gridBpm, 2));
+
+    DrumBreakOptions typed;
+    typed.forcedBpm = 80.0;
+    const auto t = transcriber.analyze(mono, rate, typed);
+    std::cout << "    typed 80: " << t.describe(false).upToFirstOccurrenceOf("\n", false, false) << std::endl;
+    check(t, "typed 80");
+}
+
 void testBoomBapSampleLineBass() { runSampleLineBass(GenreType::BoomBap); }
 void testTrapSampleLineBass() { runSampleLineBass(GenreType::Trap); }
 
@@ -1829,6 +1900,7 @@ int main()
     failures += runTest("DnB follows the sample tempo", testDnBFollowsSampleTempo);
     failures += runTest("Lane RG keeps the lanes' sample names", testLaneRegenerateKeepsSampleNames);
     failures += runTest("Techno genre in the plugin", testTechnoGenreInPlugin);
+    failures += runTest("Break rendered at a whole BPM (auto / typed)", testBreakTempoRenderedAtWholeBpm);
     failures += runTest("Boom Bap bass [2] composed from the sample", testBoomBapSampleLineBass);
     failures += runTest("Trap 808 [2] composed from the sample", testTrapSampleLineBass);
     if (juce::SystemStats::getEnvironmentVariable("HPDG_PROBE_SAMPLE", {}).isNotEmpty())

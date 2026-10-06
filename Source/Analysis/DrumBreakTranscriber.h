@@ -66,7 +66,11 @@ struct DrumBreakAnalysis
     double sampleRate = 44100.0;
     double durationSeconds = 0.0;
 
-    double bpm = 0.0;
+    double bpm = 0.0;            // the loop's tempo (what the pattern is written at)
+    // Tempo the hits' musical slots are read on, when the playing drifts from the stated tempo
+    // (a 79.4 BPM performance in a file rendered at 80, or a typed tempo): slots come from this
+    // grid, timing offsets keep the real hit times at `bpm`. 0 = same as bpm.
+    double gridBpm = 0.0;
     float tempoConfidence = 0.0f;
     bool bpmMatchesHost = false;
     int bars = 0;

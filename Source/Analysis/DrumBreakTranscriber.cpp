@@ -979,6 +979,7 @@ juce::String DrumBreakAnalysis::describe(bool includeHits) const
         return "Drum break analysis: invalid";
 
     lines.add("Drum break: bpm " + juce::String(bpm, 2)
+              + (gridBpm > 20.0 ? " (played at " + juce::String(gridBpm, 2) + ")" : juce::String())
               + " | bars " + juce::String(bars)
               + " | tempo conf " + juce::String(tempoConfidence, 2)
               + " | swing " + juce::String(swingPercent, 1) + "%"
@@ -1325,6 +1326,66 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
         }
     }
 
+    if (options.forcedBpm > 20.0)
+    {
+        // A typed tempo states the loop's tempo; the playing may still sit a little off it (a
+        // 79.4 BPM performance typed as 80). Read the hits' slots on the tempo they really fit
+        // within +-1.5 %, keep their real times at the typed tempo (assignTicks).
+        const float typedFit = bestPhasedFit(analysis.hits, analysis.bpm, true).fit;
+        double playedBpm = analysis.bpm;
+        float playedFit = typedFit;
+        for (double delta = -0.015; delta <= 0.01501; delta += 0.0005)
+        {
+            const double trial = analysis.bpm * (1.0 + delta);
+            const float fit = bestPhasedFit(analysis.hits, trial, false).fit;
+            if (fit > playedFit)
+            {
+                playedFit = fit;
+                playedBpm = trial;
+            }
+        }
+        if (playedFit >= typedFit + 0.10f)
+            analysis.gridBpm = playedBpm;
+
+        // A loop file that starts right on a hit starts on beat 1 (the user's tempo + the file
+        // start are the intent), unless that reading breaks the backbeat. Without this a
+        // symmetric groove (K S K S) could be read from beat 3 with half a bar of silence.
+        if (startsOnHit)
+        {
+            const double readBpm = analysis.gridBpm > 20.0 ? analysis.gridBpm : analysis.bpm;
+            double searched = 0.0;
+            evaluateCandidate(analysis.hits, readBpm, context, options, false, searched);
+            const double atStart = context.firstHit;
+            if (backbeatScore(analysis.hits, readBpm, atStart) >= backbeatScore(analysis.hits, readBpm, searched) - 0.35f)
+                analysis.originSeconds = atStart;
+            else
+                analysis.originSeconds = searched;
+        }
+    }
+    else if (startsOnHit && loopSeconds > 0.0 && std::abs(analysis.bpm - std::round(analysis.bpm)) > 0.1)
+    {
+        // (Only when the measured tempo is not whole itself: a whole measured tempo with a file a
+        // little longer than its bars - a tail - must not be pulled to the neighbouring BPM.)
+        // A loop rendered from a DAW is a whole number of bars at a whole tempo: its length says
+        // 79.95 -> 80 while the hits may be played at 79.4. State the whole tempo (the session's),
+        // read the slots on the played tempo; the drift stays in the timing offsets.
+        double bestWhole = 0.0;
+        for (const int bars : { 1, 2, 3, 4, 6, 8, 12, 16 })
+        {
+            const double lengthBpm = 240.0 * bars / loopSeconds;
+            const double whole = std::round(lengthBpm);
+            const double off = std::abs(whole / analysis.bpm - 1.0);
+            if (std::abs(lengthBpm - whole) <= 0.08 && off > 0.001 && off <= 0.012
+                && (bestWhole <= 0.0 || off < std::abs(bestWhole / analysis.bpm - 1.0)))
+                bestWhole = whole;
+        }
+        if (bestWhole > 20.0)
+        {
+            analysis.gridBpm = analysis.bpm;
+            analysis.bpm = bestWhole;
+        }
+    }
+
     if (wholeBarLoop && best.bars > 0)
     {
         analysis.bars = best.bars;
@@ -1356,6 +1417,8 @@ void DrumBreakTranscriber::assignTicks(DrumBreakAnalysis& analysis, float quanti
 
     const int loopTicks = analysis.bars * TimingGrid::TicksPerBar4_4;
     const double ticksPerSecond = analysis.bpm / 60.0 * TimingGrid::PPQ;
+    // Slots are read on the tempo the hits were played at (gridBpm), times stay at bpm.
+    const double slotTicksPerSecond = (analysis.gridBpm > 20.0 ? analysis.gridBpm : analysis.bpm) / 60.0 * TimingGrid::PPQ;
     const float keep = 1.0f - juce::jlimit(0.0f, 1.0f, quantizeAmount);
 
     std::vector<BreakDrumHit> placed;
@@ -1373,10 +1436,13 @@ void DrumBreakTranscriber::assignTicks(DrumBreakAnalysis& analysis, float quanti
         if (tick < -60)
             continue;
 
-        const int nearestSixteenth = static_cast<int>(std::lround(static_cast<double>(tick) / TimingGrid::Sixteenth)) * TimingGrid::Sixteenth;
+        int slotTick = static_cast<int>(std::lround((hit.timeSeconds - analysis.originSeconds) * slotTicksPerSecond));
+        if (analysis.exactLoop && slotTick >= loopTicks - 45 && slotTick < loopTicks + 60)
+            slotTick -= loopTicks;
+        const int nearestSixteenth = static_cast<int>(std::lround(static_cast<double>(slotTick) / TimingGrid::Sixteenth)) * TimingGrid::Sixteenth;
         int gridTick = nearestSixteenth;
-        if (std::abs(tick - nearestSixteenth) > 100)
-            gridTick = static_cast<int>(std::lround(static_cast<double>(tick) / TimingGrid::ThirtySecond)) * TimingGrid::ThirtySecond;
+        if (std::abs(slotTick - nearestSixteenth) > 100)
+            gridTick = static_cast<int>(std::lround(static_cast<double>(slotTick) / TimingGrid::ThirtySecond)) * TimingGrid::ThirtySecond;
         gridTick = juce::jlimit(0, loopTicks - TimingGrid::ThirtySecond, gridTick);
 
         hit.tick = tick;
