@@ -354,6 +354,24 @@ target_link_libraries(HPDG_LaneBoundaryTests
 
 add_test(NAME HPDG_LaneBoundaryTests COMMAND HPDG_LaneBoundaryTests)
 
+# Scorer validation + candidate-count benchmark (roadmap sections 8 / 11).
+add_executable(HPDG_ScorerAudit
+    Tests/ScorerAudit.cpp
+)
+
+target_link_libraries(HPDG_ScorerAudit
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
 # Generation quality lab (docs/ROADMAP_UPDATE.md, Phase 0/1): batch metrics over the real
 # product path for every genre / substyle; baselines live in docs/audit/baseline/.
 add_executable(HPDG_GenerationQualityLab

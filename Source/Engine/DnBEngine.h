@@ -25,7 +25,10 @@ public:
     void mutateTrack(PatternProject& project, TrackType trackType);
 
     // The search on its own (tests / audit): best candidate inside the quality zone.
-    static DnBPattern search(const DnBGenerationParams& params, juce::String* debugReport = nullptr);
+    // candidatesOut (audit only, Tests/GenerationQualityLab): every scored candidate of this
+    // call in candidate order; the returned pattern is unchanged by passing it.
+    static DnBPattern search(const DnBGenerationParams& params, juce::String* debugReport = nullptr,
+                             std::vector<DnBPattern>* candidatesOut = nullptr);
     static DnBGenerationParams paramsFromProject(const PatternProject& project, int seedSalt);
 
 private:

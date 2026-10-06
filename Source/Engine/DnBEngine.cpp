@@ -90,7 +90,7 @@ DnBGenerationParams DnBEngine::paramsFromProject(const PatternProject& project, 
     return params;
 }
 
-DnBPattern DnBEngine::search(const DnBGenerationParams& params, juce::String* debugReport)
+DnBPattern DnBEngine::search(const DnBGenerationParams& params, juce::String* debugReport, std::vector<DnBPattern>* candidatesOut)
 {
     const auto& style = getDnBStyleProfile(params.substyle);
     const int count = std::clamp(params.candidateCount, 8, 256);
@@ -154,6 +154,12 @@ DnBPattern DnBEngine::search(const DnBGenerationParams& params, juce::String* de
 
     if (debugReport != nullptr)
         *debugReport = describe(candidates[chosen], params, count, passed, static_cast<int>(pool.size()), best, static_cast<int>(chosen));
+    if (candidatesOut != nullptr)
+    {
+        auto selected = candidates[chosen];
+        *candidatesOut = std::move(candidates);
+        return selected;
+    }
     return std::move(candidates[chosen]);
 }
 

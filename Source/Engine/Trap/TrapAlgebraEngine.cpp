@@ -499,7 +499,7 @@ std::vector<TrapAlgebraNote> TrapPatternMatrix::allNotes() const
     return out;
 }
 
-TrapAlgebraPattern TrapAlgebraEngine::generate(const TrapAlgebraParams& rawParams) const
+TrapAlgebraPattern TrapAlgebraEngine::generate(const TrapAlgebraParams& rawParams, std::vector<TrapAlgebraPattern>* candidatesOut) const
 {
     TrapAlgebraParams params = rawParams;
     params.bars = std::clamp(params.bars, 1, 16);
@@ -546,13 +546,16 @@ TrapAlgebraPattern TrapAlgebraEngine::generate(const TrapAlgebraParams& rawParam
     const auto selection = CandidateSelectionEngine::select(selectionEntries,
         { params.qMin, 0.08f, std::max(0.12f, params.temperature), 0.10f,
           static_cast<std::uint32_t>(params.seed * 2654435761u + 0x9e3779b9u) });
-    auto selected = std::move(candidates[static_cast<size_t>(selection.selectedIndex)]);
+    auto selected = candidatesOut != nullptr ? candidates[static_cast<size_t>(selection.selectedIndex)]
+                                             : std::move(candidates[static_cast<size_t>(selection.selectedIndex)]);
     selected.nearBestPoolSize = selection.nearBestPoolSize;
     selected.bestCandidateQuality = selection.bestQuality;
     selected.selectedCandidateQuality = selection.selectedQuality;
 
     selected.debugSummary = buildDebugSummary(selected, params, weights);
     selected.tempoContext = params.tempoContext;
+    if (candidatesOut != nullptr)
+        *candidatesOut = std::move(candidates);
     return selected;
 }
 

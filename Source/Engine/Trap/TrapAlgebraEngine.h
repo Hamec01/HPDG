@@ -281,7 +281,9 @@ public:
 class TrapAlgebraEngine
 {
 public:
-    TrapAlgebraPattern generate(const TrapAlgebraParams& params) const;
+    // candidatesOut (audit only, Tests/GenerationQualityLab): every scored candidate of this
+    // call in candidate order; the returned pattern is unchanged by passing it.
+    TrapAlgebraPattern generate(const TrapAlgebraParams& params, std::vector<TrapAlgebraPattern>* candidatesOut = nullptr) const;
 
     static TrapSubstyleWeights weightsForSubstyle(TrapAlgebraSubstyle substyle);
     static const char* roleToString(TrapAlgebraRole role);

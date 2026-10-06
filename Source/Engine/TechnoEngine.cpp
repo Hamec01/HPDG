@@ -82,7 +82,7 @@ TechnoGenerationParams TechnoEngine::paramsFromProject(const PatternProject& pro
     return params;
 }
 
-TechnoPattern TechnoEngine::search(const TechnoGenerationParams& params, juce::String* debugReport)
+TechnoPattern TechnoEngine::search(const TechnoGenerationParams& params, juce::String* debugReport, std::vector<TechnoPattern>* candidatesOut)
 {
     const auto& style = getTechnoStyleProfile(params.substyle);
     const int count = std::clamp(params.candidateCount, 8, 256);
@@ -133,6 +133,12 @@ TechnoPattern TechnoEngine::search(const TechnoGenerationParams& params, juce::S
     }
     if (debugReport != nullptr)
         *debugReport = describe(candidates[chosen], params, count, passed, static_cast<int>(pool.size()), best, static_cast<int>(chosen));
+    if (candidatesOut != nullptr)
+    {
+        auto selected = candidates[chosen];
+        *candidatesOut = std::move(candidates);
+        return selected;
+    }
     return std::move(candidates[chosen]);
 }
 

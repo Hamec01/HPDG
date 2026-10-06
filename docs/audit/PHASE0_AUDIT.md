@@ -36,9 +36,9 @@ All genres enter through `BoomBapGeneratorAudioProcessor::generatePattern()`:
 | Novelty | yes (0.72 internal + 0.28 surface, weight 0.07) | surface novelty, weight 0.10 | — | — |
 | Style targets | `StyleTargetModel` (+0.16 × fit) | `StyleTargetModel` (+0.06 × fit) | inverted-U targets in scorer | inverted-U targets in scorer |
 | Bass | `BoomBapBassGenerator` (opt-in lane, styles × amount); [2] + sample → `SampleBassLineComposer` | engine 808; follower re-pitch; [2] + sample → composer | `DnBBassGenerator` search + sample lens | `TechnoBassGenerator` search + sample lens |
-| Seed dependence | seed + candidate index | seed | **seed + generationCounter** | **seed + generationCounter** |
+| Seed dependence | seed + candidate index (bass: + generationCounter) | **seed + generationCounter** | **seed + generationCounter** | **seed + generationCounter** |
 
-**Determinism (RULE 13).** DnB and Techno engines mix `project.generationCounter` into the
+**Determinism (RULE 13).** Trap, DnB and Techno engines mix `project.generationCounter` into the
 seed, so the same seed gives a different pattern after a different number of previous
 generations in the session. Fresh-session replay is deterministic (lab: 0 failures), but
 "same seed + same settings → same output" holds only from the same session state.
@@ -101,7 +101,7 @@ Most important gaps for the roadmap:
 2. **Score compensation** (RULE 11): Boom Bap (weighted sum) and Trap (arithmetic mean) can
    offset a bad core term with good secondary terms; only DnB / Techno have hard gates.
 3. **Candidate counts are not benchmarked** (RULE 17).
-4. **Determinism depends on session history** for DnB / Techno (RULE 13).
+4. **Determinism depends on session history** for Trap / DnB / Techno (RULE 13).
 
 ## 4. Generation baseline
 

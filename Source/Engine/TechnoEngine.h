@@ -23,7 +23,10 @@ public:
     void mutatePattern(PatternProject& project);
     void mutateTrack(PatternProject& project, TrackType trackType);
 
-    static TechnoPattern search(const TechnoGenerationParams& params, juce::String* debugReport = nullptr);
+    // candidatesOut (audit only, Tests/GenerationQualityLab): every scored candidate of this
+    // call in candidate order; the returned pattern is unchanged by passing it.
+    static TechnoPattern search(const TechnoGenerationParams& params, juce::String* debugReport = nullptr,
+                                std::vector<TechnoPattern>* candidatesOut = nullptr);
     static TechnoGenerationParams paramsFromProject(const PatternProject& project, int seedSalt);
 
 private:

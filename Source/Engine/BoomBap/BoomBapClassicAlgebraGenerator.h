@@ -178,7 +178,10 @@ public:
 class BoomBapClassicAlgebraGenerator
 {
 public:
-    BoomBapClassicAlgebraPattern generate(const BoomBapClassicAlgebraParams& params) const;
+    // candidatesOut (audit only, Tests/GenerationQualityLab): every scored candidate of this
+    // call in candidate order; the returned pattern is unchanged by passing it.
+    BoomBapClassicAlgebraPattern generate(const BoomBapClassicAlgebraParams& params,
+                                          std::vector<BoomBapClassicAlgebraPattern>* candidatesOut = nullptr) const;
 
     static const char* roleToString(BoomBapClassicRole role);
     static int ticksPerBar();

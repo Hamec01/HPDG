@@ -495,7 +495,8 @@ int BoomBapClassicAlgebraGenerator::ticksPerBeat() { return kTicksPerBeat; }
 int BoomBapClassicAlgebraGenerator::ticksPerSixteenth() { return kTicksPerSixteenth; }
 int BoomBapClassicAlgebraGenerator::ticksPerEighth() { return kTicksPerEighth; }
 
-BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const BoomBapClassicAlgebraParams& rawParams) const
+BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const BoomBapClassicAlgebraParams& rawParams,
+                                                                      std::vector<BoomBapClassicAlgebraPattern>* candidatesOut) const
 {
     BoomBapClassicAlgebraParams params = rawParams;
     params.bars = std::clamp(params.bars, 1, 16);
@@ -503,7 +504,7 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const Boom
     params.swing = clamp01(params.swing);
     params.humanize = clamp01(params.humanize);
     params.variation = clamp01(params.variation);
-    params.candidateCount = std::clamp(params.candidateCount, 24, 64);
+    params.candidateCount = std::clamp(params.candidateCount, 8, 128); // production uses 64 / 24
 
     const auto& style = getBoomBapProfile(params.substyle);
     const auto styleTarget = StyleTargetModel::withPerformanceIntent(boomBapStyleTarget(params.substyle),
@@ -539,11 +540,14 @@ BoomBapClassicAlgebraPattern BoomBapClassicAlgebraGenerator::generate(const Boom
     const auto selection = CandidateSelectionEngine::select(selectionEntries,
         { style.qualityFloor, style.nearBestTolerance, style.selectionTemperature, style.noveltyWeight,
           static_cast<std::uint32_t>(context.selectionSeed) });
-    auto best=std::move(candidates[static_cast<size_t>(selection.selectedIndex)]);
+    auto best = candidatesOut != nullptr ? candidates[static_cast<size_t>(selection.selectedIndex)]
+                                         : std::move(candidates[static_cast<size_t>(selection.selectedIndex)]);
     best.nearBestPoolSize=selection.nearBestPoolSize;
     best.bestCandidateQuality=selection.bestQuality;
     best.selectedCandidateQuality=selection.selectedQuality;
     best.debugSummary = buildDebugSummary(best, params);
+    if (candidatesOut != nullptr)
+        *candidatesOut = std::move(candidates);
     return best;
 }
 
