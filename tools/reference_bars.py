@@ -22,7 +22,7 @@ ref = {'calibration': [], 'validation': []}
 for line in open(args[0], encoding='utf-8'):
     if line.startswith('#') or '\t' not in line:
         continue
-    name, text = line.rstrip('\n').split('\t')
+    name, text = line.rstrip('\n').split('\t')[:2]
     split = 'validation' if int(hashlib.md5(text.encode()).hexdigest(), 16) % 10 < 3 else 'calibration'
     ref[split].extend(frozenset(int(x) for x in b.split()) for b in text.split('|'))
 

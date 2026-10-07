@@ -3654,8 +3654,33 @@ void testTrapAlgebraEngineSmoke()
                 expect(kick.microTimingTicks == 0,
                        "Trap Algebra Engine should keep main kicks locked; hats carry swing, not the kick backbone.");
     }
-    expect(barsWithSnareAnswer >= 3,
-           "Trap Algebra Engine should bind the kick phrase to the snare backbone across the phrase.");
+    juce::ignoreUnused(barsWithSnareAnswer);
+
+    // A distribution property, not one seed's: phrases where >= 3 of 4 bars answer the snare with a
+    // kick on 16 / 24 / 36 / 40. Played trap loops: 52 % (docs/audit/reference/trap_kick_bars.tsv);
+    // HPDG after Trap steps 1-3: 79-86 % (docs/audit/TRAP_STAGE.md). The fixed-phrase engine passed
+    // it for every seed; with articulated phrases a single seed is a coin toss (RULE 3).
+    int answeringPhrases = 0;
+    constexpr int answerSeeds = 50;
+    for (int s = 0; s < answerSeeds; ++s)
+    {
+        auto seedParams = params;
+        seedParams.seed = 9090 + s * 7919;
+        const auto pattern = engine.generate(seedParams);
+        int answeringBars = 0;
+        for (int bar = 0; bar < seedParams.bars; ++bar)
+        {
+            const auto kicks = pattern.matrix.notesForLane(TrapAlgebraLanes::Kick);
+            answeringBars += std::any_of(kicks.begin(), kicks.end(), [bar](const auto& kick)
+            {
+                const int tick = kick.tick64 % 64;
+                return kick.barIndex == bar && (tick == 16 || tick == 24 || tick == 36 || tick == 40);
+            }) ? 1 : 0;
+        }
+        answeringPhrases += answeringBars >= 3 ? 1 : 0;
+    }
+    expect(answeringPhrases >= answerSeeds * 6 / 10,
+           "Trap Algebra Engine should bind the kick phrase to the snare backbone across the phrase (>= 60 % of seeds).");
 
     expect(first.score.kick808CouplingRatio >= 0.70f,
            "Trap Algebra Engine should strongly couple kick starts with 808 starts.");
@@ -3736,8 +3761,17 @@ void testTrapAlgebraEngineSmoke()
         styledParams.substyle = substyle;
         styledParams.seed += static_cast<int>(profileHatCounts.size()) * 97;
         const auto pattern = engine.generate(styledParams);
-        expect(pattern.score.kick808CouplingScore >= 0.60f,
-               "Every Trap Algebra substyle should retain trap low-end core.");
+        // Low-end core as a rate, not one seed's: 50 seeds, >= 70 % with kick-808 coupling >= 0.60
+        // (measured: 83-97 % per substyle after Trap step 2, 79-99 % after step 3; docs/audit/TRAP_STAGE.md).
+        int coupledSeeds = 0;
+        for (int s = 0; s < 50; ++s)
+        {
+            auto coreParams = styledParams;
+            coreParams.seed = 1000 + s * 131;
+            coupledSeeds += engine.generate(coreParams).score.kick808CouplingScore >= 0.60f ? 1 : 0;
+        }
+        expect(coupledSeeds >= 35,
+               "Every Trap Algebra substyle should retain trap low-end core (>= 70 % of seeds).");
         expect(pattern.score.hiHatMovementScore >= 0.55f,
                "Every Trap Algebra substyle should retain a readable hat driver.");
         expect(pattern.score.negativeSpaceScore >= 0.35f,

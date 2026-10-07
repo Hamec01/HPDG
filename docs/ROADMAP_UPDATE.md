@@ -65,7 +65,11 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Step 2: the density slider reaches Trap — `applyTrapMusicalHints` blended it 75 % towards a fixed
   style density (slider 0.2–0.8 → 0.52–0.67). Removed: events/bar spread +0.2–0.45 → +1.0–1.6,
   "density barely changes" 18/18 → 0/18. Rap and Drill have the same blend (not touched).
-- Next Trap: hat density range (8th base vs 16ths / rolls), substyle kick identity.
+- Step 3: gaps in the 8th hat carrier from hat stems (8ths present 53–88 %, HPDG 100 %), scaled by
+  density: hat-position L1 3.4–4.1 → 1.8–2.2, events spread +1.0–1.6 → +2.1–2.9. Two single-seed smoke checks
+  became rates over seeds. Lab: `hatAllBars` / `hatAllPerBar` (HiHat + HatFX).
+- Next Trap: kick-808 coupling < 0.60 in 1–21 % of seeds (core, RULE 11); 16th fill (3B);
+  substyle kick identity.
 
 ## How to reproduce / continue (another PC)
 

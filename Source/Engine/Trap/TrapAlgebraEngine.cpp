@@ -605,9 +605,16 @@ void TrapAlgebraEngine::generateSkeleton(TrapPatternMatrix& matrix,
                                TrapAlgebraRole::Anchor);
         }
 
+        // Played trap hats leave gaps in the 8th carrier (stems: an 8th holds a hat in 53-88 % of bars,
+        // least under the snare, most on 4 / 12; docs/audit/TRAP_STAGE.md step 3). Skip chance per 8th =
+        // 1 - the calibration presence, scaled by density (x1 at 0.5, more gaps when sparse).
+        static constexpr std::array<float, 8> eighthSkip { 0.20f, 0.38f, 0.12f, 0.32f, 0.44f, 0.31f, 0.18f, 0.41f };
+        const float gapScale = std::clamp(1.4f - 0.8f * params.density, 0.4f, 1.4f);
         const int hatPulse = params.tempoContext.doubleTime ? 4 : 8;
         for (int tick = 0; tick < 64; tick += hatPulse)
         {
+            if (!params.tempoContext.doubleTime && chance(rng, eighthSkip[static_cast<size_t>(tick / 8)] * gapScale))
+                continue;
             matrix.setNote(TrapAlgebraLanes::HiHat,
                            start + tick,
                            hatVelocity(rng, tick, false),

@@ -73,6 +73,8 @@ struct Metrics
     juce::String kickBarsText;    // kick 16ths per bar, "0 6 10|0 7 10 13|..." (reference comparison)
     juce::String hatBarsText;     // closed-hat 16ths per bar, same format
     juce::String kickAllBarsText; // Kick + GhostKick 16ths per bar, ghosts included (a transcription keeps soft kicks)
+    juce::String hatAllBarsText;  // HiHat + HatFX (closed-hat accents / rolls) 16ths per bar: what a hat stem holds
+    float hatAllNotesPerBar = 0;  // HiHat + HatFX notes per bar, rolls counted note by note
     std::set<std::pair<int, int>> skeletonSet;
 };
 
@@ -350,6 +352,23 @@ Metrics measure(const PatternProject& project, GenreType genre)
             if (type == TrackType::Kick)
                 m.firstTwoKick << s32 << " ";
         }
+    }
+    const auto hatFx = notesOf(project, TrackType::HatFX);
+    std::vector<std::set<int>> hatAllBars(static_cast<size_t>(bars));
+    for (const auto* lane : { &hats, &hatFx })
+        for (const auto& n : *lane)
+            if (stepOf(n) / 16 < bars)
+                hatAllBars[static_cast<size_t>(stepOf(n) / 16)].insert(stepOf(n) % 16);
+    m.hatAllNotesPerBar = (hats.size() + hatFx.size()) / fb;
+    for (const auto& bar : hatAllBars)
+    {
+        bool first = true;
+        for (const int s : bar)
+        {
+            m.hatAllBarsText << (first ? "" : " ") << s;
+            first = false;
+        }
+        m.hatAllBarsText << "|";
     }
     std::vector<std::set<int>> kickAllBars(static_cast<size_t>(bars));
     for (const auto* lane : { &kick, &ghostKick })

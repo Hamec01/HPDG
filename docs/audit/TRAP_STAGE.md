@@ -37,7 +37,7 @@ on 8ths with 32nd rolls, and bar-pair variation:
 - eMastered, *Trap drum patterns* — a kick on the first beat, kicks between beats (before beat 3,
   off-beats), variations every 4 / 8 bars.
 
-## Step 1 — kick vocabulary, articulation, bar-pair downbeat (accepted, pending listening)
+## Step 1 — kick vocabulary, articulation, bar-pair downbeat (accepted; maintainer listening 2026-10-07: OK)
 
 **Findings (calibration / validation vs HPDG, all substyles identical):** kicks/bar 2.27 / 2.49 vs
 1.67; distinct kick bars 44 per 136 bars vs 13 per 4000; kick on 1 in 0.62 / 0.61 of bars vs 0.25 —
@@ -117,3 +117,49 @@ semantics tests pass.
 
 Next: the hat range is still narrow (≈ 0.7 hats a bar from 0.2 to 0.8, reference 2-23) — the hat
 generator's density response (8th base vs 16ths / rolls), with sources on sparse vs busy trap hats.
+
+## Step 3 — gaps in the 8th hat carrier (accepted; maintainer listening 2026-10-07: hats sound right)
+
+**Measurement.** The lab's `hatsPerBar` counts only the HiHat lane; Trap puts closed-hat accents and
+roll notes in HatFX, while a hat stem holds both. New lab columns `hatAllBars` / `hatAllPerBar`
+(HiHat + HatFX). Reference: the 35 hat stems of the step-1 loops, `docs/audit/reference/trap_hat_bars.tsv`
+(16th positions per bar + hat notes per bar), `tools/reference_bars.py --column hatAllBars`.
+
+**Written sources.** 8ths are the steady base, most producers write 16ths, triplets add drive, 32nd
+rolls mark transitions (end of a 4-bar phrase, before the snare) with a volume build; dark /
+atmospheric trap uses sparse hats; "space" works when the hits form rhythmic shapes — eMastered,
+*5 best trap hi-hat patterns* and *Trap drum patterns*; MusicRadar, *How to thin out a busy drum beat*.
+
+**Finding.** Hat notes per bar are inside the reference range (HPDG 10.6-13.5 at 0.2-0.8 density;
+stems median 13.25, quartiles 9.75-16.25), but HPDG played **every 8th in every bar** (presence 1.00
+on all even 16ths) where the stems hold an 8th in 53-88 % of bars — least under the snare (beat 3,
+0.53-0.56) and on the 16ths 2 / 14, most on 4 / 12 (0.82-0.88). Hat-position L1 to validation 3.4-4.1.
+
+**Change (3A).** In the skeleton, each 8th of the hat carrier (normal time) is skipped with
+`(1 - calibration presence of that 8th) × (1.4 - 0.8·density)` — the calibration gaps at density 0.5,
+more gaps when sparse, fewer when dense. Double time unchanged.
+
+| Measure (300 seeds, 4 bars, density 0.2 / default / 0.8) | Before (step 2) | After |
+|---|---|---|
+| hat-position L1 to validation (ATL / Dark / Rage) | 3.6-4.1 / 3.7-4.1 / 3.4-3.9 | **1.9-2.2 / 1.8-2.1 / 1.8-2.1** |
+| distinct closed-hat bars / 1200 | 148-223 | 922-1042 |
+| hat notes/bar, ATL (reference median 13.1 / 13.3) | 11.5 / 12.0 / 12.5 | 8.6 / 10.0 / 10.8 |
+| events/bar spread 0.2 → 0.8 | +1.0-1.6 | +2.1-2.9 |
+| exact duplicates / failures (54 cells), monotone | 0 / 0, 18 / 18 | 0 / 0, 18 / 18 |
+| 1000 seeds defaults: kicks/bar, validation kick L1 | 2.06-2.37, 0.79-0.89 | 2.06-2.38, 0.78-0.88 |
+| kick-skeleton reuse | 6.3-20.3 % | 8.1-21.7 % |
+| determinism, p95 ms | 0, 21.6-25.4 | 0, 23.5-27.0 (one 34.3 outlier run) |
+
+Costs: hat notes at default density moved to the lower half of the reference (ATL 12.0 → 10.0);
+the odd 16ths are still thinner than the stems except 7 / 15 → 3B candidate (16th fill, sources say
+most trap hats are written in 16ths).
+
+**Tests.** Two single-seed checks of `testTrapAlgebraEngineSmoke` turned into rates over seeds
+(RULE 3): the phrase answering the snare in >= 3 of 4 bars (measured 79-86 % of seeds, reference
+52 %; now >= 60 % of 50 seeds) and kick-808 coupling >= 0.60 per substyle (now >= 70 % of 50 seeds).
+Both checks only held for the old fixed-phrase engine; at step 2 the coupling check passed by luck
+(per substyle 3-17 % of seeds below 0.60, probability ≈ 0.59 that six single seeds pass).
+
+**Open (core, RULE 11).** Kick-808 coupling below 0.60 in 3-17 % of seeds per substyle at step 2,
+1-21 % after step 3 (CloudTrap 9 → 17 %, LuxuryTrap 17 → 21 %, MemphisTrap 5 → 1 %): the selection
+lets secondary terms outweigh a weak low-end core. Next Trap step.
