@@ -166,6 +166,10 @@ bool isLegalMainKickLocalTick(int tick, bool /*bar4*/, bool doubleTime)
     if (doubleTime && (tick == 16 || tick == 48))
         return false;
 
+    // 8 and 48 (16ths 2 / 12) are common in played trap kicks; 48 is the double-time snare.
+    if (tick == 8 || tick == 48)
+        return !(doubleTime && tick == 48);
+
     return tick == 0
         || tick == 16
         || tick == 24
@@ -639,7 +643,11 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         if (matrix.hasNote(TrapAlgebraLanes::Kick, start + tick))
             selectedKicks.push_back(tick);
 
-    const std::array<std::array<std::array<int, 4>, 4>, 9> phraseMotifs {{
+    // The first nine are the original phrases; the rest are the 4-bar kick phrases of the calibration
+    // split of a trap reference (Ghosthack GH Trap Kit MIDI + kick stems of trap drum loops,
+    // docs/audit/reference/trap_kick_bars.tsv, docs/audit/TRAP_STAGE.md step 1): they carry the
+    // downbeat in most bars and the 16ths 2 / 12 the original phrases never used.
+    const std::array<std::array<std::array<int, 4>, 4>, 38> phraseMotifs {{
         std::array<std::array<int, 4>, 4> {{ {{ 0, 24, -1, -1 }}, {{ 24, 56, -1, -1 }}, {{ 56, -1, -1, -1 }}, {{ 24, -1, -1, -1 }} }},
         std::array<std::array<int, 4>, 4> {{ {{ 0, 36, -1, -1 }}, {{ 24, -1, -1, -1 }}, {{ 16, 40, -1, -1 }}, {{ 24, 56, -1, -1 }} }},
         std::array<std::array<int, 4>, 4> {{ {{ 0, 24, -1, -1 }}, {{ 36, 56, -1, -1 }}, {{ 24, -1, -1, -1 }}, {{ 16, 40, -1, -1 }} }},
@@ -648,7 +656,36 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         std::array<std::array<int, 4>, 4> {{ {{ 0, 24, 56, -1 }}, {{ 24, -1, -1, -1 }}, {{ 16, 36, -1, -1 }}, {{ 56, -1, -1, -1 }} }},
         std::array<std::array<int, 4>, 4> {{ {{ 0, -1, -1, -1 }}, {{ 24, 56, -1, -1 }}, {{ 24, 40, -1, -1 }}, {{ 16, 56, -1, -1 }} }},
         std::array<std::array<int, 4>, 4> {{ {{ 0, 36, -1, -1 }}, {{ 56, -1, -1, -1 }}, {{ 24, 56, -1, -1 }}, {{ 24, 40, -1, -1 }} }},
-        std::array<std::array<int, 4>, 4> {{ {{ 0, 16, 40, -1 }}, {{ 24, -1, -1, -1 }}, {{ 56, -1, -1, -1 }}, {{ 24, 56, -1, -1 }} }}
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 16, 40, -1 }}, {{ 24, -1, -1, -1 }}, {{ 56, -1, -1, -1 }}, {{ 24, 56, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 48, -1, -1 }}, {{ 16, 40, -1, -1 }}, {{ 16, 40, 48, -1 }}, {{ 16, 40, 56, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 40, -1, -1 }}, {{ 8, 24, 48, 56 }}, {{ 8, 48, -1, -1 }}, {{ 16, 40, 48, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 40, -1, -1 }}, {{ 0, 40, 56, -1 }}, {{ 0, 40, -1, -1 }}, {{ 0, 40, 56, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 40, -1, -1 }}, {{ 0, 40, -1, -1 }}, {{ 0, 40, -1, -1 }}, {{ 0, 40, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 48, -1, -1 }}, {{ 0, 8, 16, -1 }}, {{ 0, 56, -1, -1 }}, {{ 24, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 48, -1, -1 }}, {{ 16, -1, -1, -1 }}, {{ 0, 16, 40, 56 }}, {{ 8, 16, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 48, -1, -1 }}, {{ 0, 56, -1, -1 }}, {{ 0, 24, -1, -1 }}, {{ -1, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 16, -1, -1 }}, {{ 8, 16, -1, -1 }}, {{ 24, 56, -1, -1 }}, {{ 16, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 48, -1, -1 }}, {{ 16, 56, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ 8, 16, 48, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 40, 48, 56 }}, {{ 8, 56, -1, -1 }}, {{ 0, 40, 56, -1 }}, {{ 0, 24, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 16, -1, -1 }}, {{ 16, -1, -1, -1 }}, {{ 0, 16, -1, -1 }}, {{ 16, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 48, -1, -1 }}, {{ 16, -1, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ 24, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 24, 48, -1 }}, {{ 16, -1, -1, -1 }}, {{ 0, 48, -1, -1 }}, {{ -1, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, -1, -1, -1 }}, {{ 8, 16, 40, -1 }}, {{ 0, 24, -1, -1 }}, {{ 0, 24, 48, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, -1, -1, -1 }}, {{ 16, 40, -1, -1 }}, {{ 0, 56, -1, -1 }}, {{ 24, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 24, 48, -1 }}, {{ 24, -1, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ -1, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, -1, -1, -1 }}, {{ 16, 40, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ 8, 16, 48, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 48, -1, -1 }}, {{ 16, -1, -1, -1 }}, {{ 0, 48, -1, -1 }}, {{ 24, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, -1, -1, -1 }}, {{ 8, 16, -1, -1 }}, {{ 0, 40, -1, -1 }}, {{ 24, 48, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 24, 48, -1 }}, {{ 16, 48, -1, -1 }}, {{ 0, 24, 48, -1 }}, {{ -1, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 40, -1, -1 }}, {{ 0, 24, -1, -1 }}, {{ 0, 48, 56, -1 }}, {{ 16, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, -1, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ 0, 56, -1, -1 }}, {{ -1, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 40, 48, 56 }}, {{ 8, 24, 48, -1 }}, {{ 0, 24, 56, -1 }}, {{ 16, 24, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 56, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ 0, 56, -1, -1 }}, {{ 0, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, -1, -1, -1 }}, {{ 8, -1, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ -1, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 24, -1, -1 }}, {{ 8, -1, -1, -1 }}, {{ 0, -1, -1, -1 }}, {{ 8, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 56, -1, -1 }}, {{ 0, 24, 56, -1 }}, {{ 0, 24, 48, -1 }}, {{ 8, -1, -1, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 24, 56, -1 }}, {{ 0, 24, 56, -1 }}, {{ 0, 24, 56, -1 }}, {{ 0, 24, 56, -1 }} }},
+        std::array<std::array<int, 4>, 4> {{ {{ 0, 24, 56, -1 }}, {{ 0, 8, 24, 56 }}, {{ 0, 24, 56, -1 }}, {{ 0, 8, 24, 56 }} }}
     }};
 
     const auto& motif = phraseMotifs[static_cast<size_t>((candidateIndex + params.seed) % static_cast<int>(phraseMotifs.size()))]
@@ -670,7 +707,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
             continue;
         if (std::any_of(selectedKicks.begin(), selectedKicks.end(), [candidateTick](int tick) { return std::abs(tick - candidateTick) < 8; }))
             continue;
-        if (candidateTick == 0 && bar != 0 && selectedKicks.empty() && chance(rng, 0.74f))
+        if (candidateTick == 0 && bar % 2 == 1 && selectedKicks.empty() && chance(rng, 0.74f))
             continue;
 
         matrix.setNote(TrapAlgebraLanes::Kick,
@@ -680,6 +717,16 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
                        0,
                        TrapAlgebraRole::Anchor);
         selectedKicks.push_back(candidateTick);
+    }
+
+    // Played trap phrases answer in pairs of bars: the A bars (1, 3) start on the kick in 85-100 % of the
+    // reference, the B bars (2, 4) in 16-38 % (docs/audit/TRAP_STAGE.md step 1).
+    if (bar % 2 == 0 && bar != 0 && !matrix.hasNote(TrapAlgebraLanes::Kick, start)
+        && std::none_of(selectedKicks.begin(), selectedKicks.end(), [](int tick) { return tick < 8; })
+        && chance(rng, 0.80f))
+    {
+        matrix.setNote(TrapAlgebraLanes::Kick, start, randomInt(rng, 96, 123), 2, 0, TrapAlgebraRole::Anchor);
+        selectedKicks.push_back(0);
     }
 
     if (selectedKicks.empty())
@@ -695,6 +742,37 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
     }
 
     std::sort(selectedKicks.begin(), selectedKicks.end());
+
+    // Articulation: the phrase fixes the kick identity, density adds one kick around it. Position weights
+    // are the off-downbeat kick probabilities of the calibration split (docs/audit/TRAP_STAGE.md step 1).
+    if (chance(rng, 0.10f + density * 0.45f + style.kickIrregularity * 0.20f))
+    {
+        static constexpr std::array<std::pair<int, float>, 6> articulation {{
+            { 8, 0.15f }, { 16, 0.24f }, { 24, 0.25f }, { 40, 0.26f }, { 48, 0.24f }, { 56, 0.26f } }};
+        float total = 0.0f;
+        std::array<float, articulation.size()> weights {};
+        for (size_t i = 0; i < articulation.size(); ++i)
+        {
+            const int tick = articulation[i].first;
+            const bool free = isLegalMainKickLocalTick(tick, bar4, params.tempoContext.doubleTime)
+                && std::none_of(selectedKicks.begin(), selectedKicks.end(), [tick](int other) { return std::abs(other - tick) < 8; });
+            weights[i] = free ? articulation[i].second : 0.0f;
+            total += weights[i];
+        }
+        if (total > 0.0f)
+        {
+            float pick = std::uniform_real_distribution<float>(0.0f, total)(rng);
+            size_t index = 0;
+            while (index + 1 < weights.size() && pick >= weights[index])
+                pick -= weights[index++];
+            if (weights[index] <= 0.0f)
+                for (index = 0; weights[index] <= 0.0f; ++index) {}
+            const int tick = articulation[index].first;
+            matrix.setNote(TrapAlgebraLanes::Kick, start + tick, randomInt(rng, 86, 116), 2, 0, TrapAlgebraRole::Accent);
+            selectedKicks.push_back(tick);
+            std::sort(selectedKicks.begin(), selectedKicks.end());
+        }
+    }
 
     if (params.substyle == TrapAlgebraSubstyle::RageTrap && bar4 && chance(rng, 0.04f + density * 0.04f))
     {

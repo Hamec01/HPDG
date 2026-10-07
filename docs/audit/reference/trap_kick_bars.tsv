@@ -1,0 +1,49 @@
+# Trap kick reference: 16th positions per bar (0-15, snare on 8), "|" between bars.
+# *_midi: Ghosthack UPB2020 GH Trap Kit NN "Drums Kick.mid" (exact notes); *_stem: kick stems of
+# Ghosthack Urban / Hybrid Trap Essentials and Sonic Mechanics UTT2 drum loops, HPDG_BreakLab analyze
+# --bpm <label from the file name> --hits, every onset of the kick stem, step = round(t / 16th) from the
+# file start (the loops are trimmed to the bar). Rebuild: tools/trap_reference.py. See docs/audit/TRAP_STAGE.md.
+ghkit_01_midi	0 6|2 4 10|0 12|2 10 14|0 6|2 4 10|0 12|2 10 14
+ghkit_02_midi	0 10 14|4 14|0 6 10 14|4 10 14|0 10 14|4 14|0 6 10 14|4 10 14
+ghkit_03_midi	0 10|6 10|0 10|0 2 6 12 14|0 10|6 10|0 10|0 2 6 12 14
+ghkit_04_midi	0 12|6 10|0 12|4 6 10 14|0 12|6 10|0 12|4 6 10 14
+ghkit_05_midi	0 12|4 10|4 10 12|4 10 14|0 12|4 10|4 10 12|4 10 14
+ghkit_06_midi	0 10|2 6 12 14|2 12|4 10 12|0 10|2 6 12 14|2 12|4 10 12
+ghkit_08_midi	0 10|0 10 14|0 10|0 10 14|0 10|0 10 14|0 10|0 10 14
+ghkit_09_midi	0 7 10|0 3 10 13 15|0 7 10|0 3 10 13 15|0 7 10|0 3 10 13 15|0 7 10|0 3 10 13 15
+ghkit_10_midi	0 2 14|2 4|0 2 10 14|2 4 6 12|0 2 14|2 4|0 2 10 14|2 4 6 12
+hybrid_01_140_stem	0 12|0 2 4|0 14|6
+hybrid_01_150_stem	0 12|4|0 4 10 14|2 4
+hybrid_01_160_stem	0 12|0 14|0 6|
+hybrid_02_140_stem	0 4|2 3 4|6 14|1 4
+hybrid_02_150_stem	0|2 3 4 10|0 6|0 4
+hybrid_02_160_stem	0 12|4 14|0|2 3 4 12
+hybrid_03_140_stem	0 10 11 12 14|2 5 14|0 10 14 15|0 3 6 11
+hybrid_03_150_stem	0 4|4|0 4|4
+hybrid_03_160_stem	0|8|0|8 14 15
+hybrid_04_150_stem	0 6 12|4 8 10 12|0 6 12|4
+urban_01_150_stem	0 12|4|0|6
+urban_02_160_stem	0 6 12|4|0 12|
+urban_03_140_stem	0|2 3 4 10|0 6|0 3 6 12
+urban_04_150_stem	0|4 10|0 14|6
+urban_05_160_stem	0 6 12|6|0|
+urban_06_140_stem	0|4 10|0|2 3 4 12
+urban_07_160_stem	0|0 6 10|0|2
+urban_08_150_stem	0 12|4|0 12|6
+urban_09_150_stem	0|2 3 4|0 10|6 12
+urban_10_140_stem	0 6 12|4 12|0 6 12|
+urban_11_160_stem	0 10|0 6|0 12 14|4
+urban_12_140_stem	0 6||0 6 12|
+urban_13_140_stem	0|0|0 14|
+urban_14_150_stem	0 10 12 14|2 6 7 12|0 6 11 14|1 4 6 11
+urban_15_160_stem	0 8 14|10|0 8|2
+utt2_01_142_stem	0 14 15|0|0 14|0
+utt2_02_142_stem	0 7|4|0|4
+utt2_04_145_stem	0|2|0|
+utt2_05_145_stem	0 6|2|0|2
+utt2_07_147_stem	0 14|0 6 14|0 6 12|2 8
+utt2_08_147_stem	0 14|0 6 14|0 6 12|2 8
+utt2_10_145_stem	0 2 6 8|0 2 8 10|0 2 6 8|0 2
+utt2_11_145_stem	0 2 6 8|0 2 8 10|0 2 6 8|0 2
+utt2_13_143_stem	0 6 14|0 6 14|0 6 14|0 6 14
+utt2_14_143_stem	0 6 14|0 2 6 14|0 6 14|0 2 6 14

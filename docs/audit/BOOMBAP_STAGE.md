@@ -187,3 +187,13 @@ the position: a straight "1 and 3" kick frame (`0 8`, `0 3 8 15`, `0 7 8 10`, `0
 HPDG Russian plays in a quarter of its bars. The zero after the snare may be masking by the
 snare + vocal in a full mix. Next Russian step: substyle kick motifs with beat 3, measured on
 instrumentals / drum stems with a held-out track split (15 tracks is too few to validate).
+
+### Written sources (checked after steps 2-3)
+
+- Native Instruments, *What is boom bap* — kicks on the 1st, 4th and 6th 8th notes plus a softer one
+  on the 2nd (≈ 4 kicks a bar), the second bar slightly varied; closed hats on 8ths plus one swung 16th
+  before beat 3. Consistent with step 3 (3.6-3.7 kicks/bar) and with step 2 (straight 8th hats, rare
+  odd 16ths — no hat change).
+- RouteNote, *How to make 90s hip-hop boom bap drums* — the starting template is sparser: kick on 1
+  and around the 16ths 8-9 (2 main kicks), the kick "dancing around the snare". Step 3 sits between
+  this template and the played loops (4.0-4.6); listening decides (RULE 42).

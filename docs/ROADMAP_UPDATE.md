@@ -50,7 +50,19 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
   2-bar duplicates (18 cells) 294 → 182 (Classic low density 53 → 40 %); cost: Classic 2-bar
   default-density duplicates 9 → 15 %, substyle kick-count spread narrower. Pending listening.
 - Open Boom Bap items: 2-bar duplicates (Classic 40 / 15 %, Gold 31 / 8 % low / default density),
-  5-kick bars 6–13 % vs 26 % in played loops, listening check of step 3. Next by stage order: Trap.
+  5-kick bars 6–13 % vs 26 % in played loops, listening check of step 3. Russian Underground substyle kick
+  motifs (beat 3, from 36 full tracks: `tools/track_kicks.py`) wait for instrumentals / drum stems.
+
+
+## Trap step 1 (kick vocabulary, articulation, bar-pair downbeat) — `docs/audit/TRAP_STAGE.md`
+
+- Reference: 44 trap loops (9 GH Trap Kit kick MIDI + 35 kick stems), `docs/audit/reference/trap_kick_bars.tsv`,
+  `tools/reference_bars.py` / `tools/trap_reference.py` / `tools/midi_drums.py`; written sources (NI, EDMProd, eMastered).
+- Additive changes: 29 calibration phrases appended (9 → 38), 16ths 2 / 12 legal, one density-driven
+  articulation kick, downbeat skip only in B bars + kick on 1 in bar 3. Kick-skeleton reuse 99 % →
+  6–18 %, kicks/bar 1.67 → 2.09–2.37 (reference 2.27–2.49), validation kick L1 1.70 → 0.79–0.88,
+  0 failures, runtime unchanged. Seed-picked phrase (Boom Bap style) measured, no gain, reverted.
+- Next Trap: density control (scorer prefers more kicks at any density), substyle kick identity.
 
 ## How to reproduce / continue (another PC)
 
