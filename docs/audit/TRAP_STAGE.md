@@ -163,3 +163,21 @@ Both checks only held for the old fixed-phrase engine; at step 2 the coupling ch
 **Open (core, RULE 11).** Kick-808 coupling below 0.60 in 3-17 % of seeds per substyle at step 2,
 1-21 % after step 3 (CloudTrap 9 → 17 %, LuxuryTrap 17 → 21 %, MemphisTrap 5 → 1 %): the selection
 lets secondary terms outweigh a weak low-end core. Next Trap step.
+
+## Kick-808 coupling check (measured, no change)
+
+The step-3 "open" item assumed that a kick-808 coupling score below 0.60 (1-21 % of seeds) is a
+core failure. Measured against the reference instead (RULE 12 — the score is not the music):
+
+| | HPDG, all substyles (step 3, 1000 seeds) | GH Trap Kit MIDI (8 kits with Kick + 808 files) |
+|---|---|---|
+| 808 starts on a kick | 0.93-0.94 | 0.40 (per kit 0.10-0.78) |
+| kicks with an 808 start | scorer band 0.50-0.90 | 0.43 (0.10-0.73) |
+| 808 starts per bar | 1.5-2.1 | ≈ 2.5 (1.2-4.0) |
+
+Sources: the kick gives the punch, the 808 the sustain, the pair defines trap (eMastered, *How to make
+808s hit hard*; MusicRadar, *808 kick guide*); the 808 line follows the melody's roots with glides
+(Native Instruments); "not every 808 hit has to align with a kick, but it helps if most of them do"
+(EDMProd). HPDG couples more tightly than the reference, so the low-coupling seeds are within played
+practice — not tightened (RULE 10). Open, weak evidence (9 kits, one vendor; sources disagree): an 808
+with more of its own rhythm between kicks. Needs more 808 references before any change.
