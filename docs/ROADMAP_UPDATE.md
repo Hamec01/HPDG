@@ -82,6 +82,34 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Open Trap (design decision): every kick still carries an 808 (kicks with an 808: HPDG ≈ 0.76,
   GH / Cr2 0.43–0.45); the scorer's coupling bands and a smoke test encode the tighter design.
 
+## DnB step 1 — `docs/audit/DNB_STAGE.md`
+
+- References: Ghosthack Upfront kick & snare loops (`docs/audit/reference/dnb_kick_bars.tsv`), Freaky
+  Loops neurofunk drum loops, tutorials. Ghosthack is busier than the rest, so the kick count was not raised.
+- Change: the kick budget's rounded-away fraction is a chance of one more kick (additive). Kick-skeleton
+  reuse Modern 79 → 59 %, Liquid 86 → 77 %, Jump-Up 94 → 86 %; Roller / Neuro / Breakbeat unchanged.
+
+## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
+
+- Read `docs/RULES.md`, this log, `docs/audit/BOOMBAP_STAGE.md`, `TRAP_STAGE.md`, `DNB_STAGE.md`.
+- Maintainer's working rules (also in agent memory): back every genre change with written sources
+  (articles) and several reference packs; packs are guidance, not truth, never copy patterns; improve,
+  do not rework (additive changes; revert mechanism changes without a measured gain); report in Russian
+  with numbers; commit after the maintainer listens / approves; FL Studio must be closed before
+  `build_vst.bat` (it locks HPDG.vst3).
+- Boom Bap: done (steps 1-3). Russian Underground kick motifs (beat 3) wait for instrumentals / stems.
+- Trap: done (steps 1-5, listened: good). Open design question: every kick carries an 808 (HPDG 0.76 vs
+  packs 0.43-0.45); the maintainer has not decided, default is keep.
+- DnB: step 1 committed, NOT yet listened to. Next: phrase-level repetition (Roller / Jump-Up reuse
+  86 %), hats / ghosts vs Ghosthack "DnB_Top" and Freaky stems, the "4 + 10" snare variant.
+- Then Techno (Phase 0: 20-68 % duplicates, density inverted in Minimal / Dub).
+- Corpus: `E:/HPDG_corpus` (being copied from the other PC; verify with `tools/corpus_manifest.py verify`).
+  More packs: `E:/DRUMS/...` (Ghosthack bundle, Sonic Mechanics, Freaky Loops), `C:/Users/Ham_h/Downloads`
+  (Cr2 Trippy Trap, Hex Loops Trap MIDI with mixed grids; Controversial Loops / Jungle Loops torrents
+  were incomplete).
+- Rap and Drill still blend `densityAmount` towards a style value in `StyleInfluence.cpp` (Trap step 2
+  removed it for Trap); check before tuning those engines.
+
 ## How to reproduce / continue (another PC)
 
 - Build: `cmake --build build --config Release --target HPDG_GenerationQualityLab HPDG_ScorerAudit HPDG_BreakLab HPDG_BoomBapBatchAudit HPDG_LaneBoundaryTests HPDG_CoreTests`

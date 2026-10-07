@@ -155,9 +155,14 @@ void addKicks(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
         bar.push_back(makeEvent(TrackType::Kick, anchor, randomInt(rng, 110, 122), DnBRole::KickAnchor));
     }
 
-    // Played loops sit at ~2 kicks a bar (downbeat + 2-step); density opens up the rest.
-    const int budget = std::clamp(style.minKicks
-                                      + static_cast<int>(std::lround((style.maxKicks - style.minKicks) * std::clamp((density - 0.25f) * 1.3f, 0.0f, 1.0f))),
+    // Played loops sit at ~2 kicks a bar (downbeat + 2-step); density opens up the rest. Rounding the
+    // extra kicks down gave every bar of a density the same count (Modern / Liquid / Jump-Up: 2 in
+    // 77-89 % of bars; played loops spread 1-5, docs/audit/DNB_STAGE.md step 1): the part rounded away
+    // becomes the chance of one more kick. Never fewer kicks than before.
+    const float extraKicks = (style.maxKicks - style.minKicks) * std::clamp((density - 0.25f) * 1.3f, 0.0f, 1.0f);
+    const int roundedExtra = static_cast<int>(std::lround(extraKicks));
+    const float roundedAway = extraKicks - static_cast<float>(roundedExtra);
+    const int budget = std::clamp(style.minKicks + roundedExtra + (roundedAway > 0.0f && chance(rng, roundedAway) ? 1 : 0),
                                   style.minKicks, style.maxKicks);
 
     std::vector<std::pair<int, float>> scored;
