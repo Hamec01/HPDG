@@ -116,3 +116,74 @@ hat-recall check on labeled loops (stage 7) before it can justify a generator ch
 distinct hat layers per 300 seeds (Classic `hatEighthDropout` = 0, bar 2 cloned from bar 1);
 straight 8ths are genre-true, so the lever is not the odd-16th rate.
 
+## Step 3 — kick count: motif cap + band-shaped kick target (accepted, pending listening)
+
+**Finding.** Played loops spread over 3–5 kicks a bar (calibration: 3 = 19 %, 4 = 38 %, 5 = 26 %,
+6+ = 7 %); HPDG almost never played 5 (1–5 % of bars) and averaged 3.2–3.7 vs 4.0–4.6. Ghost kicks
+do not close the gap (+0.05–0.14 / bar; lab column `kickAllBars`, `reference_kicks.py --lane kickall`).
+Two causes: a bar could not hold more main kicks than its motif (`maxMainKicks = max(3, motifSize)`),
+and the scorer's kick term `close(kicks, 3 + 1.5·density)` peaks on one count, so the 64 candidates
+converge on it — below the motif size it drops a random motif kick (variety that under-plays kicks),
+at the motif size every seed plays its bare motif (25 outcomes).
+
+**Change.** `maxMainKicks = max(3, motifSize + 1)` (one articulation kick may join a full motif);
+kick term `band(kicks / bar, 3.0 + 0.8·d, 4.0 + 1.0·d, 0.75)` instead of the peaked target.
+
+Variants measured and rejected (same seeds / benchmarks):
+
+| Variant | 2-bar exact dup, sum of 18 cells | Classic 2-bar default dup | kicks/bar (6 substyles) | note |
+|---|---|---|---|---|
+| baseline | 294 | 9.0 % | 3.23–3.65 | |
+| peaked target 3.5 + 1.2·d | 227 | 30.0 % | 3.61–3.84 | converges on the bare motif; density ≈ no effect above default |
+| motif + 1 cap only | 291 | 9.0 % | 3.23–3.67 | scorer pulls the extra kick back out |
+| peaked target + cap | 214 | 29.0 % | 3.65–3.87 | as above |
+| band around old centre 2.5 + 1.5·d … 3.5 + 1.5·d, + cap | 207 | 17.3 % | 3.34–3.66 | kick profile barely moves |
+| **band 3.0 + 0.8·d … 4.0 + 1.0·d, + cap** | **182** | 15.3 % | 3.57–3.73 | accepted |
+
+Accepted variant, before → after (1000 seeds, defaults, 4 bars unless noted; validation split
+not used for tuning):
+
+| Measure | Before | After |
+|---|---|---|
+| kicks/bar (Classic / Dusty / Jazzy / Gold / Russian / Lofi) | 3.44 / 3.45 / 3.64 / 3.65 / 3.25 / 3.23 | 3.65 / 3.61 / 3.73 / 3.70 / 3.58 / 3.57 |
+| bars with 5 kicks | 0.8–4.8 % | 6.4–13.1 % (reference 25–26 %) |
+| kick L1 distance to **validation** | 1.71 / 1.69 / 1.65 / 1.66 / 1.76 / 1.76 | 1.63 / 1.62 / 1.63 / 1.64 / 1.64 / 1.63 |
+| validation bars HPDG can play | 38.0 / 40.4 / 39.8 / 44.4 / 37.4 / 37.4 % | 45.6 / 37.4 / 46.2 / 48.0 / 42.7 / 41.5 % |
+| kick-skeleton reuse, 4 bars | 8.3–11.6 % | 6.1–7.5 % |
+| near duplicates, 4 bars | 0.8–2.5 % | 0.3–1.9 % |
+| 2 bars, exact dup low / default / high density: Classic | 53.0 / 9.0 / 14.7 % | 39.7 / 15.3 / 6.3 % |
+| Dusty | 21.0 / 3.7 / 7.7 % | 10.7 / 4.7 / 2.7 % |
+| Jazzy | 21.7 / 2.3 / 7.7 % | 11.3 / 6.0 / 5.0 % |
+| Gold | 43.3 / 7.0 / 15.3 % | 31.3 / 8.3 / 4.3 % |
+| Russian | 15.3 / 16.0 / 2.3 % | 6.0 / 5.0 / 1.7 % |
+| Lofi | 23.3 / 20.3 / 10.3 % | 10.0 / 9.0 / 4.7 % |
+| hard failures / monotone events per bar (density) | 0 % / 18 of 18 | 0 % / 18 of 18 |
+| `BoomBapBatchAudit 1000`: hard trap / missing backbeats / ghost violations / determinism | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 |
+| `BoomBapBatchAudit 1000`: p50 / p95 ms | 5.43 / 6.92 | 5.34 / 6.23 |
+| lane / core tests | pass | pass |
+
+Costs (RULE 38 / 45): 2-bar duplicates at default density rose for Classic (+6.3 points), Jazzy
+(+3.7), Gold (+1.3), Dusty (+1.0); the kick-count spread between substyles narrowed (0.42 → 0.16
+kicks/bar) and density moves kicks less (Classic 2 bars: 2.99–3.91 → 3.44–3.95). The scorer
+average (9.82 → 9.87) changed with the scorer and is not comparable. Needs a listening check
+(RULE 42) — Lofi / Russian at default density are the substyles to listen to first.
+
+### Russian Underground check of step 3 (full tracks, weak evidence)
+
+Question from the maintainer: does Russian Underground need more kicks at all? 36 full tracks
+(no stems, vocals included) of early Тбили Тёплый, Рем Дигга, Триагрутрика, Восточный Округ,
+Полумягкие, Кто ТАМ were transcribed with `HPDG_BreakLab analyze --hits`; 15 tracks / 200 bars
+pass the reliability filter of `tools/track_kicks.py` (tempo confidence >= 0.6, 70-100 BPM, kick
+on beat 1 in >= 60 % of bars). Audio and reports are not in git.
+
+| Measure | Tracks | HPDG Russian before step 3 | after step 3 |
+|---|---|---|---|
+| kicks/bar | 3.64 (track median 3.67, spread 1.9-5.8) | 3.25 | 3.58 |
+| kick on beat 3 (16th 8) | 0.65 (>= 0.5 in 12 of 15 tracks) | 0.23 | — |
+| kick after the snare (16ths 5 / 13) | 0.03 / 0.00 | 0.06 / 0.18 | — |
+
+Step 3 does not move Russian away from the tracks on kick count. The real substyle difference is
+the position: a straight "1 and 3" kick frame (`0 8`, `0 3 8 15`, `0 7 8 10`, `0 8 10 14`) that
+HPDG Russian plays in a quarter of its bars. The zero after the snare may be masking by the
+snare + vocal in a full mix. Next Russian step: substyle kick motifs with beat 3, measured on
+instrumentals / drum stems with a held-out track split (15 tracks is too few to validate).

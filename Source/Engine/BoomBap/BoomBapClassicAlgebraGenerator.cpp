@@ -707,7 +707,9 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
             selectedKickTicks.push_back(candidate.tick);
     }
 
-    const int maxMainKicks = std::min(kMaxKicksPerBar, std::max(ending ? profile.mainKickMax + 1 : profile.mainKickMax, motifSize));
+    // One articulation kick may join a full motif: played loops put 5+ kicks in a third of their
+    // bars, the motif cap kept HPDG at 1-5 % (docs/audit/BOOMBAP_STAGE.md, step 3).
+    const int maxMainKicks = std::min(kMaxKicksPerBar, std::max(ending ? profile.mainKickMax + 1 : profile.mainKickMax, motifSize + 1));
     if (selectedKickTicks.empty())
         selectedKickTicks.push_back(0);
     std::stable_sort(selectedKickTicks.begin(), selectedKickTicks.end(), [](int a, int b)

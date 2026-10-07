@@ -33,7 +33,7 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
    consumed by any production engine; used confidences become binary thresholds.
 5. **Determinism (RULE 13)** — Trap / DnB / Techno mix `generationCounter` into the seed.
 
-## Boom Bap step 2 (hats) — measured, no generator change
+## Boom Bap steps 2–3 (hats measured, kick count changed)
 
 - **Lab measurement fix** (`Tests/QualityMetrics.h`): Boom Bap keeps micro-timing in `gridTick`;
   the lab floored it, reading every early hit a 16th early. Now read like the engine (Boom Bap only).
@@ -44,8 +44,13 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Hats vs played loops at unmasked positions (`tools/reference_hats.py`): Classic / Gold play all
   free off-beat 8ths in 0.75 of bars vs ≈ 0.5 in the reference; not changed until the
   transcriber's soft-hat recall is measured (RULES 21 / 30).
-- Open Boom Bap items: 2-bar low-density duplicates (Classic 53 %, Gold 43 %), 4-bar kick-skeleton
-  reuse 8–12 %, kicks/bar 3.2–3.7 vs 4.0–4.6. Next by stage order: Trap.
+- **Step 3 (kick count)**: one articulation kick may join a full motif, and the scorer's kick term
+  is a band (3.0 + 0.8·d … 4.0 + 1.0·d per bar) instead of a peaked target. Kicks/bar 3.23–3.65 →
+  3.57–3.73, validation kick L1 better in 6 / 6 substyles, 4-bar kick-skeleton reuse 8–12 → 6–8 %,
+  2-bar duplicates (18 cells) 294 → 182 (Classic low density 53 → 40 %); cost: Classic 2-bar
+  default-density duplicates 9 → 15 %, substyle kick-count spread narrower. Pending listening.
+- Open Boom Bap items: 2-bar duplicates (Classic 40 / 15 %, Gold 31 / 8 % low / default density),
+  5-kick bars 6–13 % vs 26 % in played loops, listening check of step 3. Next by stage order: Trap.
 
 ## How to reproduce / continue (another PC)
 
