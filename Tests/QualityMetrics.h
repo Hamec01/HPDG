@@ -65,6 +65,12 @@ struct Metrics
     double ms = 0;
     juce::String skeleton;      // drums, 32nd resolution, no velocity / offset
     juce::String kickSkeleton;
+    juce::String snareSkeleton;   // Snare + ClapGhost, 32nd resolution
+    juce::String hatSkeleton;     // HiHat + OpenHat + HatFX
+    juce::String otherSkeleton;   // GhostKick, Ride, Cymbal, Perc
+    juce::String firstTwoBars;    // all drums of bars 1-2 (the groove core)
+    juce::String firstTwoKick;
+    juce::String kickBarsText;    // kick 16ths per bar, "0 6 10|0 7 10 13|..." (reference comparison)
     std::set<std::pair<int, int>> skeletonSet;
 };
 
@@ -307,12 +313,31 @@ Metrics measure(const PatternProject& project, GenreType genre)
 
     // --- skeleton strings (duplicate detection)
     for (const auto& [lane, s32] : m.skeletonSet)
+    {
         m.skeleton << lane << ":" << s32 << " ";
+        const auto type = static_cast<TrackType>(lane);
+        auto& part = (type == TrackType::Snare || type == TrackType::ClapGhostSnare) ? m.snareSkeleton
+                   : (type == TrackType::HiHat || type == TrackType::OpenHat || type == TrackType::HatFX) ? m.hatSkeleton
+                   : type == TrackType::Kick ? m.kickSkeleton
+                   : m.otherSkeleton;
+        if (type != TrackType::Kick)
+            part << lane << ":" << s32 << " ";
+        if (s32 < 64)
+        {
+            m.firstTwoBars << lane << ":" << s32 << " ";
+            if (type == TrackType::Kick)
+                m.firstTwoKick << s32 << " ";
+        }
+    }
     for (const auto& bar : kickBars)
     {
         for (const int s : bar)
+        {
             m.kickSkeleton << s << ",";
+            m.kickBarsText << (m.kickBarsText.isEmpty() || m.kickBarsText.endsWith("|") ? "" : " ") << s;
+        }
         m.kickSkeleton << "|";
+        m.kickBarsText << "|";
     }
 
     // --- critical structural failures (baseline counts, not gates)

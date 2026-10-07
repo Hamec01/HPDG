@@ -651,10 +651,17 @@ void BoomBapClassicAlgebraGenerator::generateBar(BoomBapClassicAlgebraPattern& p
     // Select a relational motif first; per-position probabilities only articulate that motif.
     // The last eight are taken from played boom bap loops: the 9-10 double (36,40), the swung
     // "a" of beat 2 (28), the last 16th pushing into the next bar (60), the "a" before the snare (12).
-    static const std::array<std::array<int,5>,13> kickMotifs{{
+    // The last twelve are the most frequent bar kick patterns of a transcribed reference corpus
+    // (calibration split of 159 played boom bap loops, docs/audit/BOOMBAP_STAGE.md): they carry
+    // the "a" after beat 1 (12), beat 3 (32), the "a" before the snare (44) and the 16th after
+    // it (52), which the first thirteen under-represented.
+    static const std::array<std::array<int,5>,25> kickMotifs{{
         {{0,24,40,-1,-1}}, {{0,12,32,56,-1}}, {{0,28,-1,-1,-1}}, {{0,8,40,56,-1}}, {{0,24,52,60,-1}},
         {{0,28,36,40,60}}, {{0,12,28,40,60}}, {{0,24,36,40,60}}, {{0,28,32,40,60}},
-        {{0,36,40,60,-1}}, {{0,8,28,40,60}}, {{0,28,40,44,-1}}, {{0,24,32,40,60}}
+        {{0,36,40,60,-1}}, {{0,8,28,40,60}}, {{0,28,40,44,-1}}, {{0,24,32,40,60}},
+        {{0,24,40,52,-1}}, {{0,40,52,-1,-1}}, {{0,24,32,44,-1}}, {{0,28,40,52,-1}}, {{0,12,24,52,-1}},
+        {{0,12,24,44,-1}}, {{0,40,-1,-1,-1}}, {{0,12,24,40,-1}}, {{0,12,32,-1,-1}}, {{0,24,44,52,-1}},
+        {{0,20,32,40,-1}}, {{0,28,32,40,-1}}
     }};
     // The motif is the generation's identity, picked once from the seed: candidates only differ in
     // articulation. (Giving every candidate its own motif let the scorer settle on the same few
