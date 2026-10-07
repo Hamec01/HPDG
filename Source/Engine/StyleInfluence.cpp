@@ -138,7 +138,6 @@ void applyTrapMusicalHints(const ResolvedStyleDefinition& definition, PatternPro
     const auto sharedSwing = hintValue(definition.styleHints, "groove.swing", normalizedSwing(params.swingPercent));
     const auto sharedTiming = hintValue(definition.styleHints, "groove.timing", params.timingAmount);
     const auto sharedHumanize = hintValue(definition.styleHints, "groove.humanize", params.humanizeAmount);
-    const auto sharedDensity = hintValue(definition.styleHints, "groove.density", params.densityAmount);
 
     const auto hatSubdivision = hintValue(definition.styleHints, "trap.hat_subdivision", 0.55f);
     const auto bounce = hintValue(definition.styleHints, "trap.bounce", 0.5f);
@@ -148,7 +147,9 @@ void applyTrapMusicalHints(const ResolvedStyleDefinition& definition, PatternPro
     blendSwing(params.swingPercent, clampUnit(sharedSwing * 0.6f + bounce * 0.2f), 0.3f);
     blendParam(params.timingAmount, clampUnit(sharedTiming * 0.7f + bounce * 0.18f), 0.45f);
     blendParam(params.humanizeAmount, clampUnit(sharedHumanize * 0.55f + hatSubdivision * 0.10f), 0.35f);
-    blendParam(params.densityAmount, clampUnit(sharedDensity * 0.58f + hatSubdivision * 0.18f + emphasis808 * 0.16f), 0.75f);
+    // Density stays the user's: Trap generation (TrapAlgebraEngine) owns it, and blending it 75 % towards
+    // the style's groove.density squeezed the whole 0.2-0.8 slider into ≈ 0.15 (docs/audit/TRAP_STAGE.md
+    // step 2; Boom Bap skips these hints for the same reason). The substyle default comes from its preset.
 
     blendWeight(laneBiasFor(styleInfluence, TrackRole::HiHat).activityWeight, 1.0f + hatSubdivision * 0.22f, 0.8f);
     blendWeight(laneBiasFor(styleInfluence, TrackRole::HatFX).activityWeight, 0.96f + bounce * 0.24f, 0.75f);

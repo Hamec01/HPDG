@@ -62,7 +62,10 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
   articulation kick, downbeat skip only in B bars + kick on 1 in bar 3. Kick-skeleton reuse 99 % →
   6–18 %, kicks/bar 1.67 → 2.09–2.37 (reference 2.27–2.49), validation kick L1 1.70 → 0.79–0.88,
   0 failures, runtime unchanged. Seed-picked phrase (Boom Bap style) measured, no gain, reverted.
-- Next Trap: density control (scorer prefers more kicks at any density), substyle kick identity.
+- Step 2: the density slider reaches Trap — `applyTrapMusicalHints` blended it 75 % towards a fixed
+  style density (slider 0.2–0.8 → 0.52–0.67). Removed: events/bar spread +0.2–0.45 → +1.0–1.6,
+  "density barely changes" 18/18 → 0/18. Rap and Drill have the same blend (not touched).
+- Next Trap: hat density range (8th base vs 16ths / rolls), substyle kick identity.
 
 ## How to reproduce / continue (another PC)
 

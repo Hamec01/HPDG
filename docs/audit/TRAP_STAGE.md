@@ -77,3 +77,43 @@ Not solved: **density still barely moves Trap** (kicks/bar density 0.2 → 0.8: 
 top decile 2.24-2.58 vs bottom 1.84-2.15 kicks/bar), so the selection picks articulated candidates at
 any density. Next Trap step: density control (scorer density awareness; tutorials put Trap density
 mostly in hats / rolls / 808, not kicks). Substyles still share one kick vocabulary (RULE 9) — later step.
+
+## Step 2 — the density slider reaches Trap (accepted)
+
+**Written sources.** Trap density lives mostly in the hats: an 8th-note base, 16ths / triplets /
+32nd-64th rolls for energy, rolls with restraint (transitions, not every bar); darker trap uses
+slower, sparser hats, aggressive trap fast, complex ones; kick and 808 stay sparse (2-4 808 notes a
+bar) — eMastered, *Trap drum patterns*; Violet Recording, *The best drum patterns for trap*;
+Native Instruments, *How to make a trap beat*. Reference hat stems (35 loops of the step-1 corpus,
+every onset): 2-23 hats a bar, median 13; GH Trap Kit hat MIDI 4-8 a bar — a wide range.
+
+**Finding.** HPDG moved by +0.2-0.45 events a bar from density 0.2 to 0.8 (18 / 18 configurations
+"barely changes"). Measured step by step:
+
+- 2A (rejected, reverted): the scorer's hat target made density-aware — no change to the hundredth.
+- A temporary probe (first candidate instead of the selection; debug print of the generator's
+  density): the generator itself barely moved, and it received **0.515 / 0.61 / 0.665** for slider
+  values 0.2 / 0.58 / 0.8 (ATL). `applyTrapMusicalHints` (`StyleInfluence.cpp`) blended the slider
+  75 % towards the style's fixed `groove.density`, keeping a quarter of the slider. Boom Bap skips
+  these hints for the same reason (its Algebra generator owns density).
+
+**Change (2B).** `applyTrapMusicalHints` no longer blends `densityAmount` (swing / timing / humanize
+and lane weights unchanged; Rap and Drill have the same blend — not touched, other engines).
+
+| Measure (300 seeds, density 0.2 / default / 0.8, 4 bars) | Before | After |
+|---|---|---|
+| events/bar spread 0.2 → 0.8 (18 configurations) | +0.17-0.45 | **+1.0-1.6** |
+| "density barely changes the pattern" | 18 / 18 | **0 / 18** |
+| monotone events/bar | 18 / 18 | 18 / 18 |
+| hats/bar, ATL | 10.40 / 10.50 / 10.53 | 10.08 / 10.43 / 10.76 |
+| roll notes/bar, ATL | 3.16 / 3.27 / 3.34 | 2.78 / 3.23 / 3.59 |
+| kicks/bar, ATL | 2.12 / 2.17 / 2.19 | 2.01 / 2.16 / 2.27 |
+| exact duplicates / failures (54 cells) | 0 / 0 | 0 / 0 |
+
+At default density (1000 seeds): kicks/bar 2.06-2.37, validation kick L1 0.79-0.89 (step 1:
+0.79-0.88), kick-skeleton reuse 6.3-20.3 % (step 1: 5.6-18.0 % — the substyles with a low default
+density now play at it), failures / duplicates / determinism 0, p95 21.6-25.4 ms; lane / core / track
+semantics tests pass.
+
+Next: the hat range is still narrow (≈ 0.7 hats a bar from 0.2 to 0.8, reference 2-23) — the hat
+generator's density response (8th base vs 16ths / rolls), with sources on sparse vs busy trap hats.
