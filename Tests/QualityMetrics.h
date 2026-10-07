@@ -72,6 +72,7 @@ struct Metrics
     juce::String firstTwoKick;
     juce::String kickBarsText;    // kick 16ths per bar, "0 6 10|0 7 10 13|..." (reference comparison)
     juce::String hatBarsText;     // closed-hat 16ths per bar, same format
+    juce::String kickAllBarsText; // Kick + GhostKick 16ths per bar, ghosts included (a transcription keeps soft kicks)
     std::set<std::pair<int, int>> skeletonSet;
 };
 
@@ -83,13 +84,22 @@ std::vector<NoteEvent> notesOf(const PatternProject& project, TrackType lane)
 
 // The 16th a note belongs to (a 32nd at x.5 stays in step x: rounding moved the last 32nd of
 // a fill onto the next bar's downbeat and reported "snare on 1").
-int stepOf(const NoteEvent& n) { return n.gridTick >= 0 ? n.gridTick / kStep : 0; }
+int stepOf(const NoteEvent& n, int earlyTicks = 0) { return n.gridTick >= 0 ? (n.gridTick + earlyTicks) / kStep : 0; }
 bool onStep(const NoteEvent& n) { return n.gridTick % kStep == 0; }
 
 Metrics measure(const PatternProject& project, GenreType genre)
 {
     Metrics m;
     const int bars = std::max(1, project.params.bars);
+    // Boom Bap notes carry their micro-timing inside gridTick: read them the way the engine does
+    // (BoomBapEngine stepIndexOf: up to a 1/64 early belongs to the next 16th), the last bar's
+    // early push wrapping onto the loop's downbeat. Flooring put every early hat / kick a 16th early.
+    const int earlyTicks = genre == GenreType::BoomBap ? kStep / 4 : 0;
+    const auto stepOf = [earlyTicks, bars](const NoteEvent& n)
+    {
+        const int s = bbg::quality::stepOf(n, earlyTicks);
+        return earlyTicks > 0 ? s % (bars * 16) : s;
+    };
     const float fb = static_cast<float>(bars);
     m.bpm = project.params.bpm;
 
@@ -98,6 +108,7 @@ Metrics measure(const PatternProject& project, GenreType genre)
     const auto hats = notesOf(project, TrackType::HiHat);
     const auto open = notesOf(project, TrackType::OpenHat);
     const auto bass = notesOf(project, TrackType::Sub808);
+    const auto ghostKick = notesOf(project, TrackType::GhostKick);
 
     // --- kick
     std::vector<std::set<int>> kickBars(static_cast<size_t>(bars));
@@ -339,6 +350,21 @@ Metrics measure(const PatternProject& project, GenreType genre)
             if (type == TrackType::Kick)
                 m.firstTwoKick << s32 << " ";
         }
+    }
+    std::vector<std::set<int>> kickAllBars(static_cast<size_t>(bars));
+    for (const auto* lane : { &kick, &ghostKick })
+        for (const auto& n : *lane)
+            if (stepOf(n) / 16 < bars)
+                kickAllBars[static_cast<size_t>(stepOf(n) / 16)].insert(stepOf(n) % 16);
+    for (const auto& bar : kickAllBars)
+    {
+        bool first = true;
+        for (const int s : bar)
+        {
+            m.kickAllBarsText << (first ? "" : " ") << s;
+            first = false;
+        }
+        m.kickAllBarsText << "|";
     }
     for (const auto& bar : kickBars)
     {

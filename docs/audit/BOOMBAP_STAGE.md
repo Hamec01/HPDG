@@ -63,3 +63,56 @@ Notes: the kick-skeleton reuse at 4 bars rose by 1.4–1.6 points in three subst
 1000-seed noise, sparser new motifs such as `{0, 40}` repeat more); kicks/bar did not move
 (3.42) — the reference plays 4.0–4.6, the density / kick-count side is a separate hypothesis.
 Low-density 2-bar duplicates remain high for Classic / Gold → step 2 looks at the hat layer.
+
+## Measurement fix (lab step reading) — before step 2
+
+Boom Bap notes carry their micro-timing inside `gridTick` (`BoomBapEngine.cpp`, `stepIndexOf`:
+up to a 1/64 early belongs to the next 16th). `Tests/QualityMetrics.h` floored `gridTick`, so every
+early hat / kick was read a 16th early (an early off-beat hat on 2 → 1, an early downbeat of the
+next bar → 15). The lab now reads Boom Bap steps the way the engine does (other genres unchanged,
+their notes stay on the grid). Exact-duplicate / skeleton hashes are unaffected (53.0 % Classic,
+2 bars, density 0.2, before and after the fix).
+
+Effect on earlier Boom Bap numbers (same code, 1000 seeds, default density, 4 bars):
+
+| Measure | floored reading | engine reading |
+|---|---|---|
+| hat odd-16th probability per position | 0.14–0.29 | **0.05–0.13** (reference 0.00–0.15) |
+| distinct hat bar patterns, Classic | 1479 / 4000 bars | 698 / 4000 bars |
+| kick-skeleton reuse, 4 bars (6 substyles) | 1.5–4.5 % | **8.3–11.6 %** |
+| kick L1 distance to validation, Classic | 1.54 | 1.71 |
+
+Step 1 re-checked under the engine reading (motif table temporarily reverted, same seeds):
+
+| Measure (6 substyles) | before step 1 | after step 1 |
+|---|---|---|
+| kick L1 distance to validation | 1.80–1.94 | **1.65–1.76** |
+| validation bars HPDG can play | 35.1–40.4 % | 37.4–44.4 % (Classic 39.2 → 38.0) |
+
+Step 1 stays accepted (the profile moved towards the held-out loops in every substyle); the
+earlier "34 → 39 % playable" claim was a measurement artifact and is replaced by the row above.
+New reference summaries: `docs/audit/boombap/measure_v2_*_summary.json`.
+
+## Step 2 — hats (measured, no change)
+
+Hypothesis from the floored reading: HPDG plays too many odd 16ths. **Rejected** — it was the
+reading. With the engine reading, compared only where the bar has no kick / snare (masked hats
+fall under confidence 0.5 in the transcription; `tools/reference_hats.py`):
+
+| hat probability, unmasked | 2 | 6 | 10 | 14 | odd 16ths | all free off-beats |
+|---|---|---|---|---|---|---|
+| reference calibration | 0.80 | 0.69 | 0.84 | 0.67 | 0.00–0.10 | 0.52 |
+| reference validation | 0.86 | 0.70 | 0.77 | 0.64 | 0.00–0.15 | 0.47 |
+| HPDG Classic | 0.90 | 0.89 | 0.88 | 0.92 | 0.08–0.10 | 0.76 |
+| HPDG Gold | 0.89 | 0.89 | 0.85 | 0.91 | 0.09–0.11 | 0.74 |
+| HPDG Dusty / Jazzy / Lofi / Russian | 0.82–0.85 | 0.80–0.84 | 0.79–0.81 | 0.83–0.86 | 0.04–0.13 | 0.55–0.64 |
+
+Remaining gap: Classic / Gold play every free off-beat 8th more often than played loops (0.75 vs
+≈ 0.5). Not changed: the transcription's recall of soft off-beat hats is not measured (RULE 30),
+so part of the gap may be missed hats, and the gap is within ≈ 0.1–0.25 per position. Needs a
+hat-recall check on labeled loops (stage 7) before it can justify a generator change (RULE 21).
+
+2-bar, density-0.2 duplicates (Classic 53 %, Gold 43 %): Classic has 98 distinct kick and 37
+distinct hat layers per 300 seeds (Classic `hatEighthDropout` = 0, bar 2 cloned from bar 1);
+straight 8ths are genre-true, so the lever is not the odd-16th rate.
+

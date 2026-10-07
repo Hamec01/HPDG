@@ -18,7 +18,7 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 | — | Copy Break: whole-BPM DAW renders (79.39 played in an 80 BPM file → 80, slots read on the played tempo, drift kept as timing) and beat 1 on the first hit for a typed tempo (half-bar silence bug). 243 labeled loops, typed tempo: beat 1 > 0.5 s off 22 → 1; automatic tempo unchanged | `43e0dc9` | commit message |
 | Phase 0 | Generation Quality Lab (`HPDG_GenerationQualityLab`), pipeline map, quality-mechanism audit, baseline 1000 seeds × 25 substyles + density × bars matrix | `4f80f81` | `docs/audit/PHASE0_AUDIT.md`, `docs/audit/baseline/` |
 | Phase 1 (measurement) | Scorer validation (top / middle / bottom decile, within-seed Spearman) and candidate-count benchmark 16–128 (`HPDG_ScorerAudit`); engines expose `candidatesOut` (no behaviour change, verified 0 differing values) | `6e03ea4` | `docs/audit/PHASE1_MEASUREMENT.md`, `docs/audit/phase1/` |
-| Stage 2 Boom Bap, step 1 | 12 kick motifs from the calibration split of 159 transcribed boom bap loops (13 → 25). Validation kick-profile distance 1.87 → 1.54, playable validation bars 34 → 39 %, 2-bar low-density duplicates down (Classic 55.7 → 53.0 %, Russian 24.7 → 15.3 %), 0 failures, quality / runtime unchanged | `c95bb41` | `docs/audit/BOOMBAP_STAGE.md`, `docs/audit/boombap/` |
+| Stage 2 Boom Bap, step 1 | 12 kick motifs from the calibration split of 159 transcribed boom bap loops (13 → 25). Validation kick-profile distance 1.80–1.94 → 1.65–1.76 (re-measured after the lab fix below), 2-bar low-density duplicates down (Classic 55.7 → 53.0 %, Russian 24.7 → 15.3 %), 0 failures, quality / runtime unchanged | `c95bb41` | `docs/audit/BOOMBAP_STAGE.md`, `docs/audit/boombap/` |
 
 ## Key baseline findings still open
 
@@ -28,19 +28,24 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 2. **Trap** — 99.1 % kick-skeleton reuse (≈ 9 kick patterns per 1000 seeds, 1.67 kicks/bar);
    density control almost without effect; quality flat from 16 to 128 candidates (time × 8).
 3. **Boom Bap** — groove core (bars 1–2) diversity limited; 2-bar low-density duplicates still
-   high for Classic / Gold (53 / 43 %); kicks/bar 3.4 vs 4.0–4.6 in played loops.
+   high for Classic / Gold (53 / 43 %); 4-bar kick-skeleton reuse 8–12 %; kicks/bar 3.4 vs 4.0–4.6 in played loops.
 4. **Confidence → generation (RULE 20)** — GenerationHints / lane evidence are built but not
    consumed by any production engine; used confidences become binary thresholds.
 5. **Determinism (RULE 13)** — Trap / DnB / Techno mix `generationCounter` into the seed.
 
-## In progress — Boom Bap step 2 (hats), measured, not changed yet
+## Boom Bap step 2 (hats) — measured, no generator change
 
-`tools/reference_kicks.py --lane hat` vs the same corpus: played loops ≈ 5.6 hats/bar and almost
-no odd 16ths (0.03–0.15); HPDG 7.6–8.8 hats/bar with odd 16ths at 0.16–0.34. Classic at density
-0.2 has only 39 distinct hat layers per 300 seeds (2 bars). Caveat: the reference's lower hat rate
-on beats 0 / 4 / 8 / 12 may be a transcription artifact (hat under kick / snare) — use only
-off-beat / odd-16th positions as evidence. Next: find the Classic hat generator, one hypothesis,
-smallest change, same before / after benchmarks; then stage order Trap → DnB → Techno.
+- **Lab measurement fix** (`Tests/QualityMetrics.h`): Boom Bap keeps micro-timing in `gridTick`;
+  the lab floored it, reading every early hit a 16th early. Now read like the engine (Boom Bap only).
+  Corrected: hat odd 16ths 0.05–0.13 (reference 0.00–0.15) — the "too many odd 16ths" finding was
+  this artifact; 4-bar kick-skeleton reuse is really 8.3–11.6 % (not 1.5–4.5 %); step 1 re-checked
+  and kept (validation kick L1 1.80–1.94 → 1.65–1.76; its "34 → 39 % playable" claim was an
+  artifact, corrected 35–40 → 37–44 %). Details: `docs/audit/BOOMBAP_STAGE.md`.
+- Hats vs played loops at unmasked positions (`tools/reference_hats.py`): Classic / Gold play all
+  free off-beat 8ths in 0.75 of bars vs ≈ 0.5 in the reference; not changed until the
+  transcriber's soft-hat recall is measured (RULES 21 / 30).
+- Open Boom Bap items: 2-bar low-density duplicates (Classic 53 %, Gold 43 %), 4-bar kick-skeleton
+  reuse 8–12 %, kicks/bar 3.2–3.7 vs 4.0–4.6. Next by stage order: Trap.
 
 ## How to reproduce / continue (another PC)
 
@@ -54,6 +59,7 @@ smallest change, same before / after benchmarks; then stage order Trap → DnB �
   then `python tools/reference_kicks.py <reports> [--lane hat] --generated <lab>_patterns.csv`.
   Classic-break corpus for tempo: `.../04_CLASSIC_DRUM_BREAKS_(80+Drm_Loopz)`. Multitrack stems
   for bass-line accuracy: `HPDG_BreakLab lines <stems folder>`.
+- Hats at unmasked positions: `python tools/reference_hats.py docs/audit/reference/boombap_loops_transcribed <lab>_patterns.csv`.
 - Per-pattern CSVs (`*_patterns.csv`) are not in git (regenerable); summaries are.
 - Reference data without audio (transcription reports, corpus manifests with SHA-256, tempo-bench
   results): `docs/audit/reference/` (see its README). The kick / hat reference comparison runs from

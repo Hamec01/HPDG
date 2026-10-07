@@ -1,6 +1,6 @@
 """Reference kick distribution vs HPDG (roadmap Phase 2, RULES 18 / 19).
 
-usage: python tools/reference_kicks.py <reports folder> [--lane kick|hat] [--generated <lab patterns.csv> ...]
+usage: python tools/reference_kicks.py <reports folder> [--lane kick|kickall|hat] [--generated <lab patterns.csv> ...]
 
 <reports folder>: `HPDG_BreakLab analyze <loop> --bpm <label> --hits` reports (one .txt per loop).
 Kicks with transcription confidence >= 0.5 are read per bar on the 16th grid. Loops are split
@@ -24,8 +24,8 @@ args = sys.argv[1:]
 folder = args[0]
 generated = [args[i + 1] for i, a in enumerate(args) if a == '--generated']
 lane = args[args.index('--lane') + 1] if '--lane' in args else 'kick'
-LANE_NAME = {'kick': 'Kick', 'hat': 'HiHat'}[lane]
-COLUMN = {'kick': 'kickBars', 'hat': 'hatBars'}[lane]
+LANE_NAME = {'kick': 'Kick', 'kickall': 'Kick', 'hat': 'HiHat'}[lane]
+COLUMN = {'kick': 'kickBars', 'kickall': 'kickAllBars', 'hat': 'hatBars'}[lane]
 
 
 def split_of(name):
