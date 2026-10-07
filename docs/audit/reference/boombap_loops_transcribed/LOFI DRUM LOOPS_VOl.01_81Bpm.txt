@@ -1,0 +1,116 @@
+LOFI DRUM LOOPS_VOl.01_81Bpm.wav     bpm   81.00 bars 4 conf 1.00 swing 65.0 | K 24 S 8 H 31 | loop 0.93
+Drum break: bpm 81.00 | bars 4 | tempo conf 1.00 | swing 65.0% | origin 0.5 ms | free break | length 11.711 s
+Drum loop confidence 0.93 (sustain 0.04, template fit 0.94) | onsets 48 | K 24 S 8 H 31
+Tempo candidates: [81.00 bpm/4bar score 1.82 grid 0.92 len 0.06 bb 0.89]
+HiHat  t=0.0005 bar 1 16th 1.00 grid 0 off 0 vel 75 conf 0.02
+Kick   t=0.0005 bar 1 16th 1.00 grid 0 off 0 vel 127 conf 1.00
+HiHat  t=0.3726 bar 1 16th 3.01 grid 480 off 2 vel 127 conf 1.00
+HiHat  t=0.6138 bar 1 16th 4.31 grid 720 off 75 vel 79 conf 0.07
+Kick   t=0.6138 bar 1 16th 4.31 grid 720 off 75 vel 125 conf 1.00
+HiHat  t=0.7665 bar 1 16th 5.14 grid 960 off 33 vel 73 conf 0.00
+Snare  t=0.7427 bar 1 16th 5.01 grid 960 off 2 vel 121 conf 1.00
+HiHat  t=0.9848 bar 1 16th 6.32 grid 1200 off 76 vel 77 conf 0.06
+Kick   t=0.9848 bar 1 16th 6.32 grid 1200 off 76 vel 124 conf 1.00
+HiHat  t=1.1134 bar 1 16th 7.01 grid 1440 off 2 vel 126 conf 1.00
+HiHat  t=1.4844 bar 1 16th 9.01 grid 1920 off 3 vel 113 conf 1.00
+Kick   t=1.7254 bar 1 16th 10.31 grid 2160 off 75 vel 124 conf 1.00
+HiHat  t=1.8551 bar 1 16th 11.02 grid 2400 off 4 vel 111 conf 0.98
+Kick   t=1.8551 bar 1 16th 11.02 grid 2400 off 4 vel 111 conf 0.92
+Kick   t=2.0959 bar 1 16th 12.32 grid 2640 off 76 vel 123 conf 1.00
+Snare  t=2.2264 bar 1 16th 13.02 grid 2880 off 5 vel 127 conf 1.00
+HiHat  t=2.9633 bar 2 16th 1.00 grid 3840 off 0 vel 82 conf 0.12
+Kick   t=2.9633 bar 2 16th 1.00 grid 3840 off 0 vel 124 conf 1.00
+HiHat  t=3.3357 bar 2 16th 3.01 grid 4320 off 2 vel 124 conf 1.00
+HiHat  t=3.5772 bar 2 16th 4.31 grid 4560 off 75 vel 75 conf 0.03
+Kick   t=3.5772 bar 2 16th 4.31 grid 4560 off 75 vel 127 conf 1.00
+HiHat  t=3.7057 bar 2 16th 5.01 grid 4800 off 2 vel 101 conf 0.60
+Snare  t=3.7057 bar 2 16th 5.01 grid 4800 off 2 vel 124 conf 1.00
+HiHat  t=3.9472 bar 2 16th 6.31 grid 5040 off 75 vel 78 conf 0.06
+Kick   t=3.9472 bar 2 16th 6.31 grid 5040 off 75 vel 126 conf 1.00
+HiHat  t=4.0762 bar 2 16th 7.01 grid 5280 off 2 vel 127 conf 1.00
+HiHat  t=4.4467 bar 2 16th 9.01 grid 5760 off 2 vel 115 conf 1.00
+Kick   t=4.6904 bar 2 16th 10.32 grid 6000 off 78 vel 121 conf 1.00
+HiHat  t=4.8179 bar 2 16th 11.01 grid 6240 off 3 vel 113 conf 1.00
+Kick   t=4.8179 bar 2 16th 11.01 grid 6240 off 3 vel 115 conf 1.00
+Kick   t=5.0589 bar 2 16th 12.32 grid 6480 off 76 vel 120 conf 1.00
+Snare  t=5.1894 bar 2 16th 13.02 grid 6720 off 5 vel 126 conf 1.00
+HiHat  t=5.9264 bar 3 16th 1.00 grid 7680 off 0 vel 78 conf 0.07
+Kick   t=5.9264 bar 3 16th 1.00 grid 7680 off 0 vel 127 conf 1.00
+HiHat  t=6.2987 bar 3 16th 3.01 grid 8160 off 3 vel 127 conf 1.00
+HiHat  t=6.5397 bar 3 16th 4.31 grid 8400 off 75 vel 79 conf 0.07
+Kick   t=6.5397 bar 3 16th 4.31 grid 8400 off 75 vel 124 conf 1.00
+HiHat  t=6.6924 bar 3 16th 5.14 grid 8640 off 33 vel 85 conf 0.15
+Snare  t=6.6695 bar 3 16th 5.01 grid 8640 off 3 vel 122 conf 1.00
+HiHat  t=6.9107 bar 3 16th 6.32 grid 8880 off 76 vel 77 conf 0.06
+Kick   t=6.9107 bar 3 16th 6.32 grid 8880 off 76 vel 123 conf 1.00
+HiHat  t=7.0396 bar 3 16th 7.01 grid 9120 off 3 vel 125 conf 1.00
+HiHat  t=7.4098 bar 3 16th 9.01 grid 9600 off 2 vel 112 conf 1.00
+Kick   t=7.6513 bar 3 16th 10.31 grid 9840 off 75 vel 123 conf 1.00
+HiHat  t=7.7810 bar 3 16th 11.02 grid 10080 off 4 vel 113 conf 1.00
+Kick   t=7.7810 bar 3 16th 11.02 grid 10080 off 4 vel 117 conf 1.00
+Kick   t=8.0220 bar 3 16th 12.32 grid 10320 off 76 vel 122 conf 1.00
+Snare  t=8.1525 bar 3 16th 13.02 grid 10560 off 5 vel 127 conf 1.00
+Kick   t=8.8892 bar 4 16th 1.00 grid 11520 off 0 vel 127 conf 1.00
+HiHat  t=9.2616 bar 4 16th 3.01 grid 12000 off 2 vel 124 conf 1.00
+HiHat  t=9.5027 bar 4 16th 4.31 grid 12240 off 75 vel 79 conf 0.07
+Kick   t=9.5027 bar 4 16th 4.31 grid 12240 off 75 vel 126 conf 1.00
+HiHat  t=9.6316 bar 4 16th 5.01 grid 12480 off 2 vel 102 conf 0.60
+Snare  t=9.6316 bar 4 16th 5.01 grid 12480 off 2 vel 124 conf 1.00
+HiHat  t=9.8738 bar 4 16th 6.32 grid 12720 off 76 vel 78 conf 0.06
+Kick   t=9.8738 bar 4 16th 6.32 grid 12720 off 76 vel 125 conf 1.00
+HiHat  t=10.0023 bar 4 16th 7.01 grid 12960 off 2 vel 127 conf 1.00
+HiHat  t=10.3728 bar 4 16th 9.01 grid 13440 off 3 vel 114 conf 1.00
+Kick   t=10.6138 bar 4 16th 10.31 grid 13680 off 75 vel 125 conf 1.00
+HiHat  t=10.7420 bar 4 16th 11.00 grid 13920 off 1 vel 112 conf 1.00
+Kick   t=10.7420 bar 4 16th 11.00 grid 13920 off 1 vel 113 conf 1.00
+Kick   t=10.9848 bar 4 16th 12.32 grid 14160 off 76 vel 124 conf 1.00
+Snare  t=11.1154 bar 4 16th 13.02 grid 14400 off 5 vel 127 conf 1.00
+  onset 0.0005 K 0.996 S 0.019 H 0.089 hf 2.399
+  onset 0.3726 K 0.002 S 0.065 H 0.982 hf 16.246
+  onset 0.6138 K 0.919 S 0.000 H 0.108 hf 1.954
+  onset 0.7427 K 0.000 S 0.760 H 0.069 hf 26.180
+  onset 0.7665 K 0.071 S 0.639 H 0.082 hf 27.261
+  onset 0.9848 K 0.880 S 0.000 H 0.102 hf 1.837
+  onset 1.1134 K 0.000 S 0.012 H 0.968 hf 13.413
+  onset 1.4844 K 0.002 S 0.026 H 0.527 hf 8.551
+  onset 1.7254 K 0.873 S 0.000 H 0.063 hf 1.135
+  onset 1.8551 K 0.470 S 0.019 H 0.471 hf 7.873
+  onset 2.0959 K 0.826 S 0.000 H 0.067 hf 1.168
+  onset 2.2264 K 0.000 S 0.984 H 0.000 hf 30.687
+  onset 2.9633 K 0.889 S 0.001 H 0.126 hf 2.309
+  onset 3.3357 K 0.004 S 0.052 H 0.891 hf 14.139
+  onset 3.5772 K 1.000 S 0.011 H 0.092 hf 2.108
+  onset 3.7057 K 0.000 S 0.859 H 0.012 hf 28.486
+  onset 3.9472 K 0.959 S 0.001 H 0.104 hf 1.848
+  onset 4.0762 K 0.000 S 0.010 H 1.069 hf 14.807
+  onset 4.4467 K 0.001 S 0.032 H 0.570 hf 9.416
+  onset 4.6904 K 0.771 S 0.000 H 0.059 hf 1.045
+  onset 4.8179 K 0.580 S 0.016 H 0.530 hf 8.595
+  onset 5.0589 K 0.714 S 0.000 H 0.059 hf 1.123
+  onset 5.1894 K 0.000 S 0.974 H 0.000 hf 29.377
+  onset 5.9264 K 0.989 S 0.011 H 0.106 hf 2.310
+  onset 6.2987 K 0.004 S 0.054 H 0.977 hf 15.636
+  onset 6.5397 K 0.883 S 0.000 H 0.107 hf 1.940
+  onset 6.6695 K 0.000 S 0.806 H 0.023 hf 27.138
+  onset 6.6924 K 0.066 S 0.582 H 0.142 hf 26.710
+  onset 6.9107 K 0.839 S 0.000 H 0.102 hf 1.806
+  onset 7.0396 K 0.000 S 0.009 H 0.927 hf 12.912
+  onset 7.4098 K 0.000 S 0.028 H 0.498 hf 8.206
+  onset 7.6513 K 0.846 S 0.000 H 0.063 hf 1.140
+  onset 7.7810 K 0.639 S 0.031 H 0.536 hf 9.430
+  onset 8.0220 K 0.798 S 0.000 H 0.061 hf 1.134
+  onset 8.1525 K 0.000 S 1.068 H 0.000 hf 30.974
+  onset 8.8892 K 1.047 S 0.046 H 0.037 hf 2.531
+  onset 9.2616 K 0.007 S 0.046 H 0.866 hf 13.614
+  onset 9.5027 K 0.968 S 0.003 H 0.109 hf 2.053
+  onset 9.6316 K 0.000 S 0.891 H 0.004 hf 29.116
+  onset 9.6554 K 0.068 S 0.716 H 0.022 hf 28.108
+  onset 9.8738 K 0.929 S 0.000 H 0.106 hf 1.856
+  onset 10.0023 K 0.000 S 0.010 H 1.000 hf 14.159
+  onset 10.3728 K 0.001 S 0.031 H 0.553 hf 9.076
+  onset 10.6138 K 0.913 S 0.000 H 0.068 hf 1.190
+  onset 10.7420 K 0.522 S 0.017 H 0.506 hf 8.297
+  onset 10.9848 K 0.868 S 0.000 H 0.069 hf 1.226
+  onset 11.1154 K 0.000 S 1.000 H 0.000 hf 30.179
+  onset 11.6843 K 0.002 S 0.002 H 0.000 hf 0.058
+

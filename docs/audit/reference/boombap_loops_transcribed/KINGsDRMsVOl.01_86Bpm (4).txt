@@ -1,0 +1,40 @@
+KINGsDRMsVOl.01_86Bpm (4).wav        bpm   86.00 bars 1 conf 1.00 swing 50.0 | K 5 S 2 H 9 | loop 0.86
+Drum break: bpm 86.00 | bars 1 | tempo conf 1.00 | swing 50.0% | origin 7.1 ms | exact loop | length 2.791 s
+Drum loop confidence 0.86 (sustain 0.02, template fit 0.93) | onsets 19 | K 5 S 2 H 9
+Tempo candidates: [86.00 bpm/1bar score 2.13 grid 0.52 len 1.00 bb 0.95]
+HiHat  t=0.0071 bar 1 16th 1.00 grid 0 off 0 vel 88 conf 0.22
+Kick   t=0.0071 bar 1 16th 1.00 grid 0 off 0 vel 127 conf 1.00
+HiHat  t=0.1850 bar 1 16th 2.02 grid 240 off 5 vel 86 conf 0.18
+HiHat  t=0.3713 bar 1 16th 3.09 grid 480 off 21 vel 127 conf 1.00
+HiHat  t=0.6878 bar 1 16th 4.90 grid 960 off -23 vel 111 conf 0.30
+Snare  t=0.6878 bar 1 16th 4.90 grid 960 off -23 vel 127 conf 1.00
+HiHat  t=1.0636 bar 1 16th 7.06 grid 1440 off 14 vel 95 conf 0.36
+Kick   t=1.0636 bar 1 16th 7.06 grid 1440 off 14 vel 127 conf 1.00
+HiHat  t=1.3958 bar 1 16th 8.96 grid 1920 off -9 vel 127 conf 1.00
+HiHat  t=1.7582 bar 1 16th 11.04 grid 2400 off 10 vel 109 conf 0.87
+Kick   t=1.7582 bar 1 16th 11.04 grid 2400 off 10 vel 127 conf 1.00
+HiHat  t=2.0858 bar 1 16th 12.92 grid 2880 off -20 vel 78 conf 0.06
+Snare  t=2.0858 bar 1 16th 12.92 grid 2880 off -20 vel 127 conf 1.00
+Kick   t=2.3725 bar 1 16th 14.56 grid 3240 off 15 vel 102 conf 0.53
+HiHat  t=2.4606 bar 1 16th 15.07 grid 3360 off 16 vel 98 conf 0.46
+Kick   t=2.4606 bar 1 16th 15.07 grid 3360 off 16 vel 120 conf 1.00
+  onset 0.0071 K 0.992 S 0.013 H 0.167 hf 1.638
+  onset 0.1850 K 0.006 S 0.004 H 0.152 hf 2.016
+  onset 0.2522 K 0.011 S 0.009 H 0.036 hf 0.488
+  onset 0.2909 K 0.012 S 0.000 H 0.000 hf 0.000
+  onset 0.3713 K 0.000 S 0.070 H 1.734 hf 21.656
+  onset 0.6878 K 0.000 S 1.000 H 0.003 hf 11.572
+  onset 1.0636 K 1.078 S 0.002 H 0.224 hf 2.336
+  onset 1.2653 K 0.016 S 0.000 H 0.003 hf 0.050
+  onset 1.3117 K 0.010 S 0.004 H 0.045 hf 0.511
+  onset 1.3504 K 0.011 S 0.000 H 0.018 hf 0.410
+  onset 1.3958 K 0.004 S 0.010 H 1.000 hf 11.640
+  onset 1.7582 K 1.000 S 0.010 H 0.427 hf 5.147
+  onset 1.9599 K 0.009 S 0.000 H 0.012 hf 0.123
+  onset 2.0063 K 0.011 S 0.009 H 0.014 hf 0.234
+  onset 2.0858 K 0.000 S 1.038 H 0.105 hf 14.546
+  onset 2.3725 K 0.314 S 0.000 H 0.015 hf 0.213
+  onset 2.4606 K 0.725 S 0.000 H 0.263 hf 2.858
+  onset 2.6590 K 0.021 S 0.000 H 0.021 hf 0.182
+  onset 2.7052 K 0.007 S 0.004 H 0.076 hf 0.828
+

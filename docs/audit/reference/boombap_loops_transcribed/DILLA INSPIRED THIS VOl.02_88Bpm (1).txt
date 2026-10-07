@@ -1,0 +1,69 @@
+DILLA INSPIRED THIS VOl.02_88Bpm (1).wav bpm   88.00 bars 4 conf 1.00 swing 67.0 | K 19 S 8 H 6 | loop 0.95
+Drum break: bpm 88.00 | bars 4 | tempo conf 1.00 | swing 67.0% | origin 0.0 ms | free break | length 10.775 s
+Drum loop confidence 0.95 (sustain 0.02, template fit 0.94) | onsets 31 | K 19 S 8 H 6
+Tempo candidates: [88.00 bpm/4bar score 1.89 grid 0.97 len 0.05 bb 0.90]
+Kick   t=0.0000 bar 1 16th 1.00 grid 0 off 0 vel 127 conf 1.00
+Snare  t=0.6858 bar 1 16th 5.03 grid 960 off 6 vel 127 conf 1.00
+Kick   t=0.9162 bar 1 16th 6.38 grid 1200 off 90 vel 125 conf 1.00
+Kick   t=1.2572 bar 1 16th 8.38 grid 1680 off 90 vel 124 conf 1.00
+Kick   t=1.3749 bar 1 16th 9.07 grid 1920 off 16 vel 117 conf 1.00
+HiHat  t=1.7093 bar 1 16th 11.03 grid 2400 off 7 vel 127 conf 1.00
+Snare  t=2.0495 bar 1 16th 13.03 grid 2880 off 6 vel 127 conf 1.00
+Kick   t=2.6208 bar 1 16th 16.38 grid 3600 off 90 vel 124 conf 1.00
+Kick   t=2.7326 bar 2 16th 1.03 grid 3840 off 8 vel 121 conf 1.00
+Snare  t=3.4131 bar 2 16th 5.03 grid 4800 off 6 vel 125 conf 1.00
+Kick   t=3.6435 bar 2 16th 6.38 grid 5040 off 90 vel 124 conf 1.00
+Kick   t=3.9845 bar 2 16th 8.38 grid 5520 off 90 vel 127 conf 1.00
+Kick   t=4.1018 bar 2 16th 9.06 grid 5760 off 15 vel 117 conf 1.00
+HiHat  t=4.4366 bar 2 16th 11.03 grid 6240 off 7 vel 127 conf 1.00
+Snare  t=4.7768 bar 2 16th 13.03 grid 6720 off 6 vel 125 conf 1.00
+Kick   t=5.3482 bar 2 16th 16.38 grid 7440 off 90 vel 127 conf 1.00
+Kick   t=5.4600 bar 3 16th 1.03 grid 7680 off 8 vel 120 conf 1.00
+HiHat  t=6.1405 bar 3 16th 5.03 grid 8640 off 6 vel 86 conf 0.17
+Snare  t=6.1405 bar 3 16th 5.03 grid 8640 off 6 vel 124 conf 1.00
+Kick   t=6.3709 bar 3 16th 6.38 grid 8880 off 90 vel 124 conf 1.00
+Kick   t=6.7114 bar 3 16th 8.38 grid 9360 off 90 vel 126 conf 1.00
+Kick   t=6.8237 bar 3 16th 9.03 grid 9600 off 8 vel 119 conf 1.00
+HiHat  t=7.1612 bar 3 16th 11.01 grid 10080 off 3 vel 127 conf 1.00
+Snare  t=7.5041 bar 3 16th 13.03 grid 10560 off 6 vel 124 conf 1.00
+Kick   t=8.0752 bar 3 16th 16.38 grid 11280 off 90 vel 127 conf 1.00
+Kick   t=8.1873 bar 4 16th 1.03 grid 11520 off 8 vel 122 conf 1.00
+Snare  t=8.8660 bar 4 16th 5.01 grid 12480 off 3 vel 127 conf 1.00
+Kick   t=9.0977 bar 4 16th 6.38 grid 12720 off 90 vel 126 conf 1.00
+Kick   t=9.4389 bar 4 16th 8.38 grid 13200 off 90 vel 126 conf 1.00
+Kick   t=9.5505 bar 4 16th 9.03 grid 13440 off 7 vel 121 conf 1.00
+HiHat  t=9.8885 bar 4 16th 11.01 grid 13920 off 3 vel 126 conf 1.00
+HiHat  t=10.2312 bar 4 16th 13.03 grid 14400 off 6 vel 90 conf 0.25
+Snare  t=10.2312 bar 4 16th 13.03 grid 14400 off 6 vel 122 conf 1.00
+  onset 0.0000 K 1.057 S 0.042 H 0.000 hf 0.197
+  onset 0.6858 K 0.003 S 1.000 H 0.002 hf 26.978
+  onset 0.9162 K 0.901 S 0.000 H 0.000 hf 0.000
+  onset 1.2572 K 0.877 S 0.000 H 0.010 hf 0.086
+  onset 1.3749 K 0.632 S 0.000 H 0.009 hf 0.186
+  onset 1.7093 K 0.004 S 0.025 H 0.985 hf 12.391
+  onset 2.0495 K 0.001 S 0.987 H 0.000 hf 25.682
+  onset 2.6208 K 0.879 S 0.002 H 0.000 hf 0.064
+  onset 2.7326 K 0.767 S 0.002 H 0.000 hf 0.078
+  onset 3.4131 K 0.002 S 0.930 H 0.041 hf 26.964
+  onset 3.6435 K 0.879 S 0.000 H 0.000 hf 0.000
+  onset 3.9845 K 0.997 S 0.001 H 0.020 hf 0.193
+  onset 4.1018 K 0.634 S 0.000 H 0.005 hf 0.110
+  onset 4.4366 K 0.004 S 0.026 H 1.009 hf 12.660
+  onset 4.7768 K 0.002 S 0.924 H 0.006 hf 25.426
+  onset 5.3482 K 1.000 S 0.006 H 0.000 hf 0.084
+  onset 5.4600 K 0.715 S 0.002 H 0.000 hf 0.070
+  onset 6.1405 K 0.003 S 0.874 H 0.149 hf 26.807
+  onset 6.3709 K 0.857 S 0.000 H 0.000 hf 0.000
+  onset 6.7114 K 0.970 S 0.000 H 0.019 hf 0.193
+  onset 6.8237 K 0.683 S 0.000 H 0.004 hf 0.086
+  onset 7.1612 K 0.003 S 0.027 H 1.000 hf 12.547
+  onset 7.5041 K 0.002 S 0.871 H 0.059 hf 25.397
+  onset 8.0752 K 0.977 S 0.004 H 0.000 hf 0.080
+  onset 8.1873 K 0.807 S 0.003 H 0.000 hf 0.103
+  onset 8.8660 K 0.000 S 1.128 H 0.000 hf 27.256
+  onset 9.0977 K 0.975 S 0.000 H 0.000 hf 0.000
+  onset 9.4389 K 0.949 S 0.000 H 0.018 hf 0.186
+  onset 9.5505 K 0.763 S 0.000 H 0.007 hf 0.092
+  onset 9.8885 K 0.004 S 0.026 H 0.977 hf 12.253
+  onset 10.2312 K 0.002 S 0.816 H 0.181 hf 25.252
+

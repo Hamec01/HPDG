@@ -55,6 +55,10 @@ smallest change, same before / after benchmarks; then stage order Trap → DnB �
   Classic-break corpus for tempo: `.../04_CLASSIC_DRUM_BREAKS_(80+Drm_Loopz)`. Multitrack stems
   for bass-line accuracy: `HPDG_BreakLab lines <stems folder>`.
 - Per-pattern CSVs (`*_patterns.csv`) are not in git (regenerable); summaries are.
+- Reference data without audio (transcription reports, corpus manifests with SHA-256, tempo-bench
+  results): `docs/audit/reference/` (see its README). The kick / hat reference comparison runs from
+  `docs/audit/reference/boombap_loops_transcribed` directly; audio corpora are not in git (public
+  repository, third-party material) — verify a local copy with `tools/corpus_manifest.py verify`.
 
 ---
 

@@ -1,0 +1,31 @@
+KINGsDRMsVOl.01_86Bpm (3).wav        bpm   86.00 bars 1 conf 1.00 swing 50.0 | K 4 S 2 H 8 | loop 0.78
+Drum break: bpm 86.00 | bars 1 | tempo conf 1.00 | swing 50.0% | origin 0.0 ms | free break | length 2.791 s
+Drum loop confidence 0.78 (sustain 0.09, template fit 0.95) | onsets 12 | K 4 S 2 H 8
+Tempo candidates: [86.00 bpm/1bar score 2.08 grid 0.44 len 1.00 bb 1.00]
+HiHat  t=0.0000 bar 1 16th 1.00 grid 0 off 0 vel 99 conf 0.49
+Kick   t=0.0000 bar 1 16th 1.00 grid 0 off 0 vel 127 conf 1.00
+HiHat  t=0.4040 bar 1 16th 3.32 grid 480 off 76 vel 122 conf 1.00
+Kick   t=0.5740 bar 1 16th 4.29 grid 720 off 70 vel 101 conf 0.51
+HiHat  t=0.6969 bar 1 16th 5.00 grid 960 off -1 vel 124 conf 0.60
+Snare  t=0.6969 bar 1 16th 5.00 grid 960 off -1 vel 127 conf 1.00
+HiHat  t=1.0988 bar 1 16th 7.30 grid 1440 off 72 vel 127 conf 1.00
+Kick   t=1.0988 bar 1 16th 7.30 grid 1440 off 72 vel 127 conf 1.00
+HiHat  t=1.3880 bar 1 16th 8.96 grid 1920 off -10 vel 105 conf 0.72
+HiHat  t=1.7935 bar 1 16th 11.28 grid 2400 off 68 vel 127 conf 1.00
+Kick   t=1.7935 bar 1 16th 11.28 grid 2400 off 68 vel 127 conf 1.00
+HiHat  t=2.0841 bar 1 16th 12.95 grid 2880 off -12 vel 124 conf 0.60
+Snare  t=2.0841 bar 1 16th 12.95 grid 2880 off -12 vel 127 conf 1.00
+HiHat  t=2.5044 bar 1 16th 15.36 grid 3360 off 86 vel 121 conf 1.00
+  onset 0.0000 K 1.000 S 0.033 H 0.278 hf 2.362
+  onset 0.1825 K 0.002 S 0.004 H 0.000 hf 0.000
+  onset 0.4040 K 0.008 S 0.059 H 0.795 hf 6.135
+  onset 0.5740 K 0.305 S 0.013 H 0.000 hf 0.074
+  onset 0.6969 K 0.000 S 1.000 H 0.000 hf 18.357
+  onset 1.0988 K 1.033 S 0.032 H 1.065 hf 6.986
+  onset 1.3880 K 0.015 S 0.003 H 0.368 hf 2.461
+  onset 1.7935 K 1.000 S 0.033 H 1.000 hf 6.698
+  onset 1.9747 K 0.002 S 0.007 H 0.000 hf 0.000
+  onset 2.0841 K 0.034 S 1.122 H 0.000 hf 18.283
+  onset 2.2602 K 0.006 S 0.001 H 0.000 hf 0.000
+  onset 2.5044 K 0.000 S 0.057 H 0.753 hf 5.825
+
