@@ -868,13 +868,21 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         }
     }
 
-    // An occasional independent 808 answer keeps the low end conversational.
-    if (!selectedKicks.empty() && chance(rng, 0.10f + params.variation * 0.12f + style.kickIrregularity * 0.10f))
+    // Independent 808 answers keep the low end conversational. Played trap 808 lines (GH Trap Kit and
+    // Cr2 Trippy Trap MIDI) put about half their notes between the kicks (1.2 a bar), mostly an 8th,
+    // a dotted quarter or a quarter after a kick (docs/audit/TRAP_STAGE.md step 4): up to two answers a
+    // bar, their chance rising with density; never on the snare.
+    for (int answer = 0; answer < 2; ++answer)
     {
+        if (selectedKicks.empty()
+            || !chance(rng, 0.22f + density * 0.30f + params.variation * 0.08f + style.kickIrregularity * 0.10f))
+            continue;
         const int sourceKick = selectedKicks[static_cast<size_t>(randomInt(rng, 0, static_cast<int>(selectedKicks.size()) - 1))];
-        const int answerTick = sourceKick + (chance(rng, 0.68f) ? 8 : 12);
+        const float offsetPick = random01(rng);
+        const int answerTick = sourceKick + (offsetPick < 0.43f ? 8 : (offsetPick < 0.68f ? 16 : 24));
+        const bool onSnare = params.tempoContext.doubleTime ? (answerTick == 16 || answerTick == 48) : answerTick == 32;
         const bool validAnswer = answerTick < 64
-            && answerTick != 16 && answerTick != 32 && answerTick != 48
+            && !onSnare
             && !matrix.hasNote(TrapAlgebraLanes::Kick, start + answerTick)
             && !matrix.hasNote(TrapAlgebraLanes::Sub808, start + answerTick);
         if (validAnswer)

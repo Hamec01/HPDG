@@ -169,7 +169,7 @@ lets secondary terms outweigh a weak low-end core. Next Trap step.
 The step-3 "open" item assumed that a kick-808 coupling score below 0.60 (1-21 % of seeds) is a
 core failure. Measured against the reference instead (RULE 12 — the score is not the music):
 
-| | HPDG, all substyles (step 3, 1000 seeds) | GH Trap Kit MIDI (8 kits with Kick + 808 files) |
+| | HPDG, all substyles (step 3, 1000 seeds) | GH Trap Kit MIDI (9 kits with Kick + 808 files) |
 |---|---|---|
 | 808 starts on a kick | 0.93-0.94 | 0.40 (per kit 0.10-0.78) |
 | kicks with an 808 start | scorer band 0.50-0.90 | 0.43 (0.10-0.73) |
@@ -181,3 +181,55 @@ Sources: the kick gives the punch, the 808 the sustain, the pair defines trap (e
 (EDMProd). HPDG couples more tightly than the reference, so the low-coupling seeds are within played
 practice — not tightened (RULE 10). Open, weak evidence (9 kits, one vendor; sources disagree): an 808
 with more of its own rhythm between kicks. Needs more 808 references before any change.
+
+## Step 4 — the 808 gets more of its own rhythm (accepted; listening: better, 808 sometimes cut off -> step 5)
+
+**New references (maintainer-provided; good quality, not ground truth, never copied).**
+
+- Sample Tools by Cr2 *Trippy Trap Drum Loops*: 15 "Kick & Snare" loops (snare on the 16th 8 — same
+  half-time grid as HPDG) and 9 matching 808 MIDI files. The kick frame repeats the A / B pairing of
+  step 1 (bar A on 1, bar B often on beat 2: `0 | 4`, `0 12 | 4`). The 808 MIDI is exported from an
+  arrangement position — aligned to the audio by whole bars.
+- Hex Loops *Trap MIDI Loops Vol. 3*: kick / snare / clap / 808 MIDI files are separate loops, and
+  their grids differ (snares on 8 in some files, on 4 / 12 in others), so a kick file's grid is
+  ambiguous — **not used** for the kick reference.
+
+`docs/audit/reference/trap_808_bars.tsv` (18 kick / 808 pairs: 9 GH Trap Kit + 9 Cr2; rebuild /
+statistics `tools/trap_808_reference.py`):
+
+| | GH Trap Kit | Cr2 | pooled | HPDG step 3 |
+|---|---|---|---|---|
+| 808 starts on a kick | 0.40 | ≈ 0.57 | 0.46 | 0.92-0.95 |
+| 808 starts per bar | ≈ 2.5 | ≈ 2.2 | 2.27 | 1.4-2.1 |
+| own 808 (not on a kick) per bar | | | 1.22 | ≈ 0.1 |
+
+Own 808 notes sit on even 16ths (12 most, then 10, 0, 4, 6, 8, 2) — an 8th (44), a dotted quarter
+(33), a quarter (26) or a half (16) after the previous kick, almost never a dotted 8th (5). Sources:
+the 808 is a bass line following the melody's roots with glides (Native Instruments); most 808 hits
+with a kick, not all (EDMProd).
+
+**Change.** The existing "independent 808 answer" (≤ 1 a bar, chance ≈ 0.2, an 8th or a dotted 8th
+after a kick, never on the 16ths 4 / 8 / 12) became up to two answers a bar with chance
+`0.22 + 0.30·density + 0.08·variation + 0.10·kickIrregularity` each, an 8th / dotted quarter / quarter
+after a kick (0.43 / 0.25 / 0.32), never on the snare of the current grid (the old exclusion of 16 /
+48 belongs to double time — in normal time 12 is the most frequent own-808 position).
+
+| Measure | Step 3 | Step 4 |
+|---|---|---|
+| 808 starts on a kick (300 seeds, density 0.2 / default / 0.8) | 0.92-0.95 | **0.75-0.82** |
+| 808 starts per bar | 1.4-2.1 | **1.7-2.6** (reference 2.27) |
+| kicks/bar, validation kick L1 (1000 seeds, defaults) | 2.06-2.38, 0.78-0.88 | 2.06-2.40, 0.79-0.90 |
+| hat-position L1 to validation | 1.8-2.2 | 1.8-2.1 |
+| failures / duplicates / determinism | 0 / 0 / 0 | 0 / 0 / 0 |
+| monotone density (18 cells) | 18 / 18 | 18 / 18 |
+| p50 / p95 ms (re-run) | 20.5-23.8 / 23.5-27.0 | 19.6-22.7 / 20.6-26.6 |
+| lane / core / track semantics tests | pass | pass |
+
+Still tighter than played trap (808 on a kick 0.77 vs 0.46): every main kick still gets its 808 (kicks
+with an 808: reference 0.43-0.45). Loosening that means moving the scorer's coupling band (0.50-0.90)
+— a separate step, only with more references.
+
+**Test.** The smoke check "kick-808 coupling ratio >= 0.70" on one seed became >= 60 % of 50 seeds
+(RULE 3): the ratio's distribution did not move (>= 0.70 in 74 / 100 seeds before step 4, 75 / 100
+after; mean 0.767 / 0.763) — seed 9090 went from 0.714 to 0.667.
+

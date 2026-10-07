@@ -3682,8 +3682,18 @@ void testTrapAlgebraEngineSmoke()
     expect(answeringPhrases >= answerSeeds * 6 / 10,
            "Trap Algebra Engine should bind the kick phrase to the snare backbone across the phrase (>= 60 % of seeds).");
 
-    expect(first.score.kick808CouplingRatio >= 0.70f,
-           "Trap Algebra Engine should strongly couple kick starts with 808 starts.");
+    // Kick-808 coupling as a rate over seeds (RULE 3): >= 60 % of 50 seeds with >= 70 % of kicks
+    // carrying an 808 (measured 74-75 % of seeds at Trap steps 3-4; played trap: 43-45 % of kicks
+    // carry an 808, docs/audit/TRAP_STAGE.md - HPDG keeps a tighter low end by design).
+    int stronglyCoupled = 0;
+    for (int s = 0; s < 50; ++s)
+    {
+        auto coupledParams = params;
+        coupledParams.seed = 1000 + s * 131;
+        stronglyCoupled += engine.generate(coupledParams).score.kick808CouplingRatio >= 0.70f ? 1 : 0;
+    }
+    expect(stronglyCoupled >= 30,
+           "Trap Algebra Engine should strongly couple kick starts with 808 starts (>= 60 % of seeds).");
     expect(first.score.sub808Density >= 0.18f && first.score.sub808Density <= 0.65f,
            "Trap Algebra Engine should keep 808 density inside the musical negative-space range.");
     expect(first.score.hatVelocityVariance >= 40.0f,

@@ -69,8 +69,11 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
   density: hat-position L1 3.4–4.1 → 1.8–2.2, events spread +1.0–1.6 → +2.1–2.9. Two single-seed smoke checks
   became rates over seeds. Lab: `hatAllBars` / `hatAllPerBar` (HiHat + HatFX).
 - Kick-808 coupling measured against GH Trap Kit MIDI: HPDG couples tighter (808 on a kick 0.93
-  vs 0.40), so the low-coupling seeds are not failures — no change. Open: 808's own rhythm (weak
-  evidence), 16th hat fill (3B), substyle kick identity (RULE 9).
+  vs 0.40), so the low-coupling seeds are not failures — no change.
+- Step 4: 808's own rhythm from 18 kick / 808 pairs (GH Trap Kit + Cr2 Trippy Trap; Hex Loops MIDI
+  not used — mixed grids): up to two 808 answers a bar, offsets from the reference, density-driven.
+  808 on a kick 0.93 → 0.75–0.82 (reference 0.46), 808/bar 1.4–2.1 → 1.7–2.6 (reference 2.27).
+- Open Trap: every kick still carries an 808 (scorer band), 16th hat fill (3B), substyle kick identity.
 
 ## How to reproduce / continue (another PC)
 
