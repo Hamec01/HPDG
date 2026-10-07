@@ -104,7 +104,7 @@ int main(int argc, char** argv)
                 "kickSnareCollisionsPerBar,kickUniqueBarRatio,backbeatCoverage,snareGhostRate,extraSnaresPerBar,ghostLouderThanAnchor,"
                 "snareInvalidPerBar,hatsPerBar,openHatsPerBar,hatEighthCoverage,hatMaxGapSteps,hatRollNotesPerBar,openClosedCollisions,"
                 "barSimilarity,identicalBarRate,lastBarDifference,velocityStd,identicalVelocityRate,anchorTimingMeanAbs,"
-                "secondaryTimingMeanAbs,timingOutlierRate,bassNotesPerBar,bassOnKickRate,eventsPerBar,syncopation,hardFailures,failure,skeletonHash,kickHash,snareHash,hatHash,otherHash,firstTwoHash,firstTwoKickHash,kickBars\n";
+                "secondaryTimingMeanAbs,timingOutlierRate,bassNotesPerBar,bassOnKickRate,eventsPerBar,syncopation,hardFailures,failure,skeletonHash,kickHash,snareHash,hatHash,otherHash,firstTwoHash,firstTwoKickHash,kickBars,hatBars\n";
 
     juce::String json = "{\n  \"tag\": \"" + tag + "\",\n  \"seeds\": " + juce::String(seeds) + ",\n  \"configurations\": [\n";
     bool firstConfig = true;
@@ -211,7 +211,7 @@ int main(int argc, char** argv)
                                  << m.bassOnKickRate << ',' << m.eventsPerBar << ',' << m.syncopation << ',' << m.hardFailures << ',' << m.failure << ',' << m.skeleton.hashCode64() << ','
                                  << m.kickSkeleton.hashCode64() << ',' << m.snareSkeleton.hashCode64() << ','
                                  << m.hatSkeleton.hashCode64() << ',' << m.otherSkeleton.hashCode64() << ','
-                                 << m.firstTwoBars.hashCode64() << ',' << m.firstTwoKick.hashCode64() << ',' << m.kickBarsText << '\n';
+                                 << m.firstTwoBars.hashCode64() << ',' << m.firstTwoKick.hashCode64() << ',' << m.kickBarsText << ',' << m.hatBarsText << '\n';
                     }
 
                     // Determinism: a fresh processor replaying seeds 1..10 must give the same patterns.

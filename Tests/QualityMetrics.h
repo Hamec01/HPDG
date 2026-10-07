@@ -71,6 +71,7 @@ struct Metrics
     juce::String firstTwoBars;    // all drums of bars 1-2 (the groove core)
     juce::String firstTwoKick;
     juce::String kickBarsText;    // kick 16ths per bar, "0 6 10|0 7 10 13|..." (reference comparison)
+    juce::String hatBarsText;     // closed-hat 16ths per bar, same format
     std::set<std::pair<int, int>> skeletonSet;
 };
 
@@ -216,6 +217,16 @@ Metrics measure(const PatternProject& project, GenreType genre)
     }
     if (allHat.empty())
         maxGap = bars * 16;
+    for (const auto& bar : hatBars)
+    {
+        bool first = true;
+        for (const int s : bar)
+        {
+            m.hatBarsText << (first ? "" : " ") << s;
+            first = false;
+        }
+        m.hatBarsText << "|";
+    }
     m.hatEighthCoverage = eighths / (fb * 8.0f);
     m.hatMaxGapSteps = static_cast<float>(maxGap);
     for (const auto& n : hats)

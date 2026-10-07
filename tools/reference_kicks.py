@@ -1,6 +1,6 @@
 """Reference kick distribution vs HPDG (roadmap Phase 2, RULES 18 / 19).
 
-usage: python tools/reference_kicks.py <reports folder> [--generated <lab patterns.csv> ...]
+usage: python tools/reference_kicks.py <reports folder> [--lane kick|hat] [--generated <lab patterns.csv> ...]
 
 <reports folder>: `HPDG_BreakLab analyze <loop> --bpm <label> --hits` reports (one .txt per loop).
 Kicks with transcription confidence >= 0.5 are read per bar on the 16th grid. Loops are split
@@ -23,6 +23,9 @@ import sys
 args = sys.argv[1:]
 folder = args[0]
 generated = [args[i + 1] for i, a in enumerate(args) if a == '--generated']
+lane = args[args.index('--lane') + 1] if '--lane' in args else 'kick'
+LANE_NAME = {'kick': 'Kick', 'hat': 'HiHat'}[lane]
+COLUMN = {'kick': 'kickBars', 'hat': 'hatBars'}[lane]
 
 
 def split_of(name):
@@ -46,7 +49,7 @@ for name in sorted(os.listdir(folder)):
     m = re.search(r'\| bars (\d+) \|', text)
     nbars = int(m.group(1)) if m else 0
     per_bar = collections.defaultdict(set)
-    for hit in re.finditer(r'^Kick\s+t=\S+ bar (\d+) 16th \S+ grid (\d+) off \S+ vel \d+ conf ([0-9.]+)', text, re.M):
+    for hit in re.finditer(r'^' + LANE_NAME + r'\s+t=\S+ bar (\d+) 16th \S+ grid (\d+) off \S+ vel \d+ conf ([0-9.]+)', text, re.M):
         if float(hit.group(3)) >= 0.5:
             per_bar[int(hit.group(1))].add((int(hit.group(2)) % 3840) // 240)
     ref[split_of(name)].extend(frozenset(per_bar.get(b, set())) for b in range(1, nbars + 1))
@@ -54,7 +57,7 @@ for name in sorted(os.listdir(folder)):
 
 def show(title, bars):
     prof, kpb = profile(bars)
-    print(f'{title}: {len(bars)} bars | kicks/bar {kpb:.2f} | distinct patterns {len(set(bars))}')
+    print(f'{title}: {len(bars)} bars | {lane}s/bar {kpb:.2f} | distinct patterns {len(set(bars))}')
     print('   16th: ' + ' '.join(f'{s:4d}' for s in range(16)))
     print('   p   : ' + ' '.join(f'{p:4.2f}' for p in prof))
     return prof
@@ -65,7 +68,7 @@ for path in generated:
     rows = list(csv.DictReader(open(path, encoding='utf-8')))
     by_config = collections.defaultdict(list)
     for r in rows:
-        bars = [frozenset(int(x) for x in b.split()) for b in r['kickBars'].split('|') if b != '' or True][:int(r['bars'])]
+        bars = [frozenset(int(x) for x in b.split()) for b in r[COLUMN].split('|') if b != '' or True][:int(r['bars'])]
         by_config[(r['genre'], r['substyle'], r['density'])].extend(bars)
     for key, bars in by_config.items():
         prof = show(f'HPDG {key[0]} {key[1]} density {float(key[2]):.2f}', bars)
