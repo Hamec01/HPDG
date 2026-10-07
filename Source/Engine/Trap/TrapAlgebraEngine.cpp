@@ -825,7 +825,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         }
 
         const int styleExtra = static_cast<int>(std::lround(style.bassLegato * 5.0f));
-        const int maxDuration = std::clamp(endLimit - kickTick, 4, (bar4 ? 10 : 8) + styleExtra);
+        const int maxDuration = std::clamp(endLimit - kickTick, 4, (bar4 ? 26 : 22) + styleExtra);
         const int minDuration = std::min(maxDuration, kickTick == 0 ? 6 + static_cast<int>(style.bassLegato * 3.0f) : 4);
         const int duration = randomInt(rng, minDuration, maxDuration);
         auto* subCell = matrix.cellAt(TrapAlgebraLanes::Sub808, start + kickTick);
@@ -890,7 +890,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
             matrix.setNote(TrapAlgebraLanes::Sub808,
                            start + answerTick,
                            randomInt(rng, 82, 108),
-                           randomInt(rng, 4, 8),
+                           randomInt(rng, 8, 16),
                            0,
                            answerTick >= 56 ? TrapAlgebraRole::BassPickup : TrapAlgebraRole::BassAnswer);
         }
@@ -955,17 +955,19 @@ void TrapAlgebraEngine::shape808Durations(TrapPatternMatrix& matrix,
 
         const int nextTick = index + 1 < bassNotes.size() ? bassNotes[index + 1].tick64 : matrix.getTotalTicks();
         const int available = std::max(1, nextTick - note.tick64);
-        float articulation = 0.76f;
+        // Played 808 notes fill 0.81 of the gap to the next one on average (GH Trap Kit 0.87-1.00), only
+        // 6 % are shorter than an 8th: near-legato keeps the bounce (docs/audit/TRAP_STAGE.md step 5).
+        float articulation = 0.90f;
         if (note.role == TrapAlgebraRole::BassAnchor)
-            articulation = 0.90f;
+            articulation = 0.96f;
         else if (note.role == TrapAlgebraRole::BassAnswer)
-            articulation = 0.62f;
+            articulation = 0.86f;
         else if (note.role == TrapAlgebraRole::BassPickup)
-            articulation = 0.42f;
+            articulation = 0.66f;
 
         if (params.substyle == TrapAlgebraSubstyle::RageTrap)
-            articulation += 0.04f;
-        articulation = std::clamp(articulation, 0.35f, 0.94f);
+            articulation += 0.02f;
+        articulation = std::clamp(articulation, 0.35f, 0.98f);
 
         const int roleDuration = std::max(2, static_cast<int>(std::floor(static_cast<float>(available) * articulation)));
         cell->durationTicks = std::clamp(std::min(cell->durationTicks, roleDuration), 2, available);
@@ -1086,13 +1088,16 @@ std::pair<float, float> occupancyBand(TrapAlgebraSubstyle substyle)
 {
     switch (substyle)
     {
-        case TrapAlgebraSubstyle::RageTrap: return { 0.34f, 0.55f };
-        case TrapAlgebraSubstyle::CloudTrap: return { 0.22f, 0.42f };
-        case TrapAlgebraSubstyle::DarkTrap: return { 0.24f, 0.43f };
-        case TrapAlgebraSubstyle::MemphisTrap: return { 0.26f, 0.46f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.25f, 0.44f };
+        // Share of the time the 808 sounds. Played trap 808 lines: GH Trap Kit median 0.91 (0.81-1.00),
+        // Cr2 Trippy Trap 0.67 (0.41-0.89); the old bands (0.22-0.55) rewarded a choppy 808 without
+        // bounce (docs/audit/TRAP_STAGE.md step 5). Substyle order kept; HPDG keeps a breath before the snare.
+        case TrapAlgebraSubstyle::RageTrap: return { 0.50f, 0.85f };
+        case TrapAlgebraSubstyle::CloudTrap: return { 0.38f, 0.72f };
+        case TrapAlgebraSubstyle::DarkTrap: return { 0.40f, 0.75f };
+        case TrapAlgebraSubstyle::MemphisTrap: return { 0.42f, 0.78f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.40f, 0.76f };
         case TrapAlgebraSubstyle::ATLClassic:
-        default: return { 0.28f, 0.48f };
+        default: return { 0.45f, 0.80f };
     }
 }
 

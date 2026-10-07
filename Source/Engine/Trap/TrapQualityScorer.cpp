@@ -51,13 +51,16 @@ std::pair<float, float> targetOccupancyBand(TrapAlgebraSubstyle substyle)
 {
     switch (substyle)
     {
-        case TrapAlgebraSubstyle::RageTrap: return { 0.34f, 0.55f };
-        case TrapAlgebraSubstyle::CloudTrap: return { 0.22f, 0.42f };
-        case TrapAlgebraSubstyle::DarkTrap: return { 0.24f, 0.43f };
-        case TrapAlgebraSubstyle::MemphisTrap: return { 0.26f, 0.46f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.25f, 0.44f };
+        // Share of the time the 808 sounds. Played trap 808 lines: GH Trap Kit median 0.91 (0.81-1.00),
+        // Cr2 Trippy Trap 0.67 (0.41-0.89); the old bands (0.22-0.55) rewarded a choppy 808 without
+        // bounce (docs/audit/TRAP_STAGE.md step 5). Substyle order kept; HPDG keeps a breath before the snare.
+        case TrapAlgebraSubstyle::RageTrap: return { 0.50f, 0.85f };
+        case TrapAlgebraSubstyle::CloudTrap: return { 0.38f, 0.72f };
+        case TrapAlgebraSubstyle::DarkTrap: return { 0.40f, 0.75f };
+        case TrapAlgebraSubstyle::MemphisTrap: return { 0.42f, 0.78f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.40f, 0.76f };
         case TrapAlgebraSubstyle::ATLClassic:
-        default: return { 0.28f, 0.48f };
+        default: return { 0.45f, 0.80f };
     }
 }
 
@@ -481,7 +484,7 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
     const float percDensity = bars > 0 ? static_cast<float>(perc) / static_cast<float>(bars) : 0.0f;
     const float styleScore = clamp01((closenessScore(hatDensity, std::max(0.05f, weights.hatRate * 0.55f), 0.18f)
                                    + closenessScore(rollDensity, weights.rollRate * 0.75f, 0.75f)
-                                   + closenessScore(out.sub808Density, std::clamp(0.22f + weights.bassLegato * 0.18f, 0.18f, 0.65f), 0.22f)
+                                   + closenessScore(out.sub808Density, std::clamp(0.50f + weights.bassLegato * 0.18f, 0.40f, 0.80f), 0.22f)
                                    + closenessScore(percDensity, weights.cowbell * 1.25f, 1.60f)
                                    + closenessScore(1.0f - out.negativeSpaceScore, weights.kickIrregularity * 0.38f, 0.42f)
                                    + closenessScore(out.overloadPenalty, (1.0f - weights.drumDryness) * 0.05f, 0.10f)) / 6.0f);

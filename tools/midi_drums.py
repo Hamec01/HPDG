@@ -1,7 +1,8 @@
 """Drum reference from MIDI loops (roadmap Phase 2): exact notes, no transcription.
 
 usage: python tools/midi_drums.py <kick.mid> [...]          prints per-bar 16th positions of every note
-       (import) read_onsets(path) -> (ppq, [tick, ...])     note-on ticks (velocity > 0), any pitch
+       (import) read_onsets(path) -> (ppq, [(tick, pitch, velocity), ...])   note-ons (velocity > 0)
+                read_notes(path)  -> (ppq, [(on tick, off tick, pitch), ...])  notes with their ends
 
 Minimal Standard MIDI File reader (format 0 / 1, running status, meta / sysex skipped); a bar is
 4 beats (4/4), a 16th is ppq / 4 ticks, notes are rounded to the nearest 16th.
@@ -17,6 +18,44 @@ def _vlq(data, i):
         value = (value << 7) | (b & 0x7F)
         if b < 0x80:
             return value, i
+
+
+def read_notes(path):
+    data = open(path, 'rb').read()
+    assert data[:4] == b'MThd', path
+    ppq = int.from_bytes(data[12:14], 'big')
+    i, notes = 14, []
+    while i < len(data):
+        kind, length = data[i:i + 4], int.from_bytes(data[i + 4:i + 8], 'big')
+        i += 8
+        end = i + length
+        if kind == b'MTrk':
+            tick, status, sounding = 0, 0, {}
+            while i < end:
+                delta, i = _vlq(data, i)
+                tick += delta
+                b = data[i]
+                if b == 0xFF:
+                    length2, i = _vlq(data, i + 2)
+                    i += length2
+                    continue
+                if b in (0xF0, 0xF7):
+                    length2, i = _vlq(data, i + 1)
+                    i += length2
+                    continue
+                if b & 0x80:
+                    status = b
+                    i += 1
+                kind2 = status & 0xF0
+                size = 1 if kind2 in (0xC0, 0xD0) else 2
+                args = data[i:i + size]
+                i += size
+                if kind2 == 0x90 and args[1] > 0:
+                    sounding[args[0]] = tick
+                elif (kind2 == 0x80 or kind2 == 0x90) and args[0] in sounding:
+                    notes.append((sounding.pop(args[0]), tick, args[0]))
+        i = end
+    return ppq, sorted(notes)
 
 
 def read_onsets(path):

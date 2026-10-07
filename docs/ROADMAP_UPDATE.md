@@ -73,6 +73,9 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Step 4: 808's own rhythm from 18 kick / 808 pairs (GH Trap Kit + Cr2 Trippy Trap; Hex Loops MIDI
   not used — mixed grids): up to two 808 answers a bar, offsets from the reference, density-driven.
   808 on a kick 0.93 → 0.75–0.82 (reference 0.46), 808/bar 1.4–2.1 → 1.7–2.6 (reference 2.27).
+- Step 5: the 808 sustains — gap fill 0.43–0.56 → 0.60–0.70 (reference 0.81), notes shorter than an
+  8th 8–12 % → 1–2 % (reference 6 %); the scorer's 808 occupancy band raised from 0.22–0.55 towards the
+  reference (GH 0.91, Cr2 0.67). Lab: `bassMeanLength` / `bassGapFill` / `bassShortRate`.
 - Open Trap: every kick still carries an 808 (scorer band), 16th hat fill (3B), substyle kick identity.
 
 ## How to reproduce / continue (another PC)

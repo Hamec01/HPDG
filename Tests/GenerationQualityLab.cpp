@@ -195,7 +195,9 @@ int main(int argc, char** argv)
                             { "velocityStd", m.velocityStd }, { "identicalVelocityRate", m.identicalVelocityRate },
                             { "anchorTimingMeanAbs", m.anchorTimingMeanAbs }, { "secondaryTimingMeanAbs", m.secondaryTimingMeanAbs },
                             { "timingOutlierRate", m.timingOutlierRate }, { "bassNotesPerBar", m.bassNotesPerBar },
-                            { "bassOnKickRate", m.bassOnKickRate }, { "eventsPerBar", m.eventsPerBar }, { "syncopation", m.syncopation },
+                            { "bassOnKickRate", m.bassOnKickRate }, { "bassMeanLength", m.bassMeanLength },
+                            { "bassGapFill", m.bassGapFill }, { "bassShortRate", m.bassShortRate },
+                            { "eventsPerBar", m.eventsPerBar }, { "syncopation", m.syncopation },
                         };
                         for (const auto& [name, value] : values)
                             stats[name].add(value);

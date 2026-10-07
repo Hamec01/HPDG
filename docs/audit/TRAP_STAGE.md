@@ -233,3 +233,43 @@ with an 808: reference 0.43-0.45). Loosening that means moving the scorer's coup
 (RULE 3): the ratio's distribution did not move (>= 0.70 in 74 / 100 seeds before step 4, 75 / 100
 after; mean 0.767 / 0.763) — seed 9090 went from 0.714 to 0.667.
 
+## Step 5 — the 808 sustains (accepted; maintainer listening 2026-10-07: sounds good)
+
+**Listening (maintainer, after step 4):** better, but the 808 sometimes cuts off abruptly — "no bounce".
+
+**Measurement.** Lab metrics `bassMeanLength` (16ths), `bassGapFill` (share of the gap to the next
+bass start the note fills; legato = 1), `bassShortRate` (notes shorter than an 8th); reference note
+lengths from the 808 MIDI (`tools/midi_drums.py read_notes`):
+
+| | GH Trap Kit + Cr2 + Hex 808 MIDI | HPDG step 3 | HPDG step 4 |
+|---|---|---|---|
+| 808 gap fill | 0.81 (GH 0.87-1.00, Cr2 0.53-1.00) | 0.41-0.55 | 0.43-0.56 |
+| mean length (16ths) | 6.7 (median 4) | 3.0-3.1 | 2.5-2.6 |
+| shorter than an 8th | 6 % | 3-6 % | 8-12 % |
+| share of the time the 808 sounds | GH median 0.91, Cr2 0.67 | ≈ 0.3 | ≈ 0.3 |
+
+The 808 was choppy before step 4 (a note filled ≈ half the gap, then silence); the step-4 answers an
+8th after a kick made the cut audible. Two causes: note lengths capped at 8-10 ticks (an 8th) at
+creation and 0.42-0.76 of the gap in `shape808Durations`; and the scorer's 808 occupancy band
+(0.22-0.55, "mud" above) — longer 808s would have been selected away.
+
+**Change (numbers only, mechanisms kept).** Occupancy bands (engine repair + scorer) raised towards
+the reference with the substyle order kept (Cloud 0.38-0.72 … Rage 0.50-0.85; ATL 0.45-0.80); the
+style-score 808 target 0.22 + 0.18·legato → 0.50 + 0.18·legato; gap fill 0.76 / anchor 0.90 / answer
+0.62 / pickup 0.42 → 0.90 / 0.96 / 0.86 / 0.66; creation cap 8 / 10 → 22 / 26 ticks (the next kick
+and the breath before the snare now limit the note); answer length 4-8 → 8-16 ticks (trimmed to the gap).
+The breath before the snare (HPDG's choice) stays — the reason the fill stops below the reference.
+
+| Measure (1000 seeds, defaults) | Step 4 | Step 5 | Reference |
+|---|---|---|---|
+| 808 gap fill | 0.43-0.56 | **0.60-0.70** | 0.81 |
+| 808 mean length (16ths) | 2.5-2.6 | **3.6-3.9** | 6.7 (median 4) |
+| 808 shorter than an 8th | 8-12 % | **1-2 %** | 6 % |
+| 808 starts per bar | 1.8-2.5 | 1.8-2.5 | 2.27 |
+| kicks/bar, validation kick L1 | 2.06-2.40, 0.79-0.90 | 2.06-2.40, 0.79-0.89 | |
+| hat-position L1 | 1.8-2.1 | 1.8-2.1 | |
+| failures / duplicates / determinism; monotone density | 0 / 0 / 0; 18 / 18 | 0 / 0 / 0; 18 / 18 | |
+| lane / core / track semantics tests | pass | pass | |
+
+Runtime: back-to-back runs with FL Studio open differ more between two runs of the same build (ATL
+p50 24.4 / 27.1 ms) than between steps 4 and 5 — no measurable change.

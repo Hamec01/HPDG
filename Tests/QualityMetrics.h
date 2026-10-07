@@ -58,6 +58,9 @@ struct Metrics
     float anchorTimingMeanAbs = 0, secondaryTimingMeanAbs = 0, timingOutlierRate = 0;
     // bass
     float bassNotesPerBar = 0, bassOnKickRate = 0;
+    // 808 / bass articulation: mean length (16ths), share of the gap to the next bass start it fills
+    // (legato = 1), share of notes shorter than an 8th.
+    float bassMeanLength = 0, bassGapFill = 0, bassShortRate = 0;
     // overall
     float eventsPerBar = 0, syncopation = 0, bpm = 0;
     int hardFailures = 0;
@@ -334,6 +337,26 @@ Metrics measure(const PatternProject& project, GenreType genre)
         onKick += kickSteps.count(stepOf(n)) > 0 ? 1 : 0;
     m.bassNotesPerBar = bass.size() / fb;
     m.bassOnKickRate = bass.empty() ? 0.0f : onKick / static_cast<float>(bass.size());
+    if (!bass.empty())
+    {
+        auto sorted = bass;
+        std::sort(sorted.begin(), sorted.end(), [](const NoteEvent& a, const NoteEvent& b) { return a.startTick() < b.startTick(); });
+        const int loopTicks = bars * 16 * kStep;
+        double length = 0, fill = 0;
+        int shortNotes = 0;
+        for (size_t i = 0; i < sorted.size(); ++i)
+        {
+            const int start = sorted[i].startTick();
+            const int next = i + 1 < sorted.size() ? sorted[i + 1].startTick() : sorted.front().startTick() + loopTicks;
+            const int len = std::max(1, sorted[i].lengthTicks);
+            length += len / static_cast<double>(kStep);
+            fill += std::min(1.0, len / static_cast<double>(std::max(1, next - start)));
+            shortNotes += len < 2 * kStep ? 1 : 0;
+        }
+        m.bassMeanLength = static_cast<float>(length / sorted.size());
+        m.bassGapFill = static_cast<float>(fill / sorted.size());
+        m.bassShortRate = shortNotes / static_cast<float>(sorted.size());
+    }
 
     // --- skeleton strings (duplicate detection)
     for (const auto& [lane, s32] : m.skeletonSet)
