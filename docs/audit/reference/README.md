@@ -22,6 +22,19 @@ checked without redistributing the audio.
 | `manifest_stems07.csv` | `D:/Downloads/mp3/07.безметежнные дни (Cover) Stems.zip` | bass-line accuracy |
 | `manifest_stems_40s.csv` | `D:/Downloads/mp3/40.4s Recording (Jul 14 @ 4_03 PM) (Cover) Stems` | bass-line accuracy |
 
+## Portable copy
+
+Everything the benchmarks use is collected in one folder on the development PC (copy it to the
+other machine as a whole):
+
+```
+D:/HPDG_corpus/
+  boombap_loops/02_CUSTOM_DRUM_LOOPS_(150+Custom_Drum_Loopz)/   159 loops
+  boombap_loops/04_CLASSIC_DRUM_BREAKS_(80+Drm_Loopz)/          84 breaks
+  stems/*.zip                                                   11 stem zips (s1 … s10 + 07; unzip each into its own folder)
+  stems/40.4s Recording (Jul 14 @ 4_03 PM) (Cover) Stems/       already unzipped
+```
+
 ## Checking a corpus on another machine
 
 ```
