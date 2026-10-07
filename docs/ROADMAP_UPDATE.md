@@ -76,7 +76,11 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Step 5: the 808 sustains — gap fill 0.43–0.56 → 0.60–0.70 (reference 0.81), notes shorter than an
   8th 8–12 % → 1–2 % (reference 6 %); the scorer's 808 occupancy band raised from 0.22–0.55 towards the
   reference (GH 0.91, Cr2 0.67). Lab: `bassMeanLength` / `bassGapFill` / `bassShortRate`.
-- Open Trap: every kick still carries an 808 (scorer band), 16th hat fill (3B), substyle kick identity.
+- Substyles checked against written sources: where sources describe the drums (Rage, Cloud, Dark,
+  Memphis) HPDG already differs the right way; no source gives substyle kick positions — no change.
+  Hat 16th fill (3B) inside the reference — no change.
+- Open Trap (design decision): every kick still carries an 808 (kicks with an 808: HPDG ≈ 0.76,
+  GH / Cr2 0.43–0.45); the scorer's coupling bands and a smoke test encode the tighter design.
 
 ## How to reproduce / continue (another PC)
 

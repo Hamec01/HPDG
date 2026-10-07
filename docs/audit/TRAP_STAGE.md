@@ -273,3 +273,21 @@ The breath before the snare (HPDG's choice) stays — the reason the fill stops 
 
 Runtime: back-to-back runs with FL Studio open differ more between two runs of the same build (ATL
 p50 24.4 / 27.1 ms) than between steps 4 and 5 — no measurable change.
+
+## Substyle identity check (researched, no change)
+
+RULE 9 asks for real substyle differences. Written sources on the drums of each substyle, against
+HPDG at step 5 (1000 seeds, defaults):
+
+| Substyle | Sources (drums) | HPDG |
+|---|---|---|
+| Rage (Whole Lotta Red era) | 150-170 BPM, fast hats, distorted long 808, kick layered under the 808 (Output, *Playboi Carti type beat*) | densest hats (9.5 a bar) and rolls (4.4), most 808 (2.5), tightest coupling band (0.72-0.90) ✓ |
+| Cloud | gentle hats, laid-back snares, mellow kicks, relaxed (RouteNote, *How to make cloud rap beats*) | sparsest hats (7.4) and rolls (2.5) ✓ |
+| Dark | sparse kicks, 2-4 808 a bar (Violet Recording, *Best drum patterns for trap*) | ✓ |
+| Memphis | 16th hats without swing, the triplet hat cadence is DJ Paul's signature (MPC-Forums / DJ Paul profiles); modern phonk "simpler hats" + cowbell (Output, *Memphis type beat*) | highest triplet bias (0.95) — matches classic Memphis ✓ |
+| ATL classic / Luxury | no drum-specific source found | — |
+
+No source gives substyle-specific **kick positions**, and the references are not labelled by
+substyle, so the shared kick vocabulary stays (inventing per-substyle kick tables would be tuning by
+vibe, RULE 51). Hat 16th fill (candidate 3B) also re-checked: HPDG odd 16ths average 0.33 a position,
+reference calibration 0.25 / validation 0.42 — inside, no change.
