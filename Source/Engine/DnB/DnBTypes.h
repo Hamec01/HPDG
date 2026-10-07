@@ -132,6 +132,7 @@ struct DnBStyleProfile
     int minKicks = 2;
     int maxKicks = 3;               // played loops: ~2 kicks per bar (0 + the 2-step kick)
     float answerDropsDownbeat = 0.5f; // the phrase's second bar plays only the 2-step kick (K0 K10 | K10)
+    float displacedSnareRate = 0.0f; // the phrase's second bar moves the second snare an 8th: 4 + 10 / 4 + 14
     float twoStepAnchor = 0.85f;    // chance the bar is built on the classic 2-step second kick
     float ghostAmount = 0.35f;
     float ghostPreBias = 0.65f;     // pre-snare vs post-snare ghosts

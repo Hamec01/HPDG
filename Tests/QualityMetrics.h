@@ -75,6 +75,8 @@ struct Metrics
     juce::String firstTwoKick;
     juce::String kickBarsText;    // kick 16ths per bar, "0 6 10|0 7 10 13|..." (reference comparison)
     juce::String hatBarsText;     // closed-hat 16ths per bar, same format
+    juce::String snareBarsText;   // non-ghost snare 16ths per bar, same format
+    float displacedBackbeatPerBar = 0; // DnB: bars whose second snare sits an 8th off 12 (4 + 10 / 4 + 14)
     juce::String kickAllBarsText; // Kick + GhostKick 16ths per bar, ghosts included (a transcription keeps soft kicks)
     juce::String hatAllBarsText;  // HiHat + HatFX (closed-hat accents / rolls) 16ths per bar: what a hat stem holds
     float hatAllNotesPerBar = 0;  // HiHat + HatFX notes per bar, rolls counted note by note
@@ -182,9 +184,26 @@ Metrics measure(const PatternProject& project, GenreType genre)
             ++invalid;
     }
     int covered = 0;
+    int displaced = 0;
     for (const auto& bar : snareBars)
+    {
         for (const int b : backbeat)
             covered += bar.count(b) > 0 ? 1 : 0;
+        // DnB: a second snare displaced by an 8th (4 + 10 / 4 + 14) still carries the backbeat.
+        if (genre == GenreType::DnB && bar.count(4) > 0 && bar.count(12) == 0 && (bar.count(10) > 0 || bar.count(14) > 0))
+        {
+            ++covered;
+            ++displaced;
+        }
+        bool first = true;
+        for (const int s : bar)
+        {
+            m.snareBarsText << (first ? "" : " ") << s;
+            first = false;
+        }
+        m.snareBarsText << "|";
+    }
+    m.displacedBackbeatPerBar = displaced / fb;
     m.backbeatCoverage = covered / (fb * static_cast<float>(backbeat.size()));
     m.snareGhostRate = (ghosts + anchors) > 0 ? ghosts / static_cast<float>(ghosts + anchors) : 0.0f;
     m.extraSnaresPerBar = std::max(0.0f, (anchors - covered) / fb);

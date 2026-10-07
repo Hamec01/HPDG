@@ -497,6 +497,32 @@ Bar deriveDevelopment(const Bar& source, const CandidateContext& ctx, std::mt199
     return bar;
 }
 
+// Moves the second backbone snare (48) to `target` (40 or 56). The ghosts / ghost kicks that
+// belonged to it go; the kicks clear the new snare (4 + 10: the 2-step kick moves to 6, sometimes a
+// kick on 14 - Ghosthack Upfront 4 + 10 bars; 4 + 14: nothing after the 2-step kick).
+void displaceSecondSnare(Bar& bar, int target, std::mt19937& rng)
+{
+    const bool early = target < DnBGrid::kSnare4;
+    bar.erase(std::remove_if(bar.begin(), bar.end(), [&](const DnBEvent& e)
+    {
+        if (e.anchorTick == DnBGrid::kSnare4)
+            return true;
+        if (e.lane == TrackType::Kick && e.tick != 0)
+            return early ? e.tick > 24 : e.tick > DnBGrid::kSnare4 - 8;
+        return e.lane == TrackType::Snare && e.ghost && std::abs(e.tick - target) <= 2;
+    }), bar.end());
+    for (auto& e : bar)
+        if (isBackbone(e) && e.tick == DnBGrid::kSnare4)
+            e.tick = target;
+    if (early)
+    {
+        if (!barHas(bar, TrackType::Kick, 24))
+            bar.push_back(makeEvent(TrackType::Kick, 24, randomInt(rng, 108, 120), DnBRole::KickAnchor));
+        if (chance(rng, 0.5f))
+            bar.push_back(makeEvent(TrackType::Kick, 56, randomInt(rng, 96, 108), DnBRole::KickResponse));
+    }
+}
+
 // A fill must lead somewhere: it rolls into the next downbeat.
 void applyFill(Bar& bar, const CandidateContext& ctx, std::mt19937& rng)
 {
@@ -596,10 +622,26 @@ void DnBGrammar::repair(DnBPattern& pattern)
 {
     auto& events = pattern.events;
 
-    // Kicks never sit on the backbone.
-    events.erase(std::remove_if(events.begin(), events.end(), [](const DnBEvent& e)
+    // Kicks never sit on the backbone (16 / 48, or a displaced second snare).
+    std::map<int, std::vector<int>> backbone; // bar -> backbone ticks
+    auto backboneTicks = [&backbone](int bar) -> const std::vector<int>&
     {
-        return e.lane == TrackType::Kick && (e.tick == DnBGrid::kSnare2 || e.tick == DnBGrid::kSnare4);
+        static const std::vector<int> regular { DnBGrid::kSnare2, DnBGrid::kSnare4 };
+        const auto found = backbone.find(bar);
+        return found != backbone.end() ? found->second : regular;
+    };
+    for (const auto& e : events)
+        if (isBackbone(e) && e.tick != DnBGrid::kSnare2 && e.tick != DnBGrid::kSnare4)
+        {
+            auto& ticks = backbone.try_emplace(e.bar, std::vector<int> { DnBGrid::kSnare2, DnBGrid::kSnare4 }).first->second;
+            ticks.push_back(e.tick);
+        }
+    events.erase(std::remove_if(events.begin(), events.end(), [&](const DnBEvent& e)
+    {
+        if (e.lane != TrackType::Kick)
+            return false;
+        const auto& ticks = backboneTicks(e.bar);
+        return std::find(ticks.begin(), ticks.end(), e.tick) != ticks.end();
     }), events.end());
 
     // One event per lane / bar / tick: keep the strongest (non-ghost first).
@@ -646,7 +688,7 @@ void DnBGrammar::repair(DnBPattern& pattern)
         }
         if (e.lane == TrackType::HiHat || e.lane == TrackType::Ride || e.lane == TrackType::HatFX)
         {
-            for (const int s : { DnBGrid::kSnare2, DnBGrid::kSnare4 })
+            for (const int s : backboneTicks(e.bar))
             {
                 const int snare = mainSnareVelocity(e.bar, s);
                 if (snare > 0 && std::abs(e.tick - s) <= 2)
@@ -815,6 +857,13 @@ DnBPattern DnBGrammar::generateCandidate(const DnBGenerationParams& params,
             fillBars.push_back(bar);
         }
     }
+
+    // A displaced second snare in the phrase's answer bars: 4 + 10 (the 2-step kick moves to 6) or
+    // 4 + 14 (kicks 0 / 10 stay). A fill bar keeps its own ending.
+    if (params.displacedSnareTick > 0)
+        for (int bar = 1; bar < pattern.bars; bar += 2)
+            if (pattern.barRoles[static_cast<size_t>(bar)] != DnBBarRole::Fill)
+                displaceSecondSnare(bars[static_cast<size_t>(bar)], params.displacedSnareTick, rng);
 
     for (int bar = 0; bar < pattern.bars; ++bar)
     {

@@ -88,6 +88,11 @@ DnBScore DnBScorer::score(const DnBPattern& p, const DnBStyleProfile& style)
     {
         const auto* s2 = findAt(p, TrackType::Snare, bar, DnBGrid::kSnare2, true);
         const auto* s4 = findAt(p, TrackType::Snare, bar, DnBGrid::kSnare4, true);
+        // A displaced second snare (4 + 10 / 4 + 14) carries the backbone as well.
+        for (const int displaced : { DnBGrid::kSnare4 - 8, DnBGrid::kSnare4 + 8 })
+            if (s4 == nullptr)
+                if (const auto* e = findAt(p, TrackType::Snare, bar, displaced, true); e != nullptr && isBackbone(*e))
+                    s4 = e;
         // A phrase's answer bar may carry the pulse with the 2-step kick alone (K0 K10 | K10).
         const bool twoStepBar = bar % 2 == 1 && std::any_of(p.events.begin(), p.events.end(), [bar](const DnBEvent& e)
         {
@@ -218,10 +223,11 @@ DnBScore DnBScorer::score(const DnBPattern& p, const DnBStyleProfile& style)
         }
         if (e.lane == TrackType::HiHat || e.lane == TrackType::HatFX || e.lane == TrackType::Ride)
         {
-            for (const int tick : { DnBGrid::kSnare2, DnBGrid::kSnare4 })
+            for (const int tick : { DnBGrid::kSnare2, DnBGrid::kSnare4, DnBGrid::kSnare4 - 8, DnBGrid::kSnare4 + 8 })
             {
                 const auto* snare = findAt(p, TrackType::Snare, e.bar, tick, true);
-                if (snare != nullptr && std::abs(e.tick - tick) <= 2)
+                if (snare != nullptr && (tick == DnBGrid::kSnare2 || tick == DnBGrid::kSnare4 || isBackbone(*snare))
+                    && std::abs(e.tick - tick) <= 2)
                 {
                     ++checks;
                     passed += e.velocity < snare->velocity ? 1 : 0;

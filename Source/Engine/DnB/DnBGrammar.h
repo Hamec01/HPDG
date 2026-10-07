@@ -19,6 +19,10 @@ struct DnBGenerationParams
     int candidateCount = 64;
     float nearBestTolerance = 0.03f;
     float temperature = 0.012f;
+    // Pattern-level choice (made once per seed by the engine, so the candidate search cannot
+    // filter it out): the answer bars move the second snare here (40 = 4 + 10, 56 = 4 + 14);
+    // 0 = the engine decides, -1 = none.
+    int displacedSnareTick = 0;
 };
 
 // The relational grammar: phrase planner -> snare backbone -> kick/snare conversation ->

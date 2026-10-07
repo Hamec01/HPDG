@@ -89,6 +89,15 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Change: the kick budget's rounded-away fraction is a chance of one more kick (additive). Kick-skeleton
   reuse Modern 79 → 59 %, Liquid 86 → 77 %, Jump-Up 94 → 86 %; Roller / Neuro / Breakbeat unchanged.
 
+## DnB steps 2-3 — `docs/audit/DNB_STAGE.md` (2026-10-08)
+
+- Second pack: Freaky DNC_174 (`docs/audit/reference/dnb_freaky_bars.tsv`, `tools/dnb_phrase.py`).
+- Step 2, phrase repetition: Roller / Jump-Up repeat more than the packs, but the sources call that the
+  style ("consistent", "roll along") — measured, no change.
+- Step 3, a displaced second snare in the answer bar (4 + 10 / 4 + 14), decided once per seed; snare
+  L1 closer to both packs in 5 substyles, kick validation L1 better in 5; Breakbeat left at 0 (worse).
+  Bit-identical at rate 0. Listened 2026-10-08: "DnB стал намного лучше".
+
 ## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
 
 - Read `docs/RULES.md`, this log, `docs/audit/BOOMBAP_STAGE.md`, `TRAP_STAGE.md`, `DNB_STAGE.md`.
@@ -100,8 +109,8 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Boom Bap: done (steps 1-3). Russian Underground kick motifs (beat 3) wait for instrumentals / stems.
 - Trap: done (steps 1-5, listened: good). Open design question: every kick carries an 808 (HPDG 0.76 vs
   packs 0.43-0.45); the maintainer has not decided, default is keep.
-- DnB: step 1 committed, NOT yet listened to. Next: phrase-level repetition (Roller / Jump-Up reuse
-  86 %), hats / ghosts vs Ghosthack "DnB_Top" and Freaky stems, the "4 + 10" snare variant.
+- DnB: steps 1-3 done (2: no change; 3: displaced second snare), listened: much better. Next: hats /
+  ghosts vs Ghosthack "DnB_Top" and Freaky stems; bass stabs vs a displaced snare.
 - Then Techno (Phase 0: 20-68 % duplicates, density inverted in Minimal / Dub).
 - Corpus: `E:/HPDG_corpus` (being copied from the other PC; verify with `tools/corpus_manifest.py verify`).
   More packs: `E:/DRUMS/...` (Ghosthack bundle, Sonic Mechanics, Freaky Loops), `C:/Users/Ham_h/Downloads`

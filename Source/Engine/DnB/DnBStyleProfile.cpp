@@ -65,6 +65,7 @@ DnBStyleProfile makeModern()
     DnBStyleProfile p;
     p.name = "Modern";
     p.substyle = DnBSubstyle::Modern;
+    p.displacedSnareRate = 0.30f; // docs/audit/DNB_STAGE.md step 3
     // Clean 2-step backbone, medium kick syncopation, low-medium ghosts, low microtiming.
     p.carrierWeights = { 0.15f, 0.45f, 0.15f, 0.20f, 0.00f, 0.05f };
     p.topologyWeights = { 0.25f, 0.30f, 0.15f, 0.15f, 0.05f, 0.10f };
@@ -79,6 +80,7 @@ DnBStyleProfile makeRoller()
     DnBStyleProfile p;
     p.name = "Roller";
     p.substyle = DnBSubstyle::Roller;
+    p.displacedSnareRate = 0.12f; // docs/audit/DNB_STAGE.md step 3
     // Continuous forward motion, hypnotic repetition (AAAA is welcome).
     p.kickSyncopation = 0.70f;
     p.maxKicks = 4;
@@ -105,6 +107,7 @@ DnBStyleProfile makeLiquid()
     DnBStyleProfile p;
     p.name = "Liquid";
     p.substyle = DnBSubstyle::Liquid;
+    p.displacedSnareRate = 0.15f; // docs/audit/DNB_STAGE.md step 3
     p.bpmDefault = 172.0f;
     p.bpmMin = 170;
     p.bpmMax = 174;
@@ -139,6 +142,7 @@ DnBStyleProfile makeNeurofunk()
     DnBStyleProfile p;
     p.name = "Neurofunk";
     p.substyle = DnBSubstyle::Neurofunk;
+    p.displacedSnareRate = 0.35f; // docs/audit/DNB_STAGE.md step 3
     p.swingDefault = 50.0f;
     p.humanizeDefault = 0.15f;
     // Very rigid snare, high kick syncopation, precise and controlled - aggressive != random.
@@ -168,6 +172,7 @@ DnBStyleProfile makeJumpUp()
     DnBStyleProfile p;
     p.name = "Jump-Up";
     p.substyle = DnBSubstyle::JumpUp;
+    p.displacedSnareRate = 0.10f; // docs/audit/DNB_STAGE.md step 3
     p.swingDefault = 50.0f;
     p.humanizeDefault = 0.15f;
     // Obvious BANG -> answer -> BANG: clear, repetitive, few ghosts.
@@ -198,6 +203,7 @@ DnBStyleProfile makeBreakbeat()
     DnBStyleProfile p;
     p.name = "Breakbeat";
     p.substyle = DnBSubstyle::Breakbeat;
+    p.displacedSnareRate = 0.0f; // docs/audit/DNB_STAGE.md step 3: kicks moved away from both packs
     p.bpmDefault = 170.0f;
     p.bpmMin = 164;
     p.bpmMax = 174;

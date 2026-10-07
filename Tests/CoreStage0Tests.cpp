@@ -4767,7 +4767,10 @@ void testDnBGrammarInvariants()
                 expect(pattern.score.quality > 0.8f, label + "low quality " + juce::String(pattern.score.quality, 3));
                 for (int bar = 0; bar < bars; ++bar)
                 {
-                    expect(pattern.has(TrackType::Snare, bar, 16, false) && pattern.has(TrackType::Snare, bar, 48, false),
+                    // The answer bar may displace the second snare by an 8th (4 + 10 / 4 + 14).
+                    const bool secondSnare = pattern.has(TrackType::Snare, bar, 48, false)
+                        || (bar % 2 == 1 && (pattern.has(TrackType::Snare, bar, 40, false) || pattern.has(TrackType::Snare, bar, 56, false)));
+                    expect(pattern.has(TrackType::Snare, bar, 16, false) && secondSnare,
                            label + "bar " + juce::String(bar + 1) + " lost the 2 & 4 backbone");
                     const bool twoStepOnly = bar % 2 == 1 && std::any_of(pattern.events.begin(), pattern.events.end(), [bar](const DnBEvent& e)
                     {
@@ -4780,6 +4783,10 @@ void testDnBGrammarInvariants()
                 {
                     expect(e.tick >= 0 && e.tick < 64 && e.bar >= 0 && e.bar < bars, label + "event outside the loop");
                     expect(!(e.lane == TrackType::Kick && (e.tick == 16 || e.tick == 48)), label + "kick on the snare backbone");
+                    expect(!(e.lane == TrackType::Kick && std::any_of(pattern.events.begin(), pattern.events.end(), [&e](const DnBEvent& s)
+                    {
+                        return s.lane == TrackType::Snare && s.role == DnBRole::SnareBackbeat && s.bar == e.bar && s.tick == e.tick;
+                    })), label + "kick on a displaced backbone snare");
                     if ((e.lane == TrackType::Snare && e.ghost) || e.lane == TrackType::GhostKick)
                     {
                         const auto anchor = std::find_if(pattern.events.begin(), pattern.events.end(), [&e](const DnBEvent& a)

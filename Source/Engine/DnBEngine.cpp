@@ -49,6 +49,34 @@ juce::String describe(const DnBPattern& p, const DnBGenerationParams& params, in
               + (s.passedGates ? juce::String() : " | FAILED gate: " + s.failedGate));
     return lines.joinIntoString("\n");
 }
+// The displaced second snare the project's snare lane already plays (40 / 56 on the 64 lattice),
+// or -1 for none: lanes written on their own (or next to a locked snare) follow it, so a new kick
+// never lands on an old displaced snare.
+int displacedSnareInProject(const PatternProject& project)
+{
+    const auto* snare = ProjectLaneAccess::findTrackState(project, TrackType::Snare);
+    if (snare == nullptr)
+        return -1;
+    auto has = [snare](int bar, int tick)
+    {
+        return std::any_of(snare->notes.begin(), snare->notes.end(), [&](const NoteEvent& n)
+        {
+            return !n.isGhost && n.gridTick == bar * TimingGrid::TicksPerBar4_4 + tick * DnBGrid::kPpqPerTick;
+        });
+    };
+    for (int bar = 1; bar < std::clamp(project.params.bars, 1, 16); bar += 2)
+        if (!has(bar, DnBGrid::kSnare4))
+            for (const int tick : { DnBGrid::kSnare4 - 8, DnBGrid::kSnare4 + 8 })
+                if (has(bar, tick))
+                    return tick;
+    return -1;
+}
+
+DnBGenerationParams lanesParams(const PatternProject& project, DnBGenerationParams params)
+{
+    params.displacedSnareTick = displacedSnareInProject(project);
+    return params;
+}
 } // namespace
 
 const std::unordered_set<TrackType>& DnBEngine::allLanes()
@@ -90,9 +118,19 @@ DnBGenerationParams DnBEngine::paramsFromProject(const PatternProject& project, 
     return params;
 }
 
-DnBPattern DnBEngine::search(const DnBGenerationParams& params, juce::String* debugReport, std::vector<DnBPattern>* candidatesOut)
+DnBPattern DnBEngine::search(const DnBGenerationParams& requested, juce::String* debugReport, std::vector<DnBPattern>* candidatesOut)
 {
-    const auto& style = getDnBStyleProfile(params.substyle);
+    const auto& style = getDnBStyleProfile(requested.substyle);
+    auto params = requested;
+    // The displaced second snare is decided once per seed: decided per candidate, the search
+    // filtered most of it out (docs/audit/DNB_STAGE.md step 3).
+    if (style.displacedSnareRate > 0.0f && params.displacedSnareTick == 0)
+    {
+        std::mt19937 intent(static_cast<std::mt19937::result_type>(static_cast<uint32_t>(params.seed) * 2246822519u + 0x534e52u));
+        std::uniform_real_distribution<float> unit(0.0f, 1.0f);
+        if (unit(intent) < style.displacedSnareRate)
+            params.displacedSnareTick = unit(intent) < 0.65f ? DnBGrid::kSnare4 - 8 : DnBGrid::kSnare4 + 8;
+    }
     const int count = std::clamp(params.candidateCount, 8, 256);
 
     std::vector<DnBPattern> candidates;
@@ -263,7 +301,10 @@ juce::String DnBEngine::writeBass(PatternProject& project, const DnBDrumFrame& d
 void DnBEngine::generate(PatternProject& project)
 {
     juce::String report;
-    const auto pattern = search(paramsFromProject(project, project.generationCounter * 131), &report);
+    auto params = paramsFromProject(project, project.generationCounter * 131);
+    if (const auto* snare = findTrack(project, TrackType::Snare); snare != nullptr && snare->locked)
+        params = lanesParams(project, params);
+    const auto pattern = search(params, &report);
     writePattern(project, pattern, allLanes(), report);
     const auto bassReport = writeBass(project, drumsFromProject(project), project.generationCounter * 131 + 7);
     if (bassReport.isNotEmpty())
@@ -287,7 +328,7 @@ void DnBEngine::generateTrackNew(PatternProject& project, TrackType trackType)
     if (std::none_of(lanes.begin(), lanes.end(), [](TrackType t) { return allLanes().count(t) > 0; }))
         return; // e.g. the bass lane: not part of the DnB drum generator
     juce::String report;
-    const auto pattern = search(paramsFromProject(project, static_cast<int>(trackType) * 131 + project.generationCounter * 17), &report);
+    const auto pattern = search(lanesParams(project, paramsFromProject(project, static_cast<int>(trackType) * 131 + project.generationCounter * 17)), &report);
     writePattern(project, pattern, lanes, report);
 }
 
@@ -300,6 +341,8 @@ void DnBEngine::mutatePattern(PatternProject& project)
 {
     auto params = paramsFromProject(project, project.mutationCounter * 911 + 17);
     params.variation = std::min(1.0f, params.variation + 0.15f);
+    if (const auto* snare = findTrack(project, TrackType::Snare); snare != nullptr && snare->locked)
+        params = lanesParams(project, params);
     juce::String report;
     const auto pattern = search(params, &report);
     writePattern(project, pattern, allLanes(), report);
@@ -320,6 +363,7 @@ void DnBEngine::mutateTrack(PatternProject& project, TrackType trackType)
         return;
     auto params = paramsFromProject(project, static_cast<int>(trackType) * 199 + project.mutationCounter * 29);
     params.variation = std::min(1.0f, params.variation + 0.15f);
+    params = lanesParams(project, params);
     juce::String report;
     const auto pattern = search(params, &report);
     writePattern(project, pattern, lanes, report);
