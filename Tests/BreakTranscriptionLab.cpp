@@ -20,13 +20,14 @@
 #include "../Source/Analysis/DrumBreakTranscriber.h"
 #include "../Source/Analysis/SampleHarmonyAnalyzer.h"
 #include "../Source/Analysis/SampleLineTranscriber.h"
+#include "../Source/Analysis/SampleLabelReader.h"
 #include "../Source/Core/TimingGrid.h"
 
 using namespace bbg;
 
 namespace
 {
-bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRate)
+bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRate, juce::StringPairArray* metadata = nullptr)
 {
     juce::AudioFormatManager manager;
     manager.registerBasicFormats();
@@ -44,6 +45,8 @@ bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRa
         for (int i = 0; i < length; ++i)
             mono[static_cast<size_t>(i)] += buffer.getSample(channel, i) / static_cast<float>(channels);
     sampleRate = reader->sampleRate;
+    if (metadata != nullptr)
+        *metadata = reader->metadataValues;
     return true;
 }
 
@@ -90,6 +93,9 @@ int runAnalyze(const juce::StringArray& args)
     DrumBreakOptions options;
     bool printHits = false;
     bool printHarmony = false;
+    bool readLabels = false;
+    double forcedLabelBpm = 0.0;
+    juce::String forcedLabelKey;
     for (int i = 2; i < args.size(); ++i)
     {
         if (args[i] == "--out" && i + 1 < args.size())
@@ -102,6 +108,12 @@ int runAnalyze(const juce::StringArray& args)
             printHarmony = true;
         else if (args[i] == "--hits")
             printHits = true;
+        else if (args[i] == "--labels")
+            readLabels = true; // tempo / key the file states (name, acid chunk), like the plugin
+        else if (args[i] == "--label-bpm" && i + 1 < args.size())
+            forcedLabelBpm = args[++i].getDoubleValue(); // inject a label (benchmarks: wrong labels)
+        else if (args[i] == "--label-key" && i + 1 < args.size())
+            forcedLabelKey = args[++i];
     }
 
     juce::Array<juce::File> files;
@@ -120,13 +132,34 @@ int runAnalyze(const juce::StringArray& args)
     {
         std::vector<float> mono;
         double sampleRate = 0.0;
-        if (!loadMono(file, mono, sampleRate))
+        juce::StringPairArray metadata;
+        if (!loadMono(file, mono, sampleRate, &metadata))
         {
             std::cout << file.getFileName() << ": cannot read\n";
             continue;
         }
 
-        const auto analysis = transcriber.analyze(mono, sampleRate, options);
+        SampleLabels labels;
+        if (readLabels)
+            labels = SampleLabelReader::read(file, metadata);
+        if (forcedLabelBpm > 0.0)
+        {
+            labels.bpm = forcedLabelBpm;
+            labels.bpmSource = "given";
+        }
+        if (forcedLabelKey.isNotEmpty())
+        {
+            const auto given = SampleLabelReader::fromName(forcedLabelKey);
+            labels.keyRoot = given.keyRoot;
+            labels.keyMode = given.keyMode;
+            labels.keySource = "given";
+        }
+        auto fileOptions = options;
+        fileOptions.labelBpm = labels.bpm;
+        if (readLabels || forcedLabelBpm > 0.0 || forcedLabelKey.isNotEmpty())
+            std::cout << "    " << labels.describe() << "\n";
+
+        const auto analysis = transcriber.analyze(mono, sampleRate, fileOptions);
         std::cout << file.getFileName().paddedRight(' ', 36)
                   << " bpm " << juce::String(analysis.bpm, 2).paddedLeft(' ', 7)
                   << " bars " << analysis.bars
@@ -141,7 +174,8 @@ int runAnalyze(const juce::StringArray& args)
             const double beat = 60.0 / (analysis.bpm > 20.0 ? analysis.bpm : 90.0);
             // Same call as the plugin (SampleAnalyzer): the sample's tuning first.
             const double tuningCents = SampleLineTranscriber::estimateTuningCents(mono, sampleRate);
-            const auto harmony = SampleHarmonyAnalyzer().analyze(mono, sampleRate, beat, analysis.originSeconds, tuningCents);
+            const auto harmony = SampleHarmonyAnalyzer().analyze(mono, sampleRate, beat, analysis.originSeconds, tuningCents,
+                                                                 labels.keyRoot, labels.keyMode);
             std::cout << "    " << harmony.describe() << " | tuning " << juce::String(tuningCents, 1) << " cents\n";
             // The key decision's inputs (offline key-profile experiments, tools/tempo_bench.py).
             std::array<float, 12> bassShare {};
@@ -938,11 +972,26 @@ int runHarmonySynth(const juce::StringArray& args)
 }
 } // namespace
 
+#if JUCE_WINDOWS
+extern "C" __declspec(dllimport) wchar_t* __stdcall GetCommandLineW();
+#endif
+
 int main(int argc, char** argv)
 {
     juce::StringArray args;
+#if JUCE_WINDOWS
+    // argv is in the ANSI code page on Windows: file names with Cyrillic letters (the
+    // maintainer's renders, some packs) would not open. Take the UTF-16 command line instead.
+    juce::StringArray tokens;
+    tokens.addTokens(juce::String(GetCommandLineW()), true);
+    tokens.removeEmptyStrings();
+    for (int i = 1; i < tokens.size(); ++i)
+        args.add(tokens[i].unquoted());
+    juce::ignoreUnused(argc, argv);
+#else
     for (int i = 1; i < argc; ++i)
         args.add(juce::String::fromUTF8(argv[i]));
+#endif
 
     if (args.isEmpty())
     {

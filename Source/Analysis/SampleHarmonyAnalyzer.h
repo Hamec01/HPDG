@@ -56,10 +56,14 @@ public:
     // is, so segments line up with the musical grid.
     // tuningCents: the sample's offset from A440 (SampleLineTranscriber::estimateTuningCents),
     // so a detuned record still lands on the right semitones.
+    // labelKeyRoot / labelKeyMode: the key the sample's file name states (SampleLabelReader;
+    // -1 = none / mode not given). A strong hint the audio can still overrule.
     SampleHarmony analyze(const std::vector<float>& mono,
                           double sampleRate,
                           double segmentSeconds,
                           double originSeconds,
-                          double tuningCents = 0.0) const;
+                          double tuningCents = 0.0,
+                          int labelKeyRoot = -1,
+                          int labelKeyMode = -1) const;
 };
 } // namespace bbg

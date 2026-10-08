@@ -641,6 +641,10 @@ float phaseBackbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, doub
     return std::max(backbeatScore(hits, bpm, origin), halfTime);
 }
 
+// A tempo the sample states (file name / acid chunk; step 6) wins unless the audio clearly
+// contradicts it: a candidate more than this far below the audio's best score is rejected.
+constexpr float kLabelBonus = 0.6f;
+
 // Half / double-time evidence (docs/audit/SAMPLE_ANALYSIS_STAGE.md, step 2): onsets per sixteenth
 // at this tempo. Real loops at their written tempo stay below ~0.85 (Boom Bap median 0.67, p90
 // 0.76); a half-time reading of a Trap / DnB loop needs 32nds for its hat rolls and ghosts (Trap
@@ -854,12 +858,15 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
     candidate.prior = static_cast<float>(std::exp(-0.5 * (octaves / 0.45) * (octaves / 0.45)));
     if (options.hostBpm > 20.0 && std::abs(candidate.bpm / options.hostBpm - 1.0) < 0.006)
         candidate.host = 1.0f;
+    if (options.labelBpm > 20.0 && std::abs(candidate.bpm / options.labelBpm - 1.0) < 0.006)
+        candidate.label = 1.0f;
 
     candidate.score = 1.00f * candidate.gridFit
         + (trimmed ? 0.70f : 0.0f) * candidate.lengthFit
         + 0.60f * candidate.backbeat
         + 0.35f * candidate.prior
         + 0.08f * candidate.host
+        + kLabelBonus * candidate.label
         - 0.50f * subdivisionOverload(hits, candidate.bpm);
     return candidate;
 }
@@ -1092,7 +1099,8 @@ juce::String DrumBreakAnalysis::describe(bool includeHits) const
                        << " grid " << juce::String(candidate.gridFit, 2)
                        << " len " << juce::String(candidate.lengthFit, 2)
                        << " bb " << juce::String(candidate.backbeat, 2)
-                       << (candidate.host > 0.0f ? " host" : "") << "]";
+                       << (candidate.host > 0.0f ? " host" : "")
+                       << (candidate.label > 0.0f ? " label" : "") << "]";
     }
     lines.add(candidatesLine);
 
@@ -1328,6 +1336,11 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
                     seeds.push_back(options.hostBpm * factor);
     }
 
+    // The stated tempo is evaluated first and exactly where it is (no local refinement that
+    // would slide it to a nearby grid peak and lose the label).
+    if (options.labelBpm > 20.0 && options.forcedBpm <= 20.0)
+        seeds.insert(seeds.begin(), options.labelBpm);
+
     std::vector<std::pair<BreakTempoCandidate, double>> evaluated; // candidate + its origin
     std::vector<double> triedSeeds;
     for (const double seed : seeds)
@@ -1341,7 +1354,8 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
         triedSeeds.push_back(seed);
 
         double origin = 0.0;
-        auto candidate = evaluateCandidate(analysis.hits, seed, context, options, options.forcedBpm <= 20.0, origin);
+        const bool labelSeed = options.labelBpm > 20.0 && seed == options.labelBpm;
+        auto candidate = evaluateCandidate(analysis.hits, seed, context, options, options.forcedBpm <= 20.0 && !labelSeed, origin);
         auto existing = std::find_if(evaluated.begin(), evaluated.end(), [&](const auto& other)
         {
             return std::abs(other.first.bpm / candidate.bpm - 1.0) < 0.004;
@@ -1382,7 +1396,13 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
     // tempo is a loop even when its beat 1 is not at the start (pickup / anacrusis).
     const bool startsOnHit = context.firstHit - context.leadSilenceEnd < 0.050 && context.firstHit < 0.3;
     const bool wholeBarLoop = analysis.exactLoop || (startsOnHit && best.lengthFit >= 0.5f);
-    if (wholeBarLoop && options.forcedBpm <= 20.0 && best.bars > 0 && loopSeconds > 0.0)
+    if (best.label > 0.0f && options.forcedBpm <= 20.0)
+    {
+        // The stated tempo, confirmed by the audio: keep it exactly (no length snap / regression,
+        // which would move a 174 BPM loop with a tail to 177).
+        analysis.bpm = options.labelBpm;
+    }
+    else if (wholeBarLoop && options.forcedBpm <= 20.0 && best.bars > 0 && loopSeconds > 0.0)
     {
         const double loopBpm = 240.0 * best.bars / loopSeconds;
         if (std::abs(loopBpm / analysis.bpm - 1.0) < 0.02)
@@ -1411,6 +1431,9 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
         const float margin = std::max(0.0f, best.score - alternative);
         analysis.tempoConfidence = std::min(analysis.tempoConfidence, juce::jlimit(0.5f, 1.0f, 0.5f + 2.0f * margin));
     }
+    // The stated tempo and the audio agree: as reliable as a typed tempo for practical purposes.
+    if (best.label > 0.0f)
+        analysis.tempoConfidence = std::max(analysis.tempoConfidence, 0.95f);
     if (options.forcedBpm > 20.0)
         analysis.tempoConfidence = 1.0f; // typed by the user
 

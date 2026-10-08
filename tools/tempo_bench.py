@@ -20,6 +20,9 @@ usage:
       relative 0.3, parallel 0.2), exact, relative, fifth, parallel, other; files whose name gives
       only a root ("A#") are scored on the root. Confidence -> exact accuracy.
 
+  Both run commands take --labels name|wrong: the file's own tempo / key labels (as the plugin
+  reads them) or deliberately wrong ones (tempo x4/3, key a tritone off). Default: audio only.
+
 Tempo and phase are reported separately (roadmap §29); the host / typed tempo is a hint, the label in
 the file name is the ground truth.
 """
@@ -43,20 +46,77 @@ def load_corpus(path):
     return rows
 
 
+def acid_tempo(path):
+    """Tempo in a WAV 'acid' chunk (FL Studio renders, acidized packs), or None."""
+    import struct
+    try:
+        with open(path, 'rb') as f:
+            if f.read(12)[8:12] != b'WAVE':
+                return None
+            while True:
+                h = f.read(8)
+                if len(h) < 8:
+                    return None
+                cid, size = h[:4], struct.unpack('<I', h[4:])[0]
+                if cid == b'acid' and size >= 24:
+                    return struct.unpack('<f', f.read(size)[20:24])[0]
+                f.seek(size + (size % 2), 1)
+    except OSError:
+        return None
+
+
+PATHS = {}  # (corpus id, name) -> full path, for list-based corpora
+
+
+def path_of(corpus, name):
+    return PATHS.get((corpus['id'], name), os.path.join(corpus['folder'], name))
+
+
 def files(corpus):
-    if not os.path.isdir(corpus['folder']):
+    """(name, true bpm) per file. 'folder' may be a .txt list of full paths; the bpm regex
+    'acid' takes the tempo from the WAV acid chunk instead of the name."""
+    if corpus['folder'].endswith('.txt'):
+        if not os.path.isfile(corpus['folder']):
+            return []
+        paths = [l.strip() for l in open(corpus['folder'], encoding='utf-8') if l.strip() and not l.startswith('#')]
+    elif os.path.isdir(corpus['folder']):
+        paths = [os.path.join(corpus['folder'], n) for n in sorted(os.listdir(corpus['folder']))]
+    else:
         return []
     out = []
-    for name in sorted(os.listdir(corpus['folder'])):
+    for path in paths:
+        name = os.path.basename(path)
         if not corpus['include'].search(name):
+            continue
+        if corpus['bpm'].pattern == 'acid':
+            bpm = acid_tempo(path)
+            if bpm:
+                out.append((name, round(bpm, 2)))
+                PATHS[(corpus['id'], name)] = path
             continue
         m = corpus['bpm'].search(name)
         if m:
             out.append((name, float(m.group(1))))
+            PATHS[(corpus['id'], name)] = path
     return out
 
 
-def run(corpus_path, out, exe, only):
+def label_args(labels, name, bpm):
+    """Extra lab arguments: no labels (audio only, default), the file's own labels (name / acid
+    chunk, as the plugin reads them), or deliberately wrong ones (tempo x4/3, key a tritone off)
+    to measure how often the audio rejects a wrong label."""
+    if labels == 'name':
+        return ['--labels']
+    if labels == 'wrong':
+        extra = ['--label-bpm', f'{bpm * 4 / 3:.2f}']
+        key = key_from_name(name)
+        if key is not None:
+            extra += ['--label-key', NOTE_NAMES[(key[0] + 6) % 12] + ('' if key[1] is None else 'm' if key[1] == 0 else ' maj')]
+        return extra
+    return []
+
+
+def run(corpus_path, out, exe, only, labels=None):
     for corpus in load_corpus(corpus_path):
         if only and corpus['id'] != only:
             continue
@@ -69,15 +129,16 @@ def run(corpus_path, out, exe, only):
                 target = os.path.join(folder, name + '.txt')
                 if os.path.exists(target):
                     continue
-                args = [exe, 'analyze', os.path.join(corpus['folder'], name), '--hits']
+                args = [exe, 'analyze', path_of(corpus, name), '--hits']
                 if mode == 'typed':
                     args[3:3] = ['--bpm', f'{bpm:g}']
+                args += label_args(labels, name, bpm)
                 result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace')
                 with open(target, 'w', encoding='utf-8') as f:
                     f.write(result.stdout)
 
 
-def run_key(corpus_path, out, exe, only):
+def run_key(corpus_path, out, exe, only, labels=None):
     for corpus in load_corpus(corpus_path):
         if corpus['category'] != 'tonal' or (only and corpus['id'] != only):
             continue
@@ -85,11 +146,11 @@ def run_key(corpus_path, out, exe, only):
         print(f"{corpus['id']}: {len(items)} files", flush=True)
         folder = os.path.join(out, 'harmony', corpus['id'])
         os.makedirs(folder, exist_ok=True)
-        for name, _ in items:
+        for name, bpm in items:
             target = os.path.join(folder, name + '.txt')
             if os.path.exists(target):
                 continue
-            result = subprocess.run([exe, 'analyze', os.path.join(corpus['folder'], name), '--harmony'],
+            result = subprocess.run([exe, 'analyze', path_of(corpus, name), '--harmony'] + label_args(labels, name, bpm),
                                     capture_output=True, text=True, encoding='utf-8', errors='replace')
             with open(target, 'w', encoding='utf-8') as f:
                 f.write(result.stdout)
@@ -97,7 +158,9 @@ def run_key(corpus_path, out, exe, only):
 
 NOTE = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 NOTE_NAMES = 'C C# D D# E F F# G G# A A# B'.split()
-KEY_IN_NAME = re.compile(r'(?:^|[ _\-])([A-G])([#b]?) ?(minor|major|min|maj|m)?(?=[ _.\-]|$)', re.I)
+# same rule as SampleLabelReader: the letter must not continue a word ("Drum"); digits may touch it
+# ("95Em"); accidentals "#", "b", "sharp", "shrp"
+KEY_IN_NAME = re.compile(r'(?:^|[^A-Za-z])([A-G])(#|b|sharp|shrp)? ?(minor|major|min|maj|m)?(?=[^A-Za-z]|$)', re.I)
 KEY_FOUND = re.compile(r'Sample harmony: key ([A-G]#?) (major|minor) \(([0-9.]+)\)')
 
 
@@ -109,7 +172,8 @@ def key_from_name(name):
     if not matches:
         return None
     m = matches[-1]
-    root = (NOTE[m.group(1)] + (1 if m.group(2) == '#' else -1 if m.group(2) == 'b' else 0)) % 12
+    acc = (m.group(2) or '').lower()
+    root = (NOTE[m.group(1)] + (1 if acc == '#' or acc.startswith('s') else -1 if acc == 'b' else 0)) % 12
     suffix = (m.group(3) or '').lower()
     mode = 0 if suffix in ('m', 'min', 'minor') else 1 if suffix in ('maj', 'major') else None
     return root, mode
@@ -302,10 +366,11 @@ def main():
     exe = args[args.index('--breaklab') + 1] if '--breaklab' in args else DEFAULT_EXE
     only = args[args.index('--only') + 1] if '--only' in args else None
     json_path = args[args.index('--json') + 1] if '--json' in args else None
+    labels = args[args.index('--labels') + 1] if '--labels' in args else None
     if args[0] == 'run':
-        run(args[1], args[2], exe, only)
+        run(args[1], args[2], exe, only, labels)
     elif args[0] == 'run-key':
-        run_key(args[1], args[2], exe, only)
+        run_key(args[1], args[2], exe, only, labels)
     elif args[0] == 'key-report':
         key_report(args[1], args[2], json_path, '--list' in args)
     elif args[0] == 'report':

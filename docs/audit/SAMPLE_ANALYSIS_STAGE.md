@@ -288,9 +288,70 @@ Sources:
 - Faraldo, Gómez, Jordà, Herrera (2016), "Key Estimation in Electronic Dance Music", ECIR;
 - Essentia `Key` profile notes.
 
+## Step 6 — what the sample states about itself (file name, WAV acid chunk)
+
+**Cause.** The plugin ignored the tempo and key that nearly every commercial sample carries in its
+name ("Melody Loop 1 - 70 BPM G# Min", "rhh_bass_loop_90_Am"). FL Studio renders and "acidized" packs
+also carry the tempo in the WAV `acid` chunk: 180 of the 883 corpus files, every one equal to the
+label, and 1690 of the maintainer's 3134 FL renders.
+
+**Change.**
+- `SampleLabelReader` (new) reads the tempo from the `acid` chunk (via JUCE metadata), else from the
+  name (explicit "BPM", else a single bare number 60-200 that is not a counter), and the key from the
+  name ("G# Min", "_Am", "95Em", "Fmin", "Gsharp", "Dshrp", Cyrillic look-alikes).
+- `SampleAnalyzer::analyzeAudioFileExtended` passes these to both analyzers through the request.
+- Tempo: the stated tempo is evaluated exactly (no local refinement) and gets +0.6 in the candidate
+  score. If it wins, the tempo is kept exactly (no length snap or regression) and the confidence is
+  0.95.
+- Key: the stated key is taken unless its scale clashes with the notes heard (chroma correlation
+  with its profile < -0.1). Measured: true labels kept 94.7 %, a tritone-off label 15 %, a
+  semitone-off label 24 %. A root-only label takes the mode the audio prefers. A rejected label
+  caps the key confidence at 0.5.
+
+**Lab and bench.**
+- The lab gains `--labels` (read like the plugin), `--label-bpm` and `--label-key` (inject).
+- The lab now reads its command line as UTF-16 on Windows, so Cyrillic paths open.
+- `tempo_bench.py run|run-key --labels name|wrong` runs with the files' own labels or deliberately
+  wrong ones (tempo x4/3, key a tritone off).
+- A corpus folder may be a `.txt` list of paths, and the bpm regex `acid` takes the truth from the
+  chunk.
+- New corpora:
+  - `user_renders`: 120 of the maintainer's FL renders, 4-30 s, spread over 70-180 BPM;
+  - `user_hamlo_pack`: 12 loops with tempo and key in free-form names;
+  - `user_piano`;
+  - `user_song_stems`: 13 stems of one track, 79 Am.
+
+**Result:**
+
+| | audio only | with the files' labels | with wrong labels |
+|---|---|---|---|
+| tempo, drum loops | 93 % | **99 %** | 93 % |
+| tempo, classic breaks | 96 % | **100 %** | 96 % |
+| tempo, tonal loops (13 packs) | 48 % | **94 %** | 41 % |
+| tempo, maintainer's FL renders (120) | 42 % | **96 %** | 34 % |
+| key, tonal loops (MIREX / exact) | 0.64 / 56 % | **0.95 / 95 %** | 0.61 / 53 % |
+
+- Wrong drum and break tempo labels were all rejected (tempo unchanged from audio only).
+- On tonal loops some wrong labels pass because the audio itself is unsure there.
+- Remaining errors with labels:
+  - a few mislabelled packs: "DILLA ... 88Bpm" is exactly 4 bars at 91.9, and the analyzer keeps
+    the audio tempo;
+  - tonal loops whose audio rejects the true tempo label.
+- Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
+
+**Audio-only finding on the maintainer's material.** These are the most realistic test.
+- Tempo is right on 42 % of FL renders, 42 % of HamloProd pack 2 and 8 % of the song stems.
+- The errors are systematic:
+  - x2 (85 -> 170, 79 -> 158);
+  - x3/2 (70 -> 105: triplets or swing).
+- The renders sit at 70-95 BPM. On melodic parts the analyzer counts every note as a beat and
+  drifts to 140-180. This is the next step.
+
 ## Open (next steps)
 
-1. **Tempo of tonal loops.** Across the 9 tonal packs the tempo is right in only 49 % of files
+1. **Tempo of tonal loops from the audio (NEXT).** Audio only: 48 % on 13 tonal packs, 42 % on the
+   maintainer's FL renders (x2 and x3/2 errors, see step 6). Before step 6: across the 9 tonal packs
+   the tempo was right in only 49 % of files
    (Freaky DnB bass 30 %, Cymatics 42-48 %). The analyzer tracks the onsets of notes, not a beat.
    The plugin only trusts these at confidence ≥ 0.8 (81 % right there). Look at this together with
    the key work.
@@ -319,7 +380,7 @@ Sources:
 
    Measure: share of the bundled samples and the maintainer's packs that sound off the written note,
    before and after.
-5. **Maintainer's own material.**
+5. **Maintainer's own material** (in the bench since step 6).
    - `E:/FL/.../Audio/Rendered`: 1680 of 3134 renders carry FL's project tempo in the WAV `acid`
      chunk. That is a tempo reference from real beats; the bench needs a bpm-from-chunk mode and a
      length cap for loops.

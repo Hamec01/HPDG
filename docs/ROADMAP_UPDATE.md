@@ -139,7 +139,55 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - Step 5: key of the loop — peak chroma + Albrecht-Shanahan profiles + bass / opening-note weights
   + small minor prior, chosen leave-one-pack-out. Key MIREX 0.50 → 0.65 (exact 41 → 56 %) on 377
   tonal loops; majors 7 → 9 / 28; synthetic harmony test unchanged (36 / 40).
-- Next: key confidence, bass sample root from audio, 16th phase; tonal tempo is only 49 % right.
+- Step 6: the sample's own labels (file name, WAV acid chunk; `SampleLabelReader`) as hints the audio
+  checks. With labels: tempo drums 99 %, breaks 100 %, tonal 94 %, maintainer's FL renders 96 %;
+  key 95 % exact. Deliberately wrong labels are rejected on drums (tempo unchanged).
+- Next: tempo of tonal loops from the audio alone (48 %; maintainer's renders 42 %, x2 / x3/2 errors).
+
+## NOTE FOR THE NEXT AGENT (2026-10-08, Sample Analysis)
+
+Stage 6 (Sample Analysis) is in progress. The maintainer's goals are tempo close to 100 % and the
+sample overall (key, bass) close to 90 %. Steps 1-6 are done; see `docs/audit/SAMPLE_ANALYSIS_STAGE.md`.
+
+**Benchmarks** (audio stays on the dev PC, lists in `docs/audit/reference/`):
+- tempo / phase: `python tools/tempo_bench.py run|report docs/audit/reference/tempo_corpus.tsv <out>`
+- key: `python tools/tempo_bench.py run-key|key-report docs/audit/reference/tempo_corpus.tsv <out>`
+- add `--labels name` (the files' own labels) or `--labels wrong` (injected wrong labels). Always
+  report audio-only too, so labels cannot hide a regression.
+- Corpora:
+  - 8 drum packs, classic breaks, 9 tonal packs;
+  - the maintainer's material: `user_renders` (120 FL renders, tempo from the acid chunk),
+    `user_hamlo_pack`, `user_song_stems`, `user_piano`;
+  - more renders in `E:/FL/Image-Line/FL Studio/Audio/Rendered` (1690 with acid tempo).
+
+**What to do next, in order:**
+1. **Tempo of melodic loops from the audio alone.**
+   - Now 48 % on 13 tonal packs and 42 % on the maintainer's renders.
+   - The errors are x2 (85 -> 170) and x3/2 (70 -> 105). The melody's note onsets are read as beats.
+   - Ideas to measure first:
+     - the step-2 subdivision penalty only works one way: add the opposite check, a "sparse beat"
+       for the fast reading;
+     - weight onsets by low-frequency energy (bass and chord changes) rather than every note;
+     - a stronger loop-length prior for trimmed loops (renders are whole bars);
+     - a tempo prior from the maintainer's renders (median 87).
+   - Pick by leave-one-pack-out, as in step 5. Do not touch drum-loop accuracy (93 %).
+2. **Key confidence** (follow the margin over the second key, as tempo step 3) and major keys (9 / 28).
+   Ask the maintainer for major-key material (soul samples).
+3. **Root note, octave and cents of bass / 808 one-shots from the audio.**
+   - Today the root comes only from the name (`LaneSampleBank::rootPitchClassFromName`), with the
+     octave ignored.
+   - `HPDG_BreakLab rootnote` exists.
+   - Findings on the 40 bundled Sub808 samples: TSB3 is C#2 but is read as C; there are mixed C1 / C2
+     octaves; DnB DSB2 and DSB9 are labelled E but sound F.
+4. **16th phase** on some techno loops (GUT 01 / 04 / 22).
+
+**Working rules** (also in agent memory):
+- measure before changing; same test before and after;
+- calibration and validation are separate (leave-one-pack-out);
+- improve, do not rework;
+- report to the maintainer in Russian with numbers, including short progress notes;
+- commit after the maintainer approves; push when asked;
+- FL Studio must be closed before `build_vst.bat`.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
 

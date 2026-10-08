@@ -46,12 +46,14 @@ struct BreakTempoCandidate
     float backbeat = 0.0f;
     float prior = 0.0f;
     float host = 0.0f;
+    float label = 0.0f;       // 1: the tempo the sample's name / acid chunk states
     float score = 0.0f;
 };
 
 struct DrumBreakOptions
 {
     double hostBpm = 0.0;        // hint only
+    double labelBpm = 0.0;       // tempo the sample states (name / acid chunk): strong hint, checked against the audio
     double forcedBpm = 0.0;      // > 0: skip detection and use this tempo
     double minBpm = 55.0;
     double maxBpm = 200.0;

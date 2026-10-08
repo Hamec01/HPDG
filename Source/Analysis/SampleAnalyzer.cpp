@@ -74,6 +74,7 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     breakOptions.hostBpm = hostBpm;
     breakOptions.quantizeAmount = request.breakQuantizeAmount;
     breakOptions.forcedBpm = request.manualBpm > 20.0 ? request.manualBpm : 0.0;
+    breakOptions.labelBpm = request.labelBpm;
     bundle.breakAnalysis = breakTranscriber.analyze(mono, sampleRate, breakOptions);
 
     // Key + bass line, on the original timeline. Segments are one beat of the tempo the
@@ -115,7 +116,8 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     // Records are often off A440: the sample's tuning first, so notes land on semitones. Then
     // the bass line and lead melody note by note (drum-free), which also settle each beat's bass.
     const double tuningCents = SampleLineTranscriber::estimateTuningCents(mono, sampleRate);
-    bundle.harmony = harmonyAnalyzer.analyze(mono, sampleRate, 60.0 / bundle.harmonyBpm, bundle.harmonyOriginSeconds, tuningCents);
+    bundle.harmony = harmonyAnalyzer.analyze(mono, sampleRate, 60.0 / bundle.harmonyBpm, bundle.harmonyOriginSeconds, tuningCents,
+                                             request.labelKeyRoot, request.labelKeyMode);
     if (bundle.harmony.valid)
     {
         bundle.harmony.lines = SampleLineTranscriber().transcribe(mono, sampleRate, bundle.harmony.keyRoot, bundle.harmony.scaleMode,
@@ -279,7 +281,14 @@ SampleAnalysisBundle SampleAnalyzer::analyzeAudioFileExtended(const juce::File& 
         return {};
     }
 
-    auto bundle = analyzeBufferExtended(buffer, reader->sampleRate, request, hostBpm);
+    // What the file states about itself: a strong hint for tempo and key (step 6).
+    const auto labels = SampleLabelReader::read(file, reader->metadataValues);
+    auto labelledRequest = request;
+    labelledRequest.labelBpm = labels.bpm;
+    labelledRequest.labelKeyRoot = labels.keyRoot;
+    labelledRequest.labelKeyMode = labels.keyMode;
+    auto bundle = analyzeBufferExtended(buffer, reader->sampleRate, labelledRequest, hostBpm);
+    bundle.labels = labels;
 
     if (errorMessage != nullptr && !bundle.summary.valid)
         *errorMessage = "Analysis completed with invalid result.";

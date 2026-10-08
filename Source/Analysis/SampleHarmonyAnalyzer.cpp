@@ -23,6 +23,10 @@ constexpr std::array<float, 12> kMinorProfile { 6.33f, 2.68f, 3.52f, 5.38f, 2.60
 // Albrecht & Shanahan (2013) corpus profiles: the key decision uses these (docs/audit/
 // SAMPLE_ANALYSIS_STAGE.md, key step: per-pack MIREX on 9 held-out packs beat Krumhansl-Kessler
 // and Temperley). The KK profiles stay for reference.
+// A key the sample's file name states is kept unless its scale clashes with the notes heard:
+// correlation of the chroma with the stated key's profile below this rejects it (step 6:
+// true labels kept 94.7 %, a tritone-off label 15 %, a semitone-off label 24 %).
+constexpr float kKeyLabelMinCorrelation = -0.1f;
 constexpr std::array<float, 12> kMajorProfileAS { 0.238f, 0.006f, 0.111f, 0.006f, 0.137f, 0.094f, 0.016f, 0.214f, 0.009f, 0.080f, 0.008f, 0.081f };
 constexpr std::array<float, 12> kMinorProfileAS { 0.220f, 0.006f, 0.104f, 0.123f, 0.019f, 0.103f, 0.012f, 0.214f, 0.062f, 0.022f, 0.061f, 0.052f };
 
@@ -134,7 +138,9 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
                                              double sampleRate,
                                              double segmentSeconds,
                                              double originSeconds,
-                                             double tuningCents) const
+                                             double tuningCents,
+                                             int labelKeyRoot,
+                                             int labelKeyMode) const
 {
     const double tuning = juce::jlimit(-50.0, 50.0, tuningCents) / 100.0;
     SampleHarmony harmony;
@@ -325,6 +331,27 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
     }
 
     harmony.keyConfidence = juce::jlimit(0.0f, 1.0f, (bestScore - 0.35f) / 0.45f) * juce::jlimit(0.3f, 1.0f, (bestScore - secondScore) / 0.08f);
+    // The key the file name states (step 6). Fifth / relative / parallel keys share most notes
+    // and are exactly where the audio is least sure, so the label wins there; a label whose scale
+    // clashes with what is heard (wrong label, "Kit A" read as a key) is rejected.
+    if (labelKeyRoot >= 0 && labelKeyRoot < 12)
+    {
+        int labelMode = labelKeyMode;
+        if (labelMode < 0) // root only: the mode the audio prefers on that root
+            labelMode = correlation(chroma, kMinorProfileAS, labelKeyRoot) + 0.10f
+                            >= correlation(chroma, kMajorProfileAS, labelKeyRoot) ? 0 : 1;
+        const float labelCorrelation = correlation(chroma, labelMode == 1 ? kMajorProfileAS : kMinorProfileAS, labelKeyRoot);
+        if (labelCorrelation >= kKeyLabelMinCorrelation)
+        {
+            harmony.keyRoot = labelKeyRoot;
+            harmony.scaleMode = labelMode;
+            harmony.keyConfidence = 0.95f; // stated, and the notes fit
+        }
+        else
+        {
+            harmony.keyConfidence = std::min(harmony.keyConfidence, 0.5f); // the file says otherwise
+        }
+    }
     harmony.valid = true;
     return harmony;
 }

@@ -71,6 +71,7 @@ target_sources(HPDG
     Source/Analysis/SampleSourceAudio.cpp
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
+    Source/Analysis/SampleLabelReader.cpp
     Source/Analysis/SampleLineTranscriber.cpp
     Source/Analysis/FeatureExtractor.cpp
     Source/Analysis/SampleApplyWeights.cpp
@@ -402,6 +403,7 @@ add_executable(HPDG_BreakLab
     Tests/BreakTranscriptionLab.cpp
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
+    Source/Analysis/SampleLabelReader.cpp
     Source/Analysis/SampleLineTranscriber.cpp
 )
 

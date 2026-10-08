@@ -60,6 +60,12 @@ struct SampleAnalysisRequest
     // used as-is (and trusted for key analysis and generation).
     double manualBpm = 0.0;
 
+    // What the sample states about itself (SampleLabelReader: WAV acid chunk / file name), filled
+    // by SampleAnalyzer::analyzeAudioFileExtended. Hints checked against the audio.
+    double labelBpm = 0.0;
+    int labelKeyRoot = -1;
+    int labelKeyMode = -1;
+
     bool hasTrim() const { return trimEndSeconds > trimStartSeconds; }
 };
 } // namespace bbg

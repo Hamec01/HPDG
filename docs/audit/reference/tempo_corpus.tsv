@@ -21,3 +21,7 @@ tonal_rhh_melodic	tonal	boombap	yes	E:/DRUMS/DRUMS/Boombap/Raw Hip-Hop/melodic_l
 tonal_rhh_bass	tonal	boombap	yes	E:/DRUMS/DRUMS/Boombap/Raw Hip-Hop/bass_loops	\.wav$	_([0-9]+)_[A-G]
 tonal_dnb_music	tonal	dnb	yes	E:/DRUMS/DRUMS/Freaky Loops - Dark Neurofunk and Cinematic DnB/DNC_Music Loops_FRK	\.wav$	DNC_([0-9]+)_
 tonal_dnb_bass	tonal	dnb	yes	E:/DRUMS/DRUMS/Freaky Loops - Dark Neurofunk and Cinematic DnB/DNC_Bass Loops_FRK	\.wav$	DNC_([0-9]+)_
+user_hamlo_pack	tonal	user	no	E:/FL/Image-Line/FL Studio/Audio/Rendered/HamloProd sample pack 2	\.wav$	(?:^|[^0-9])([0-9]{2,3})(?:[^0-9]|$)
+user_piano	tonal	user	no	E:/FL/Image-Line/FL Studio/Audio/Rendered	^Piano 85 Em\.wav$	([0-9]{2,3})
+user_song_stems	tonal	user	no	E:/FL/Image-Line/FL Studio/Audio/Rendered/потому что тебя не люблю	\.wav$	([0-9]{2,3})Am
+user_renders	renders	user	no	docs/audit/reference/user_renders_120.txt	\.wav$	acid

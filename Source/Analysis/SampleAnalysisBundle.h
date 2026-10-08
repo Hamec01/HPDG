@@ -3,6 +3,7 @@
 #include "AudioFeatureMap.h"
 #include "DrumBreakTranscriber.h"
 #include "SampleHarmonyAnalyzer.h"
+#include "SampleLabelReader.h"
 #include "GenerationHints.h"
 #include "LaneEvidenceMap.h"
 #include "SampleAnalysisResult.h"
@@ -18,6 +19,7 @@ struct SampleAnalysisBundle
     SampleTranscription transcription;
     GenerationHints hints;
     DrumBreakAnalysis breakAnalysis;
+    SampleLabels labels;            // tempo / key the file states (name, acid chunk)
     SampleHarmony harmony;
     double sampleBpm = 0.0;         // the sample's own tempo when trusted, 0 when unknown
     double harmonyBpm = 0.0;        // tempo the bass segments were cut with
