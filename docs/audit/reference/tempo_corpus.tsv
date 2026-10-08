@@ -1,0 +1,16 @@
+# Tempo / phase benchmark corpus (roadmap §24-29). Audio stays outside git; paths are local to the
+# development PC (E: = the drum library, C:/Users/Ham_h/Downloads = maintainer-provided packs).
+# id	category	genre	trimmed	folder	include regex (file name)	bpm regex (group 1)
+# category: drums (pure drum loop) | breaks (classic break, untrimmed: no beat-1 truth) | tonal (no drums)
+# trimmed: yes = the file starts on beat 1 (origin truth 0 ms)
+boombap_custom	drums	boombap	yes	E:/HPDG_corpus/boombap_loops/02_CUSTOM_DRUM_LOOPS_(150+Custom_Drum_Loopz)	\.wav$	([0-9]+(?:\.[0-9]+)?) ?B?pm
+classic_breaks	breaks	boombap	no	E:/HPDG_corpus/boombap_loops/04_CLASSIC_DRUM_BREAKS_(80+Drm_Loopz)	\.wav$	^([0-9]+(?:\.[0-9]+)?) ?BPM
+dnb_ghosthack	drums	dnb	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Upfront Drum and Bass/DnB_Drum_Loops/DnB_Full	\.wav$	_loop_([0-9]+)\.wav
+dnb_freaky	drums	dnb	yes	E:/DRUMS/DRUMS/Freaky Loops - Dark Neurofunk and Cinematic DnB/DNC_Drum Tools_FRK/DNC_Drum Loops_FRK	\.wav$	DNC_([0-9]+)_
+techno_ghosthack	drums	techno	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Ultimate Techno Essentials/GUT_Drum_Loops	_Full\.wav$	_([0-9]+)_BPM
+trap_urban	drums	trap	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Urban Trap Essentials/Samples and Loops/Loops/15 Full Drum Loops (Stems Seperated)	Full\.wav$	\(([0-9]+)\)
+trap_hybrid	drums	trap	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Hybrid Trap Essentials/Drum Loops (stem seperated)	Full\.wav$	Ghosthack ([0-9]+) Drum
+trap_utt2	drums	trap	yes	E:/DRUMS/DRUMS/Sonic Mechanics - Underground Trap Tool Kit 2/UTT2 - LOOPS/WAV/DRUMS	- DRM\.wav$	- ([0-9]+) - DRM
+trap_cr2	drums	trap	yes	C:/Users/Ham_h/Downloads/Sample Tools by Cr2 - Trippy Trap Drum Loops/Audio_MIDI/Drum Loops/Full Loops	_Full_	_Full_([0-9]+)
+tonal_techno_music	tonal	techno	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Ultimate Techno Essentials/GUT_Music_Loops	\.wav$	_([0-9]+)_BPM
+tonal_techno_bass	tonal	techno	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Ultimate Techno Essentials/GUT_Bass Loops	\.wav$	_([0-9]+)_BPM

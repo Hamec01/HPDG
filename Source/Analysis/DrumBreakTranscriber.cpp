@@ -607,6 +607,40 @@ float backbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, double or
     return static_cast<float>(0.75 * snarePart + 0.25 * kickPart);
 }
 
+// Bar-phase evidence: the 2 & 4 backbeat or the half-time one (one snare on beat 3, trap / halftime
+// DnB at their written tempo). Used only to place beat 1 at a given tempo: the tempo score keeps the
+// 2 & 4 backbeat. With "2 & 4 only" a trap loop's beat 1 moved a quarter so the beat-3 snare read
+// as beat 2 (docs/audit/SAMPLE_ANALYSIS_STAGE.md step 1).
+float phaseBackbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, double origin)
+{
+    double onThree = 0.0;
+    double snareTotal = 0.0;
+    double kickOnOne = 0.0;
+    double kickTotal = 0.0;
+    for (const auto& hit : hits)
+    {
+        if (hit.strength < 0.45f)
+            continue;
+        const double beat = std::fmod((hit.timeSeconds - origin) * bpm / 60.0 + 4000.0, 4.0);
+        if (hit.lane == TrackType::Snare)
+        {
+            snareTotal += hit.strength;
+            if (std::abs(beat - 2.0) < 0.14)
+                onThree += hit.strength;
+        }
+        else if (hit.lane == TrackType::Kick)
+        {
+            kickTotal += hit.strength;
+            if (beat < 0.14 || beat > 3.86)
+                kickOnOne += hit.strength;
+        }
+    }
+    const double snarePart = snareTotal > 0.0 ? onThree / snareTotal : 0.5;
+    const double kickPart = kickTotal > 0.0 ? std::min(1.0, 3.0 * kickOnOne / kickTotal) : 0.5;
+    const float halfTime = static_cast<float>(0.75 * snarePart + 0.25 * kickPart);
+    return std::max(backbeatScore(hits, bpm, origin), halfTime);
+}
+
 float lengthFit(double loopSeconds, double bpm, int& barsOut)
 {
     const double bars = loopSeconds * bpm / 240.0;
@@ -750,6 +784,7 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
     double bestOrigin = phased.phase;
     float bestBarScore = -1.0f;
     float bestBackbeat = 0.0f;
+    float tempoBarScore = -1.0f;
     const int slotStep = phased.swing < 0.03f ? 1 : 2;
     for (int slot = 0; slot < 16; slot += slotStep)
     {
@@ -763,11 +798,16 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
             startOffset = std::min(startOffset, bar - startOffset);
             startBonus = startOffset < 0.035 ? 0.3f : 0.0f;
         }
-        const float barScore = backbeat + startBonus;
+        // The tempo score keeps the 2 & 4 reading (unchanged); beat 1 also accepts the half-time one.
+        if (backbeat + startBonus > tempoBarScore)
+        {
+            tempoBarScore = backbeat + startBonus;
+            bestBackbeat = backbeat;
+        }
+        const float barScore = phaseBackbeatScore(hits, candidate.bpm, origin) + startBonus;
         if (barScore > bestBarScore)
         {
             bestBarScore = barScore;
-            bestBackbeat = backbeat;
             bestOrigin = origin;
         }
     }
@@ -1356,7 +1396,7 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
             double searched = 0.0;
             evaluateCandidate(analysis.hits, readBpm, context, options, false, searched);
             const double atStart = context.firstHit;
-            if (backbeatScore(analysis.hits, readBpm, atStart) >= backbeatScore(analysis.hits, readBpm, searched) - 0.35f)
+            if (phaseBackbeatScore(analysis.hits, readBpm, atStart) >= phaseBackbeatScore(analysis.hits, readBpm, searched) - 0.35f)
                 analysis.originSeconds = atStart;
             else
                 analysis.originSeconds = searched;
