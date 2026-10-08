@@ -218,6 +218,76 @@ The darkest drum loops are lo-fi Boom Bap (minimum 0.19 %).
 - `tempo_bench.py` now reports the share ≥ 0.75 (the plugin's threshold) instead of ≥ 0.5.
 - Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
 
+## Step 5 — key of the loop (`SampleHarmonyAnalyzer`)
+
+**Benchmark.** `tempo_bench.py run-key` / `key-report` run `HPDG_BreakLab analyze --harmony` on
+the 377 tonal loops and score the key against the file name:
+- MIREX weighting: exact 1, fifth 0.5, relative 0.3, parallel 0.2;
+- 97 files name only a root (Freaky DnB bass, some Raw Hip-Hop bass) and are scored on the root;
+- 3 Ghosthack files whose names use a Cyrillic "С" cannot be opened by the lab and are skipped.
+
+The lab now passes the sample's tuning exactly as `SampleAnalyzer` does, and prints the key
+decision's inputs (chroma, bass share, opening bass note).
+
+**Baseline.** MIREX 0.50, exact 41 %. The errors:
+- fifth 11 %;
+- parallel 11 % (bass loops rarely play the third);
+- other 33 %, often a minor key read as its VI or VII major (i-VI-VII progressions).
+
+Confidence was no guide: 44 % exact at confidence ≥ 0.6.
+
+**Experiments, offline before coding.**
+- A Python replica of the decision reproduces the plugin on 377 / 377 files.
+- Chroma variants were computed from the audio: summed spectrum (current), spectral peaks only,
+  stability-weighted, harmonic salience, top-3 notes per frame.
+- These were crossed with three profiles (Krumhansl-Kessler, Temperley, Albrecht & Shanahan 2013),
+  bass weight, opening-note weight and a minor prior.
+- Selection by leave-one-pack-out over the 9 packs: choose on 8, score the 9th.
+- The same configuration won in 7 of 9 folds and every held-out pack improved (mean per-pack MIREX
+  0.49 → 0.61): peak chroma, no compression, Albrecht-Shanahan profiles, bass 0.2, opening note
+  0.35, minor prior.
+
+**Final weights.** Opening note 0.5 and minor prior 0.1.
+- The labelled loops are 255 minor / 28 major, which matches the genres here (EDM key work:
+  Faraldo et al. 2016-17).
+- With opening 0.35 the lane test "guide bass follows sample bass and key" broke. Its sample is
+  Am-F-C-G (i-VI-III-VII) with loud bass roots, so the chroma correlates with F major 0.84 vs
+  A minor 0.44, and A minor won or lost on details of the beat segmentation.
+- Excluding the bass register from the chroma (≥ 110-220 Hz) does not help: real-pack MIREX
+  0.64 → 0.60-0.63.
+- Opening 0.5 gives that case a clear margin and helps the majors, for −0.01 per-pack MIREX
+  (simulation).
+
+**Result** (real lab, same 377 files):
+
+| | before | after |
+|---|---|---|
+| MIREX | 0.50 | **0.65** |
+| exact | 41 % | **56 %** |
+| major loops right | 7 / 28 | 9 / 28 |
+| synthetic harmony test (40 progressions) | 36 / 40 | 36 / 40 |
+
+Per pack (MIREX):
+- Techno bass 0.35 → 0.73;
+- Raw Hip-Hop bass 0.48 → 0.76;
+- Techno music 0.57 → 0.78;
+- Raw Hip-Hop melodic 0.46 → 0.69;
+- Freaky DnB music 0.48 → 0.64;
+- Cymatics Diamonds 0.62 → 0.72;
+- Cymatics Lofi 0.43 → 0.49;
+- Freaky DnB bass 0.42 → 0.47;
+- Cymatics Cobra 0.75 → 0.71 (more fifth errors).
+
+Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
+
+Sources:
+- Albrecht & Shanahan (2013), "The Use of Large Corpora to Train a New Type of Key-Finding
+  Algorithm", Music Perception 31(1);
+- Krumhansl (1990);
+- Temperley (2001);
+- Faraldo, Gómez, Jordà, Herrera (2016), "Key Estimation in Electronic Dance Music", ECIR;
+- Essentia `Key` profile notes.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops.** Across the 9 tonal packs the tempo is right in only 49 % of files
@@ -225,9 +295,11 @@ The darkest drum loops are lo-fi Boom Bap (minimum 0.19 %).
    The plugin only trusts these at confidence ≥ 0.8 (81 % right there). Look at this together with
    the key work.
 2. **16th phase.** On some Techno loops the grid is a 16th off (GUT 01 / 04 / 22).
-3. **Key of the loop: benchmark.** All 377 tonal loops (9 packs) carry their key in the file name
-   (`GUT_Music_Loop_13_123_BPM_Am`). Measure how often `SampleHarmonyAnalyzer` gets the root and the
-   mode right. A bass "in key" of a wrong key is still wrong, so this comes before item 4.
+3. **Key confidence and the remaining key errors.**
+   - Confidence ≥ 0.6 is right 59 % of the time and < 0.4 is right 42 %; it should follow the
+     margin over the second key, as tempo does (step 3).
+   - Major loops: 9 / 28 right. Needs more major material (soul samples).
+   - Fifth errors: 10-30 % per pack. Freaky DnB bass (reese, root only): 47 %.
 4. **Root of the bass / 808 sample from its sound.** Today the root comes only from the file name
    (`LaneSampleBank::rootPitchClassFromName`): no note in the name means C, and the octave is
    ignored. A YIN f0 check of the 40 bundled Sub808 samples (2026-10-08) found:
@@ -247,4 +319,10 @@ The darkest drum loops are lo-fi Boom Bap (minimum 0.19 %).
 
    Measure: share of the bundled samples and the maintainer's packs that sound off the written note,
    before and after.
-5. Later: swing, K/S/H transcription accuracy, Copy Break, confidence-aware Guide generation.
+5. **Maintainer's own material.**
+   - `E:/FL/.../Audio/Rendered`: 1680 of 3134 renders carry FL's project tempo in the WAV `acid`
+     chunk. That is a tempo reference from real beats; the bench needs a bpm-from-chunk mode and a
+     length cap for loops.
+   - "HamloProd sample pack 2": about 17 loops with tempo and key in free-form names (`Piano 85Dm`,
+     `Guitar Gsharp 82`) for the key benchmark.
+6. Later: swing, K/S/H transcription accuracy, Copy Break, confidence-aware Guide generation.

@@ -12,6 +12,14 @@ usage:
       confidence (median, share >= 0.75 = "clearly a drum loop" in the plugin); phase (trimmed loops only, origin truth 0 ms): |origin| automatic (when the tempo is
       right) and typed, in ms and in 16ths. --list prints every wrong file.
 
+  python tools/tempo_bench.py run-key <corpus.tsv> <out folder> [--breaklab <exe>] [--only <corpus id>]
+      Tonal corpora only: analyze <file> --harmony -> <out>/harmony/<id>/<file>.txt (the key is
+      estimated from the whole sample's chroma, independent of the tempo).
+  python tools/tempo_bench.py key-report <corpus.tsv> <out folder> [--json <file>] [--list]
+      Key accuracy against the key in the file name: MIREX weighted score (exact 1, fifth 0.5,
+      relative 0.3, parallel 0.2), exact, relative, fifth, parallel, other; files whose name gives
+      only a root ("A#") are scored on the root. Confidence -> exact accuracy.
+
 Tempo and phase are reported separately (roadmap §29); the host / typed tempo is a hint, the label in
 the file name is the ground truth.
 """
@@ -67,6 +75,119 @@ def run(corpus_path, out, exe, only):
                 result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace')
                 with open(target, 'w', encoding='utf-8') as f:
                     f.write(result.stdout)
+
+
+def run_key(corpus_path, out, exe, only):
+    for corpus in load_corpus(corpus_path):
+        if corpus['category'] != 'tonal' or (only and corpus['id'] != only):
+            continue
+        items = files(corpus)
+        print(f"{corpus['id']}: {len(items)} files", flush=True)
+        folder = os.path.join(out, 'harmony', corpus['id'])
+        os.makedirs(folder, exist_ok=True)
+        for name, _ in items:
+            target = os.path.join(folder, name + '.txt')
+            if os.path.exists(target):
+                continue
+            result = subprocess.run([exe, 'analyze', os.path.join(corpus['folder'], name), '--harmony'],
+                                    capture_output=True, text=True, encoding='utf-8', errors='replace')
+            with open(target, 'w', encoding='utf-8') as f:
+                f.write(result.stdout)
+
+
+NOTE = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
+NOTE_NAMES = 'C C# D D# E F F# G G# A A# B'.split()
+KEY_IN_NAME = re.compile(r'(?:^|[ _\-])([A-G])([#b]?) ?(minor|major|min|maj|m)?(?=[ _.\-]|$)', re.I)
+KEY_FOUND = re.compile(r'Sample harmony: key ([A-G]#?) (major|minor) \(([0-9.]+)\)')
+
+
+def key_from_name(name):
+    """(root 0-11, mode 0 minor / 1 major / None) from the last key token of a file name."""
+    # some packs type the note with a Cyrillic look-alike ("Сm")
+    stem = os.path.splitext(name)[0].translate(str.maketrans('САВЕ', 'CABE'))
+    matches = [m for m in KEY_IN_NAME.finditer(stem) if m.group(1).isupper()]
+    if not matches:
+        return None
+    m = matches[-1]
+    root = (NOTE[m.group(1)] + (1 if m.group(2) == '#' else -1 if m.group(2) == 'b' else 0)) % 12
+    suffix = (m.group(3) or '').lower()
+    mode = 0 if suffix in ('m', 'min', 'minor') else 1 if suffix in ('maj', 'major') else None
+    return root, mode
+
+
+def key_kind(found, truth):
+    root, mode = found
+    troot, tmode = truth
+    if tmode is None:
+        return 'exact' if root == troot else 'other'
+    if root == troot and mode == tmode:
+        return 'exact'
+    if mode == tmode and (root - troot) % 12 in (5, 7):
+        return 'fifth'
+    if mode != tmode and root == (troot + (3 if tmode == 0 else 9)) % 12:
+        return 'relative'
+    if root == troot:
+        return 'parallel'
+    return 'other'
+
+
+MIREX = {'exact': 1.0, 'fifth': 0.5, 'relative': 0.3, 'parallel': 0.2, 'other': 0.0}
+
+
+def key_report(corpus_path, out, json_path, list_wrong):
+    result = {}
+    everything = []
+    for corpus in load_corpus(corpus_path):
+        if corpus['category'] != 'tonal':
+            continue
+        rows = []
+        for name, _ in files(corpus):
+            truth = key_from_name(name)
+            path = os.path.join(out, 'harmony', corpus['id'], name + '.txt')
+            if truth is None or not os.path.exists(path):
+                continue
+            text = open(path, encoding='utf-8', errors='replace').read()
+            if 'cannot read' in text:
+                continue  # the lab could not open the file (non-ANSI name on Windows)
+            m = KEY_FOUND.search(text)
+            if not m:
+                rows.append(dict(name=name, kind='other', conf=0.0, found='-', truth=truth))
+                continue
+            root = (NOTE[m.group(1)[0]] + (1 if m.group(1).endswith('#') else 0)) % 12
+            found = (root, 1 if m.group(2) == 'major' else 0)
+            rows.append(dict(name=name, kind=key_kind(found, truth), conf=float(m.group(3)),
+                             found=f"{m.group(1)} {m.group(2)}", truth=truth))
+        if rows:
+            result[corpus['id']] = key_summary(corpus['id'], rows, list_wrong)
+            everything.extend(rows)
+    if everything:
+        result['ALL tonal'] = key_summary('ALL tonal', everything, False)
+    if json_path:
+        json.dump(result, open(json_path, 'w', encoding='utf-8'), indent=1)
+
+
+def key_summary(cid, rows, list_wrong):
+    n = len(rows)
+    share = lambda k: sum(1 for r in rows if r['kind'] == k) / n
+    s = dict(n=n, mirex=sum(MIREX[r['kind']] for r in rows) / n, exact=share('exact'), fifth=share('fifth'),
+             relative=share('relative'), parallel=share('parallel'), other=share('other'),
+             modeKnown=sum(1 for r in rows if r['truth'][1] is not None) / n)
+    bins = {}
+    for r in rows:
+        b = '<0.4' if r['conf'] < 0.4 else '0.4-0.6' if r['conf'] < 0.6 else '>=0.6'
+        t, ok = bins.get(b, (0, 0))
+        bins[b] = (t + 1, ok + (r['kind'] == 'exact'))
+    s['calibration'] = {b: dict(n=t, exact=ok / t) for b, (t, ok) in bins.items()}
+    cal = ' '.join(f"{b}:{v['exact']:.2f}(n{v['n']})" for b, v in sorted(s['calibration'].items()))
+    print(f"{cid:20s} n {n:3d} | MIREX {s['mirex']:.2f} | exact {s['exact']:.2f} fifth {s['fifth']:.2f} "
+          f"relative {s['relative']:.2f} parallel {s['parallel']:.2f} other {s['other']:.2f} "
+          f"| mode in name {s['modeKnown']:.2f} | conf -> exact {cal}")
+    if list_wrong:
+        for r in rows:
+            if r['kind'] != 'exact':
+                t = NOTE_NAMES[r['truth'][0]] + ('' if r['truth'][1] is None else ' major' if r['truth'][1] else ' minor')
+                print(f"{'':22s}{r['kind']:8s} truth {t:9s} found {r['found']:9s} conf {r['conf']:.2f}  {r['name']}")
+    return s
 
 
 SUMMARY = re.compile(r'Drum break: bpm ([0-9.]+) \| bars (\d+) \| tempo conf ([0-9.]+).*?origin ([-0-9.]+) ms', re.S)
@@ -183,6 +304,10 @@ def main():
     json_path = args[args.index('--json') + 1] if '--json' in args else None
     if args[0] == 'run':
         run(args[1], args[2], exe, only)
+    elif args[0] == 'run-key':
+        run_key(args[1], args[2], exe, only)
+    elif args[0] == 'key-report':
+        key_report(args[1], args[2], json_path, '--list' in args)
     elif args[0] == 'report':
         report(args[1], args[2], json_path, '--list' in args)
 

@@ -136,7 +136,10 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
   Wrong drum-loop tempos at confidence ≥ 0.8: 23 → 11 of 25; tempo choices unchanged.
 - Step 4: drum-loop confidence × (0.6 + 0.4 × high-band noise); 7 tonal packs added (377 tonal loops).
   "Clearly a drum loop" on tonal loops: validation 14 → 1 of 302; drum corpora identical (320 / 347).
-- Next: 16th phase, key of the loop, bass sample root from audio; tonal tempo is only 49 % right.
+- Step 5: key of the loop — peak chroma + Albrecht-Shanahan profiles + bass / opening-note weights
+  + small minor prior, chosen leave-one-pack-out. Key MIREX 0.50 → 0.65 (exact 41 → 56 %) on 377
+  tonal loops; majors 7 → 9 / 28; synthetic harmony test unchanged (36 / 40).
+- Next: key confidence, bass sample root from audio, 16th phase; tonal tempo is only 49 % right.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
 
@@ -152,7 +155,7 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - DnB: steps 1-7 done (7: density leans the hat carrier, "density barely changes" 11/18 -> 0/18; 6: broken-16th hat mask from FAZE + Ghosthack Top hats; lab "kick spam" limit 6 for Breakbeat). Earlier: steps 1-5 done (2: no change; 3: displaced second snare, listened: much better; 4: bass ducks under it; 5: hats vs FAZE stems, ghosts not measurable). Next: Techno. Open DnB: hats /
   ghosts vs Ghosthack "DnB_Top" and Freaky stems; bass stabs vs a displaced snare.
 - Techno: step 2 (hat accents on chosen odd 16ths, exact dup Minimal 68 -> 35 %, Dub 61 -> 43 %; lab `drumBars`). Step 1 (density moves the scorer's density target, "density barely changes" 18/21 -> 0/21, Minimal / Dub no longer inverted, defaults identical) - `docs/audit/TECHNO_STAGE.md`. Duplicates measured: the grammar's own pattern space is the bound (wider pool rejected). Next: widen the grammar with techno references; generationCounter salt (RULE 13).
-- Sample Analysis (stage 6): steps 1-4 done (half-time beat 1; half/double from onset rate; honest confidence; tonal loops are not drum loops); next 16th phase, then key + bass sample root (see the stage doc). Benchmark: `python tools/tempo_bench.py run|report docs/audit/reference/tempo_corpus.tsv <out>`.
+- Sample Analysis (stage 6): steps 1-5 done (half-time beat 1; half/double from onset rate; honest confidence; tonal loops are not drum loops; key of the loop); next key confidence + bass sample root (see the stage doc). Key bench: `tempo_bench.py run-key|key-report`. Benchmark: `python tools/tempo_bench.py run|report docs/audit/reference/tempo_corpus.tsv <out>`.
 - Corpus: `E:/HPDG_corpus` (being copied from the other PC; verify with `tools/corpus_manifest.py verify`).
   More packs: `E:/DRUMS/...` (Ghosthack bundle, Sonic Mechanics, Freaky Loops), `C:/Users/Ham_h/Downloads`
   (Cr2 Trippy Trap, Hex Loops Trap MIDI with mixed grids; Controversial Loops / Jungle Loops torrents

@@ -139,8 +139,28 @@ int runAnalyze(const juce::StringArray& args)
         if (printHarmony)
         {
             const double beat = 60.0 / (analysis.bpm > 20.0 ? analysis.bpm : 90.0);
-            const auto harmony = SampleHarmonyAnalyzer().analyze(mono, sampleRate, beat, analysis.originSeconds);
-            std::cout << "    " << harmony.describe() << "\n";
+            // Same call as the plugin (SampleAnalyzer): the sample's tuning first.
+            const double tuningCents = SampleLineTranscriber::estimateTuningCents(mono, sampleRate);
+            const auto harmony = SampleHarmonyAnalyzer().analyze(mono, sampleRate, beat, analysis.originSeconds, tuningCents);
+            std::cout << "    " << harmony.describe() << " | tuning " << juce::String(tuningCents, 1) << " cents\n";
+            // The key decision's inputs (offline key-profile experiments, tools/tempo_bench.py).
+            std::array<float, 12> bassShare {};
+            int openingPc = -1;
+            for (const auto& segment : harmony.bass)
+            {
+                if (segment.midiNote < 0)
+                    continue;
+                bassShare[static_cast<size_t>(segment.midiNote % 12)] += segment.confidence * segment.lowEnergy;
+                if (openingPc < 0 && segment.startSeconds + 1.0e-6 >= analysis.originSeconds && segment.confidence >= 0.35f)
+                    openingPc = segment.midiNote % 12;
+            }
+            std::cout << "    key features | chroma";
+            for (const float value : harmony.chroma)
+                std::cout << " " << juce::String(value, 4);
+            std::cout << " | bass";
+            for (const float value : bassShare)
+                std::cout << " " << juce::String(value, 4);
+            std::cout << " | opening " << openingPc << "\n";
         }
         if (printHits)
         {

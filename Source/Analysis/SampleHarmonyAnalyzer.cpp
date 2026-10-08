@@ -20,6 +20,11 @@ constexpr std::array<float, 4> kHarmonicWeights { 1.0f, 0.7f, 0.5f, 0.35f };
 // Krumhansl-Kessler key profiles (C major / C minor).
 constexpr std::array<float, 12> kMajorProfile { 6.35f, 2.23f, 3.48f, 2.33f, 4.38f, 4.09f, 2.52f, 5.19f, 2.39f, 3.66f, 2.29f, 2.88f };
 constexpr std::array<float, 12> kMinorProfile { 6.33f, 2.68f, 3.52f, 5.38f, 2.60f, 3.53f, 2.54f, 4.75f, 3.98f, 2.69f, 3.34f, 3.17f };
+// Albrecht & Shanahan (2013) corpus profiles: the key decision uses these (docs/audit/
+// SAMPLE_ANALYSIS_STAGE.md, key step: per-pack MIREX on 9 held-out packs beat Krumhansl-Kessler
+// and Temperley). The KK profiles stay for reference.
+constexpr std::array<float, 12> kMajorProfileAS { 0.238f, 0.006f, 0.111f, 0.006f, 0.137f, 0.094f, 0.016f, 0.214f, 0.009f, 0.080f, 0.008f, 0.081f };
+constexpr std::array<float, 12> kMinorProfileAS { 0.220f, 0.006f, 0.104f, 0.123f, 0.019f, 0.103f, 0.012f, 0.214f, 0.062f, 0.022f, 0.061f, 0.052f };
 
 const char* const kNoteNames[] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
@@ -194,8 +199,13 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
             low += data[static_cast<size_t>(bin)];
         frameLowEnergy[static_cast<size_t>(frame)] = low;
 
-        for (int bin = static_cast<int>(65.0 / binHz); bin <= std::min(kFrameSize / 2 - 1, static_cast<int>(2100.0 / binHz)); ++bin)
+        // Spectral peaks only: noise, attacks and the skirts of loud partials smear a summed
+        // spectrum over neighbouring pitch classes (peak chroma: per-pack key MIREX 0.49 -> 0.61).
+        for (int bin = static_cast<int>(65.0 / binHz); bin <= std::min(kFrameSize / 2 - 2, static_cast<int>(2100.0 / binHz)); ++bin)
         {
+            const float magnitude = data[static_cast<size_t>(bin)];
+            if (magnitude <= data[static_cast<size_t>(bin - 1)] || magnitude < data[static_cast<size_t>(bin + 1)])
+                continue;
             const double hz = bin * binHz;
             const int pc = (static_cast<int>(std::lround(12.0 * std::log2(hz / 440.0) + 69.0 - tuning)) % 12 + 12) % 12;
             chroma[static_cast<size_t>(pc)] += data[static_cast<size_t>(bin)];
@@ -276,7 +286,7 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
         }
     }
     for (auto& value : chroma)
-        value = std::sqrt(value / std::max(1.0e-9f, chromaTotal)); // compressed: loud notes must not hide the rest
+        value /= std::max(1.0e-9f, chromaTotal); // peak chroma needs no compression (tested: sqrt is worse)
     const float chromaPeak = std::max(1.0e-9f, *std::max_element(chroma.begin(), chroma.end()));
     for (auto& value : chroma)
         value /= chromaPeak;
@@ -288,15 +298,18 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
     {
         for (int mode = 0; mode < 2; ++mode)
         {
-            const float corr = correlation(chroma, mode == 1 ? kMajorProfile : kMinorProfile, root);
+            const float corr = correlation(chroma, mode == 1 ? kMajorProfileAS : kMinorProfileAS, root);
             // Relative keys share every note: the tonic is told by where the bass lives and
-            // where the loop opens. Parallel keys differ by the third: test it explicitly.
-            const float bassBonus = bassTotal > 0.0f ? 0.45f * bassPitchClassShare[static_cast<size_t>(root)] / bassTotal : 0.0f;
-            const float openingBonus = root == openingBassPc ? 0.15f : 0.0f;
-            const float minorThird = chroma[static_cast<size_t>((root + 3) % 12)];
-            const float majorThird = chroma[static_cast<size_t>((root + 4) % 12)];
-            const float thirdEvidence = 0.25f * (mode == 1 ? majorThird - minorThird : minorThird - majorThird);
-            const float score = corr + bassBonus + openingBonus + thirdEvidence;
+            // where the loop opens (bass loops open on the tonic: 75-85 % in the bass packs).
+            // Minor prior: the genres served here are minor-led (255 of 283 labelled loops).
+            // Weights from leave-one-pack-out over 9 packs; the opening note is weighted 0.5 (not
+            // the 0.35 the packs alone favour) so an i-VI-III-VII loop whose loud bass roots make
+            // the chroma look like VI major still reads as the minor key it opens on, and major
+            // loops gain (7 -> 9 / 28 right).
+            const float bassBonus = bassTotal > 0.0f ? 0.20f * bassPitchClassShare[static_cast<size_t>(root)] / bassTotal : 0.0f;
+            const float openingBonus = root == openingBassPc ? 0.50f : 0.0f;
+            const float minorPrior = mode == 0 ? 0.10f : 0.0f;
+            const float score = corr + bassBonus + openingBonus + minorPrior;
             if (score > bestScore)
             {
                 secondScore = bestScore;
