@@ -641,6 +641,35 @@ float phaseBackbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, doub
     return std::max(backbeatScore(hits, bpm, origin), halfTime);
 }
 
+// Half / double-time evidence (docs/audit/SAMPLE_ANALYSIS_STAGE.md, step 2): onsets per sixteenth
+// at this tempo. Real loops at their written tempo stay below ~0.85 (Boom Bap median 0.67, p90
+// 0.76); a half-time reading of a Trap / DnB loop needs 32nds for its hat rolls and ghosts (Trap
+// 0.8-2.0, median 1.1-1.3), so a rate above 0.85 says the tempo is too slow to write the loop.
+// 0 = clearly playable, 1 = too dense by 0.3 or more onsets per sixteenth.
+float subdivisionOverload(const std::vector<BreakDrumHit>& hits, double bpm)
+{
+    std::vector<double> times;
+    times.reserve(hits.size());
+    for (const auto& hit : hits)
+        times.push_back(hit.timeSeconds);
+    std::sort(times.begin(), times.end());
+    int onsets = 0;
+    double last = -1.0;
+    for (const double time : times)
+    {
+        if (last >= 0.0 && time - last < 0.015) // one stroke on several lanes
+            continue;
+        ++onsets;
+        last = time;
+    }
+    if (onsets < 4)
+        return 0.0f;
+
+    const double sixteenthSeconds = 15.0 / bpm;
+    const double rate = onsets / ((times.back() - times.front()) / sixteenthSeconds + 1.0);
+    return static_cast<float>(juce::jlimit(0.0, 1.0, (rate - 0.85) / 0.3));
+}
+
 float lengthFit(double loopSeconds, double bpm, int& barsOut)
 {
     const double bars = loopSeconds * bpm / 240.0;
@@ -830,7 +859,8 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
         + (trimmed ? 0.70f : 0.0f) * candidate.lengthFit
         + 0.60f * candidate.backbeat
         + 0.35f * candidate.prior
-        + 0.08f * candidate.host;
+        + 0.08f * candidate.host
+        - 0.50f * subdivisionOverload(hits, candidate.bpm);
     return candidate;
 }
 

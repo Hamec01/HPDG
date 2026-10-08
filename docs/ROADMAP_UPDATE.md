@@ -129,7 +129,10 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - Step 1: beat 1 now also accepts a half-time backbeat (snare on beat 3). With the typed tempo,
   Trap loops whose beat 1 was a quarter off went from 45-67 % to 0 %; all drums 13 % → 2 %. Tempo
   selection is unchanged.
-- Next: half/double ambiguity + honest confidence (§27-28), tonal false-positive drum-loop confidence.
+- Step 2: half / double from the onset rate per sixteenth (a slow reading that would need 64ths is
+  penalised). Drum tempo ≤ 2 %: 79 → 93 % (Trap 27-45 → 79-100 %, DnB 54-75 → 77-94 %, Boom Bap
+  unchanged, classic breaks 98 → 96 %, one busy funk break).
+- Next: honest confidence (§27, margin over the octave partner), tonal false-positive drum-loop confidence.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
 
@@ -145,7 +148,7 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - DnB: steps 1-7 done (7: density leans the hat carrier, "density barely changes" 11/18 -> 0/18; 6: broken-16th hat mask from FAZE + Ghosthack Top hats; lab "kick spam" limit 6 for Breakbeat). Earlier: steps 1-5 done (2: no change; 3: displaced second snare, listened: much better; 4: bass ducks under it; 5: hats vs FAZE stems, ghosts not measurable). Next: Techno. Open DnB: hats /
   ghosts vs Ghosthack "DnB_Top" and Freaky stems; bass stabs vs a displaced snare.
 - Techno: step 2 (hat accents on chosen odd 16ths, exact dup Minimal 68 -> 35 %, Dub 61 -> 43 %; lab `drumBars`). Step 1 (density moves the scorer's density target, "density barely changes" 18/21 -> 0/21, Minimal / Dub no longer inverted, defaults identical) - `docs/audit/TECHNO_STAGE.md`. Duplicates measured: the grammar's own pattern space is the bound (wider pool rejected). Next: widen the grammar with techno references; generationCounter salt (RULE 13).
-- Sample Analysis (stage 6): step 1 done (half-time beat 1); next half/double + confidence. Benchmark: `python tools/tempo_bench.py run|report docs/audit/reference/tempo_corpus.tsv <out>`.
+- Sample Analysis (stage 6): steps 1-2 done (half-time beat 1; half/double from onset rate); next honest confidence. Benchmark: `python tools/tempo_bench.py run|report docs/audit/reference/tempo_corpus.tsv <out>`.
 - Corpus: `E:/HPDG_corpus` (being copied from the other PC; verify with `tools/corpus_manifest.py verify`).
   More packs: `E:/DRUMS/...` (Ghosthack bundle, Sonic Mechanics, Freaky Loops), `C:/Users/Ham_h/Downloads`
   (Cr2 Trippy Trap, Hex Loops Trap MIDI with mixed grids; Controversial Loops / Jungle Loops torrents

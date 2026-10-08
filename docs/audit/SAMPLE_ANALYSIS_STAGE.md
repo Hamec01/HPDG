@@ -76,11 +76,65 @@ in 45-67 % of Trap loops.
   GUT 14 and GUT 15 were fixed (−488 → 0 ms and −976 → 0 ms).
 - Tests: CoreTests 77/77 PASS, SampleTrimTests, LaneBoundaryTests PASS.
 
+## Step 2 — half / double time from the onset rate (§28)
+
+**Cause.** A half-time Trap loop at 150 BPM, with its snare on beat 3, looks exactly like a 75 BPM
+loop with the snare on 2 & 4. The 2 & 4 backbeat term (0.6) favoured the slow reading. The grid fit
+of the fast reading was better, but the grid gap does not separate the two cases: swung Boom Bap
+also gains +0.2 to +0.5 grid at double tempo.
+
+**Evidence** (onsets per sixteenth of the slow reading; strokes on several lanes within 15 ms count
+once; p10 / median / p90):
+
+| Corpus | p10 | median | p90 |
+|---|---|---|---|
+| Boom Bap | 0.56 | 0.67 | 0.76 |
+| Classic breaks | 0.55 | 0.69 | 0.97 |
+| Trap (4 packs) | 0.96-1.03 | 1.13-1.31 | 1.35-1.69 |
+| DnB | 0.73-0.86 | 1.00-1.16 | 1.36-1.44 |
+
+At the slow reading, Trap hat rolls (1/32 at 140-160 BPM) and DnB ghost notes become 64ths. Real
+loops at their written tempo do not need more than about one onset per sixteenth.
+
+Sources:
+- Octave errors are the main tempo-estimation failure, and candidate support / onset density are
+  known correction signals: Schreiber 2020 (PhD thesis, AudioLabs Erlangen); arXiv 2401.00209
+  (review of tempo estimation).
+- Trap is written at 120-160 BPM with a half-time feel and hat rolls on a 1/32 grid: eMastered
+  "Trap Drum Patterns".
+
+**Change.** The new `subdivisionOverload(hits, bpm)` is 0 up to 0.85 onsets per sixteenth and
+reaches 1 at 1.15. The candidate score subtracts 0.5 × overload. It is evidence from the sample
+itself, with no genre hint (§28).
+
+**Parameter choice.** The parameters were simulated on the cached candidate scores before coding.
+The neighbouring settings (k 0.3-0.7, threshold 0.75-0.9, width 0.3-0.4) give the same picture, so
+the result is not a knife-edge fit.
+
+**Result** (tempo within 2 %, same 506 files):
+
+| Corpus | before | after |
+|---|---|---|
+| Boom Bap | 96 % | 96 % |
+| Classic breaks | 98 % | 96 % (1 file: Brian Auger "Compared To What", a busy 79 BPM funk break, now 158) |
+| DnB Ghosthack | 75 % | **94 %** |
+| DnB Freaky | 54 % | **77 %** |
+| Techno | 92 % | 92 % |
+| Trap Urban | 27 % | **87 %** |
+| Trap Hybrid | 30 % | **90 %** |
+| Trap UTT2 | 43 % | **79 %** |
+| Trap Cr2 | 45 % | **100 %** |
+| **All drums** | 79 % | **93 %** |
+| Tonal | 69 % | 71 % (some 3/4 errors became 3/2) |
+
+- Phase is unchanged: all-drums auto origin ≤ 20 ms is 91 %, typed 93 %.
+- Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
+
 ## Open (next steps)
 
-1. **Half / double-time ambiguity** (§27). Trap is read at half its tempo in 55-73 % of loops, DnB
-   in 25-46 %, always with confidence ≥ 0.8. Confidence must drop when the octave alternative scores
-   close, and the half / double choice needs a better rule (hat rate, genre hint).
+1. **Honest confidence** (§27). 334 of 347 drum loops still report confidence ≥ 0.8. The whole-bar
+   loop branch raises the confidence to 0.45 + 0.5 × grid whatever the octave alternative scores.
+   The margin over the octave partner should lower it.
 2. **Tonal false positives.** 68 % of tonal loops get drum-loop confidence ≥ 0.5.
 3. **16th phase.** On some Techno loops the grid is a 16th off (GUT 01 / 04 / 22).
 4. Later: swing, K/S/H transcription accuracy, Copy Break, harmony / bass (808 tone),
