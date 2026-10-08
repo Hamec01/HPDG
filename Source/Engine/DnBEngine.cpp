@@ -301,12 +301,12 @@ juce::String DnBEngine::writeBass(PatternProject& project, const DnBDrumFrame& d
 void DnBEngine::generate(PatternProject& project)
 {
     juce::String report;
-    auto params = paramsFromProject(project, project.generationCounter * 131);
+    auto params = paramsFromProject(project, 0); // seed + settings decide a Generate (RULE 13)
     if (const auto* snare = findTrack(project, TrackType::Snare); snare != nullptr && snare->locked)
         params = lanesParams(project, params);
     const auto pattern = search(params, &report);
     writePattern(project, pattern, allLanes(), report);
-    const auto bassReport = writeBass(project, drumsFromProject(project), project.generationCounter * 131 + 7);
+    const auto bassReport = writeBass(project, drumsFromProject(project), 7);
     if (bassReport.isNotEmpty())
         project.generationDebugReport << "\n" << bassReport;
 }

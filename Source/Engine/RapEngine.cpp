@@ -2759,7 +2759,7 @@ void RapEngine::generate(PatternProject& project)
 {
     applyResolvedStyleInfluence(project);
     const auto& style = getRapProfile(project.params.rapSubstyle);
-    std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + project.generationCounter * 19 + 101));
+    std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed + 101)); // seed + settings decide a Generate (RULE 13)
 
     const auto phrasePlan = createPhrasePlanForStyle(std::max(1, project.params.bars), project.params.densityAmount, rng, style);
 

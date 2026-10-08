@@ -355,7 +355,7 @@ void TrapEngine::generate(PatternProject& project)
     }
 
     TrapAlgebraParams algebraParams;
-    algebraParams.seed = project.params.seed + project.generationCounter * 41 + 601;
+    algebraParams.seed = project.params.seed + 601; // seed + settings decide a Generate (RULE 13)
     algebraParams.bars = std::max(1, project.params.bars);
     algebraParams.bpm = project.params.bpm;
     algebraParams.density = project.params.densityAmount;

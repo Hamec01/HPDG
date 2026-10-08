@@ -31,7 +31,7 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
    high for Classic / Gold (53 / 43 %); 4-bar kick-skeleton reuse 8–12 %; kicks/bar 3.4 vs 4.0–4.6 in played loops.
 4. **Confidence → generation (RULE 20)** — GenerationHints / lane evidence are built but not
    consumed by any production engine; used confidences become binary thresholds.
-5. **Determinism (RULE 13)** — Trap / DnB / Techno mix `generationCounter` into the seed.
+5. ~~**Determinism (RULE 13)** — Trap / DnB / Techno mix `generationCounter` into the seed.~~ Fixed 2026-10-08 (see below).
 
 ## Boom Bap steps 2–3 (hats measured, kick count changed)
 
@@ -104,6 +104,20 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Step 5: hats vs 32 Ghost Syndicate FAZE hat stems (+ Freaky): the offbeat-only hat carrier (0 / 32
   stems, 1 / 26 Freaky; Attack Magazine: DnB hats on every 8th) moved to rolling 8ths; hat L1 better in
   5 substyles, Breakbeat unchanged; Jump-Up near dup 21.6 → 24.6 %. Ghost snares not measurable from stems.
+
+## Determinism (RULE 13) — fixed 2026-10-08
+
+Maintainer's decision: a full Generate is decided by seed + settings in every genre; lane RG / Mutate /
+"new lane" keep the generation counter (repeated presses still vary). With Seed Lock off the plugin
+advances the seed by 1 on every Generate, so variety comes from the seed.
+- Removed `generationCounter` from the main Generate of Trap, DnB (+ bass), Techno (+ bass), Rap,
+  Boom Bap's bass, and the sample bass composer (kept for a bass-lane RG).
+- Lab determinism check made strict: the second processor generates three times with another seed
+  first. Old code: 10 / 10 failures in every Trap / DnB / Techno substyle; new code: 0 everywhere.
+- Statistics unchanged (1000 seeds per genre, within noise; Boom Bap identical). Test
+  "BoomBap bass varies between generations" now varies the seed (as the plugin does), checks the same
+  seed replays the same line after other generations, and expects >= 4 styles in 30 (calm-weighted
+  styles: about 4.75 expected; >= 5 passed by chance of one counter sequence).
 
 ## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
 

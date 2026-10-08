@@ -310,11 +310,11 @@ void BoomBapEngine::generateWithAlgebra(PatternProject& project, const BoomBapSt
     }
 
     // Bass is opt-in in Boom Bap: only an enabled (and unlocked) bass lane gets a line, written
-    // after the kick so it can lock with it. The generation counter keeps every Generate different.
+    // after the kick so it can lock with it. Seed + settings decide it (RULE 13); a new seed gives a new line.
     juce::String bassReport;
     if (auto* bass = findTrack(project, TrackType::Sub808); bass != nullptr && !bass->locked && bass->enabled)
     {
-        std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 7919 + project.generationCounter * 31 + 0x6261));
+        std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 7919 + 0x6261));
         const auto bassStyle = BoomBapBassGenerator::pickStyle(rng, project.sampleContext.mood, BoomBapBassGenerator::bassAmountOf(project));
         bass->notes = BoomBapBassGenerator::generate(project, rng, bassStyle);
         bass->sub808Notes.clear();

@@ -242,9 +242,9 @@ juce::String TechnoEngine::writeBass(PatternProject& project, int seedSalt)
 void TechnoEngine::generate(PatternProject& project)
 {
     juce::String report;
-    const auto pattern = search(paramsFromProject(project, project.generationCounter * 131), &report);
+    const auto pattern = search(paramsFromProject(project, 0), &report); // seed + settings decide a Generate (RULE 13)
     writePattern(project, pattern, allLanes(), report);
-    const auto bassReport = writeBass(project, project.generationCounter * 131 + 7);
+    const auto bassReport = writeBass(project, 7);
     if (bassReport.isNotEmpty())
         project.generationDebugReport << "\n" << bassReport;
 }

@@ -4985,7 +4985,8 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
             && (!focusTrack.has_value() || *focusTrack == TrackType::Sub808)
             && SampleBassLineComposer::wants(project, currentAnalysisBundle.harmony))
         {
-            std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 4241 + project.generationCounter * 17 + 0x5b));
+            // A full Generate is decided by seed + settings (RULE 13); a bass-lane RG keeps varying.
+            std::mt19937 rng(static_cast<std::mt19937::result_type>(project.params.seed * 4241 + (focusTrack.has_value() ? project.generationCounter * 17 : 0) + 0x5b));
             const auto lineReport = SampleBassLineComposer::compose(project,
                                                                     currentAnalysisBundle.harmony,
                                                                     sampleGridBpm,

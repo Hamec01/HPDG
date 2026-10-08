@@ -233,6 +233,13 @@ int main(int argc, char** argv)
                                 setChoice(s, ParamIds::densityAmount, density);
                             setChoice(s, ParamIds::seedLock, 1.0f);
                         }
+                        // b has generated before (another seed, three times): its session history differs,
+                        // the same seed + settings must still give the same pattern (RULE 13).
+                        for (int warmUp = 0; warmUp < 3; ++warmUp)
+                        {
+                            setChoice(b.getApvts(), ParamIds::seed, 7777.0f);
+                            b.generatePattern();
+                        }
                         for (int seed : { 1, 2, 3, 10, 25, 42, 100, 256, 512, 999 })
                         {
                             for (auto* p : { &a, &b })
