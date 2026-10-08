@@ -130,12 +130,68 @@ the result is not a knife-edge fit.
 - Phase is unchanged: all-drums auto origin ≤ 20 ms is 91 %, typed 93 %.
 - Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
 
+## Step 3 — honest tempo confidence (§27)
+
+**Cause.** A whole-bar loop raised its confidence to 0.45 + 0.5 × grid, whatever the alternatives
+scored. After step 2, 23 of the 25 wrong drum-loop tempos still reported confidence ≥ 0.8.
+
+**Evidence** (drum loops; margin = best score − the best candidate more than 2 % away):
+
+| margin | n | tempo right |
+|---|---|---|
+| < 0.1 | 23 | 48 % |
+| 0.1-0.2 | 30 | 87 % |
+| 0.2-0.3 | 48 | 88 % |
+| 0.3-0.5 | 93 | 97 % |
+| ≥ 0.5 | 153 | 100 % |
+
+Breaks and tonal loops show the same picture: below 0.1 the tempo is right in 37-75 % of files, from
+0.3 up in 100 %. This is the roadmap §27 rule: confidence depends on how clearly the best tempo beats
+the alternative.
+
+**Change.** The confidence is capped at 0.5 + 2 × margin, within [0.5, 1].
+- The floor 0.5 keeps every drum loop's tempo trusted in `SampleAnalyzer` exactly as before
+  (drum-loop confidence ≥ 0.75 and tempo confidence ≥ 0.5).
+- A tonal sample needs tempo confidence ≥ 0.8 to be trusted, so an ambiguous tempo there now falls
+  back to the session tempo.
+
+**Result.**
+- Tempo choices are identical on every file.
+
+| | before | after |
+|---|---|---|
+| drum loops: wrong tempo with confidence ≥ 0.8 | 23 / 25 | **11 / 25** |
+| drum loops: right tempo with confidence ≥ 0.8 | 311 / 322 | 296 / 322 |
+| drum loops: accuracy in the ≥ 0.8 bin | 93 % | **96 %** |
+| tonal: wrong with confidence ≥ 0.8 | 2 / 22 | 1 / 22 |
+| tonal: right with confidence ≥ 0.8 | 33 / 53 | 31 / 53 |
+
+- Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
+
 ## Open (next steps)
 
-1. **Honest confidence** (§27). 334 of 347 drum loops still report confidence ≥ 0.8. The whole-bar
-   loop branch raises the confidence to 0.45 + 0.5 × grid whatever the octave alternative scores.
-   The margin over the octave partner should lower it.
-2. **Tonal false positives.** 68 % of tonal loops get drum-loop confidence ≥ 0.5.
-3. **16th phase.** On some Techno loops the grid is a 16th off (GUT 01 / 04 / 22).
-4. Later: swing, K/S/H transcription accuracy, Copy Break, harmony / bass (808 tone),
-   confidence-aware Guide generation.
+1. **Tonal false positives.** 68 % of tonal loops get drum-loop confidence ≥ 0.5.
+2. **16th phase.** On some Techno loops the grid is a 16th off (GUT 01 / 04 / 22).
+3. **Key of the loop: benchmark.** About 75 tonal loops carry their key in the file name
+   (`GUT_Music_Loop_13_123_BPM_Am`). Measure how often `SampleHarmonyAnalyzer` gets the root and the
+   mode right. A bass "in key" of a wrong key is still wrong, so this comes before item 4.
+4. **Root of the bass / 808 sample from its sound.** Today the root comes only from the file name
+   (`LaneSampleBank::rootPitchClassFromName`): no note in the name means C, and the octave is
+   ignored. A YIN f0 check of the 40 bundled Sub808 samples (2026-10-08) found:
+   - mixed octaves: Boom Bap 2 × C1 (33 Hz) and 3 × C2 (65 Hz), Techno mixed too, so the same bass
+     line sounds an octave apart depending on the sample;
+   - one real key error: Techno TSB3 `techno-bass_120bpm` sounds C#2 but is read as C, a semitone
+     off the key;
+   - wrong labels: DnB DSB2 / DSB9 are named "E" but sound F1; DSB5 / DSB7 are named "F" but are
+     near F#1;
+   - detune: Drill DRSB2 is 47 cents flat of C1.
+
+   Plan:
+   - detect pitch class, octave and cents when a sample is loaded, keeping the name as a hint
+     (when the two disagree and the detector is confident, trust the sound);
+   - play each written note at its true pitch, with the detune corrected;
+   - keep the bass register the same whatever octave the sample was recorded in.
+
+   Measure: share of the bundled samples and the maintainer's packs that sound off the written note,
+   before and after.
+5. Later: swing, K/S/H transcription accuracy, Copy Break, confidence-aware Guide generation.

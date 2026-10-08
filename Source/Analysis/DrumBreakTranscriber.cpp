@@ -1375,6 +1375,22 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
     }
     else if (options.forcedBpm <= 20.0)
         refineTempoLeastSquares(analysis.hits, analysis.bpm, analysis.originSeconds, best.swing);
+
+    // Honest confidence (docs/audit/SAMPLE_ANALYSIS_STAGE.md, step 3; roadmap §27): a tempo that
+    // beats its nearest different alternative (more than 2 % away: half / double / 2:3) by under
+    // 0.1 is right about half the time (drum loops 48 %), by 0.3 or more 97-100 %. Cap the
+    // confidence by that margin; the floor 0.5 keeps a drum loop's tempo trusted as before.
+    {
+        float alternative = 0.0f;
+        for (size_t i = 1; i < analysis.tempoCandidates.size(); ++i)
+            if (std::abs(analysis.tempoCandidates[i].bpm / best.bpm - 1.0) > 0.02)
+            {
+                alternative = analysis.tempoCandidates[i].score;
+                break;
+            }
+        const float margin = std::max(0.0f, best.score - alternative);
+        analysis.tempoConfidence = std::min(analysis.tempoConfidence, juce::jlimit(0.5f, 1.0f, 0.5f + 2.0f * margin));
+    }
     if (options.forcedBpm > 20.0)
         analysis.tempoConfidence = 1.0f; // typed by the user
 
