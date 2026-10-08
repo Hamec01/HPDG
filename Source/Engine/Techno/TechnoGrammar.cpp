@@ -341,7 +341,7 @@ float TechnoScorer::syncopation(const TechnoPattern& pattern)
     return total / static_cast<float>(std::max(1, pattern.bars));
 }
 
-TechnoScore TechnoScorer::score(const TechnoPattern& pattern, const TechnoStyleProfile& style)
+TechnoScore TechnoScorer::score(const TechnoPattern& pattern, const TechnoStyleProfile& style, float userDensity)
 {
     TechnoScore s;
     auto fit = [](float x, float target, float sigma) { return std::exp(-(x - target) * (x - target) / (2.0f * sigma * sigma)); };
@@ -393,7 +393,12 @@ TechnoScore TechnoScorer::score(const TechnoPattern& pattern, const TechnoStyleP
         }
     }
     s.density = weighted / static_cast<float>(pattern.bars * TechnoGrid::kStepsPerBar);
-    s.densityFit = fit(s.density, style.densityTarget, 0.25f * style.densityTarget);
+    // The user's density moves the target around the style's default (docs/audit/TECHNO_STAGE.md step 1):
+    // a fixed target made the sharp selection undo the density slider (inverted in Minimal / Dub).
+    const float densityTarget = userDensity < 0.0f
+        ? style.densityTarget
+        : style.densityTarget * std::clamp(1.0f + 1.2f * (userDensity - style.densityDefault), 0.4f, 1.6f);
+    s.densityFit = fit(s.density, densityTarget, 0.25f * densityTarget);
 
     // f5: repetition = mean Jaccard of neighbouring bars.
     auto barSet = [&](int bar)

@@ -93,7 +93,7 @@ TechnoPattern TechnoEngine::search(const TechnoGenerationParams& params, juce::S
         std::mt19937 rng(static_cast<std::mt19937::result_type>(static_cast<uint32_t>(params.seed) * 2654435761u
                                                                  + static_cast<uint32_t>(i) * 40503u + 0x7ec40u));
         auto pattern = TechnoGrammar::generateCandidate(params, style, rng);
-        pattern.score = TechnoScorer::score(pattern, style);
+        pattern.score = TechnoScorer::score(pattern, style, params.density);
         candidates.push_back(std::move(pattern));
     }
 

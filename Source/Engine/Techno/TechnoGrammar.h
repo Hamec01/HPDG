@@ -20,7 +20,8 @@ public:
 class TechnoScorer
 {
 public:
-    static TechnoScore score(const TechnoPattern& pattern, const TechnoStyleProfile& style);
+    // userDensity < 0: the style's own density target (no user intent).
+    static TechnoScore score(const TechnoPattern& pattern, const TechnoStyleProfile& style, float userDensity = -1.0f);
     static float syncopation(const TechnoPattern& pattern); // S, per bar
 };
 } // namespace bbg
