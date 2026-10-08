@@ -743,8 +743,16 @@ DnBPattern DnBGrammar::generateCandidate(const DnBGenerationParams& params,
 
     CandidateContext ctx { style, params };
     std::vector<std::pair<DnBCarrierMode, float>> carriers;
+    // Density leans the carrier: 8th hats for the calm end, 16ths / broken 16ths for intensity (Netsky's
+    // liquid hat on 8ths; 16th hats and rolls as the intensity tool - docs/audit/DNB_STAGE.md step 7).
+    // Neutral at the substyle's default density, so default patterns do not change.
+    const float lean = std::clamp(1.2f * (params.density - style.densityDefault), -0.6f, 0.6f);
     for (int i = 0; i < static_cast<int>(DnBCarrierMode::Count); ++i)
-        carriers.emplace_back(static_cast<DnBCarrierMode>(i), style.carrierWeights[static_cast<size_t>(i)]);
+    {
+        const auto mode = static_cast<DnBCarrierMode>(i);
+        const bool busy = mode == DnBCarrierMode::SixteenthShaker || mode == DnBCarrierMode::BrokenSixteenth;
+        carriers.emplace_back(mode, style.carrierWeights[static_cast<size_t>(i)] * (busy ? 1.0f + lean : 1.0f - lean));
+    }
     ctx.carrier = pickWeighted(rng, carriers);
     pattern.carrier = ctx.carrier;
     ctx.hatPhase = uniform01(rng) * 6.2831853f;

@@ -188,11 +188,39 @@ Ghosthack Upfront 3 / 52 loops average > 5 kicks a bar (up to 9.5), Freaky 1 / 2
 — not a true failure at the top of the density range: the lab limit for DnB Breakbeat is now 6 (Boom
 Bap's), 5 for the other DnB substyles. No generator change; the matrix now reports no failures.
 
+## Step 7 — density leans the hat carrier (accepted, listened 2026-10-08)
+
+**Finding.** From density 0.2 to 0.8, Modern / Liquid / Neurofunk / Jump-Up gained only +0.3-0.8 events
+a bar ("density barely changes" 11 / 18 matrix cells). Density added kicks (+0.6-1.0) but nothing to the
+hats (flat or falling), and the hat carrier is the largest lane. A probe with `pruneSecondary` switched
+off changed nothing (removed afterwards) - the cause is in the grammar: the carrier (8ths / 16ths /
+broken 16ths / ride ...) was picked from fixed substyle weights at any density.
+
+**Written.** Calm liquid plays the hat on 8ths (Netsky, Future Music); 16th hats and rolls are the
+intensity tool (Production Expert / Gearspace hat programming threads); the same lever as Trap step 3.
+
+**Change.** Carrier weights lean with density around the substyle's default density:
+busy carriers (16th shaker, broken 16ths) x (1 + lean), the rest x (1 - lean), lean = 1.2 x (density -
+default), clamped to ±0.6. At the default density nothing changes (1000-seed lab CSV identical to step 6
+in all 6 substyles; a first version neutral at 0.5 moved Breakbeat, default 0.6, and its hat L1 got worse).
+
+| Substyle (300 seeds, 4 bars) | events/bar spread 0.2 → 0.8 | hats / bar 0.2 / default / 0.8 |
+|---|---|---|
+| Modern | +0.32 → **+2.17** | 9.6 / 9.4 / 9.3 → 8.4 / 9.4 / 10.0 |
+| Roller | +1.57 → **+3.33** | 10.5 / 10.7 / 11.2 → 9.4 / 10.7 / 12.0 |
+| Liquid | +0.61 → **+2.16** | 8.4 / 8.4 / 8.2 → 7.7 / 8.4 / 9.7 |
+| Neurofunk | +0.82 → **+2.53** | 10.6 / 10.4 / 10.5 → 9.5 / 10.4 / 11.1 |
+| Jump-Up | +0.56 → **+2.17** | 9.4 / 9.1 / 9.3 → 8.9 / 9.1 / 10.3 |
+| Breakbeat | +2.45 → +4.17 | 9.8 / 10.4 / 10.4 → 8.7 / 10.4 / 10.9 |
+
+Matrix: "density barely changes" 11 → **0 / 18**, monotone 18 / 18, failures none. Duplicates move only
+at the density ends, both ways, within a few points (e.g. Liquid 0.8 / 4 bars near dup 9.7 → 15.3 %,
+Roller 0.2 / 8 bars 9.3 → 4.3 %). Lane / core / track semantics tests pass.
+
 ## Open (next steps)
 
 1. (step 2: done, no change - Roller / Jump-Up repetition is genre-true.)
 2. (steps 5-6: hats done with FAZE + Ghosthack Top; ghosts not measurable from stems.) Hat under the snare
    (A / A') waits for listening.
-4. Density barely moves Modern / Liquid / Neurofunk / Jump-Up (events +0.3-0.9 a bar from 0.2 to 0.8, 11 / 18
-   matrix cells) - pre-existing; check where density acts (kicks yes, hats / ghosts?) against sources.
+4. (step 7: done - density leans the hat carrier.)
 3. (steps 3-4: done.)

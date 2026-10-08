@@ -116,7 +116,7 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Boom Bap: done (steps 1-3). Russian Underground kick motifs (beat 3) wait for instrumentals / stems.
 - Trap: done (steps 1-5, listened: good). Open design question: every kick carries an 808 (HPDG 0.76 vs
   packs 0.43-0.45); the maintainer has not decided, default is keep.
-- DnB: steps 1-6 done (6: broken-16th hat mask from FAZE + Ghosthack Top hats; lab "kick spam" limit 6 for Breakbeat). Earlier: steps 1-5 done (2: no change; 3: displaced second snare, listened: much better; 4: bass ducks under it; 5: hats vs FAZE stems, ghosts not measurable). Next: Techno. Open DnB: hats /
+- DnB: steps 1-7 done (7: density leans the hat carrier, "density barely changes" 11/18 -> 0/18; 6: broken-16th hat mask from FAZE + Ghosthack Top hats; lab "kick spam" limit 6 for Breakbeat). Earlier: steps 1-5 done (2: no change; 3: displaced second snare, listened: much better; 4: bass ducks under it; 5: hats vs FAZE stems, ghosts not measurable). Next: Techno. Open DnB: hats /
   ghosts vs Ghosthack "DnB_Top" and Freaky stems; bass stabs vs a displaced snare.
 - Then Techno (Phase 0: 20-68 % duplicates, density inverted in Minimal / Dub).
 - Corpus: `E:/HPDG_corpus` (being copied from the other PC; verify with `tools/corpus_manifest.py verify`).
