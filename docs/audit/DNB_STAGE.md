@@ -155,8 +155,44 @@ stems sit on 4 / 12 at full level (double triggers of the snare), and the off-ba
 (velocity 79-127, 0.29 a bar, mostly on 16th 7). HPDG's loud off-backbone snares, 0.16-0.37 a bar,
 are inside that. No change to ghosts without a reference.
 
+## Step 6 — broken-16th hat mask; Breakbeat "kick spam" re-measured (hats: accepted, listened 2026-10-08)
+
+**Second hat pack.** Ghosthack Upfront "DnB_Top" (53 loops, hats + percussion) →
+`docs/audit/reference/dnb_ghosthack_top_bars.tsv` (`tools/dnb_stems.py hats`). It agrees with FAZE:
+a hat on the beats in 0.80-1.00 of bars (16ths 4 / 12, under the snare: 0.88-0.92), odd 16ths ≈ 0.35.
+HPDG (step 5): beats 4 / 12 at 0.48-0.65, odd 16ths ≈ 0.55 in Roller / Neurofunk / Breakbeat.
+
+Two causes in `DnBGrammar.cpp`: the broken-16th carrier (`brokenMask`) kept every non-offbeat 16th with
+one chance 0.55 (beats and odd 16ths alike), and `addCarrier` dropped the hat under the snare with 25 %.
+
+| Variant (1000 seeds, defaults) | hat L1 val. FAZE (6 substyles) | hat L1 val. Ghosthack Top | near dup Jump-Up / Roller / Liquid | exact dup Jump-Up |
+|---|---|---|---|---|
+| step 5 | 1.79-3.88 | 2.00-3.16 | 24.6 / 9.5 / 7.9 % | 2.5 % |
+| A: no drop under the snare | 1.26-3.63 | 1.66-2.91 | 41.6 / 19.7 / 12.9 % | 5.5 % |
+| A': drop 10 % + B | 1.43-3.15 | 1.65-2.09 | 32.1 / 15.6 / 10.8 % | 4.2 % |
+| **B: broken mask beats 0.90 / odd 16ths 0.40** | **1.66-3.38** | **1.91-2.33** | **23.6 / 10.6 / 8.0 %** | **2.5 %** |
+
+Accepted: B only — closer to both packs in all 6 substyles with no duplicate cost (Breakbeat FAZE
+3.88 → 3.03, Top 3.16 → 2.32; Roller 3.73 → 3.38 / 2.82 → 2.33). A / A' rejected for now: the random
+drop under the snare is the only variation of the rolling-8th hat (Jump-Up, Liquid), and removing it
+nearly doubles near duplicates (RULES 38 / 45) — a listening decision, not a measured win.
+
+Other measures unchanged: failures 0, determinism 0, kicks / bass untouched; matrix "density barely
+changes" 11 / 18 (as in step 5), three ±0.1 events non-monotone cells (noise of 300 seeds in Liquid /
+Jump-Up, which pick the broken carrier in 10 % of patterns); lane / core / track semantics tests pass.
+
+**Breakbeat "kick spam" (lab).** Since the Phase 0 baseline the lab flagged Breakbeat at density 0.8 as
+failing (3.3 / 10.3 / 12.3 % at 2 / 4 / 8 bars): every flagged pattern averages 5.25 kicks a bar
+(one bar of six), e.g. `0 1 2 5 10 15`, against a DnB limit of 5. Played chopped breaks reach that:
+Ghosthack Upfront 3 / 52 loops average > 5 kicks a bar (up to 9.5), Freaky 1 / 26 (FAZE 0 / 20). RULE 10
+— not a true failure at the top of the density range: the lab limit for DnB Breakbeat is now 6 (Boom
+Bap's), 5 for the other DnB substyles. No generator change; the matrix now reports no failures.
+
 ## Open (next steps)
 
 1. (step 2: done, no change - Roller / Jump-Up repetition is genre-true.)
-2. (step 5: hats done; ghosts not measurable from stems.) Ghosthack "DnB_Top" (other PC) as a second hat pack.
+2. (steps 5-6: hats done with FAZE + Ghosthack Top; ghosts not measurable from stems.) Hat under the snare
+   (A / A') waits for listening.
+4. Density barely moves Modern / Liquid / Neurofunk / Jump-Up (events +0.3-0.9 a bar from 0.2 to 0.8, 11 / 18
+   matrix cells) - pre-existing; check where density acts (kicks yes, hats / ghosts?) against sources.
 3. (steps 3-4: done.)

@@ -751,9 +751,11 @@ DnBPattern DnBGrammar::generateCandidate(const DnBGenerationParams& params,
     for (const int t : { 12, 36 })
         if (chance(rng, style.hatPickupRate))
             ctx.hatPickups.push_back(t);
-    // Broken 16ths: offbeat eighths always, the rest with gaps (never three empty 16ths in a row).
+    // Broken 16ths: offbeat eighths always, the rest with gaps (never three empty 16ths in a row). The
+    // beats hold a hat in 0.88-0.96 of played bars, the odd 16ths in ~0.3 (FAZE + Ghosthack Top hat stems,
+    // docs/audit/DNB_STAGE.md step 6) - one shared 0.55 overplayed the odd 16ths and dropped beats.
     for (int i = 0; i < 16; ++i)
-        ctx.brokenMask[static_cast<size_t>(i)] = (i % 4 == 2) || chance(rng, 0.55f);
+        ctx.brokenMask[static_cast<size_t>(i)] = (i % 4 == 2) || chance(rng, i % 4 == 0 ? 0.90f : 0.40f);
     for (int i = 2; i < 16; ++i)
         if (!ctx.brokenMask[static_cast<size_t>(i)] && !ctx.brokenMask[static_cast<size_t>(i - 1)] && !ctx.brokenMask[static_cast<size_t>(i - 2)])
             ctx.brokenMask[static_cast<size_t>(i)] = true;

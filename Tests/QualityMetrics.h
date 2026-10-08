@@ -450,7 +450,11 @@ Metrics measure(const PatternProject& project, GenreType genre)
     if (genre == GenreType::BoomBap || genre == GenreType::DnB)
     {
         if (m.backbeatCoverage < 0.999f) fails.add("backbeat missing");
-        if (m.kicksPerBar > (genre == GenreType::DnB ? 5.0f : 6.0f)) fails.add("kick spam");
+        // DnB Breakbeat plays chopped breaks: at the top of the density range 5-6 kicks a bar are inside
+        // played practice (Ghosthack Upfront 3 / 52 loops average > 5, up to 9.5; Freaky 1 / 26;
+        // docs/audit/DNB_STAGE.md step 6), so it shares Boom Bap's limit. dnbSubstyle 5 = Breakbeat.
+        const bool chopped = genre == GenreType::DnB && project.params.dnbSubstyle == 5;
+        if (m.kicksPerBar > (genre == GenreType::DnB && !chopped ? 5.0f : 6.0f)) fails.add("kick spam");
         if (m.ghostLouderThanAnchor > 0) fails.add("ghost louder than anchor");
         if (m.snareInvalidPerBar > 0) fails.add("snare on 1/3");
     }
