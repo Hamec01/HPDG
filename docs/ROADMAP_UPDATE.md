@@ -118,7 +118,7 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
   packs 0.43-0.45); the maintainer has not decided, default is keep.
 - DnB: steps 1-7 done (7: density leans the hat carrier, "density barely changes" 11/18 -> 0/18; 6: broken-16th hat mask from FAZE + Ghosthack Top hats; lab "kick spam" limit 6 for Breakbeat). Earlier: steps 1-5 done (2: no change; 3: displaced second snare, listened: much better; 4: bass ducks under it; 5: hats vs FAZE stems, ghosts not measurable). Next: Techno. Open DnB: hats /
   ghosts vs Ghosthack "DnB_Top" and Freaky stems; bass stabs vs a displaced snare.
-- Techno: step 1 (density moves the scorer's density target, "density barely changes" 18/21 -> 0/21, Minimal / Dub no longer inverted, defaults identical) - `docs/audit/TECHNO_STAGE.md`. Duplicates measured: the grammar's own pattern space is the bound (wider pool rejected). Next: widen the grammar with techno references; generationCounter salt (RULE 13).
+- Techno: step 2 (hat accents on chosen odd 16ths, exact dup Minimal 68 -> 35 %, Dub 61 -> 43 %; lab `drumBars`). Step 1 (density moves the scorer's density target, "density barely changes" 18/21 -> 0/21, Minimal / Dub no longer inverted, defaults identical) - `docs/audit/TECHNO_STAGE.md`. Duplicates measured: the grammar's own pattern space is the bound (wider pool rejected). Next: widen the grammar with techno references; generationCounter salt (RULE 13).
 - Corpus: `E:/HPDG_corpus` (being copied from the other PC; verify with `tools/corpus_manifest.py verify`).
   More packs: `E:/DRUMS/...` (Ghosthack bundle, Sonic Mechanics, Freaky Loops), `C:/Users/Ham_h/Downloads`
   (Cr2 Trippy Trap, Hex Loops Trap MIDI with mixed grids; Controversial Loops / Jungle Loops torrents

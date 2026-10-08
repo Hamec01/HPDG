@@ -201,7 +201,21 @@ TechnoPattern TechnoGrammar::generateCandidate(const TechnoGenerationParams& par
             if (chance(rng, (1.0f - density) * 0.5f))
                 droppedHatSteps.insert(s);
 
-    const auto closedSteps = hatSteps(p.hatMode, openOn);
+    auto closedSteps = hatSteps(p.hatMode, openOn);
+    // An 8th / offbeat carrier often carries a few accents of its own on chosen odd 16ths, the same in
+    // every bar of the loop: played techno loops put 1-3 odd 16ths in 46 % of bars, in 42 different
+    // sets per 200 bars; HPDG had none (0 % of bars with 2-3, 16-18 sets per 1200 bars) -
+    // docs/audit/TECHNO_STAGE.md step 2 (Ghosthack Ultimate Techno Essentials drum loops).
+    const bool noOddCarrier = p.hatMode == TechnoHatMode::Eighths || (p.hatMode == TechnoHatMode::Offbeat && !openOn);
+    if (noOddCarrier && chance(rng, 0.65f))
+    {
+        const int accents = 1 + (chance(rng, 0.25f + 0.5f * density) ? 1 : 0) + (chance(rng, 0.15f + 0.4f * density) ? 1 : 0);
+        std::array<int, 8> odd { 1, 3, 5, 7, 9, 11, 13, 15 };
+        std::shuffle(odd.begin(), odd.end(), rng);
+        for (int i = 0; i < accents; ++i)
+            closedSteps.push_back(odd[static_cast<size_t>(i)]);
+        std::sort(closedSteps.begin(), closedSteps.end());
+    }
     const auto percSteps = percStepsOffAxis(p.perc);
     const int pickupStep = chance(rng, 0.6f) ? 14 : 15;
     const int displacedClapStep = chance(rng, 0.6f) ? 15 : 13;

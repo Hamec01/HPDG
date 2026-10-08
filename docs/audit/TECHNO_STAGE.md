@@ -62,9 +62,42 @@ Widening the near-best pool (tolerance 0.03 → 0.06, temperature 0.012 → 0.03
 rejected. Percussion: 47-84 % of candidates carry it, the selection keeps it at default density
 (41-98 %) but drops it at 0.2 (1-75 %).
 
+## Step 2 — hat accents on chosen odd 16ths (accepted, listened 2026-10-08)
+
+**Reference.** Ghosthack Ultimate Techno Essentials `GUT_Drum_Loops` (50 loops, 118-127 BPM): the
+Strpd + Top_a + Top_b layers merged per loop → `docs/audit/reference/techno_ghosthack_drum_bars.tsv`;
+lab column `drumBars` (every drum lane but the crash and the rumble — rumble is the kick's tail, not
+a transient a loop transcription sees). The pack is deep / minimal tempo: Minimal and Dub compare
+directly; Peak Time / Hard / Hypnotic (faster, busier) are not judged on its position averages.
+
+**Finding.** Odd 16ths per bar: played loops 0: 28 %, 1: 22 %, **2-3: 24 %**, 4: 14 %, 6-8: 9 %, in **42
+different odd-16th sets per 200 bars** (`2 7 11`, `3 10`, `1 15` ...). HPDG: 2-3 odd 16ths in **0 %** of
+bars, 16-18 sets per 1200 bars — the hat modes give all-or-nothing (every "a", every 16th, none).
+
+**Change (additive).** An 8th carrier (or offbeat without open hats) gets, with 0.65 per pattern, 1-3
+odd 16ths chosen once for the loop (count leans up with density); 16th carriers unchanged.
+
+| Measure (1000 seeds, defaults) | Step 1 | Step 2 |
+|---|---|---|
+| exact dup Minimal / Dub / Acid / Detroit / Peak Time | 68.2 / 60.8 / 52.8 / 43.7 / 57.3 % | **35.0 / 42.7 / 36.8 / 32.1 / 46.8 %** |
+| exact dup Hypnotic / Hard (16th carriers) | 20.4 / 31.8 % | 20.5 / 31.0 % |
+| odd-16th sets per 1200 bars | 16-18 | 59-116 |
+| Minimal odd 16ths per bar 0 / 1 / 2 / 3 (reference 28 / 22 / 14 / 10 %) | 62 / 14 / 0 / 0 % | 27 / 20 / 18 / 6 % |
+| position L1 calibration / validation, Minimal | 2.02 / 0.83 | 1.36 / 1.56 |
+| position L1 calibration / validation, Dub / Detroit / Acid | 1.74 / 2.17, 2.85 / 3.73, 2.82 / 3.71 | 2.17 / 2.87, 3.36 / 4.24, 3.12 / 4.01 |
+
+Matrix (300 seeds): monotone **21 / 21** (step 1: 20), "density barely changes" 0 / 21, failures none;
+exact dup at the default density, 4 bars: Minimal 51.0 → 18.0, Dub 44.7 → 27.0, Acid 34.3 → 23.0,
+Detroit 26.7 → 15.3, Peak Time 35.3 → 28.3 %. Lane / core / track semantics tests pass.
+
+Cost: the position averages move away from the pack for Dub / Detroit / Acid (their odd 16ths were
+already above it through the 16th / "a" carriers), and the validation split is small (19 loops,
+18 distinct bars). Accepted on the duplicate and bar-shape evidence; listening decides.
+
 ## Open (next steps)
 
-1. Widen the grammar's pattern space in a genre-true way (references: Ghosthack Ultimate Techno
+1. (step 2: hat accents.) Further widening: 16th carriers (Hypnotic / Hard) - a second, faster techno reference is needed.
+   Original note: widen the grammar's pattern space in a genre-true way (references: Ghosthack Ultimate Techno
    Essentials drum loops Full / Top / Kick, construction-kit stems; Afterhours Tech House "We Want
    Techno"; African Tech House Drums MIDI = tech house, not techno) — which hat / perc / rumble
    variations do played techno loops use?

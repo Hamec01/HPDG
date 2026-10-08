@@ -79,6 +79,7 @@ struct Metrics
     float displacedBackbeatPerBar = 0; // DnB: bars whose second snare sits an 8th off 12 (4 + 10 / 4 + 14)
     juce::String kickAllBarsText; // Kick + GhostKick 16ths per bar, ghosts included (a transcription keeps soft kicks)
     juce::String hatAllBarsText;  // HiHat + HatFX (closed-hat accents / rolls) 16ths per bar: what a hat stem holds
+    juce::String drumBarsText;    // every drum lane but the crash and the rumble, 16ths per bar (a full drum loop's onsets)
     float hatAllNotesPerBar = 0;  // HiHat + HatFX notes per bar, rolls counted note by note
     std::set<std::pair<int, int>> skeletonSet;
 };
@@ -275,6 +276,7 @@ Metrics measure(const PatternProject& project, GenreType genre)
     double anchorAbs = 0, secondaryAbs = 0;
     int anchorCount = 0, secondaryCount = 0, outliers = 0;
     std::vector<std::set<int>> allLaneBars(static_cast<size_t>(bars));
+    std::vector<std::set<int>> drumBars(static_cast<size_t>(bars));
     for (const auto lane : drumLanes())
     {
         const auto notes = notesOf(project, lane);
@@ -302,7 +304,20 @@ Metrics measure(const PatternProject& project, GenreType genre)
             outliers += offset > 60 ? 1 : 0;
             if (lane != TrackType::Cymbal && lane != TrackType::HatFX)
                 allLaneBars[static_cast<size_t>(bar)].insert(stepOf(n) % 16 + 16 * static_cast<int>(lane));
+            // Rumble (GhostKick in Techno) is the kick's tail, not a transient a loop transcription sees.
+            if (lane != TrackType::Cymbal && lane != TrackType::GhostKick)
+                drumBars[static_cast<size_t>(bar)].insert(stepOf(n) % 16);
         }
+    }
+    for (const auto& bar : drumBars)
+    {
+        bool first = true;
+        for (const int s : bar)
+        {
+            m.drumBarsText << (first ? "" : " ") << s;
+            first = false;
+        }
+        m.drumBarsText << "|";
     }
     m.eventsPerBar = events / fb;
     float jaccardSum = 0.0f;
