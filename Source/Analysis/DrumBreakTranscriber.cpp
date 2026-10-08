@@ -944,6 +944,25 @@ float computeSustainRatio(const Matrix& spectrogram)
     return meanSum > 0.0 ? static_cast<float>(floorSum / meanSum) : 0.0f;
 }
 
+// Share of the loop's power above 4 kHz. Drum loops carry hat / snare noise there (p10 of the
+// drum corpora 0.6-5 %); melodic and bass loops almost none (median 0, p90 <= 1.6 % in 8 packs).
+float computeHighBandShare(const Matrix& spectrogram, const BandLayout& layout)
+{
+    double high = 0.0;
+    double total = 0.0;
+    for (const auto& frame : spectrogram)
+        for (int band = 0; band < layout.size(); ++band)
+        {
+            const auto b = static_cast<size_t>(band);
+            const double value = frame[b];
+            const double power = value * value * static_cast<double>(layout.binEnd[b] - layout.binStart[b]);
+            total += power;
+            if (layout.centerHz[b] > 4000.0f)
+                high += power;
+        }
+    return total > 0.0 ? static_cast<float>(high / total) : 0.0f;
+}
+
 // A hat played together with a snare is spectrally buried in the snare's own noise. When the
 // hats form a regular stream around that snare/kick and the onset still gained enough energy
 // above 6 kHz, the hat is restored (flagged as inferred).
@@ -1058,7 +1077,8 @@ juce::String DrumBreakAnalysis::describe(bool includeHits) const
               + " | length " + juce::String(durationSeconds, 3) + " s");
     lines.add("Drum loop confidence " + juce::String(drumLoopConfidence, 2)
               + " (sustain " + juce::String(sustainRatio, 2)
-              + ", template fit " + juce::String(templateFit, 2) + ")"
+              + ", template fit " + juce::String(templateFit, 2)
+              + ", high band " + juce::String(highBandShare, 4) + ")"
               + " | onsets " + juce::String(static_cast<int>(onsetTimes.size()))
               + " | K " + juce::String(countLane(TrackType::Kick))
               + " S " + juce::String(countLane(TrackType::Snare))
@@ -1489,6 +1509,12 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
     analysis.sustainRatio = computeSustainRatio(spectrogram);
     const float percussive = juce::jlimit(0.0f, 1.0f, 1.0f - 2.2f * analysis.sustainRatio);
     analysis.drumLoopConfidence = juce::jlimit(0.0f, 1.0f, 0.45f * percussive + 0.35f * analysis.templateFit + 0.20f * best.gridFit);
+    // A loop without noise above 4 kHz has no hats or snares: a percussive bass / pluck loop that
+    // K/S/H templates still "explain" (docs/audit/SAMPLE_ANALYSIS_STAGE.md, step 4). Fades the
+    // confidence to x0.6 from 0.4 % down to 0.1 % high-band power (log scale).
+    analysis.highBandShare = computeHighBandShare(spectrogram, layout);
+    const float noisy = juce::jlimit(0.0f, 1.0f, static_cast<float>(std::log10((analysis.highBandShare + 1.0e-5) / 0.001) / std::log10(4.0)));
+    analysis.drumLoopConfidence *= 0.6f + 0.4f * noisy;
 
     assignTicks(analysis, options.quantizeAmount);
     completeMaskedHats(analysis);

@@ -14,3 +14,10 @@ trap_utt2	drums	trap	yes	E:/DRUMS/DRUMS/Sonic Mechanics - Underground Trap Tool 
 trap_cr2	drums	trap	yes	C:/Users/Ham_h/Downloads/Sample Tools by Cr2 - Trippy Trap Drum Loops/Audio_MIDI/Drum Loops/Full Loops	_Full_	_Full_([0-9]+)
 tonal_techno_music	tonal	techno	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Ultimate Techno Essentials/GUT_Music_Loops	\.wav$	_([0-9]+)_BPM
 tonal_techno_bass	tonal	techno	yes	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Ultimate Techno Essentials/GUT_Bass Loops	\.wav$	_([0-9]+)_BPM
+tonal_cym_diamonds	tonal	trap	yes	E:/DRUMS/DRUMS/Cymatics - Diamonds II Hip Hop Sample Pack/Melody Loops	\.wav$	- ([0-9]+) BPM
+tonal_cym_cobra	tonal	boombap	yes	E:/DRUMS/DRUMS/Boombap/Cymatics - Cobra Hip Hop Sample Pack/Melodics/Melody Loops	\.wav$	- ([0-9]+) BPM
+tonal_cym_lofi	tonal	boombap	yes	E:/DRUMS/DRUMS/Boombap/Cymatics - Lofi Toolkit/Melody Loops	\.wav$	- ([0-9]+) BPM
+tonal_rhh_melodic	tonal	boombap	yes	E:/DRUMS/DRUMS/Boombap/Raw Hip-Hop/melodic_loops	\.wav$	_([0-9]+)_[A-G]
+tonal_rhh_bass	tonal	boombap	yes	E:/DRUMS/DRUMS/Boombap/Raw Hip-Hop/bass_loops	\.wav$	_([0-9]+)_[A-G]
+tonal_dnb_music	tonal	dnb	yes	E:/DRUMS/DRUMS/Freaky Loops - Dark Neurofunk and Cinematic DnB/DNC_Music Loops_FRK	\.wav$	DNC_([0-9]+)_
+tonal_dnb_bass	tonal	dnb	yes	E:/DRUMS/DRUMS/Freaky Loops - Dark Neurofunk and Cinematic DnB/DNC_Bass Loops_FRK	\.wav$	DNC_([0-9]+)_

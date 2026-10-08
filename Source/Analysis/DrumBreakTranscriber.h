@@ -85,6 +85,7 @@ struct DrumBreakAnalysis
     std::vector<BreakDrumHit> hits;
 
     float sustainRatio = 0.0f;  // how much energy never decays (tonal / pads) - low for drums
+    float highBandShare = 0.0f; // share of power above 4 kHz (hats / snare noise) - ~0 for tonal loops
     float templateFit = 0.0f;   // how well K/S/H templates explain the onsets
     float drumLoopConfidence = 0.0f;
 

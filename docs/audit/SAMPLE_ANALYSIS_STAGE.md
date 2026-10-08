@@ -168,11 +168,64 @@ the alternative.
 
 - Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
 
+## Step 4 — melodic / bass loops are not drum loops
+
+**Why it matters.** In the plugin, drum-loop confidence ≥ 0.75 means "clearly a drum loop". In Guide
+mode such a sample gets its K/S/H transcription applied, so a melodic loop mistaken for drums has
+kicks and an 808 line extracted from its bass notes and chords. The flag also makes the plugin trust
+a weaker sample tempo (≥ 0.5 instead of ≥ 0.8) and keeps the measured bar phase.
+
+**Tonal corpus widened.** 7 packs added to `tempo_corpus.tsv`, all with tempo and key in the file
+names, 377 tonal loops in total:
+- Cymatics Diamonds II, Cobra and Lofi Toolkit melody loops;
+- Raw Hip-Hop melodic and bass loops;
+- Freaky Loops DnB music and bass loops.
+
+The Ghosthack techno loops are the calibration set and the 6 new packs the validation set (RULES:
+same test before / after, no tuning on the test set).
+
+**Cause.** Percussive bass and pluck loops have no sustain (0.00-0.10), and the K/S/H templates
+"explain" them (template fit 0.8-0.95). Neither term separates them from drums.
+
+**Evidence.** The share of power above 4 kHz, where hat and snare noise sits:
+
+| | p10 | median | p90 |
+|---|---|---|---|
+| drum corpora (8) | 0.6-12 % | 1.5-29 % | 3.8-39 % |
+| tonal packs (9) | 0 % | 0-0.4 % | 0-2 % |
+
+The darkest drum loops are lo-fi Boom Bap (minimum 0.19 %).
+
+**Change.**
+- `computeHighBandShare` reads the share from the transcriber's band spectrogram.
+- Drum-loop confidence is multiplied by 0.6 + 0.4 × f, where f fades from 1 at 0.4 % to 0 at 0.1 %
+  (log scale).
+- The value is printed in the report as `high band`.
+- Simulation before coding: the neighbouring settings (fade 0.05-0.15 % → 0.2-0.6 %, floor 0.6-0.7)
+  gave the same counts.
+
+**Result** ("clearly a drum loop", confidence ≥ 0.75):
+
+| | before | after |
+|---|---|---|
+| drum loops (8 corpora) | 320 / 347 | 320 / 347 (identical per corpus) |
+| classic breaks | 42 / 84 | 42 / 84 |
+| tonal, calibration (techno) | 26 / 75 | 7 / 75 |
+| **tonal, validation (6 packs)** | 14 / 302 | **1 / 302** |
+
+- Tonal loops whose tempo the plugin trusts: 82 → 66, of which wrong 14 → 12.
+- Tempo and phase are unchanged.
+- `tempo_bench.py` now reports the share ≥ 0.75 (the plugin's threshold) instead of ≥ 0.5.
+- Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
+
 ## Open (next steps)
 
-1. **Tonal false positives.** 68 % of tonal loops get drum-loop confidence ≥ 0.5.
+1. **Tempo of tonal loops.** Across the 9 tonal packs the tempo is right in only 49 % of files
+   (Freaky DnB bass 30 %, Cymatics 42-48 %). The analyzer tracks the onsets of notes, not a beat.
+   The plugin only trusts these at confidence ≥ 0.8 (81 % right there). Look at this together with
+   the key work.
 2. **16th phase.** On some Techno loops the grid is a 16th off (GUT 01 / 04 / 22).
-3. **Key of the loop: benchmark.** About 75 tonal loops carry their key in the file name
+3. **Key of the loop: benchmark.** All 377 tonal loops (9 packs) carry their key in the file name
    (`GUT_Music_Loop_13_123_BPM_Am`). Measure how often `SampleHarmonyAnalyzer` gets the root and the
    mode right. A bass "in key" of a wrong key is still wrong, so this comes before item 4.
 4. **Root of the bass / 808 sample from its sound.** Today the root comes only from the file name

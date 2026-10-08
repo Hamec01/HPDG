@@ -9,7 +9,7 @@ usage:
   python tools/tempo_bench.py report <corpus.tsv> <out folder> [--json <file>] [--list]
       Per corpus and per category: tempo accuracy (|err| <= 0.5 BPM, <= 2 %), half / double / other
       metrical errors, median error, confidence calibration (accuracy per confidence bin), drum-loop
-      confidence; phase (trimmed loops only, origin truth 0 ms): |origin| automatic (when the tempo is
+      confidence (median, share >= 0.75 = "clearly a drum loop" in the plugin); phase (trimmed loops only, origin truth 0 ms): |origin| automatic (when the tempo is
       right) and typed, in ms and in 16ths. --list prints every wrong file.
 
 Tempo and phase are reported separately (roadmap §29); the host / typed tempo is a hint, the label in
@@ -147,7 +147,8 @@ def summarize(corpus, rows, list_wrong):
     s['calibration'] = {b: dict(n=t, accuracy=ok / t) for b, (t, ok) in bins.items()}
     loops = [r['auto']['loop'] for r in rows if r['auto']['loop'] is not None]
     s['drumLoopConfMedian'] = median(loops)
-    s['drumLoopConfAbove05'] = sum(1 for v in loops if v >= 0.5) / max(1, len(loops))
+    # 0.75 = the plugin's "clearly a drum loop" threshold (SampleAnalyzer / PluginProcessor)
+    s['drumLoopConfAbove075'] = sum(1 for v in loops if v >= 0.75) / max(1, len(loops))
     if corpus['trimmed']:
         auto_origin = [abs(r['auto']['origin']) for r in right]
         typed_origin = [abs(r['typed']['origin']) for r in rows if r['typed'] is not None]
@@ -161,7 +162,7 @@ def summarize(corpus, rows, list_wrong):
     cal = ' '.join(f"{b}:{v['accuracy']:.2f}(n{v['n']})" for b, v in sorted(s['calibration'].items()))
     line = (f"{corpus['id']:20s} n {n:3d} | exact {s['exact']:.2f} <=2% {s['within2pct']:.2f} | half {s['half']:.2f} "
             f"double {s['double']:.2f} 2/3-type {s['otherMetrical']:.2f} other {s['other']:.2f} | med err {s['medianErr']:.2f} "
-            f"| loop conf med {s['drumLoopConfMedian']:.2f} (>=0.5: {s['drumLoopConfAbove05']:.2f})")
+            f"| loop conf med {s['drumLoopConfMedian']:.2f} (>=0.75: {s['drumLoopConfAbove075']:.2f})")
     if corpus['trimmed']:
         line += (f"\n{'':20s} phase: auto |origin| med {s['originAutoMedianMs']:.0f} ms (<=20 ms {s['originAutoWithin20ms']:.2f})"
                  f" | typed med {s['originTypedMedianMs']:.0f} ms (<=20 ms {s['originTypedWithin20ms']:.2f},"
