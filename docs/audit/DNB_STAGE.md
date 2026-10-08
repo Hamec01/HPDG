@@ -108,9 +108,55 @@ lane tests pass (the DnB invariant test now accepts 40 / 56 in an answer bar and
 any backbone snare). Modern kick-skeleton reuse rose 59.4 → 61.4 % (the 4 + 10 bar has fewer kick
 choices). Summaries: `docs/audit/dnb/step3_*`.
 
+## Step 4 — the bass ducks under a displaced snare (accepted)
+
+`DnBBass.cpp` kept its stab ducking / snare-clash / sustained-onset rules on 16 / 48. Now the second
+snare is read from the drum frame per bar (48, or 40 / 56 when the bar plays no 48). Only patterns with
+a displaced snare change (227 of 1032). New lab column `bassOnSnareRate` (bass attacks on a non-ghost
+snare 16th). In patterns with a displaced snare:
+
+| Substyle | bass on snare | bass notes / bar | bass on kick |
+|---|---|---|---|
+| Modern | 8.7 → 6.5 % | 1.37 → 1.39 | 0.71 → 0.70 |
+| Roller | 6.3 → 2.7 % | 1.50 → 1.50 | 0.71 → 0.73 |
+| Liquid | 9.2 → 6.1 % | 1.89 → 1.84 | 0.53 → 0.55 |
+| Neurofunk | 5.4 → 3.3 % | 1.05 → 1.03 | 0.87 → 0.89 |
+| Jump-Up | 5.0 → 3.6 % | 1.02 → 1.01 | 0.83 → 0.84 |
+
+## Step 5 — hats and ghost snares vs stems (hats: accepted; ghosts: measured, no change)
+
+References: Ghost Syndicate *FAZE* drum loop stems (174 BPM): 32 hat stems → `docs/audit/reference/dnb_faze_hat_bars.tsv`,
+20 kick & snare stems → `dnb_faze_snare_bars.tsv` (`tools/dnb_stems.py`; step = round(t / 16th) from the
+file start - BreakLab's own grid phase-shifted the hat stems that open off the beat). Second check:
+the 26 Freaky full loops (hat lane, conf >= 0.3; noisy).
+
+Hats. Carrier per loop (the commonest bar shape): FAZE 8ths + 16th pickups 12, 16ths 8, 8ths 7,
+broken / sparse 5, **offbeat-only 0** of 32; Freaky offbeat-only 1 of 26. Written: in DnB "the hi-hat
+works to stabilise the rhythm by every single eighth note" (Attack Magazine, *Programming drum 'n' bass
+in 5/4*). HPDG chose the offbeat-only carrier (16ths 2 / 6 / 10 / 14) in 10-40 % of patterns, so its
+hat on beats 1-4 sat at 0.48-0.88 where the stems hold 0.88-0.96.
+Change: offbeat-only carrier weight → rolling 8ths (Modern .15 → .05, Roller .10 → .05, Liquid .25 →
+.10, Neurofunk .20 → .05, Jump-Up .40 → .10; Breakbeat had 0). Other carriers unchanged.
+
+| Substyle | hat L1 calibration | hat L1 validation | hats / bar (FAZE 8.5-9.5) | near dup |
+|---|---|---|---|---|
+| Modern | 2.23 → 2.05 | 2.35 → 2.19 | 9.55 → 9.60 | 1.9 → 2.1 % |
+| Roller | 3.13 → 2.93 | 3.93 → 3.73 | 10.91 → 10.97 | 9.7 → 9.5 % |
+| Liquid | 2.63 → 2.32 | 2.70 → 2.13 | 8.18 → 8.62 | 8.6 → 7.9 % |
+| Neurofunk | 3.33 → 2.67 | 4.03 → 3.24 | 10.87 → 10.71 | 7.1 → 6.2 % |
+| Jump-Up | 2.68 → 2.20 | 2.62 → 1.79 | 9.10 → 9.32 | 21.6 → 24.6 % |
+| Breakbeat | unchanged | unchanged | unchanged | unchanged |
+
+Cost: Jump-Up near duplicates 21.6 → 24.6 % (the hat layer is more uniform). Still open: Roller /
+Neurofunk / Breakbeat play the odd 16ths at 0.45-0.67 (FAZE 0.15-0.50) - 16th / broken carriers.
+
+Ghost snares: not measurable from these stems. The quiet onsets BreakLab finds in the kick & snare
+stems sit on 4 / 12 at full level (double triggers of the snare), and the off-backbone snares are loud
+(velocity 79-127, 0.29 a bar, mostly on 16th 7). HPDG's loud off-backbone snares, 0.16-0.37 a bar,
+are inside that. No change to ghosts without a reference.
+
 ## Open (next steps)
 
 1. (step 2: done, no change - Roller / Jump-Up repetition is genre-true.)
-2. Hats / ghost snares / bass vs references (Ghosthack "DnB_Top" loops = hats; Freaky stems).
-3. (step 3: done.) The DnB bass still ducks its stabs under 48, not under a displaced snare
-   (`DnBBass.cpp` nearSnare / Stab); the frame from the project could pass the real snare ticks.
+2. (step 5: hats done; ghosts not measurable from stems.) Ghosthack "DnB_Top" (other PC) as a second hat pack.
+3. (steps 3-4: done.)

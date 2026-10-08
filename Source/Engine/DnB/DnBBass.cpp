@@ -113,9 +113,25 @@ const SampleBassSegment* segmentAt(const SampleHarmony& harmony, double seconds)
     return nullptr;
 }
 
-bool nearSnare(int tickInBar)
+bool nearSnare(int tickInBar, int secondSnare = DnBGrid::kSnare4)
 {
-    return std::abs(tickInBar - DnBGrid::kSnare2) <= 1 || std::abs(tickInBar - DnBGrid::kSnare4) <= 1;
+    return std::abs(tickInBar - DnBGrid::kSnare2) <= 1 || std::abs(tickInBar - secondSnare) <= 1;
+}
+
+// The bar's second backbone snare: 48, or a displaced 40 / 56 (4 + 10 / 4 + 14, docs/audit/DNB_STAGE.md
+// step 3) when the drums play no 48 in that bar.
+int secondSnareTick(const DnBDrumFrame& drums, int bar)
+{
+    if (bar < 0 || bar >= static_cast<int>(drums.snares.size()))
+        return DnBGrid::kSnare4;
+    const auto& snares = drums.snares[static_cast<size_t>(bar)];
+    auto has = [&snares](int tick) { return std::find(snares.begin(), snares.end(), tick) != snares.end(); };
+    if (has(DnBGrid::kSnare4))
+        return DnBGrid::kSnare4;
+    for (const int tick : { DnBGrid::kSnare4 - 8, DnBGrid::kSnare4 + 8 })
+        if (has(tick))
+            return tick;
+    return DnBGrid::kSnare4;
 }
 
 //------------------------------------------------------------------------------
@@ -520,7 +536,7 @@ DnBBassLine buildCandidate(const DnBBassParams& params, const DnBDrumFrame& drum
         {
             // Sustained bass never starts on the backbone snare; rhythmic lines may (played DnB basses
             // pulse through the snare - the sidechain makes the room).
-            if (o.tick != 0 && nearSnare(o.tick) && !rhythmicArchetype)
+            if (o.tick != 0 && nearSnare(o.tick, secondSnareTick(drums, bar)) && !rhythmicArchetype)
                 continue;
 
             // The sample lens: where the sample's own low end is busy, the bass holds back;
@@ -584,7 +600,7 @@ DnBBassLine buildCandidate(const DnBBassParams& params, const DnBDrumFrame& drum
         if (line.archetype == DnBBassArchetype::Stab && !nextGlides)
         {
             const int tickInBar = note.start % kBar;
-            for (const int snare : { DnBGrid::kSnare2, DnBGrid::kSnare4 })
+            for (const int snare : { DnBGrid::kSnare2, secondSnareTick(drums, note.start / kBar) })
                 if (tickInBar < snare && tickInBar + note.length > snare - 1)
                     note.length = std::max(2, snare - 1 - tickInBar);
         }
@@ -764,7 +780,7 @@ DnBBassScore DnBBassGenerator::score(const DnBBassLine& line, const DnBBassParam
     // Snare clash: bass attacks on the backbone.
     int clashes = 0;
     for (const auto& n : line.notes)
-        if (n.start % kBar != 0 && nearSnare(n.start % kBar))
+        if (n.start % kBar != 0 && nearSnare(n.start % kBar, secondSnareTick(drums, n.start / kBar)))
             ++clashes;
     s.snareClash = line.notes.empty() ? 1.0f : static_cast<float>(clashes) / static_cast<float>(line.notes.size());
 

@@ -67,7 +67,7 @@ DnBStyleProfile makeModern()
     p.substyle = DnBSubstyle::Modern;
     p.displacedSnareRate = 0.30f; // docs/audit/DNB_STAGE.md step 3
     // Clean 2-step backbone, medium kick syncopation, low-medium ghosts, low microtiming.
-    p.carrierWeights = { 0.15f, 0.45f, 0.15f, 0.20f, 0.00f, 0.05f };
+    p.carrierWeights = { 0.05f, 0.55f, 0.15f, 0.20f, 0.00f, 0.05f }; // offbeat-only hat: 0 / 32 FAZE hat stems, 1 / 26 Freaky (DNB_STAGE.md step 5)
     p.topologyWeights = { 0.25f, 0.30f, 0.15f, 0.15f, 0.05f, 0.10f };
     p.syncTarget = 0.03f;
     p.negativeSpaceTarget = 0.37f;
@@ -87,7 +87,7 @@ DnBStyleProfile makeRoller()
     p.answerDropsDownbeat = 0.35f;
     p.ghostAmount = 0.50f;
     p.ghostPreBias = 0.70f;
-    p.carrierWeights = { 0.10f, 0.25f, 0.35f, 0.20f, 0.10f, 0.00f };
+    p.carrierWeights = { 0.05f, 0.30f, 0.35f, 0.20f, 0.10f, 0.00f }; // offbeat-only hat: 0 / 32 FAZE hat stems, 1 / 26 Freaky (DNB_STAGE.md step 5)
     p.hatAccentRate = 0.35f;
     p.openHatRate = 0.20f;
     p.breakDetail = 0.15f;
@@ -121,7 +121,7 @@ DnBStyleProfile makeLiquid()
     p.ghostPreBias = 0.60f;
     p.ghostRatioMin = 0.20f;
     p.ghostRatioMax = 0.45f;
-    p.carrierWeights = { 0.25f, 0.25f, 0.15f, 0.10f, 0.25f, 0.00f };
+    p.carrierWeights = { 0.10f, 0.40f, 0.15f, 0.10f, 0.25f, 0.00f }; // offbeat-only hat: 0 / 32 FAZE hat stems, 1 / 26 Freaky (DNB_STAGE.md step 5)
     p.hatAccentRate = 0.20f;
     p.openHatRate = 0.30f;
     p.breakDetail = 0.05f;
@@ -152,7 +152,7 @@ DnBStyleProfile makeNeurofunk()
     p.ghostAmount = 0.25f;
     p.ghostPreBias = 0.50f;
     p.ghostRatioMin = 0.30f;
-    p.carrierWeights = { 0.20f, 0.20f, 0.25f, 0.30f, 0.00f, 0.05f };
+    p.carrierWeights = { 0.05f, 0.35f, 0.25f, 0.30f, 0.00f, 0.05f }; // offbeat-only hat: 0 / 32 FAZE hat stems, 1 / 26 Freaky (DNB_STAGE.md step 5)
     p.hatAccentRate = 0.35f;
     p.openHatRate = 0.15f;
     p.fillRate = 0.40f;
@@ -181,7 +181,7 @@ DnBStyleProfile makeJumpUp()
     p.answerDropsDownbeat = 0.30f;
     p.twoStepAnchor = 0.92f;
     p.ghostAmount = 0.15f;
-    p.carrierWeights = { 0.40f, 0.30f, 0.15f, 0.10f, 0.00f, 0.05f };
+    p.carrierWeights = { 0.10f, 0.60f, 0.15f, 0.10f, 0.00f, 0.05f }; // offbeat-only hat: 0 / 32 FAZE hat stems, 1 / 26 Freaky (DNB_STAGE.md step 5)
     p.hatAccentRate = 0.25f;
     p.openHatRate = 0.30f;
     p.breakDetail = 0.0f;

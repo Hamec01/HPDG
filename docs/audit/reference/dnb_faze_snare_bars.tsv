@@ -1,0 +1,22 @@
+# DnB snares reference: 16th positions per bar, "|" between bars. Built with tools/dnb_stems.py snares
+# from HPDG_BreakLab analyze --bpm <label> --hits reports; step = round(t / 16th) from the file start.
+GS_FAZE_174_Drum_01_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4|4 7 9 10 12	|||||||
+GS_FAZE_174_Drum_02_Kick_Snare	4 7 12|4 7 12|4 7 12|4 7 12|4 7 12|4 7 12|4 7 12|12	|||||||
+GS_FAZE_174_Drum_03_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12 14|1 3 4 6 9 11 12	|||||||
+GS_FAZE_174_Drum_04_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|4 12	|||||||
+GS_FAZE_174_Drum_05_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|4	|||||||
+GS_FAZE_174_Drum_06_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4|12|4 12	|||||||
+GS_FAZE_174_Drum_07_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|4 12	|||||||
+GS_FAZE_174_Drum_08_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|4 12	|||||||
+GS_FAZE_174_Drum_09_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|4 12	|||||||
+GS_FAZE_174_Drum_10_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|4	|||||||
+GS_FAZE_174_Drum_11_Kick_Snare	4 7 12 15|4 7 12 15|4 7 12 15|4 7 12 15	|||
+GS_FAZE_174_Drum_12_Kick_Snare_V1	4 12|4 12|4 12|4 12	|||
+GS_FAZE_174_Drum_12_Kick_Snare_V2	4 7 12|4 7 12|4 12|4 7 12|4 7 12|4 7 9 12|4 7 12|4 7 12	|9|7|9||||
+GS_FAZE_174_Drum_13_Kick_Snare	4 12|4 12|4|4 12|4 12|4 12|4 12|4 8 10	|||||||15
+GS_FAZE_174_Drum_14_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|	|||||||
+GS_FAZE_174_Drum_15_Kick_Snare	4 12|4 12|4 12|4 12	|||
+GS_FAZE_174_Drum_16_Kick_Snare	4 12|4 12 13|4 12|4 12 13	|||
+GS_FAZE_174_Drum_17_Kick_Snare_V1	12|4 12|4 12|4 12|4 12|4 12|4 12|8 11 13 14 15	|||||||
+GS_FAZE_174_Drum_17_Kick_Snare_V2	4 12|4 12|4 12|4 12|4 12|4 12|4 12|8 11 13 14 15	|||||||10
+GS_FAZE_174_Drum_18_Kick_Snare	4 12|4 12|4 12|4 12|4 12|4 12|4 12|4 9 10	|||||||

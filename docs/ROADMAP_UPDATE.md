@@ -98,6 +98,13 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
   L1 closer to both packs in 5 substyles, kick validation L1 better in 5; Breakbeat left at 0 (worse).
   Bit-identical at rate 0. Listened 2026-10-08: "DnB стал намного лучше".
 
+## DnB steps 4-5 — `docs/audit/DNB_STAGE.md` (2026-10-08)
+
+- Step 4: the bass ducks under a displaced snare (bass on snare in those patterns 5-9 % → 3-6.5 %).
+- Step 5: hats vs 32 Ghost Syndicate FAZE hat stems (+ Freaky): the offbeat-only hat carrier (0 / 32
+  stems, 1 / 26 Freaky; Attack Magazine: DnB hats on every 8th) moved to rolling 8ths; hat L1 better in
+  5 substyles, Breakbeat unchanged; Jump-Up near dup 21.6 → 24.6 %. Ghost snares not measurable from stems.
+
 ## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
 
 - Read `docs/RULES.md`, this log, `docs/audit/BOOMBAP_STAGE.md`, `TRAP_STAGE.md`, `DNB_STAGE.md`.
@@ -109,7 +116,7 @@ Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: 
 - Boom Bap: done (steps 1-3). Russian Underground kick motifs (beat 3) wait for instrumentals / stems.
 - Trap: done (steps 1-5, listened: good). Open design question: every kick carries an 808 (HPDG 0.76 vs
   packs 0.43-0.45); the maintainer has not decided, default is keep.
-- DnB: steps 1-3 done (2: no change; 3: displaced second snare), listened: much better. Next: hats /
+- DnB: steps 1-5 done (2: no change; 3: displaced second snare, listened: much better; 4: bass ducks under it; 5: hats vs FAZE stems, ghosts not measurable). Next: Techno. Open DnB: hats /
   ghosts vs Ghosthack "DnB_Top" and Freaky stems; bass stabs vs a displaced snare.
 - Then Techno (Phase 0: 20-68 % duplicates, density inverted in Minimal / Dub).
 - Corpus: `E:/HPDG_corpus` (being copied from the other PC; verify with `tools/corpus_manifest.py verify`).

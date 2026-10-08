@@ -57,7 +57,7 @@ struct Metrics
     // timing
     float anchorTimingMeanAbs = 0, secondaryTimingMeanAbs = 0, timingOutlierRate = 0;
     // bass
-    float bassNotesPerBar = 0, bassOnKickRate = 0;
+    float bassNotesPerBar = 0, bassOnKickRate = 0, bassOnSnareRate = 0; // on snare = attacks on a non-ghost snare 16th
     // 808 / bass articulation: mean length (16ths), share of the gap to the next bass start it fills
     // (legato = 1), share of notes shorter than an 8th.
     float bassMeanLength = 0, bassGapFill = 0, bassShortRate = 0;
@@ -356,6 +356,13 @@ Metrics measure(const PatternProject& project, GenreType genre)
         onKick += kickSteps.count(stepOf(n)) > 0 ? 1 : 0;
     m.bassNotesPerBar = bass.size() / fb;
     m.bassOnKickRate = bass.empty() ? 0.0f : onKick / static_cast<float>(bass.size());
+    int onSnare = 0;
+    for (const auto& n : bass)
+    {
+        const int s = stepOf(n);
+        onSnare += s / 16 < bars && snareBars[static_cast<size_t>(s / 16)].count(s % 16) > 0 ? 1 : 0;
+    }
+    m.bassOnSnareRate = bass.empty() ? 0.0f : onSnare / static_cast<float>(bass.size());
     if (!bass.empty())
     {
         auto sorted = bass;
