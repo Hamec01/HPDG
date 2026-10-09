@@ -283,7 +283,7 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
     scrollListener = std::make_unique<ScrollListener>(*waveView);
     scrollBar.addListener(scrollListener.get());
 
-    for (auto* c : std::initializer_list<juce::Component*> { &titleLabel, &bpmCaption, &bpmValue, &halfButton, &doubleButton, &anchorButton,
+    for (auto* c : std::initializer_list<juce::Component*> { &titleLabel, &bpmCaption, &bpmValue, &halfButton, &doubleButton, &fitButton, &anchorButton,
                                                              &snapCombo, &hitsToggle, &lengthCombo, &autoButton, &wholeButton,
                                                              &infoLabel, &hintLabel, &playButton, &analyzeButton, &cancelButton })
         addAndMakeVisible(c);
@@ -327,6 +327,11 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
     bpmValue.onTextChange = [this] { bpmTypedByUser = true; setGridBpm(bpmValue.getText().getDoubleValue()); };
     halfButton.onClick = [this] { bpmTypedByUser = true; setGridBpm(gridBpm * 0.5); };
     doubleButton.onClick = [this] { bpmTypedByUser = true; setGridBpm(gridBpm * 2.0); };
+    // The selection is the loop: its length is a whole number of bars, so the tempo follows from
+    // it exactly (bars x 240 / seconds). The bar count nearest the current grid is kept (1/2, x2
+    // still switch the octave), and bar 1 moves to the selection start.
+    fitButton.setTooltip("The selection is exactly the loop: set the tempo from its length (whole bars) and start bar 1 there.");
+    fitButton.onClick = [this] { fitBpmToSelection(); };
     anchorButton.setTooltip("Move the bar grid so that bar 1 starts at the selection start.");
     anchorButton.onClick = [this]
     {
@@ -416,6 +421,17 @@ void SampleTrimEditorComponent::setSelection(juce::Range<double> newSelection)
     updateInfo();
     if (waveView != nullptr)
         waveView->repaint();
+}
+
+void SampleTrimEditorComponent::fitBpmToSelection()
+{
+    const double seconds = selection.getLength();
+    if (seconds < 0.2)
+        return;
+    const double bars = std::max(1.0, std::round(seconds * juce::jmax(20.0, gridBpm) / 240.0));
+    bpmTypedByUser = true;
+    gridAnchor = selection.getStart();
+    setGridBpm(240.0 * bars / seconds);
 }
 
 void SampleTrimEditorComponent::setGridBpm(double bpm)
@@ -619,6 +635,8 @@ void SampleTrimEditorComponent::resized()
     halfButton.setBounds(grid.removeFromLeft(36));
     grid.removeFromLeft(2);
     doubleButton.setBounds(grid.removeFromLeft(36));
+    grid.removeFromLeft(4);
+    fitButton.setBounds(grid.removeFromLeft(118));
     grid.removeFromLeft(8);
     anchorButton.setBounds(grid.removeFromLeft(170));
     grid.removeFromLeft(10);

@@ -160,6 +160,18 @@ int main()
         editor.setSelection({ kPadSeconds, kPadSeconds + 4.0 * 2.4 });
         check(std::abs(editor.selectionBars() - 4.0) < 1.0e-6, "selection length in bars");
         check(editor.selectionInfo().startsWith("4.00 bars"), "length hint: " + editor.selectionInfo());
+
+        {
+            // "BPM = selection": the selection is the loop, so its length sets the tempo exactly.
+            bbg::SampleTrimEditorComponent fitEditor(source, {}, false);
+            fitEditor.setGridBpm(86.0);
+            fitEditor.setSelection({ 1.0, 1.0 + 11.16 });
+            fitEditor.fitBpmToSelection();
+            check(std::abs(fitEditor.getGridBpm() - 240.0 * 4.0 / 11.16) < 0.01, "BPM from a 4-bar selection: " + juce::String(fitEditor.getGridBpm(), 3));
+            check(std::abs(fitEditor.getGridAnchor() - 1.0) < 1.0e-9, "bar 1 at the selection start");
+            check(fitEditor.getTypedBpm() > 0.0, "the fitted tempo counts as typed");
+            check(std::abs(fitEditor.selectionBars() - 4.0) < 1.0e-6, "the selection is now exactly 4 bars");
+        }
         check(editor.qualityWarning().isEmpty(), "4 bars of drums: no warning");
 
         editor.setSelection({ kPadSeconds, kPadSeconds + 2.4 });

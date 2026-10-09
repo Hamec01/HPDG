@@ -56,6 +56,9 @@ public:
     double getGridBpm() const { return gridBpm; }
     double getTypedBpm() const { return bpmTypedByUser ? gridBpm : 0.0; } // 0 = detect on Analyze
     void setGridBpm(double bpm);
+    // The selection is exactly the loop: tempo = whole bars (nearest the current grid) x 240 /
+    // its length, bar 1 at its start; the tempo counts as typed (used by Analyze selection).
+    void fitBpmToSelection();
     double getGridAnchor() const { return gridAnchor; }
     void setSnap(Snap newSnap);
     void setSnapToHits(bool enabled);
@@ -96,6 +99,7 @@ private:
     juce::Label bpmValue;
     juce::TextButton halfButton { "1/2" };
     juce::TextButton doubleButton { "x2" };
+    juce::TextButton fitButton { "BPM = selection" };
     juce::TextButton anchorButton { "Bar 1 = selection start" };
     juce::ComboBox snapCombo;
     juce::ToggleButton hitsToggle { "Snap to hits" };

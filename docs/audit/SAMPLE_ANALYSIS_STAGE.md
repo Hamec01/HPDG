@@ -575,6 +575,12 @@ a range list: Auto, 50-100, 75-150, 100-200, 150-300.
   ~61 % -> ~82 % when the user picks a range. These are mostly octave readings; x3/2 readings are
   not always fixed.
 
+**"BPM = selection" in the Trim window (maintainer's request).** When the selection is exactly
+the loop, its length gives the tempo: bars × 240 / seconds. The bar count is the one nearest the
+current grid (1/2 and x2 still switch the octave), bar 1 moves to the selection start, and the tempo
+counts as typed for "Analyze selection". Example: a 4-bar selection of 11.16 s gives 86.02 BPM.
+Test: SampleTrimTests.
+
 **Still open from the same file: a bass note read as a kick.** The maintainer: there is no kick at
 the start, only bass and a snare.
 - The first hit has 5 % of its energy below 100 Hz and 92 % at 100-250 Hz; this loop's kicks have
