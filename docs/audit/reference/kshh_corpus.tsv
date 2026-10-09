@@ -1,0 +1,4 @@
+# Drum loops with per-instrument stems (kshh_bench.py). id	folder	full regex	kick	snare	hat stem suffix
+urban_trap	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Urban Trap Essentials/Samples and Loops/Loops/15 Full Drum Loops (Stems Seperated)	 Full\.wav$	 Kick.wav	 Snare.wav	 Hats.wav
+hybrid_trap	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Hybrid Trap Essentials/Drum Loops (stem seperated)	- Full\.wav$	- Kick.wav	- Snare.wav	- Hats.wav
+dubstep	E:/DRUMS/DRUMS/Ghosthack The Ultimate Producer Bundle 2020/Ghosthack - Ultimate Producer Bundle 2020/Ghosthack - Dubstep Sound Arsenal/10 Full Drum Loops (Stem Seperated) (150bpm)	Full\.wav$	Kick.wav	Snare.wav	Cymbals.wav

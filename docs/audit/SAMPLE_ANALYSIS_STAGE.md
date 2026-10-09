@@ -591,6 +591,42 @@ the start, only bass and a snare.
   suffer), or harmonic / percussive separation so sustained bass notes do not reach the drum
   templates.
 
+## K/S/H transcription benchmark (measurement, no change yet)
+
+`tools/kshh_bench.py` + `docs/audit/reference/kshh_corpus.tsv`: 35 Ghosthack drum loops that ship
+with per-instrument stems (Urban Trap 15, Hybrid Trap 10, Dubstep 10).
+- Truth: onsets of each clean stem. On 5 ms frames, the peak of the next 30 ms must be at least
+  4 dB above the previous 60 ms; the file start counts as a rise from silence.
+- Two earlier truth versions were wrong: 808 tails "breathing" in the kick stem counted as kicks,
+  and the first hit at t = 0 was missed.
+- The analyzer's hits on the full loop are matched per lane within ±30 ms.
+- `tools/kshh_diagnose.py` explains each false hit (which stems start there) and each miss (what
+  the analyzer saw).
+
+**Baseline:**
+
+| lane | precision | recall | F |
+|---|---|---|---|
+| kick | 0.85 | 0.91 | 0.88 |
+| snare | 0.92 | 0.82 | 0.87 |
+| hat | 0.78 | 0.90 | 0.84 |
+
+**Error structure:**
+- Hats: 240 false. 100 have no onset in any stem (weak high band: median 6 vs 17.6 for true hats),
+  71 sit at a snare, 62 at a kick. The restored "masked" hats under kicks / snares are right 46,
+  wrong 60.
+- Snares: 47 missed, about half read as a hat (quiet snares / ghosts with snare level < 0.1).
+- Kicks: 42 false, 28 at a true hat. 25 missed, 15 with no analyzer onset at all.
+
+**Tried and rejected** (no net gain):
+- a higher hat threshold;
+- a loop-relative high-band filter (removes about one true hat per false one);
+- dropping the masked-hat restoration (hat F 0.839 -> 0.837).
+
+**Next.** Classify against the loop's own kit: learn kick / snare / hat spectra from this loop's
+confident hits, then re-decide the doubtful onsets (semi-adaptive templates, as in Dittmar &
+Gärtner 2014). This targets the bass-as-kick case in Pattern 2_536 as well.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on
