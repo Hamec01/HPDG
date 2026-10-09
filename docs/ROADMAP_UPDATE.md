@@ -185,9 +185,8 @@ sample overall (key, bass) close to 90 %. Steps 1-6 are done; see `docs/audit/SA
    - Pick by leave-one-pack-out, as in step 5. Do not touch drum-loop accuracy (93 %).
 2. **Key confidence** (follow the margin over the second key, as tempo step 3) and major keys (9 / 28).
    Ask the maintainer for major-key material (soul samples).
-3. **Root note of bass / 808 one-shots: done (step 9).** Open: the register, i.e. whether a sample should
-   sound exactly as written (its octave from `getSelectedRootMidi`). Ask the maintainer and let them
-   listen first: the bundled trap 808s (C1) would move up an octave.
+3. **Root note of bass / 808 one-shots: done (step 9).** The maintainer listened (good) and decided the
+   register stays as it is ("808 is bass"): no "sound exactly as written".
    Earlier notes: **Root note, octave and cents of bass / 808 one-shots from the audio.**
    - Today the root comes only from the name (`LaneSampleBank::rootPitchClassFromName`), with the
      octave ignored.
