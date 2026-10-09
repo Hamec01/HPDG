@@ -47,6 +47,7 @@ struct ExtractedPatternData
 class ExtractPatternBuilder
 {
 public:
-    static ExtractedPatternData build(const SampleAnalysisBundle& bundle);
+    // minDrumConfidence: drum hits the analyzer is less sure of are left out (Guide); 0 keeps all.
+    static ExtractedPatternData build(const SampleAnalysisBundle& bundle, float minDrumConfidence = 0.0f);
 };
 } // namespace bbg

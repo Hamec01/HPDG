@@ -5043,7 +5043,14 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
         return !changed.empty();
     }
 
-    const auto extracted = ExtractPatternBuilder::build(currentAnalysisBundle);
+    // Guide (blend, not exact copy): hits the analyzer is unsure of are not imposed on the
+    // pattern; the genre engine fills those places instead. On the stem-separated benchmark
+    // (docs/audit/SAMPLE_ANALYSIS_STAGE.md) a hit with confidence < 0.2 is right 23-44 % of the
+    // time, >= 0.8 94-96 %; dropping < 0.3 raises precision (kick 0.93 -> 0.95, snare 0.90 -> 0.95,
+    // hat 0.84 -> 0.88) for 1-4 points of recall. Copy Break keeps every hit.
+    static constexpr float kGuideMinHitConfidence = 0.3f;
+    const auto extracted = ExtractPatternBuilder::build(currentAnalysisBundle,
+                                                        currentSampleContext.applyWeights.exactCopy ? 0.0f : kGuideMinHitConfidence);
     if (!extracted.hasAnyContent())
     {
         lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext) + "\nSample apply result: no extracted drum or bass pattern was available.";

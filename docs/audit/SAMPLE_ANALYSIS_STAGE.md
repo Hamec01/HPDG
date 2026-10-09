@@ -668,6 +668,34 @@ The "missed" trials are the same two loops in every row: one bar with eighth-not
 hit sits on a swung sixteenth and the swing cannot be heard (50 % is the honest answer). Straight
 loops stay straight, swung loops are recognised, and the genre does not bias the analyzer.
 
+## Guide uses the analyzer's confidence (step 11)
+
+On the 89 stem-separated loops, a transcribed hit's confidence predicts whether it is right:
+
+| confidence | kick right | snare right | hat right |
+|---|---|---|---|
+| < 0.2 | 23 % | 25 % | 44 % |
+| 0.2-0.5 | 46 % | 64 % | 52 % |
+| 0.5-0.8 | 71 % | 82 % | 60 % |
+| ≥ 0.8 | 96 % | 96 % | 94 % |
+
+**Change.** In Guide (blend), drum hits with confidence < 0.3 are not imposed on the pattern
+(`ExtractPatternBuilder::build(bundle, minDrumConfidence)`); the genre engine fills those places.
+Copy Break (exact copy) keeps every hit.
+
+**Result on the benchmark** (hits kept with confidence ≥ 0.3):
+
+| | precision before → after | recall before → after | F before → after |
+|---|---|---|---|
+| kick | 0.93 → 0.95 | 0.95 → 0.94 | 0.940 → 0.946 |
+| snare | 0.90 → 0.95 | 0.87 → 0.85 | 0.884 → 0.894 |
+| hat | 0.84 → 0.88 | 0.93 → 0.89 | 0.882 → 0.884 |
+
+Thresholds 0.2-0.4 give nearly the same picture.
+
+Tests: CoreTests has a new check that Guide leaves out a 0.10-confidence kick and keeps a 0.50 snare
+and a 0.90 hat, while Copy keeps the kick. All suites pass.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on

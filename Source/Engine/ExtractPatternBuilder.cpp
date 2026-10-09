@@ -39,7 +39,7 @@ void dedupeAndSort(std::vector<NoteEvent>& notes)
 }
 }
 
-ExtractedPatternData ExtractPatternBuilder::build(const SampleAnalysisBundle& bundle)
+ExtractedPatternData ExtractPatternBuilder::build(const SampleAnalysisBundle& bundle, float minDrumConfidence)
 {
     ExtractedPatternData result;
     result.bars = juce::jlimit(0, 16, bundle.summary.analyzedBars);
@@ -49,6 +49,8 @@ ExtractedPatternData ExtractPatternBuilder::build(const SampleAnalysisBundle& bu
 
     for (const auto& event : bundle.transcription.drumEvents)
     {
+        if (event.confidence < minDrumConfidence)
+            continue;
         const auto laneIndex = static_cast<size_t>(trackTypeIndex(event.lane));
         if (laneIndex >= result.laneNotes.size())
             continue;

@@ -154,7 +154,12 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - Step 10: Copy Break started a bar late on loose swung loops: the automatic path anchors a trimmed
   loop's grid at its first hit for beat 1 / swing (trap origin 80-93 -> 100 %, tonal +1..+19 points);
   tempo range picker in the Sample BPM dialog (Auto / 50-100 / 75-150 / 100-200 / 150-300, like FL).
-- Next: bass notes read as kicks (Copy Break), whole songs (need a corpus), loop tails.
+- K/S/H benchmark on 89 stem-separated loops (Ghosthack stems + 54 sets from the maintainer's packs):
+  kick F 0.88-0.96, snare 0.87-0.89, hat 0.84-0.90; kit-portrait reclassification measured, not adopted.
+- Swing measured on fixed-swing synthetic loops (50-66 %): mean error 0.3-1.0 pt; no change needed.
+- Step 11: Guide leaves out drum hits with confidence < 0.3 (right only 23-52 % of the time);
+  precision kick 0.93 -> 0.95, snare 0.90 -> 0.95, hat 0.84 -> 0.88. Copy Break unchanged.
+- Next: whole songs (need a corpus), loop tails, bass notes read as kicks (low priority per maintainer).
 
 ## NOTE FOR THE NEXT AGENT (2026-10-08, Sample Analysis)
 

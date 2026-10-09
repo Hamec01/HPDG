@@ -3906,6 +3906,22 @@ void testExtractPatternBlendAndCopySmoke()
     expect(extracted.laneNotes[static_cast<size_t>(trackTypeIndex(TrackType::Kick))].size() == 1,
         "ExtractPatternBuilder should dedupe duplicate kick events on the same step.");
 
+    {
+        // Guide leaves out hits the analyzer is unsure of; Copy Break keeps every hit.
+        SampleAnalysisBundle unsure;
+        unsure.summary.analyzedBars = 1;
+        unsure.transcription.hasDetectedDrums = true;
+        unsure.transcription.drumEvents.push_back({ TrackType::Kick, 0, 1, 120, 36, 0.10f, false });
+        unsure.transcription.drumEvents.push_back({ TrackType::Snare, 4, 1, 110, 38, 0.50f, false });
+        unsure.transcription.drumEvents.push_back({ TrackType::HiHat, 2, 1, 100, 42, 0.90f, false });
+        const auto guide = ExtractPatternBuilder::build(unsure, 0.3f);
+        const auto copy = ExtractPatternBuilder::build(unsure);
+        auto count = [](const ExtractedPatternData& data, TrackType lane) { return data.laneNotes[static_cast<size_t>(trackTypeIndex(lane))].size(); };
+        expect(count(guide, TrackType::Kick) == 0 && count(guide, TrackType::Snare) == 1 && count(guide, TrackType::HiHat) == 1,
+            "Guide must leave out the 0.10-confidence kick and keep the 0.50 snare and 0.90 hat.");
+        expect(count(copy, TrackType::Kick) == 1, "Copy keeps the low-confidence kick.");
+    }
+
     auto project = createDefaultProject();
     project.params.genre = GenreType::BoomBap;
     project.params.bars = 2;
