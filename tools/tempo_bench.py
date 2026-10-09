@@ -321,6 +321,9 @@ def summarize(corpus, rows, list_wrong):
              half=kinds.get('half', 0) / n, double=kinds.get('double', 0) / n,
              otherMetrical=sum(kinds.get(k, 0) for k in ('2/3', '3/2', '3/4', '4/3')) / n,
              other=kinds.get('other', 0) / n, medianErr=median(errs))
+    # The genre engines fold a sample tempo into their own range (TempoInterpretation.h), so an
+    # octave reading (x2 / x1/2) still gives the right pattern; x3/2, x3/4 and others do not.
+    s['octaveOk'] = (len(right) + kinds.get('half', 0) + kinds.get('double', 0)) / n
     # confidence calibration: accuracy (within 2 %) per confidence bin
     bins = {}
     for r in rows:
@@ -345,7 +348,7 @@ def summarize(corpus, rows, list_wrong):
         s['originTypedWithin20ms'] = sum(1 for v in typed_origin if v <= 20) / max(1, len(typed_origin))
         s['originTypedOffByAQuarterOrMore'] = sum(1 for v in typed16 if v >= 3.5) / max(1, len(typed16))
     cal = ' '.join(f"{b}:{v['accuracy']:.2f}(n{v['n']})" for b, v in sorted(s['calibration'].items()))
-    line = (f"{corpus['id']:20s} n {n:3d} | exact {s['exact']:.2f} <=2% {s['within2pct']:.2f} | half {s['half']:.2f} "
+    line = (f"{corpus['id']:20s} n {n:3d} | exact {s['exact']:.2f} <=2% {s['within2pct']:.2f} up-to-octave {s['octaveOk']:.2f} | half {s['half']:.2f} "
             f"double {s['double']:.2f} 2/3-type {s['otherMetrical']:.2f} other {s['other']:.2f} | med err {s['medianErr']:.2f} "
             f"| loop conf med {s['drumLoopConfMedian']:.2f} (>=0.75: {s['drumLoopConfAbove075']:.2f})")
     if corpus['trimmed']:

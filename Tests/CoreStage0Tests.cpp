@@ -5146,6 +5146,12 @@ void testDnBBassFollowsSampleRoots()
     expect(std::abs(generationBpmForSample(77.0f, GenreType::DnB) - 154.0f) < 0.01f, "DnB must double a 77 BPM sample");
     expect(std::abs(generationBpmForSample(174.0f, GenreType::DnB) - 174.0f) < 0.01f, "DnB keeps a 174 BPM sample");
     expect(std::abs(generationBpmForSample(77.0f, GenreType::BoomBap) - 77.0f) < 0.01f, "other genres keep the sample tempo");
+    // A sample tempo is known up to an octave: each genre folds it into its own range.
+    expect(std::abs(generationBpmForSample(160.0f, GenreType::BoomBap) - 80.0f) < 0.01f, "Boom Bap halves a 160 BPM sample");
+    expect(std::abs(generationBpmForSample(92.0f, GenreType::BoomBap) - 92.0f) < 0.01f, "Boom Bap keeps a 92 BPM sample");
+    expect(std::abs(generationBpmForSample(80.0f, GenreType::Trap) - 160.0f) < 0.01f, "Trap doubles an 80 BPM sample");
+    expect(std::abs(generationBpmForSample(150.0f, GenreType::Trap) - 150.0f) < 0.01f, "Trap keeps a 150 BPM sample");
+    expect(std::abs(generationBpmForSample(70.0f, GenreType::Drill) - 140.0f) < 0.01f, "Drill doubles a 70 BPM sample");
     {
         auto halfTime = context;
         halfTime.harmonyBpm = 87.0;

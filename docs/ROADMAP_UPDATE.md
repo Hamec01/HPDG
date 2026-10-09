@@ -142,7 +142,11 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - Step 6: the sample's own labels (file name, WAV acid chunk; `SampleLabelReader`) as hints the audio
   checks. With labels: tempo drums 99 %, breaks 100 %, tonal 94 %, maintainer's FL renders 96 %;
   key 95 % exact. Deliberately wrong labels are rejected on drums (tempo unchanged).
-- Next: tempo of tonal loops from the audio alone (48 %; maintainer's renders 42 %, x2 / x3/2 errors).
+- Step 7: bar-count prior (loops are 4 / 8 bars) + every genre folds the sample tempo into its range
+  (Boom Bap 160 -> 80, Trap / Drill 80 -> 160; maintainer's point: an octave reading does not matter).
+  Up to octave: drums 100 %, tonal 66 -> 78 %, maintainer's renders 60 -> 79 %; exact tonal 48 -> 56 %.
+  Freaky DnB music worse (reverb tails).
+- Next: loop tails, then key confidence, bass sample root, 16th phase.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-08, Sample Analysis)
 
@@ -161,8 +165,11 @@ sample overall (key, bass) close to 90 %. Steps 1-6 are done; see `docs/audit/SA
   - more renders in `E:/FL/Image-Line/FL Studio/Audio/Rendered` (1690 with acid tempo).
 
 **What to do next, in order:**
-1. **Tempo of melodic loops from the audio alone.**
-   - Now 48 % on 13 tonal packs and 42 % on the maintainer's renders.
+1. **Tempo of melodic loops from the audio alone.** Step 7 brought up-to-octave accuracy to 78 % on tonal
+   packs and 79 % on the maintainer's renders. The engines fold the octave, so x3/2 / x3/4 are the
+   errors that matter. Next: loops with reverb tails (Freaky DnB music) — measure the length without the
+   tail; full-track stems (user_song_stems) are hardest.
+   - Before step 7: 48 % on 13 tonal packs and 42 % on the maintainer's renders.
    - The errors are x2 (85 -> 170) and x3/2 (70 -> 105). The melody's note onsets are read as beats.
    - Ideas to measure first:
      - the step-2 subdivision penalty only works one way: add the opposite check, a "sparse beat"

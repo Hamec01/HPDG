@@ -347,9 +347,73 @@ label, and 1690 of the maintainer's 3134 FL renders.
 - The renders sit at 70-95 BPM. On melodic parts the analyzer counts every note as a beat and
   drifts to 140-180. This is the next step.
 
+## Step 7 — loops are 4 / 8 bars; genres fold the sample tempo into their range
+
+**Maintainer's point (2026-10-09).** An octave reading of a sample (80 vs 160) does not matter
+musically: Boom Bap plays around 80 and Trap around 160 over either. Each engine has to fold the
+sample tempo into its own range. The x3/2 and x3/4 readings are the errors that break the grid.
+The bench now also reports **up-to-octave** accuracy (within 2 % of the truth, x2 or x1/2).
+
+**Engines.** `generationBpmForSample` (`Source/Engine/TempoInterpretation.h`) folded only DnB (up to
+≥ 120) and Techno (up to ≥ 100). Now Trap / Drill double a sample at ≤ 90 BPM and Boom Bap halves
+one at ≥ 120 BPM, the same rule `interpretedBpmForGenre` uses for the host tempo. Sample time already
+maps onto pattern ticks with the octave relation, so the sample stays in sync. Tests: CoreTests
+checks 160 → 80 (Boom Bap), 92 → 92, 80 → 160 (Trap), 150 → 150, 70 → 140 (Drill).
+
+**Cause of the melodic-loop errors.** For the errors on tonal loops and renders, the grid, length
+and backbeat terms barely separate the winner from the truth. The x2 / x3/2 / x3/4 readings are the
+other whole-bar counts of the same file length: a 12 s loop is 4 bars at 80, 8 at 160, 6 at 120,
+3 at 60.
+
+**Evidence: bar counts of the true tempo.**
+
+| | 4 bars | 8 bars | 2 bars | others |
+|---|---|---|---|---|
+| drums | 267 | 14 | 15 | 1, 5, 9, 16 bars: 10 |
+| tonal | 159 | 65 | 42 | 3, 5, 9-24 bars: 25 |
+| renders | 63 | 19 | 0 | 6 bars: 1 |
+
+**Tried offline.**
+- Gating the step-2 density penalty by high-band noise gave little: renders +8 points.
+- A tempogram prototype (spectral-flux ACF with loop-length candidates): renders 67-72 % alone.
+  Added to the analyzer's scores it gave no gain over the bar prior, so it was not ported.
+- A tempo prior around 100 BPM hurt DnB music (174).
+
+**Change.** A whole-bar candidate (length fit ≥ 0.5) gets 0.3 × (4 or 8 bars: 1, 2 bars: 0.7,
+16 bars: 0.5, 1 bar: 0.3, else 0).
+
+**Result** (same files, audio only):
+
+| | exact (≤ 2 %) before → after | up to octave, before → after |
+|---|---|---|
+| drum loops | 93 → **96 %** | 99 → **100 %** |
+| classic breaks | 96 → 96 % | 99 → 99 % |
+| tonal loops (13 packs) | 48 → **56 %** | 66 → **78 %** |
+| maintainer's FL renders (120) | 42 → **57 %** | 60 → **79 %** |
+| HamloProd pack 2 (12) | 42 → 42 % | 67 → **83 %** |
+
+Per pack, up to octave:
+- Techno music 0.82 → 0.92;
+- Techno bass 0.72 → 0.95;
+- Cymatics Diamonds 0.71 → 0.95;
+- Lofi 0.58 → 0.81;
+- Raw Hip-Hop melodic 0.70 → 0.90;
+- Raw Hip-Hop bass 0.85 → 0.97.
+
+Worse: **Freaky DnB music 0.48 → 0.36**. Its files carry reverb tails (13.79 s = 10 bars at 174,
+12.41 s = 9 bars), so the length is not a whole number of bars at the true tempo and the prior
+picks a false whole-bar reading (77.3 BPM = 4 bars of 13.79 s). Next: detect the tail and measure
+the length without it.
+
+Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
+
 ## Open (next steps)
 
-1. **Tempo of tonal loops from the audio (NEXT).** Audio only: 48 % on 13 tonal packs, 42 % on the
+1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on
+   the maintainer's renders. Loops with a reverb tail (Freaky DnB music) get false whole-bar
+   readings: measure the length without the tail. Stems of a full track (user_song_stems, 46 %) are
+   the hardest case.
+   Earlier note: **Tempo of tonal loops from the audio.** Audio only: 48 % on 13 tonal packs, 42 % on the
    maintainer's FL renders (x2 and x3/2 errors, see step 6). Before step 6: across the 9 tonal packs
    the tempo was right in only 49 % of files
    (Freaky DnB bass 30 %, Cymatics 42-48 %). The analyzer tracks the onsets of notes, not a beat.

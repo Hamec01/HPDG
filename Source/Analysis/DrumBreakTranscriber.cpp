@@ -641,6 +641,24 @@ float phaseBackbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, doub
     return std::max(backbeatScore(hits, bpm, origin), halfTime);
 }
 
+// Loops come in 4 or 8 bars, less often 2, 16 or 1, almost never 3 / 5 / 6 (step 7: bar counts of
+// the true tempo over the benchmark: drums 4 bars 267 / 2: 15 / 8: 14; tonal 4: 159, 8: 65, 2: 42;
+// the maintainer's renders 4: 63, 8: 19). A whole-bar reading with a usual bar count is preferred,
+// which settles the x2 / x3/2 / x3/4 readings of melodic loops that the onsets cannot.
+constexpr float kBarCountWeight = 0.3f;
+
+float barCountPrior(int bars)
+{
+    switch (bars)
+    {
+        case 4: case 8: return 1.0f;
+        case 2: return 0.7f;
+        case 16: return 0.5f;
+        case 1: return 0.3f;
+        default: return 0.0f;
+    }
+}
+
 // A tempo the sample states (file name / acid chunk; step 6) wins unless the audio clearly
 // contradicts it: a candidate more than this far below the audio's best score is rejected.
 constexpr float kLabelBonus = 0.6f;
@@ -867,6 +885,7 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
         + 0.35f * candidate.prior
         + 0.08f * candidate.host
         + kLabelBonus * candidate.label
+        + (candidate.lengthFit >= 0.5f ? kBarCountWeight * barCountPrior(candidate.bars) : 0.0f)
         - 0.50f * subdivisionOverload(hits, candidate.bpm);
     return candidate;
 }

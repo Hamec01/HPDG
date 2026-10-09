@@ -15,10 +15,18 @@ enum class TempoBand
 
 // The tempo a genre generates at over a loaded sample of `sampleBpm`. Drum & Bass runs at
 // double time over a half-time loop (77 -> 154): one sample bar = two DnB bars, still in sync.
-// Other genres take the sample tempo as it is.
+// A sample's tempo is only known up to an octave (a 160 reading of an 80 BPM loop is the same
+// loop), so every genre folds it into its own range, as it already does for the host tempo
+// (interpretedBpmForGenre): Trap / Drill over an 80 BPM sample run at 160, Boom Bap over a
+// 160 BPM sample at 80. The pattern stays in sync: sample time maps onto pattern ticks with that
+// octave relation.
 inline float generationBpmForSample(float sampleBpm, GenreType genre)
 {
     float bpm = std::clamp(sampleBpm, 40.0f, 240.0f);
+    if ((genre == GenreType::Trap || genre == GenreType::Drill) && bpm <= 90.0f)
+        bpm *= 2.0f;
+    if (genre == GenreType::BoomBap && bpm >= 120.0f)
+        bpm *= 0.5f;
     if (genre == GenreType::DnB)
         while (bpm < 120.0f)
             bpm *= 2.0f;
