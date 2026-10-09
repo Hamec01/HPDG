@@ -7,6 +7,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include "SampleLibraryManager.h"
+#include "../Analysis/SampleRootDetector.h"
 
 namespace bbg
 {
@@ -20,6 +21,9 @@ public:
         int selectedIndex = 0;
         juce::String selectedName;
         int selectedRootPitchClass = 0;
+        double selectedRootCents = 0.0;   // the selected sample's offset from that note (from its sound)
+        int selectedRootMidi = -1;        // its settled note with octave, -1 when unknown (display only)
+        std::vector<SampleRoot> roots;    // per file, from the sound (bass / 808 lane only)
         std::vector<double> sampleRates; // each file's own rate (no resampling on load)
     };
 
@@ -33,6 +37,19 @@ public:
     // Pitch class of a melodic one-shot, read from the "<name> - <note>" convention used by the
     // bass / 808 kits (e.g. "BoomBap Bass - Puma - C", "Kit 808 - F#"). 0 (C) when absent.
     static int rootPitchClassFromName(const juce::String& name);
+    // Same, -1 when the name states no note.
+    static int rootPitchClassFromNameOrNone(const juce::String& name);
+    // The note a melodic one-shot is tuned to: its name and its sound together
+    // (docs/audit/SAMPLE_ANALYSIS_STAGE.md, step 9). The sound decides octave and cents; the name's
+    // pitch class is kept when the sound lands within 75 cents of it, the sound wins when it
+    // clearly says otherwise (mislabelled samples), the name alone is used when the sound is unclear.
+    struct ResolvedRoot
+    {
+        int pitchClass = 0;
+        double cents = 0.0;
+        int midi = -1;
+    };
+    static ResolvedRoot resolveRoot(int namePitchClass, const SampleRoot& sound);
 
     LaneSampleBank();
 
@@ -54,6 +71,8 @@ public:
     int getSelectedIndex(TrackType track) const;
     juce::String getSelectedName(TrackType track) const;
     int getSelectedRootPitchClass(TrackType track) const;
+    double getSelectedRootCents(TrackType track) const;
+    int getSelectedRootMidi(TrackType track) const;
     // Rate the selected file was recorded at; the player scales its read speed by
     // fileRate / deviceRate so pitch and length are right for 44.1 / 48 / 96 / 192 kHz files.
     double getSelectedSampleRate(TrackType track) const;
@@ -63,6 +82,7 @@ public:
     bool hasSamplesMatchingAnyTag(TrackType track, const std::vector<juce::String>& preferredTags) const;
 
 private:
+    static void updateSelectedRoot(LaneState& state);
     static bool loadWavToBuffer(const juce::File& file,
                                 juce::AudioFormatManager& formatManager,
                                 std::shared_ptr<juce::AudioBuffer<float>>& outBuffer,

@@ -148,7 +148,10 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
   Freaky DnB music worse (reverb tails).
 - Step 8: weak onsets (melodic loops) -> stronger bar-count prior, 3 / 6 / 12-bar readings penalised.
   Maintainer's renders 79 -> 86 % up to octave (exact 57 -> 63 %), tonal 78 -> 80 %, drums unchanged.
-- Next: key from transcribed notes (in progress), loop tails, bass sample root, 16th phase.
+- Step 9: bass / 808 one-shot root from the sound (`SampleRootDetector`, YIN with settled-pitch
+  median); the Sub808 lane joins name + sound and applies the cents. Pitch class right 77 -> 89 %
+  over 1026 one-shots (808 packs 90-100 %). Register unchanged (decision for the maintainer).
+- Next: whole songs need a real corpus; loop tails; register of the 808 lane (sound as written?).
 
 ## NOTE FOR THE NEXT AGENT (2026-10-08, Sample Analysis)
 
@@ -182,7 +185,10 @@ sample overall (key, bass) close to 90 %. Steps 1-6 are done; see `docs/audit/SA
    - Pick by leave-one-pack-out, as in step 5. Do not touch drum-loop accuracy (93 %).
 2. **Key confidence** (follow the margin over the second key, as tempo step 3) and major keys (9 / 28).
    Ask the maintainer for major-key material (soul samples).
-3. **Root note, octave and cents of bass / 808 one-shots from the audio.**
+3. **Root note of bass / 808 one-shots: done (step 9).** Open: the register, i.e. whether a sample should
+   sound exactly as written (its octave from `getSelectedRootMidi`). Ask the maintainer and let them
+   listen first: the bundled trap 808s (C1) would move up an octave.
+   Earlier notes: **Root note, octave and cents of bass / 808 one-shots from the audio.**
    - Today the root comes only from the name (`LaneSampleBank::rootPitchClassFromName`), with the
      octave ignored.
    - `HPDG_BreakLab rootnote` exists.

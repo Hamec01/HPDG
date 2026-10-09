@@ -122,9 +122,11 @@ std::vector<juce::String> preferredSampleTagsForProject(const PatternProject& pr
     return {};
 }
 
-// rootPitchClass: the note the selected sample is tuned to (from its "- <note>" name), so a
-// bass sample in D plays a written D2 at its original speed instead of assuming every sample is C.
-float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass)
+// rootPitchClass / rootCents: the note the selected sample is tuned to and its offset from it
+// (LaneSampleBank::resolveRoot: its name and its sound), so a bass sample in D plays a written D2
+// at its original speed instead of assuming every sample is C, and a sample tuned 40 cents flat
+// is raised by 40 cents to sit on the note.
+float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass, double rootCents = 0.0)
 {
     const auto* info = TrackRegistry::find(track);
     const int defaultPitch = info != nullptr ? info->defaultMidiNote : 36;
@@ -137,7 +139,8 @@ float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass)
     const int defaultPitchClass = defaultPitch % 12;
     const int basePitch = defaultPitch + ((juce::jlimit(0, 11, rootPitchClass) - defaultPitchClass + 18) % 12 - 6);
     const int clampedPitch = juce::jlimit(0, 127, pitch);
-    return std::pow(2.0f, static_cast<float>(clampedPitch - basePitch) / 12.0f);
+    const double cents = juce::jlimit(-100.0, 100.0, rootCents);
+    return static_cast<float>(std::pow(2.0, (static_cast<double>(clampedPitch - basePitch) - cents / 100.0) / 12.0));
 }
 
 bool isBpmLocked(const juce::AudioProcessorValueTreeState& apvts)
@@ -2929,7 +2932,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     for (const auto& audition : pendingPreviewNotes)
     {
         PreviewEngine::TriggerOptions options;
-        options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch, laneSampleBank.getSelectedRootPitchClass(audition.track));
+        options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch, laneSampleBank.getSelectedRootPitchClass(audition.track), laneSampleBank.getSelectedRootCents(audition.track));
         if (audition.track == TrackType::Sub808)
         {
             if (const auto* subTrack = findTrackState(TrackType::Sub808); subTrack != nullptr)
@@ -3001,7 +3004,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     PreviewEngine::TriggerOptions options;
                     if (event.track == TrackType::Sub808)
                     {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track));
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track));
                         options.legato = event.legato;
                         options.glide = event.glide;
                         options.mono = event.mono;
@@ -3063,7 +3066,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     PreviewEngine::TriggerOptions options;
                     if (event.track == TrackType::Sub808)
                     {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track));
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track));
                         options.legato = event.legato;
                         options.glide = event.glide;
                         options.mono = event.mono;
@@ -4390,7 +4393,7 @@ PreviewEngine::TriggerOptions BoomBapGeneratorAudioProcessor::triggerOptionsFor(
     PreviewEngine::TriggerOptions options;
     if (event.track == TrackType::Sub808)
     {
-        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track));
+        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track));
         options.legato = event.legato;
         options.glide = event.glide;
         options.mono = event.mono;

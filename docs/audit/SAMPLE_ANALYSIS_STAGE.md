@@ -484,6 +484,60 @@ DJ library; its UI also offers x2 / ÷2 for the octave ambiguity, and short melo
 drums are a known weak case there too. A fair comparison needs the same files: load 10-20 renders
 from `docs/audit/reference/user_renders_120.txt` into Serato Sample and note its tempo / key.
 
+## Step 9 — the note of a bass / 808 one-shot from its sound
+
+**Cause.** The Sub808 lane took a sample's root only from its name (`rootPitchClassFromName`): no
+note in the name meant C, and there was no fine tuning. In the 40 bundled samples:
+- Techno TSB3 sounds C#2 but was played as C;
+- DnB DSB2 / DSB10 are labelled E but sound F;
+- Drill DRSB6 (no note in the name) sounds C# −41 cents but was treated as C;
+- several 808s are 25-55 cents off their note (DRSB2 −47, BSB2 +24, DSB7 +55, DSB9 +23).
+
+**Benchmark.** `tools/root_bench.py` + `docs/audit/reference/root_corpus.tsv`.
+- 16 packs, 1026 one-shots with the note in the file name: 808s (Cymatics Savage, Bangin, Boomin
+  and Diamonds; Ghosthack trap and 808 kicks; Southside; PeeJay; UTT2 multisamples) and basses
+  (Raw Hip-Hop, Cymatics Lofi, Origin Dusty, Oliver, Ghosthack DnB, Cymatics synth bass).
+- Ultimate Boom Bap Bass was dropped: its "A#_07_..." prefix is the kit's key, not the note.
+- The bench scores the pitch class against the name. Octave consistency is reported with a
+  constant offset, because packs number octaves differently (Kontakt / FL: C0 = our C1).
+
+**Detector** (`SampleRootDetector`, new):
+- works at ~8 kHz (box-filtered decimation; bass fundamentals stay under 500 Hz);
+- YIN frame by frame (80 ms window, 10 ms hop, 25-500 Hz);
+- a deeper dip at 2x / 4x the first dip's lag is taken, since a weak fundamental shows its octave
+  first. 3x was tried and rejected because it turns errors into fifths;
+- the settled pitch is the energy x periodicity weighted median of the largest group of frames
+  within ±35 cents, after the attack peak. This skips the pitch glide an 808 starts with;
+- a softer YIN threshold (0.35) is used when the strict one (0.15) finds nothing (synth basses).
+
+**Result** (pitch class right):
+
+| | old lab YIN (40-440 ms window) | new detector |
+|---|---|---|
+| all | 77 % (no answer for 15 % of files) | **89 %** |
+| 808 packs | 25-86 % | **90-100 %** (PeeJay 25 -> 100 %) |
+| Raw Hip-Hop / Origin / Lofi / Oliver basses | 90-100 % | 92-100 % |
+| Ghosthack DnB basses | 83 % | 87 % |
+| Cymatics synth bass one-shots | (6 answers) | 48 % |
+
+UTT2's lowest multisamples ("C0" = 16 Hz) are below the detector's 25 Hz floor, so it reports
+their 2nd or higher harmonic. The pitch class is still right.
+
+**Plugin.**
+- `LaneSampleBank::prepareLibrary` detects the root of every Sub808 sample when the bank loads (off
+  the audio / project lock).
+- `resolveRoot` joins the name and the sound:
+  - the name's pitch class is kept when the sound is within 75 cents of it, with the sound's cents;
+  - a clear sound (confidence ≥ 0.5) that says otherwise wins (mislabelled samples);
+  - without a note in the name, the sound decides.
+- `playbackRateForTrackPitch` applies the cents, so the sample sits exactly on the written note.
+- The register is unchanged on purpose: the sample's octave is still taken nearest the lane's
+  default note. The detected octave is kept (`getSelectedRootMidi`) for a later decision with the
+  maintainer: "sound as written" would raise the bundled trap 808s (C1) by an octave.
+
+Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass, including the new "Sample root
+from name and sound" (rule cases, plus a C#2 sine named C read as C#2 by the bank).
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on
@@ -502,7 +556,7 @@ from `docs/audit/reference/user_renders_120.txt` into Serato Sample and note its
      margin over the second key, as tempo does (step 3).
    - Major loops: 9 / 28 right. Needs more major material (soul samples).
    - Fifth errors: 10-30 % per pack. Freaky DnB bass (reese, root only): 47 %.
-4. **Root of the bass / 808 sample from its sound.** Today the root comes only from the file name
+4. **Root of the bass / 808 sample from its sound** — done in step 9 (register decision open). Today the root comes only from the file name
    (`LaneSampleBank::rootPitchClassFromName`): no note in the name means C, and the octave is
    ignored. A YIN f0 check of the 40 bundled Sub808 samples (2026-10-08) found:
    - mixed octaves: Boom Bap 2 × C1 (33 Hz) and 3 × C2 (65 Hz), Techno mixed too, so the same bass

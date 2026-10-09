@@ -1569,6 +1569,44 @@ void testSampleRootNoteFromName()
     expect(LaneSampleBank::rootPitchClassFromName("Kit 808 - B.wav") == 11, "B");
     expect(LaneSampleBank::rootPitchClassFromName("Kit 808 - Bass.wav") == 0, "word that starts with a note letter");
     expect(LaneSampleBank::rootPitchClassFromName("Deep Sub.wav") == 0, "no note");
+    expect(LaneSampleBank::rootPitchClassFromNameOrNone("Deep Sub.wav") == -1, "no note: -1");
+}
+
+// The note a bass one-shot is tuned to: name and sound together (SAMPLE_ANALYSIS_STAGE step 9).
+void testSampleRootFromNameAndSound()
+{
+    auto sound = [](double midi, float confidence)
+    {
+        SampleRoot root;
+        root.valid = true;
+        root.midi = midi;
+        root.confidence = confidence;
+        return root;
+    };
+    // name C, sound C1 40 cents flat: the name's note, tuned by the sound
+    auto r = LaneSampleBank::resolveRoot(0, sound(24.0 - 0.40, 0.9f));
+    expect(r.pitchClass == 0 && std::abs(r.cents + 40.0) < 0.5 && r.midi == 24, "detuned C1: C, -40 cents");
+    // name C, sound clearly C#2 (a mislabelled sample): the sound wins
+    r = LaneSampleBank::resolveRoot(0, sound(37.0, 1.0f));
+    expect(r.pitchClass == 1 && r.midi == 37, "mislabelled C#2 must read C#");
+    // name E, sound unclear and far: the name stays
+    r = LaneSampleBank::resolveRoot(4, sound(29.0, 0.3f));
+    expect(r.pitchClass == 4 && r.cents == 0.0, "unclear sound keeps the name");
+    // no note in the name: the sound
+    r = LaneSampleBank::resolveRoot(-1, sound(29.1, 0.8f));
+    expect(r.pitchClass == 5 && std::abs(r.cents - 10.0) < 0.5, "unnamed F1");
+
+    // Bank: the roots are read from the samples' sound when the bank loads.
+    const auto root = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_bank_root_test");
+    root.deleteRecursively();
+    const double cSharp2 = 440.0 * std::pow(2.0, (37 - 69) / 12.0);
+    writeSineWav(root.getChildFile("BoomBap").getChildFile("Sub808").getChildFile("Bass A - C.wav"), 44100.0, cSharp2, 1.0, 0.5f);
+    LaneSampleBank bank;
+    loadBankFrom(bank, root);
+    expect(bank.getSelectedRootPitchClass(TrackType::Sub808) == 1, "a C#2 sample named C must play as C#: "
+           + juce::String(bank.getSelectedRootPitchClass(TrackType::Sub808)));
+    expect(bank.getSelectedRootMidi(TrackType::Sub808) == 37, "octave from the sound: " + juce::String(bank.getSelectedRootMidi(TrackType::Sub808)));
+    root.deleteRecursively();
 }
 
 // A 44.1 kHz sample played on a 48 kHz device: the bank keeps the file as it is (no slow
@@ -1887,6 +1925,7 @@ int main()
     failures += runTest("Trap guide 808 follows sample bass and key", testTrapGuide808FollowsSampleBassAndKey);
     failures += runTest("BoomBap guide bass follows sample bass and key", testBoomBapGuideBassFollowsSampleBassAndKey);
     failures += runTest("Sample root note from name", testSampleRootNoteFromName);
+    failures += runTest("Sample root from name and sound", testSampleRootFromNameAndSound);
     failures += runTest("Bank resampling keeps pitch and length", testBankResamplingKeepsPitchAndLength);
     failures += runTest("Drum choke and bass note length", testDrumChokeAndBassNoteLength);
     failures += runTest("Loop and lane WAV export", testLoopAndLaneWavExport);

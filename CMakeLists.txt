@@ -72,6 +72,7 @@ target_sources(HPDG
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
     Source/Analysis/SampleLabelReader.cpp
+    Source/Analysis/SampleRootDetector.cpp
     Source/Analysis/SampleLineTranscriber.cpp
     Source/Analysis/FeatureExtractor.cpp
     Source/Analysis/SampleApplyWeights.cpp
@@ -198,6 +199,7 @@ add_executable(HPDG_CoreTests
     Source/Engine/Drill/DrillSnareGenerator.cpp
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
+    Source/Analysis/SampleRootDetector.cpp
     Source/Engine/MidiExportEngine.cpp
     Source/Engine/ExtractPatternBuilder.cpp
     Source/Engine/PatternBlendEngine.cpp
@@ -278,6 +280,7 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/Drill/DrillSnareGenerator.cpp
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
+    Source/Analysis/SampleRootDetector.cpp
     Source/Engine/MidiExportEngine.cpp
     Source/Engine/ExtractPatternBuilder.cpp
     Source/Engine/PatternBlendEngine.cpp
@@ -404,6 +407,7 @@ add_executable(HPDG_BreakLab
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
     Source/Analysis/SampleLabelReader.cpp
+    Source/Analysis/SampleRootDetector.cpp
     Source/Analysis/SampleLineTranscriber.cpp
 )
 

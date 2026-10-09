@@ -21,6 +21,7 @@
 #include "../Source/Analysis/SampleHarmonyAnalyzer.h"
 #include "../Source/Analysis/SampleLineTranscriber.h"
 #include "../Source/Analysis/SampleLabelReader.h"
+#include "../Source/Analysis/SampleRootDetector.h"
 #include "../Source/Core/TimingGrid.h"
 
 using namespace bbg;
@@ -647,6 +648,16 @@ int runRootNote(const juce::StringArray& args)
                   << (yinNote >= 0 ? juce::String(names[yinNote % 12]) + juce::String(yinNote / 12 - 1) : juce::String("?"))
                   << " (" << juce::String(cents, 0) << " c)"
                   << " | harmony " << (harmonyNote >= 0 ? juce::String(names[harmonyNote % 12]) + juce::String(harmonyNote / 12 - 1) : juce::String("?"))
+                  << [&]
+                     {
+                         // The plugin's detector (SampleRootDetector): settled pitch after the glide.
+                         const auto root = SampleRootDetector::detect(mono.data(), static_cast<int>(mono.size()), rate);
+                         if (!root.valid)
+                             return juce::String(" | final ?");
+                         const int note = root.nearestNote();
+                         return " | final " + juce::String(names[root.pitchClass()]) + juce::String(note / 12 - 1)
+                              + " (" + juce::String(juce::roundToInt(root.cents())) + " c, conf " + juce::String(root.confidence, 2) + ")";
+                     }()
                   << " | " << juce::String(mono.size() / rate, 2) << " s\n";
     }
     return 0;
