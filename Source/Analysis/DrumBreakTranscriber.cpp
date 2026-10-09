@@ -646,6 +646,7 @@ float phaseBackbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, doub
 // the maintainer's renders 4: 63, 8: 19). A whole-bar reading with a usual bar count is preferred,
 // which settles the x2 / x3/2 / x3/4 readings of melodic loops that the onsets cannot.
 constexpr float kBarCountWeight = 0.3f;
+constexpr float kAnchoredPhaseTolerance = 0.08f; // grid-fit loss accepted to start on the first hit
 constexpr float kWeakOnsetBarWeight = 0.4f;
 
 float barCountPrior(int bars)
@@ -822,8 +823,35 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
         }
     }
 
-    const auto phased = bestPhasedFit(hits, candidate.bpm, true);
-    candidate.gridFit = phased.fit;
+    auto phased = bestPhasedFit(hits, candidate.bpm, true);
+    const float tempoGridFit = phased.fit; // the tempo score keeps the free fit (step 10)
+    // A trimmed loop starts on its beat 1, and that first hit is where the grid begins. A loose,
+    // swung groove can fit a grid shifted by a few tens of ms plus more swing slightly better,
+    // which put beat 1 a whole bar early (Copy Break started a bar late; step 10). Anchored at
+    // the first hit (+-6 ms) with its own best swing, the grid is kept when it fits nearly as well.
+    // Automatic tempo only: with a typed tempo the beat-1 search below (atStart vs searched) already
+    // weighs the file start, and anchoring there made tonal loops a quarter off more often.
+    if (trimmed && options.forcedBpm <= 20.0)
+    {
+        const double sixteenth = 15.0 / candidate.bpm;
+        PhasedFit anchored { -1.0f, 0.0f, context.firstHit };
+        for (int step = -4; step <= 4; ++step)
+        {
+            const double phase = context.firstHit + 0.0015 * step;
+            for (float swing = 0.0f; swing <= 0.42f; swing += 0.02f)
+            {
+                const float fit = gridFit(hits, candidate.bpm, phase, swing) - swing * 0.01f;
+                if (fit > anchored.fit)
+                    anchored = { fit, swing, phase };
+            }
+        }
+        // compare phases modulo an eighth (the phase search spans one eighth)
+        const double eighth = 2.0 * sixteenth;
+        const double apart = std::abs(std::remainder(anchored.phase - phased.phase, eighth));
+        if (apart > 0.006 && anchored.fit >= phased.fit - kAnchoredPhaseTolerance)
+            phased = anchored; // beat 1 and swing only
+    }
+    candidate.gridFit = tempoGridFit;
     candidate.swing = phased.swing;
     candidate.lengthFit = lengthFit(loopSeconds, candidate.bpm, candidate.bars);
 

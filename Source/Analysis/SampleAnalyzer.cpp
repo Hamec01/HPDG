@@ -75,6 +75,19 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     breakOptions.quantizeAmount = request.breakQuantizeAmount;
     breakOptions.forcedBpm = request.manualBpm > 20.0 ? request.manualBpm : 0.0;
     breakOptions.labelBpm = request.labelBpm;
+    if (request.hasTempoRange())
+    {
+        breakOptions.minBpm = request.tempoRangeMin;
+        breakOptions.maxBpm = request.tempoRangeMax;
+        // a stated tempo outside the chosen range is the same tempo an octave away
+        if (breakOptions.labelBpm > 20.0)
+        {
+            while (breakOptions.labelBpm < request.tempoRangeMin)
+                breakOptions.labelBpm *= 2.0;
+            while (breakOptions.labelBpm > request.tempoRangeMax)
+                breakOptions.labelBpm *= 0.5;
+        }
+    }
     bundle.breakAnalysis = breakTranscriber.analyze(mono, sampleRate, breakOptions);
 
     // Key + bass line, on the original timeline. Segments are one beat of the tempo the

@@ -151,7 +151,10 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - Step 9: bass / 808 one-shot root from the sound (`SampleRootDetector`, YIN with settled-pitch
   median); the Sub808 lane joins name + sound and applies the cents. Pitch class right 77 -> 89 %
   over 1026 one-shots (808 packs 90-100 %). Register unchanged (decision for the maintainer).
-- Next: whole songs need a real corpus; loop tails; register of the 808 lane (sound as written?).
+- Step 10: Copy Break started a bar late on loose swung loops: the automatic path anchors a trimmed
+  loop's grid at its first hit for beat 1 / swing (trap origin 80-93 -> 100 %, tonal +1..+19 points);
+  tempo range picker in the Sample BPM dialog (Auto / 50-100 / 75-150 / 100-200 / 150-300, like FL).
+- Next: bass notes read as kicks (Copy Break), whole songs (need a corpus), loop tails.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-08, Sample Analysis)
 

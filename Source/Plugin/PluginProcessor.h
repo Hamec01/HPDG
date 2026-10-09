@@ -263,6 +263,8 @@ public:
         double trimStartSeconds = 0.0;
         double trimEndSeconds = 0.0;
         double manualBpm = 0.0;
+        double tempoRangeMin = 0.0;  // user-picked tempo range (0 = automatic)
+        double tempoRangeMax = 0.0;
         float breakQuantizeAmount = 0.0f;
         AnalysisMode mode = AnalysisMode::GenerateFromSample;
         bool playWithPattern = false;

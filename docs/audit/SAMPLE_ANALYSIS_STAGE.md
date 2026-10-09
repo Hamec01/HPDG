@@ -538,6 +538,53 @@ their 2nd or higher harmonic. The pitch class is still right.
 Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass, including the new "Sample root
 from name and sound" (rule cases, plus a C#2 sine named C read as C#2 by the bank).
 
+## Step 10 — Copy Break started a bar late; tempo range like FL Studio
+
+**Bug (maintainer, 2026-10-09).** "Pattern 2_536.wav" (90 BPM, 4 bars, a loose swung groove, a hit
+at 0.006 s) was copied with an empty first bar.
+- The grid phase came out 35-45 ms off every hit, and the fit read the offset as 61 % swing.
+- So the "a trimmed loop starts on its first hit" bonus (35 ms window) never applied, and beat 1
+  went 2.5 s before the file.
+
+**Change.** In the automatic path, a trimmed loop also tries a grid anchored at the first hit
+(±6 ms, its own best swing). It is used for beat 1 and swing when its fit is within 0.08 of the
+free fit. The tempo score keeps the free fit, so tempo choices barely move. The typed-tempo path is
+unchanged: anchoring there made tonal loops a quarter off more often (Cobra 24 -> 34 %).
+- On the bug file: origin −2533 -> 4 ms, swing 61 -> 51 %, backbeat 0.23 -> 0.60, exact 4-bar loop.
+
+**Result** (auto origin within 20 ms of beat 1, trimmed corpora):
+
+| corpus | before | after |
+|---|---|---|
+| Trap Urban / Hybrid / UTT2 | 93 / 80 / 85 % | **100 / 100 / 100 %** |
+| Boom Bap | 89 % | 91 % |
+| Techno | 80 % | 82 % |
+| Lofi / Raw Hip-Hop melodic | 44 / 45 % | **59 / 64 %** |
+| other tonal packs | 32-52 % | 41-56 % |
+
+- Typed-tempo origin is unchanged everywhere.
+- Tempo up to octave is unchanged: drums 100 %, tonal 80 %, renders 86 %.
+
+**Tempo range (maintainer's request: like FL Studio's "Detect tempo").** The Sample BPM dialog has
+a range list: Auto, 50-100, 75-150, 100-200, 150-300.
+- It is stored with the sample (`tempo_range_min` / `tempo_range_max`), and the analyzer only
+  considers tempos inside it.
+- A stated tempo (name / acid) outside the range is folded into it by octaves.
+- The lab takes `--range <min> <max>`.
+- On the 46 renders the automatic reading missed (exact), the matching range fixes 25: renders exact
+  ~61 % -> ~82 % when the user picks a range. These are mostly octave readings; x3/2 readings are
+  not always fixed.
+
+**Still open from the same file: a bass note read as a kick.** The maintainer: there is no kick at
+the start, only bass and a snare.
+- The first hit has 5 % of its energy below 100 Hz and 92 % at 100-250 Hz; this loop's kicks have
+  65 % below 100 Hz.
+- The kick template "explained" the bass note, and the snare under it was suppressed by the
+  strong-kick rule.
+- Next: compare doubtful hits with this loop's own kick and snare spectra (kits without sub must not
+  suffer), or harmonic / percussive separation so sustained bass notes do not reach the drum
+  templates.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on

@@ -109,6 +109,11 @@ int runAnalyze(const juce::StringArray& args)
             printHarmony = true;
         else if (args[i] == "--hits")
             printHits = true;
+        else if (args[i] == "--range" && i + 2 < args.size())
+        {
+            options.minBpm = args[++i].getDoubleValue(); // as the plugin's tempo range
+            options.maxBpm = args[++i].getDoubleValue();
+        }
         else if (args[i] == "--labels")
             readLabels = true; // tempo / key the file states (name, acid chunk), like the plugin
         else if (args[i] == "--label-bpm" && i + 1 < args.size())

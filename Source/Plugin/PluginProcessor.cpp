@@ -857,7 +857,7 @@ private:
 
         const auto analysis = audioProcessor.getDrumBreakAnalysis();
         auto* window = new juce::AlertWindow("Sample BPM",
-                                             "Tempo of the sample. Auto = detect it from the audio again.",
+                                             "Type the tempo of the sample, or press Auto to detect it again (inside the range, when one is picked).",
                                              juce::MessageBoxIconType::NoIcon, this);
         window->setLookAndFeel(&sketchLookAndFeel);
         window->setColour(juce::AlertWindow::backgroundColourId, sketch::Theme::paperLight());
@@ -873,6 +873,19 @@ private:
             editor->setColour(juce::TextEditor::highlightedTextColourId, sketch::Theme::graphite());
             editor->setColour(juce::CaretComponent::caretColourId, sketch::Theme::graphite());
             editor->selectAll();
+        }
+        // Tempo range, as FL Studio's "Detect tempo": the analyzer only considers tempos inside it.
+        static const std::array<std::pair<double, double>, 5> ranges { { { 0.0, 0.0 }, { 50.0, 100.0 }, { 75.0, 150.0 }, { 100.0, 200.0 }, { 150.0, 300.0 } } };
+        window->addComboBox("range", { "Auto range", "50 - 100", "75 - 150", "100 - 200", "150 - 300" }, "Range (Auto):");
+        if (auto* combo = window->getComboBoxComponent("range"))
+        {
+            int selected = 0;
+            for (int i = 1; i < static_cast<int>(ranges.size()); ++i)
+                if (std::abs(request.tempoRangeMin - ranges[static_cast<size_t>(i)].first) < 0.5
+                    && std::abs(request.tempoRangeMax - ranges[static_cast<size_t>(i)].second) < 0.5)
+                    selected = i;
+            combo->setSelectedItemIndex(selected, juce::dontSendNotification);
+            combo->setTooltip("Detect the tempo inside this range only (Auto: any tempo).");
         }
         window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
         window->addButton("Auto", 2);
@@ -893,6 +906,13 @@ private:
             }
             auto updated = safeEditor->audioProcessor.getSampleAnalysisRequest();
             updated.manualBpm = bpm >= 40.0 ? bpm : 0.0;
+            if (auto* combo = window->getComboBoxComponent("range"))
+            {
+                const int index = juce::jlimit(0, static_cast<int>(ranges.size()) - 1, combo->getSelectedItemIndex());
+                updated.tempoRangeMin = ranges[static_cast<size_t>(index)].first;
+                updated.tempoRangeMax = ranges[static_cast<size_t>(index)].second;
+                // a range picked with "Auto" detects again inside it (a typed BPM still wins)
+            }
             safeEditor->audioProcessor.setSampleAnalysisRequest(updated);
             safeEditor->runSampleAnalysis();
         }), true);
@@ -3188,6 +3208,8 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
             sample.setProperty("trim_start", request.trimStartSeconds, nullptr);
             sample.setProperty("trim_end", request.trimEndSeconds, nullptr);
             sample.setProperty("manual_bpm", request.manualBpm, nullptr);
+            sample.setProperty("tempo_range_min", request.tempoRangeMin, nullptr);
+            sample.setProperty("tempo_range_max", request.tempoRangeMax, nullptr);
             sample.setProperty("quantize", request.breakQuantizeAmount, nullptr);
             sample.setProperty("mode", static_cast<int>(analysisMode), nullptr);
             sample.setProperty("play_with_pattern", playSampleWithPattern.load(), nullptr);
@@ -3261,6 +3283,8 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
             reference.trimStartSeconds = static_cast<double>(sample.getProperty("trim_start", 0.0));
             reference.trimEndSeconds = static_cast<double>(sample.getProperty("trim_end", 0.0));
             reference.manualBpm = static_cast<double>(sample.getProperty("manual_bpm", 0.0));
+            reference.tempoRangeMin = static_cast<double>(sample.getProperty("tempo_range_min", 0.0));
+            reference.tempoRangeMax = static_cast<double>(sample.getProperty("tempo_range_max", 0.0));
             reference.breakQuantizeAmount = static_cast<float>(static_cast<double>(sample.getProperty("quantize", 0.0)));
             const int mode = static_cast<int>(sample.getProperty("mode", static_cast<int>(AnalysisMode::GenerateFromSample)));
             reference.mode = mode == static_cast<int>(AnalysisMode::ExtractFromSample) ? AnalysisMode::ExtractFromSample
@@ -3306,6 +3330,8 @@ bool BoomBapGeneratorAudioProcessor::restoreSampleSource(const SampleSourceRefer
         currentAnalysisRequest.trimStartSeconds = replaced ? 0.0 : reference.trimStartSeconds;
         currentAnalysisRequest.trimEndSeconds = replaced ? 0.0 : reference.trimEndSeconds;
         currentAnalysisRequest.manualBpm = replaced ? 0.0 : reference.manualBpm;
+        currentAnalysisRequest.tempoRangeMin = replaced ? 0.0 : reference.tempoRangeMin;
+        currentAnalysisRequest.tempoRangeMax = replaced ? 0.0 : reference.tempoRangeMax;
     }
 
     if (!loadSampleSource(file, errorMessage))

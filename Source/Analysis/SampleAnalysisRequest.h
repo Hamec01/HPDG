@@ -60,6 +60,13 @@ struct SampleAnalysisRequest
     // used as-is (and trusted for key analysis and generation).
     double manualBpm = 0.0;
 
+    // Tempo range the user picked for this sample (0 / 0 = automatic), as FL Studio's
+    // "Detect tempo" ranges (50-100, 75-150, 100-200, 150-300): the analyzer only considers tempos
+    // inside it, which settles a sample the automatic reading got wrong (80 vs 120 / 160).
+    double tempoRangeMin = 0.0;
+    double tempoRangeMax = 0.0;
+    bool hasTempoRange() const { return tempoRangeMin > 20.0 && tempoRangeMax > tempoRangeMin; }
+
     // What the sample states about itself (SampleLabelReader: WAV acid chunk / file name), filled
     // by SampleAnalyzer::analyzeAudioFileExtended. Hints checked against the audio.
     double labelBpm = 0.0;
