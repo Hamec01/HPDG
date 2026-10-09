@@ -623,7 +623,30 @@ with per-instrument stems (Urban Trap 15, Hybrid Trap 10, Dubstep 10).
 - a loop-relative high-band filter (removes about one true hat per false one);
 - dropping the masked-hat restoration (hat F 0.839 -> 0.837).
 
-**Next.** Classify against the loop's own kit: learn kick / snare / hat spectra from this loop's
+**Wider corpus.** `tools/find_drum_stems.py` finds kick + snare / clap + hat loop stems in the
+maintainer's new packs. The list is `docs/audit/reference/kshh_sets.tsv`: 54 sets, of which Ghosthack
+construction kits 38, Sample Magic Dusty Hip-Hop 3 10, Astro Loops 5, Controversial 1.
+`kshh_bench.py run-sets / report-sets` sums the stems into the loop and scores against the stems.
+
+| sets (54) | kick F | snare F | hat F |
+|---|---|---|---|
+| all | 0.96 | 0.89 | 0.90 |
+| Dusty Hip-Hop 3 (boom bap) | 0.96 | 0.81 | **0.68** (precision 0.61) |
+
+**Kit-portrait experiments (89 loops; no change made):**
+- Rebuilding the lanes from NNLS shares of the loop's own kick / snare / hat portraits (mean
+  onset spectra of its confident hits) helped the kick (0.877 -> 0.911) but cost snare (-0.06) and
+  hat (-0.05).
+- Using the portraits only as vetoes or to add snares was neutral or worse (adding snares:
+  snare 0.89 -> 0.66).
+- Dusty false hats: 28 at kicks (the kick click leaks into the hat template, low high band) and 24 at
+  snares (15 restored). Dropping hats on strong kicks with a weak high band relative to the loop's
+  solo hats: hat F 0.679 -> 0.677.
+- Conclusion: the rule-based transcription is at about kick 0.88-0.96, snare 0.87-0.89 and
+  hat 0.84-0.90 F. That is in the range published for learned drum transcription on real mixes.
+  The next real step is a trained model, not another threshold.
+
+**Previous plan (kept for reference).** Classify against the loop's own kit: learn kick / snare / hat spectra from this loop's
 confident hits, then re-decide the doubtful onsets (semi-adaptive templates, as in Dittmar &
 Gärtner 2014). This targets the bass-as-kick case in Pattern 2_536 as well.
 

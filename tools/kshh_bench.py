@@ -180,6 +180,95 @@ def report(corpus_path, out, list_files):
             print(row)
 
 
+def load_sets(path):
+    """kshh_sets.tsv (tools/find_drum_stems.py): folder TAB kick TAB snare TAB hat."""
+    rows = []
+    for line in open(path, encoding='utf-8'):
+        if line.startswith('#') or not line.strip():
+            continue
+        folder, k, s, h = line.rstrip('\n').split('\t')
+        rows.append(dict(folder=folder, stems={'Kick': k, 'Snare': s, 'HiHat': h}))
+    return rows
+
+
+def pack_of(folder):
+    parts = folder.replace('\\', '/').split('/')
+    return parts[4] if len(parts) > 4 and parts[3] == 'Downloads' else parts[-1]
+
+
+def run_sets(sets_path, out, exe):
+    """Stem sets without a full loop: the stems are summed into one (same rate, lengths within
+    2 %, cut to the shortest, peak -1 dBFS), analysed, and scored against the stems."""
+    mixdir = os.path.join(out, 'mix')
+    os.makedirs(mixdir, exist_ok=True)
+    for i, row in enumerate(load_sets(sets_path)):
+        target = os.path.join(out, f'set__{i:03d}.txt')
+        if os.path.exists(target):
+            continue
+        audio = {}
+        rate = None
+        try:
+            for lane, name in row['stems'].items():
+                sr, x = wavfile.read(os.path.join(row['folder'], name))
+                x = x.astype(np.float64)
+                if x.dtype.kind == 'i' or np.abs(x).max() > 2:
+                    x = x / 32768.0 if np.abs(x).max() < 40000 else x / 2147483648.0
+                audio[lane] = x.mean(1) if x.ndim > 1 else x
+                if rate is not None and sr != rate:
+                    raise ValueError('rates differ')
+                rate = sr
+        except Exception as e:
+            open(target, 'w', encoding='utf-8').write(f'SKIP {e}\n')
+            continue
+        lengths = [len(v) for v in audio.values()]
+        if max(lengths) > min(lengths) * 1.02:
+            open(target, 'w', encoding='utf-8').write('SKIP lengths differ\n')
+            continue
+        n = min(lengths)
+        mix = sum(v[:n] for v in audio.values())
+        mix = mix / (np.abs(mix).max() + 1e-12) * 0.89
+        mixfile = os.path.join(mixdir, f'set_{i:03d}.wav')
+        wavfile.write(mixfile, rate, (mix * 32767).astype(np.int16))
+        r = subprocess.run([exe, 'analyze', mixfile, '--hits'], capture_output=True, text=True, encoding='utf-8', errors='replace')
+        truth = []
+        for lane, name in row['stems'].items():
+            for t, level in stem_onsets(os.path.join(row['folder'], name)):
+                truth.append(f'TRUTH {lane} {t:.4f} {level:.1f}')
+        open(target, 'w', encoding='utf-8').write(f"SET {row['folder']}\n" + r.stdout + '\n' + '\n'.join(truth) + '\n')
+    print('sets done', flush=True)
+
+
+def report_sets(sets_path, out):
+    per_pack = {}
+    for i, row in enumerate(load_sets(sets_path)):
+        path = os.path.join(out, f'set__{i:03d}.txt')
+        if not os.path.exists(path):
+            continue
+        text = open(path, encoding='utf-8', errors='replace').read()
+        if text.startswith('SKIP'):
+            continue
+        found = {lane: [float(t) for l, t in HIT.findall(text) if l == lane] for lane in LANES}
+        truth = {lane: [] for lane in LANES}
+        for line in text.splitlines():
+            if line.startswith('TRUTH '):
+                _, lane, t, _ = line.split()
+                truth[lane].append(float(t))
+        stats = per_pack.setdefault(pack_of(row['folder']), {l: [0, 0, 0] for l in LANES})
+        for lane in LANES:
+            s = stats[lane]
+            s[0] += match(found[lane], truth[lane]); s[1] += len(found[lane]); s[2] += len(truth[lane])
+    total = {l: [0, 0, 0] for l in LANES}
+    for pack, stats in per_pack.items():
+        line = f'{pack[:40]:40s}'
+        for lane, (tp, nf, nt) in stats.items():
+            p, r = tp / max(1, nf), tp / max(1, nt)
+            line += f' | {lane} P {p:.2f} R {r:.2f} F {2 * p * r / max(1e-9, p + r):.2f} ({nt})'
+            for k in range(3):
+                total[lane][k] += (tp, nf, nt)[k]
+        print(line)
+    print('ALL sets ' + ' | '.join(f"{l} P {v[0] / max(1, v[1]):.2f} R {v[0] / max(1, v[2]):.2f} F {2 * v[0] / max(1, v[1] + v[2]):.2f}" for l, v in total.items()))
+
+
 def main():
     args = sys.argv[1:]
     exe = args[args.index('--breaklab') + 1] if '--breaklab' in args else DEFAULT_EXE
@@ -187,6 +276,10 @@ def main():
         run(args[1], args[2], exe)
     elif args[0] == 'report':
         report(args[1], args[2], '--list' in args)
+    elif args[0] == 'run-sets':
+        run_sets(args[1], args[2], exe)
+    elif args[0] == 'report-sets':
+        report_sets(args[1], args[2])
 
 
 if __name__ == '__main__':
