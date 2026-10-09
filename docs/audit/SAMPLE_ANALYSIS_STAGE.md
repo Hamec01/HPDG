@@ -447,8 +447,21 @@ Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
 - Key from transcribed notes (`SampleLineTranscriber` without key bias; the lab now prints the
   bass / melody pitch-class durations and the first / last bass note): leave-one-pack-out 0.65 vs
   0.66. In-sample exact rose 55 -> 59 %, which did not carry to held-out packs.
+- Opening chord (tonic-triad match of the first 0.4 / 0.8 / 1.5 s, or the last 1 s):
+  leave-one-pack-out 0.645 vs 0.661.
+- NNLS chroma (Mauch & Dixon 2010: semitone spectrum explained by note templates with decaying
+  harmonics, so the 3rd harmonic is not counted as the fifth; with log whitening): the current
+  peak chroma won all 12 folds (best NNLS variant 0.638).
+- Error structure (current rule): exact 55 %, relative 3 %, fifth 14 %, parallel 4 %, other 24 %.
+  In the same or a near scale (exact, relative or fifth): 72 %. Fifth errors concentrate in Cobra
+  (34 %) and Raw Hip-Hop melodic (30 %). Several are genuinely ambiguous: in
+  rhh_melodic_loop_abe_90_Dm the bass sits on A for the whole loop.
 - Conclusion: audio-only key on short loops sits around MIREX 0.65 with these features. With the
   file's own key label it is 95 %.
+
+**Tempo experiment after step 8: loop repetition** (not adopted). Self-similarity of chroma and
+log-band frames at the bar and 2-bar lags of each candidate gave renders 85.7 -> 86.6 % and tonal
+82.2 -> 82.7 % up to octave in simulation. Too small for its cost (a lag scan per file).
 
 **Serato Sample comparison** (maintainer's question). Serato's detectors are trained on a very large
 DJ library; its UI also offers x2 / ÷2 for the octave ambiguity, and short melodic loops without
