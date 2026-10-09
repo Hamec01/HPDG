@@ -650,6 +650,24 @@ construction kits 38, Sample Magic Dusty Hip-Hop 3 10, Astro Loops 5, Controvers
 confident hits, then re-decide the doubtful onsets (semi-adaptive templates, as in Dittmar &
 Gärtner 2014). This targets the bass-as-kick case in Pattern 2_536 as well.
 
+## Swing detection (roadmap §30): measured, no change needed
+
+`HPDG_BreakLab synth <kit> --swing <percent>` builds every trial at one swing (8th-note swing: the
+second sixteenth of each eighth delayed; 66 % = 0.32 of a sixteenth) and reports the swing error.
+60 trials each, Boom Bap kit, tempo-right trials only:
+
+| swing | mean abs error | max | straight read as swung | swing missed |
+|---|---|---|---|---|
+| 50 % | 0.31 pt | 4 | 1 / 55 | – |
+| 54 % | 0.67 pt | 8 | 0 | 0 |
+| 58 % | 0.78 pt | 8 | 0 | 2 |
+| 62 % | 0.87 pt | 12 | 0 | 2 |
+| 66 % | 1.02 pt | 16 | 0 | 2 |
+
+The "missed" trials are the same two loops in every row: one bar with eighth-note hats only, so no
+hit sits on a swung sixteenth and the swing cannot be heard (50 % is the honest answer). Straight
+loops stay straight, swung loops are recognised, and the genre does not bias the analyzer.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on

@@ -315,6 +315,7 @@ int runSynth(const juce::StringArray& args)
     int seed = 1;
     bool verbose = false;
     bool pickup = false; // loops that start on a beat other than 1 (only tempo / bars are scored)
+    double fixedSwingPercent = 0.0; // > 0: every trial at this swing (8th-note swing, 50 = straight)
     int detailTrials = 6;
     for (int i = 2; i < args.size(); ++i)
     {
@@ -328,6 +329,8 @@ int runSynth(const juce::StringArray& args)
             verbose = true;
         else if (args[i] == "--pickup")
             pickup = true;
+        else if (args[i] == "--swing" && i + 1 < args.size())
+            fixedSwingPercent = args[++i].getDoubleValue(); // e.g. 50, 54, 58, 62, 66
     }
 
     constexpr double rate = 44100.0;
@@ -359,12 +362,16 @@ int runSynth(const juce::StringArray& args)
     int gridCorrect = 0;
     int gridTotal = 0;
     std::array<int, 3> onsetMissed {};
+    double swingAbsErrorSum = 0.0, swingErrorMax = 0.0;
+    int swingScored = 0, straightCalledSwung = 0, swingMissed = 0;
 
     for (int trial = 0; trial < trials; ++trial)
     {
         const double bpm = uniform(72.0, 118.0);
         const int bars = std::array<int, 3> { 1, 2, 4 }[static_cast<size_t>(rng() % 3)];
-        const double swing = std::array<double, 4> { 0.0, 0.12, 0.22, 0.33 }[static_cast<size_t>(rng() % 4)];
+        const double randomSwing = std::array<double, 4> { 0.0, 0.12, 0.22, 0.33 }[static_cast<size_t>(rng() % 4)];
+        // swing as the delay of the 2nd sixteenth of each eighth, in sixteenths: 66 % -> 0.32
+        const double swing = fixedSwingPercent > 0.0 ? fixedSwingPercent / 50.0 - 1.0 : randomSwing;
         const bool sixteenthHats = chance(0.45);
         const double sixteenth = 15.0 / bpm;
         const double loopSeconds = bars * 16 * sixteenth;
@@ -447,10 +454,22 @@ int runSynth(const juce::StringArray& args)
         if (!tempoOk && (std::abs(analysis.bpm / (2.0 * bpm) - 1.0) < 0.01 || std::abs(analysis.bpm / (0.5 * bpm) - 1.0) < 0.01))
             ++tempoOctave;
         barsCorrect += analysis.bars == bars ? 1 : 0;
+        if (tempoOk)
+        {
+            const double truthSwing = 50.0 * (1.0 + swing);
+            const double error = analysis.swingPercent - truthSwing;
+            swingAbsErrorSum += std::abs(error);
+            swingErrorMax = std::max(swingErrorMax, std::abs(error));
+            ++swingScored;
+            if (truthSwing < 51.0 && analysis.swingPercent > 53.0)
+                ++straightCalledSwung;
+            if (truthSwing >= 56.0 && analysis.swingPercent < 52.0)
+                ++swingMissed;
+        }
 
         juce::String trialLine = "trial " + juce::String(trial) + " bpm " + juce::String(bpm, 2) + " -> " + juce::String(analysis.bpm, 2)
             + " bars " + juce::String(bars) + "->" + juce::String(analysis.bars)
-            + " swing " + juce::String(swing, 2) + " hats16 " + juce::String(sixteenthHats ? 1 : 0)
+            + " swing " + juce::String(swing, 2) + " (" + juce::String(50.0 * (1.0 + swing), 0) + "% -> " + juce::String(analysis.swingPercent, 1) + "%)" + " hats16 " + juce::String(sixteenthHats ? 1 : 0)
             + " origin " + juce::String(analysis.originSeconds * 1000.0, 1) + "ms" + (analysis.exactLoop ? " loop" : " free");
         int trialGridErrors = 0;
 
@@ -566,6 +585,10 @@ int runSynth(const juce::StringArray& args)
             std::cout << trialLine << "\n";
     }
 
+    std::cout << "\nSWING (tempo-right trials " << swingScored << ")"
+              << " | mean |error| " << juce::String(swingScored > 0 ? swingAbsErrorSum / swingScored : 0.0, 2) << " %"
+              << " max " << juce::String(swingErrorMax, 1) << " %"
+              << " | straight called swung " << straightCalledSwung << " | swing missed " << swingMissed << "\n";
     std::cout << "\nSYNTH trials " << trials
               << " | tempo " << tempoCorrect << "/" << trials << " (octave errors " << tempoOctave << ")"
               << " | tempo error avg " << (tempoCorrect > 0 ? tempoErrorSum / tempoCorrect : 0.0) << "% max " << tempoErrorMax << "%"
