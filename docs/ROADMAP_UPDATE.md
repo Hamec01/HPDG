@@ -161,55 +161,102 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
   precision kick 0.93 -> 0.95, snare 0.90 -> 0.95, hat 0.84 -> 0.88. Copy Break unchanged.
 - Next: whole songs (need a corpus), loop tails, bass notes read as kicks (low priority per maintainer).
 
-## NOTE FOR THE NEXT AGENT (2026-10-08, Sample Analysis)
+## NOTE FOR THE NEXT AGENT (2026-10-09, Sample Analysis) — START HERE
 
-Stage 6 (Sample Analysis) is in progress. The maintainer's goals are tempo close to 100 % and the
-sample overall (key, bass) close to 90 %. Steps 1-6 are done; see `docs/audit/SAMPLE_ANALYSIS_STAGE.md`.
+**First steps of a new session:**
+1. `git pull`.
+2. Read `docs/RULES.md`, then `docs/audit/SAMPLE_ANALYSIS_STAGE.md` (steps 1-11 + measurements).
+3. Build: `cmake --build build --config Release --target HPDG HPDG_BreakLab HPDG_CoreTests HPDG_LaneBoundaryTests HPDG_SampleTrimTests`.
+   The VST itself is built with `build_vst.bat`, and FL Studio must be closed first (it locks HPDG.vst3).
+4. Run the tests: `build/Release/HPDG_CoreTests.exe` (77/77), `HPDG_LaneBoundaryTests.exe`,
+   `HPDG_SampleTrimTests.exe`. All pass at f41af6f.
+5. Ask the maintainer what they want next. The options are below.
 
-**Benchmarks** (audio stays on the dev PC, lists in `docs/audit/reference/`):
-- tempo / phase: `python tools/tempo_bench.py run|report docs/audit/reference/tempo_corpus.tsv <out>`
-- key: `python tools/tempo_bench.py run-key|key-report docs/audit/reference/tempo_corpus.tsv <out>`
-- add `--labels name` (the files' own labels) or `--labels wrong` (injected wrong labels). Always
-  report audio-only too, so labels cannot hide a regression.
-- Corpora:
-  - 8 drum packs, classic breaks, 9 tonal packs;
-  - the maintainer's material: `user_renders` (120 FL renders, tempo from the acid chunk),
-    `user_hamlo_pack`, `user_song_stems`, `user_piano`;
-  - more renders in `E:/FL/Image-Line/FL Studio/Audio/Rendered` (1690 with acid tempo).
+**The maintainer.**
+- Writes in Russian. Every user-facing text is in Russian, including short progress notes. Give
+  numbers and a table before / after.
+- Wants analysis close to 100 % on tempo and close to 90 % on the sample overall.
+- "Improve, do not rework": additive changes; revert a change that brings no measured gain.
+- Commit after they approve or listen; push when asked (they usually ask for "коммит и пуш в main").
 
-**What to do next, in order:**
-1. **Tempo of melodic loops from the audio alone.** Step 7 brought up-to-octave accuracy to 78 % on tonal
-   packs and 79 % on the maintainer's renders. The engines fold the octave, so x3/2 / x3/4 are the
-   errors that matter. Next: loops with reverb tails (Freaky DnB music) — measure the length without the
-   tail; full-track stems (user_song_stems) are hardest.
-   - Before step 7: 48 % on 13 tonal packs and 42 % on the maintainer's renders.
-   - The errors are x2 (85 -> 170) and x3/2 (70 -> 105). The melody's note onsets are read as beats.
-   - Ideas to measure first:
-     - the step-2 subdivision penalty only works one way: add the opposite check, a "sparse beat"
-       for the fast reading;
-     - weight onsets by low-frequency energy (bass and chord changes) rather than every note;
-     - a stronger loop-length prior for trimmed loops (renders are whole bars);
-     - a tempo prior from the maintainer's renders (median 87).
-   - Pick by leave-one-pack-out, as in step 5. Do not touch drum-loop accuracy (93 %).
-2. **Key confidence** (follow the margin over the second key, as tempo step 3) and major keys (9 / 28).
-   Ask the maintainer for major-key material (soul samples).
-3. **Root note of bass / 808 one-shots: done (step 9).** The maintainer listened (good) and decided the
-   register stays as it is ("808 is bass"): no "sound exactly as written".
-   Earlier notes: **Root note, octave and cents of bass / 808 one-shots from the audio.**
-   - Today the root comes only from the name (`LaneSampleBank::rootPitchClassFromName`), with the
-     octave ignored.
-   - `HPDG_BreakLab rootnote` exists.
-   - Findings on the 40 bundled Sub808 samples: TSB3 is C#2 but is read as C; there are mixed C1 / C2
-     octaves; DnB DSB2 and DSB9 are labelled E but sound F.
+**State of stage 6 (Sample Analysis)** — details in the stage doc.
+
+Done:
+- Tempo:
+  - beat 1 in half-time loops (1);
+  - half / double from the onset rate (2);
+  - honest confidence (3);
+  - labels from the file name / WAV acid chunk, checked against the audio (6);
+  - the bar-count prior plus every genre folding the sample tempo into its own range, e.g. Boom Bap
+    160 -> 80 and Trap 80 -> 160 (7);
+  - weak onsets let the loop length decide (8);
+  - Copy Break beat 1 anchored at a trimmed loop's first hit, plus the tempo-range picker in the BPM
+    dialog like FL and "BPM = selection" in the Trim window (10).
+- Tonal loops are not drum loops (4).
+- Key of the loop (5): peak chroma, Albrecht-Shanahan profiles, opening bass note, minor prior.
+- Bass / 808 one-shot root from the sound (9). The register stays low: the maintainer's decision.
+- Guide leaves out drum hits with confidence < 0.3 (11).
+
+Numbers now:
+
+| | audio only | with the file's own labels |
+|---|---|---|
+| tempo up to octave, drum loops | 100 % | 99-100 % |
+| tempo up to octave, tonal loops | 80 % | 94 % |
+| tempo up to octave, maintainer's FL renders | 86 % | 96 % |
+| key, exact | 56 % | 95 % |
+| 808 / bass one-shot root (pitch class) | 89 % | — |
+| K/S/H F (89 stem-separated loops) | kick 0.88-0.96, snare 0.87-0.89, hat 0.84-0.90 | — |
+
+- The octave does not matter for the plugin: the genre engines fold it.
+- Swing is fine: mean error 0.3-1.0 pt on 50-66 % synthetic swing.
+
+Measured and NOT adopted (do not repeat without a new idea):
+- key: learned profiles, key from transcribed notes, opening chord, NNLS chroma;
+- tempo: tempogram, loop repetition, whole-song 16 s window;
+- K/S/H: kit-portrait reclassification and hat-leak rules.
+
+**Benchmarks** (audio stays on the dev PC; lists in `docs/audit/reference/`):
+- Tempo / phase: `python tools/tempo_bench.py run|report docs/audit/reference/tempo_corpus.tsv <out>`.
+  - `--labels name|wrong` runs with the files' own labels or injected wrong ones. Always report
+    audio-only too.
+  - The report has exact, ≤ 2 % and up-to-octave accuracy, plus origin ms.
+- Key: `python tools/tempo_bench.py run-key|key-report ...` (MIREX score).
+- 808 root: `python tools/root_bench.py run|report docs/audit/reference/root_corpus.tsv <out>`.
+- K/S/H:
+  - `python tools/kshh_bench.py run|report docs/audit/reference/kshh_corpus.tsv <out>`;
+  - `run-sets|report-sets docs/audit/reference/kshh_sets.tsv <out>`: stem sets mixed into loops;
+  - `tools/kshh_diagnose.py` explains the errors;
+  - `tools/find_drum_stems.py` finds new stem sets in packs.
+- Swing: `build/Release/HPDG_BreakLab.exe synth Samples/BoomBap --trials 60 --swing 62`.
+- The lab: `HPDG_BreakLab analyze <file> [--hits] [--harmony] [--labels] [--range 50 100] [--bpm X]`
+  and `HPDG_BreakLab rootnote <files>`.
+- Pick parameters with calibration / validation (leave-one-pack-out). Do not touch drum-loop accuracy.
+
+**Where the material is.**
+- `E:/DRUMS/DRUMS`: the main packs.
+- `E:/HPDG_corpus`.
+- `C:/Users/Ham_h/Downloads`: new packs, among them Ghosthack Construction Kits, Sample Magic Dusty
+  Hip-Hop 3 (boom bap), Singomakers, Astro Loops, Controversial Loops and Cr2.
+- `E:/FL/Image-Line/FL Studio/Audio/Rendered`: the maintainer's renders; the acid chunk holds the
+  tempo.
+
+**Open items (ask the maintainer which first):**
+1. **Whole songs.** The plugin analyses only the first 64 s as a loop. Needs a corpus of real mixed
+   songs with known tempo / key from the maintainer: the long FL renders turned out to be vocal / part
+   stems. Ideas: analyse the middle with drums instead of the start, a song mode like Edison, a vocal
+   detector.
+2. **Loop tails.** Reverb tails break the length / bar prior: Freaky DnB music is at 36 % up to octave.
+   Measure the length without the tail.
+3. **Key-correction UI.** A one-click key override next to the BPM / range dialog. Audio-only key is
+   at its limit (~0.65 MIREX); a trained model would be a separate project.
 4. **16th phase** on some techno loops (GUT 01 / 04 / 22).
-
-**Working rules** (also in agent memory):
-- measure before changing; same test before and after;
-- calibration and validation are separate (leave-one-pack-out);
-- improve, do not rework;
-- report to the maintainer in Russian with numbers, including short progress notes;
-- commit after the maintainer approves; push when asked;
-- FL Studio must be closed before `build_vst.bat`.
+5. **Low priority** (maintainer): a bass note read as a kick (Pattern 2_536.wav); K/S/H beyond rules
+   needs a trained model.
+6. **Genre items still deferred:**
+   - Russian Underground beat-3 motifs (need stems);
+   - Trap kick-808 coupling (keep for now);
+   - DnB hats under the snare.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-07, end of session)
 
