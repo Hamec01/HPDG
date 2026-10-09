@@ -25,3 +25,4 @@ user_hamlo_pack	tonal	user	no	E:/FL/Image-Line/FL Studio/Audio/Rendered/HamloPro
 user_piano	tonal	user	no	E:/FL/Image-Line/FL Studio/Audio/Rendered	^Piano 85 Em\.wav$	([0-9]{2,3})
 user_song_stems	tonal	user	no	E:/FL/Image-Line/FL Studio/Audio/Rendered/потому что тебя не люблю	\.wav$	([0-9]{2,3})Am
 user_renders	renders	user	no	docs/audit/reference/user_renders_120.txt	\.wav$	acid
+user_tracks	tracks	user	no	docs/audit/reference/user_tracks.txt	\.wav$	acid

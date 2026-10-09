@@ -1,0 +1,106 @@
+# The maintainer's FL renders >= 45 s (whole tracks / beats), tempo from the WAV acid chunk.
+E:/FL/Image-Line/FL Studio/Audio/Rendered/1_Pattern 1_868_(Other) (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/88_2023-03-17 20-46-05_Insert 23 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/88_2023-03-17 20-48-02_Insert 23 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/88_2023-03-17 20-56-49_Insert 23 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/88_2023-03-17 21-22-43_Insert 23 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/88_2023-03-17 21-23-31_Insert 23 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/88_2023-03-17 21-25-27_Insert 23 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Acapella топтать мою любовь.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/HamloProd sample pack 2/dont be me 110 Fmin.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Main (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 10_10.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 10_8.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_127.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_188.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_196.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_197.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_232.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_239.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_240.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_241.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_261.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_286.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_287.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_288.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_294.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_295.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_296.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_305.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_317.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_320.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_342.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_343.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_345.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_346.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_347.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_413.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_433.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_479.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_485.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_486.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_490.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_492.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_493.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_515.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_525.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_531.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 1_541.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 2_229.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 2_232.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 2_234.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 2_359.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 2_367.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 2_470.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 2_74.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_158.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_159.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_160.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_161.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_162.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_163.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_190.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_274.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_286.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_287.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_309.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_80.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 3_81.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 4_158.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 4_58.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 4_89.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 5_110.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 5_33.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 5_34.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 6_25.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 6_28.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 6_30.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 7_15.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 7_16.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Pattern 8_19.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/Track 5 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/acapella Gorod brat.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_2.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_3.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_4.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_5.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_6.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_7.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_8.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/rhh_drum_loop_flex_percussion_90 #3 (consolidated)_9.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled - Track 10 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled - Track 2 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled - Track 4 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled - Track 6 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled - Track 8 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-04-03 19-30-15_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-04-03 19-40-16_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-05-10 21-53-43_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-05-10 21-54-57_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-05-10 21-55-55_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-05-10 21-55-55_Insert 22 (consolidated)_2.wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-05-10 22-04-37_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-05-10 22-05-13_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/untitled_2023-05-10 22-06-24_Insert 22 (consolidated).wav
+E:/FL/Image-Line/FL Studio/Audio/Rendered/где ты была_2023-03-12 19-06-32_Insert 24 (consolidated).wav

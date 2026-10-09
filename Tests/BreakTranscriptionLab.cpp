@@ -35,7 +35,7 @@ bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRa
     if (reader == nullptr || reader->lengthInSamples <= 0)
         return false;
 
-    const int length = static_cast<int>(std::min<juce::int64>(reader->lengthInSamples, static_cast<juce::int64>(reader->sampleRate * 120.0)));
+    const int length = static_cast<int>(std::min<juce::int64>(reader->lengthInSamples, static_cast<juce::int64>(reader->sampleRate * 64.0))); // as SampleAnalyzer (kMaxAnalysisSeconds)
     const int channels = static_cast<int>(reader->numChannels);
     juce::AudioBuffer<float> buffer(channels, length);
     reader->read(&buffer, 0, length, 0, true, true);

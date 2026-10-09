@@ -463,6 +463,22 @@ Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
 log-band frames at the bar and 2-bar lags of each candidate gave renders 85.7 -> 86.6 % and tonal
 82.2 -> 82.7 % up to octave in simulation. Too small for its cost (a lag scan per file).
 
+**Whole songs (maintainer's question, 2026-10-09).** The plugin analyses at most the first 64 s of
+a file (`SampleAnalyzer` kMaxAnalysisSeconds); the lab now reads the same 64 s.
+- `user_tracks` (`docs/audit/reference/user_tracks.txt`): 105 of the maintainer's FL renders of 45 s
+  or longer, with the acid tempo. Up to octave: 35 %.
+- The corpus turned out to be mostly consolidated parts, not mixed songs:
+  - 36 vocal "Insert 23" takes and acapellas, 8 % right: sibilants read as hats;
+  - 35 parts without drums: 34 %;
+  - 16 s excerpts of the same files are no better (8-12 %).
+- A whole-song mode was tried and reverted: tempo on the busiest 16 s window, no length evidence,
+  then a regression over the whole file. It gave no gain (35 -> 34 %) and left the loops identical.
+- Only one real master exists in the maintainer's renders ("Потому-что тебя не люблю 79Am_Master":
+  158 BPM, right up to octave).
+- Next: a corpus of real mixed songs with known tempo / key is needed (the maintainer's finished
+  beats or masters). Ideas then: choose the analysed 64 s inside the song (the middle, with drums)
+  rather than the start; and a vocal detector, so a vocal-only file is not read as drums.
+
 **Serato Sample comparison** (maintainer's question). Serato's detectors are trained on a very large
 DJ library; its UI also offers x2 / ÷2 for the octave ambiguity, and short melodic loops without
 drums are a known weak case there too. A fair comparison needs the same files: load 10-20 renders
