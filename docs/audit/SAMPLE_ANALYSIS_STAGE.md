@@ -407,6 +407,54 @@ the length without it.
 
 Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
 
+## Step 8 — weak onsets: the loop length decides
+
+**Cause.** 26 of the maintainer's FL renders were still wrong after step 7 (up to octave).
+- 18 of them were exactly 4 or 8 bars at the acid tempo, and the truth was among the candidates.
+  The winner was a x3/2 reading (85 -> 127.5, 77 -> 115.5) with 6 or 12 bars. Swing (64-68 %)
+  makes a triplet grid fit the faster tempo.
+- On these melodic renders no candidate fits the onset grid well (grid 0.04-0.28), so the onsets
+  cannot decide.
+- 8 are not a whole number of bars at the acid tempo (6.46, 5.85, 4.80 bars) or the truth is not
+  a candidate. The audio in those renders is probably not at the project tempo (an unsynced sample
+  inside the pattern) or has a tail. This is a reference limit, not an analyzer error.
+
+**Change.** With weak onsets (`weakOnsets` = 1 - best grid fit / 0.5, clamped to 0..1), a
+whole-bar candidate gets a further 0.4 x weakOnsets x the bar-count prior. A 3 / 6 / 12-bar reading
+gets -0.4 x weakOnsets instead. Drum loops have a strong grid, so weakOnsets is 0 and they are
+unaffected.
+
+**Simulation.** Among the gating options (by high-band noise, by grid, either) and weights, this was
+the best choice with no corpus worse.
+
+**Result** (audio only, up to octave / exact):
+
+| | before | after |
+|---|---|---|
+| maintainer's FL renders (118) | 79 % / 57 % | **86 % / 63 %** |
+| tonal loops (13 packs) | 78 % / 56 % | **80 %** / 56 % |
+| drum loops | 100 % / 96 % | 100 % / 96 % |
+| classic breaks | 99 % / 96 % | 99 % / 96 % |
+
+Tests: CoreTests 77/77, SampleTrimTests and LaneBoundaryTests pass.
+
+**Key experiments after step 5** (no change made; both are negative results):
+- Confidence: the margin of the best key over the second hardly predicts correctness (46-70 %
+  exact in every margin bin), so the audio-only key errors are confident ones. Calibration alone
+  cannot fix them.
+- Learned rotation-invariant profiles (softmax over 24 keys on chroma, bass share and opening
+  note), leave-one-pack-out: per-pack MIREX 0.64 vs 0.66 for the current rule.
+- Key from transcribed notes (`SampleLineTranscriber` without key bias; the lab now prints the
+  bass / melody pitch-class durations and the first / last bass note): leave-one-pack-out 0.65 vs
+  0.66. In-sample exact rose 55 -> 59 %, which did not carry to held-out packs.
+- Conclusion: audio-only key on short loops sits around MIREX 0.65 with these features. With the
+  file's own key label it is 95 %.
+
+**Serato Sample comparison** (maintainer's question). Serato's detectors are trained on a very large
+DJ library; its UI also offers x2 / ÷2 for the octave ambiguity, and short melodic loops without
+drums are a known weak case there too. A fair comparison needs the same files: load 10-20 renders
+from `docs/audit/reference/user_renders_120.txt` into Serato Sample and note its tempo / key.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on

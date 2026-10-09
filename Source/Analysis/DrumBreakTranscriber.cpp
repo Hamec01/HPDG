@@ -646,6 +646,7 @@ float phaseBackbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, doub
 // the maintainer's renders 4: 63, 8: 19). A whole-bar reading with a usual bar count is preferred,
 // which settles the x2 / x3/2 / x3/4 readings of melodic loops that the onsets cannot.
 constexpr float kBarCountWeight = 0.3f;
+constexpr float kWeakOnsetBarWeight = 0.4f;
 
 float barCountPrior(int bars)
 {
@@ -1383,6 +1384,26 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
             evaluated.emplace_back(candidate, origin);
         else if (candidate.score > existing->first.score)
             *existing = { candidate, origin };
+    }
+
+    // Weak onsets (melodic / pad loops: no candidate fits the grid well) leave the decision to
+    // the loop length. There the bar-count prior counts more, and 3 / 6 / 12-bar readings (the
+    // x3/2 / x3/4 errors swing makes plausible) are penalised (step 8: maintainer's FL renders
+    // 78 -> 87 % up to octave, no corpus worse).
+    if (options.forcedBpm <= 20.0 && !evaluated.empty())
+    {
+        float bestGrid = 0.0f;
+        for (const auto& entry : evaluated)
+            bestGrid = std::max(bestGrid, entry.first.gridFit);
+        const float weakOnsets = 1.0f - juce::jlimit(0.0f, 1.0f, bestGrid / 0.5f);
+        for (auto& entry : evaluated)
+        {
+            auto& candidate = entry.first;
+            if (candidate.lengthFit < 0.5f || weakOnsets <= 0.0f)
+                continue;
+            const bool tripleReading = candidate.bars == 3 || candidate.bars == 6 || candidate.bars == 12;
+            candidate.score += kWeakOnsetBarWeight * weakOnsets * (tripleReading ? -1.0f : barCountPrior(candidate.bars));
+        }
     }
 
     std::sort(evaluated.begin(), evaluated.end(), [](const auto& left, const auto& right)

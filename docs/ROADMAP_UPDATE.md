@@ -146,7 +146,9 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
   (Boom Bap 160 -> 80, Trap / Drill 80 -> 160; maintainer's point: an octave reading does not matter).
   Up to octave: drums 100 %, tonal 66 -> 78 %, maintainer's renders 60 -> 79 %; exact tonal 48 -> 56 %.
   Freaky DnB music worse (reverb tails).
-- Next: loop tails, then key confidence, bass sample root, 16th phase.
+- Step 8: weak onsets (melodic loops) -> stronger bar-count prior, 3 / 6 / 12-bar readings penalised.
+  Maintainer's renders 79 -> 86 % up to octave (exact 57 -> 63 %), tonal 78 -> 80 %, drums unchanged.
+- Next: key from transcribed notes (in progress), loop tails, bass sample root, 16th phase.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-08, Sample Analysis)
 

@@ -195,6 +195,23 @@ int runAnalyze(const juce::StringArray& args)
             for (const float value : bassShare)
                 std::cout << " " << juce::String(value, 4);
             std::cout << " | opening " << openingPc << "\n";
+            // Note-level evidence for key experiments: the bass line and melody transcribed with
+            // no key bias, duration x strength per pitch class, and the bass line's first / last
+            // pitch class.
+            const auto lines = SampleLineTranscriber().transcribe(mono, sampleRate, 0, 0, false);
+            std::array<double, 12> bassDur {}, melodyDur {};
+            for (const auto& note : lines.bass)
+                bassDur[static_cast<size_t>(((note.midiNote % 12) + 12) % 12)] += note.durationSeconds() * (0.3 + note.strength);
+            for (const auto& note : lines.melody)
+                melodyDur[static_cast<size_t>(((note.midiNote % 12) + 12) % 12)] += note.durationSeconds() * (0.3 + note.strength);
+            std::cout << "    key notes | bass";
+            for (const double value : bassDur)
+                std::cout << " " << juce::String(value, 3);
+            std::cout << " | melody";
+            for (const double value : melodyDur)
+                std::cout << " " << juce::String(value, 3);
+            std::cout << " | bass first " << (lines.bass.empty() ? -1 : ((lines.bass.front().midiNote % 12) + 12) % 12)
+                      << " last " << (lines.bass.empty() ? -1 : ((lines.bass.back().midiNote % 12) + 12) % 12) << "\n";
         }
         if (printHits)
         {
