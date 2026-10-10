@@ -9,7 +9,7 @@
 
 # 0. PROGRESS LOG (keep updated — read this first when resuming)
 
-Status as of 2026-10-07 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: `CLAUDE.md`.
+Status as of 2026-10-10 (branch `main`). Rules: `docs/RULES.md`. Agent pointer: `CLAUDE.md`.
 
 ## Done
 
@@ -160,6 +160,41 @@ advances the seed by 1 on every Generate, so variety comes from the seed.
 - Step 11: Guide leaves out drum hits with confidence < 0.3 (right only 23-52 % of the time);
   precision kick 0.93 -> 0.95, snare 0.90 -> 0.95, hat 0.84 -> 0.88. Copy Break unchanged.
 - Next: whole songs (need a corpus), loop tails, bass notes read as kicks (low priority per maintainer).
+
+## Sample Analysis steps 12-15 + Techno step 3 (2026-10-10, second PC)
+
+Details: `docs/audit/SAMPLE_ANALYSIS_STAGE.md` (steps 12-15), `docs/audit/TECHNO_STAGE.md` (step 3).
+- Bench on this PC: corpora under `D:/Drums`, mapped by the untracked
+  `docs/audit/reference/corpus_roots.local.tsv`; `tempo_bench.py --jobs N --lab-args`.
+- Step 12, loop tails: a decaying tail (>= 1 s, >= 8 % of the file) makes the length terms read the
+  loop body (end within 0.4 s of a bar line), unless the whole file is a usual bar count. Freaky DnB
+  music 38 -> 69 % up to octave, all tonal 80.7 -> 82.8 %, drums / breaks identical.
+- Step 13, 16th phase: beat 1 also weighs kicks on quarter notes (drum loops only: high-band noise x
+  K/S/H template fit). Techno a 16th off: auto 9 -> 3, typed 7 -> 1; drums origin <= 20 ms 92 -> 94 %
+  (typed 93 -> 95 %); tempo unchanged everywhere.
+- Step 14, whole songs (new corpus `user_songs`: 616 mp3 songs with ID3 TBPM): the 64 s cut has no
+  length evidence (it was read as an exact loop: x3/2 errors), and a second window from 30 % of the
+  song decides the tempo when more confident. Up to octave 55 -> 80 %, exact 42 -> 58 %; confidence
+  >= 0.8 stays 95 % right. Songs cost one more 64 s transcription (two when the windows disagree).
+- Step 15, key correction: "Key" list in the Sample BPM / key dialog (Auto + 24 keys), saved with
+  the sample; test in LaneBoundaryTests.
+- Techno step 3 (measured, no change): fast techno tops (Weska / Overdrive) are sparser than HPDG's
+  16th carriers, Dasha Rush full loops as dense; lab column `topBars` (hats + open hat + ride + perc).
+- Tests: CoreTests 77/77, LaneBoundaryTests, SampleTrimTests pass.
+
+## Roadmap stages 8-11 (2026-10-10) — `docs/audit/SAMPLE_ANALYSIS_STAGE.md` steps 16-19
+
+- Stage 8 (step 16): key confidence capped at 0.45 when a fifth neighbour fits the chroma better
+  (38 % exact vs 64 %). Keys, generation key and bass lines unchanged; confidence >= 0.6 now 69 %
+  exact (was 59 %).
+- Stage 9 (step 17): Copy Break measured on 35 stem loops — hits placed 0.3-0.8 ms (median) from the
+  attack, p90 4.3 ms; K/S/H F 0.88 / 0.88 / 0.83; hat velocity does not follow the level (open).
+  `kshh_bench.py` truth now sits on the attack (it was 8-23 ms early) and reports timing / velocity.
+- Stage 10 (step 18): bass lines on 20 stem sets of the maintainer's tracks: pitch class 0.94,
+  windows 0.95; low precision is the separated-stem reference. No change.
+- Stage 11 (step 19): the Guide extract path gets tempo right up to octave in 345 / 346 drum loops —
+  no confidence weighting needed. Engines reading GenerationHints = design decision (maintainer).
+- Stage 12 (human audit, A/B): the maintainer's.
 
 ## NOTE FOR THE NEXT AGENT (2026-10-09, Sample Analysis) — START HERE
 

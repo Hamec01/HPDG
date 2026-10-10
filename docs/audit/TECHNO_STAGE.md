@@ -94,6 +94,39 @@ Cost: the position averages move away from the pack for Dub / Detroit / Acid (th
 already above it through the 16th / "a" carriers), and the validation split is small (19 loops,
 18 distinct bars). Accepted on the duplicate and bar-shape evidence; listening decides.
 
+## Step 3 — faster techno tops measured (2026-10-10, no change)
+
+**Why.** Step 2 left the 16th carriers (Hypnotic / Hard, also Peak Time) unchecked: the GUT pack is
+118-127 BPM deep / minimal. The second PC has faster packs.
+
+**References** (`tools/loop_bars.py`, typed tempo, 16th steps from the file start):
+- `docs/audit/reference/techno_fast_tops.tsv`: PML x Weska Peak Time Tops (30 loops, 128) and PML
+  Overdrive Top Loops (10, 135-138), HiHat lane — 142 bars;
+- `techno_fast_hats.tsv`: PML Overdrive Hat / Ride Loops (132-140) and Audentity Dark Techno 2
+  Hi-Hat loops (125);
+- `techno_dasha_full.tsv`: Dasha Rush "Techno Toys" full drum loops (7 loops, 131-140, TR-626).
+
+**Lab.** New column `topBars`: HiHat, OpenHat, Ride, HatFX and Perc — what a top loop holds.
+`hatAllBars` leaves out the open hat, so against a top loop it showed the offbeat at 0.03 (a false
+"missing offbeat").
+
+**Finding** (1000 seeds, defaults, 4 bars):
+
+| | per bar | offbeat 2/6/10/14 | "a" 3/7/11/15 | on-beat 0/4/8/12 |
+|---|---|---|---|---|
+| Weska + Overdrive tops (142 bars) | 8.3-8.6 | 0.88-1.00 | 0.20-0.38 | 0.30-0.60 |
+| Dasha Rush full loops (27 bars, drumBars) | 9.3-13.5 | 0.50-1.00 | 0.00-0.96 | 0.96-1.00 |
+| HPDG Peak Time topBars | 12.8 | 1.00 | 0.81-0.86 | 0.79 |
+| HPDG Hypnotic / Hard topBars | 12.5 / 13.7 | 1.00 | 0.93-0.97 | 0.45 / 0.76 |
+| HPDG Minimal / Dub topBars | 9.8 / 11.2 | 1.00 | 0.34-0.43 / 0.65-0.71 | 0.80 / 0.75 |
+
+**Decision: no change.** The two references disagree: the commercial peak-time tops are sparser than
+HPDG (8.3 vs 12.5-13.7 hits a bar, the "a" 16th 0.2-0.4 vs 0.8-0.97), while Dasha Rush's raw
+hypnotic loops are as dense as HPDG's Peak Time / Hypnotic (drumBars L1 1.1-1.4). The packs also keep
+percussion in separate loops, which `topBars` counts. Thinning the 16th carriers would be tuning on
+one pack against another (RULES 18 / 47); it needs written sources on hypnotic / hard techno hats and
+a listening check first.
+
 ## Open (next steps)
 
 1. (step 2: hat accents.) Further widening: 16th carriers (Hypnotic / Hard) - a second, faster techno reference is needed.
