@@ -58,23 +58,14 @@ SampleAnalysisResult SampleAnalyzer::analyzeAudioFile(const juce::File& file,
     return analyzeAudioFileExtended(file, request, hostBpm, errorMessage).summary;
 }
 
-SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuffer<float>& input,
-                                                           double sampleRate,
-                                                           const SampleAnalysisRequest& request,
-                                                           double hostBpm) const
+DrumBreakOptions SampleAnalyzer::breakOptionsFor(const SampleAnalysisRequest& request, double hostBpm)
 {
-    SampleAnalysisBundle bundle;
-
-    std::vector<float> mono;
-    featureExtractor.downmixToMono(input, mono, request.downmixToMono);
-
-    // Tempo (and, for drum breaks, the K/S/H events) come from the onset-level transcriber,
-    // which works in seconds first, so the step grid below is built on a measured tempo.
     DrumBreakOptions breakOptions;
     breakOptions.hostBpm = hostBpm;
     breakOptions.quantizeAmount = request.breakQuantizeAmount;
-    breakOptions.forcedBpm = request.manualBpm > 20.0 ? request.manualBpm : 0.0;
+    breakOptions.forcedBpm = request.manualBpm > 20.0 ? request.manualBpm : (request.songWindowBpm > 20.0 ? request.songWindowBpm : 0.0);
     breakOptions.labelBpm = request.labelBpm;
+    breakOptions.audioCut = request.audioCut;
     if (request.hasTempoRange())
     {
         breakOptions.minBpm = request.tempoRangeMin;
@@ -88,7 +79,27 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
                 breakOptions.labelBpm *= 0.5;
         }
     }
-    bundle.breakAnalysis = breakTranscriber.analyze(mono, sampleRate, breakOptions);
+    return breakOptions;
+}
+
+SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuffer<float>& input,
+                                                           double sampleRate,
+                                                           const SampleAnalysisRequest& request,
+                                                           double hostBpm) const
+{
+    SampleAnalysisBundle bundle;
+
+    std::vector<float> mono;
+    featureExtractor.downmixToMono(input, mono, request.downmixToMono);
+
+    // Tempo (and, for drum breaks, the K/S/H events) come from the onset-level transcriber,
+    // which works in seconds first, so the step grid below is built on a measured tempo.
+    bundle.breakAnalysis = breakTranscriber.analyze(mono, sampleRate, breakOptionsFor(request, hostBpm));
+    // The tempo came from the song's more confident window: its confidence, not the one of a
+    // re-analysis at a given tempo (that one is high by construction; step 14: with it, songs at
+    // confidence >= 0.8 were right 78 % of the time instead of 95 %).
+    if (request.songWindowBpm > 20.0)
+        bundle.breakAnalysis.tempoConfidence = request.songWindowConfidence;
 
     // Key + bass line, on the original timeline. Segments are one beat of the tempo the
     // generator will use to place them: the sample's own when measured confidently, otherwise
@@ -131,6 +142,13 @@ SampleAnalysisBundle SampleAnalyzer::analyzeBufferExtended(const juce::AudioBuff
     const double tuningCents = SampleLineTranscriber::estimateTuningCents(mono, sampleRate);
     bundle.harmony = harmonyAnalyzer.analyze(mono, sampleRate, 60.0 / bundle.harmonyBpm, bundle.harmonyOriginSeconds, tuningCents,
                                              request.labelKeyRoot, request.labelKeyMode);
+    if (bundle.harmony.valid && request.hasManualKey())
+    {
+        // the user's key wins: the lines below are then read in that key
+        bundle.harmony.keyRoot = request.manualKeyRoot;
+        bundle.harmony.scaleMode = request.manualKeyMode;
+        bundle.harmony.keyConfidence = 1.0f;
+    }
     if (bundle.harmony.valid)
     {
         bundle.harmony.lines = SampleLineTranscriber().transcribe(mono, sampleRate, bundle.harmony.keyRoot, bundle.harmony.scaleMode,
@@ -300,7 +318,30 @@ SampleAnalysisBundle SampleAnalyzer::analyzeAudioFileExtended(const juce::File& 
     labelledRequest.labelBpm = labels.bpm;
     labelledRequest.labelKeyRoot = labels.keyRoot;
     labelledRequest.labelKeyMode = labels.keyMode;
+    labelledRequest.audioCut = samplesToRead < endSample - startSample;
     auto bundle = analyzeBufferExtended(buffer, reader->sampleRate, labelledRequest, hostBpm);
+
+    // A whole song: the start is often an intro, so the tempo is also read on a second window
+    // further in; the more confident reading wins and the analysed window (the one that plays)
+    // is analysed again at that tempo. Not for a selection, a typed tempo or a stated tempo.
+    if (labelledRequest.audioCut && !request.hasTrim() && request.manualBpm <= 20.0 && labelledRequest.labelBpm <= 20.0)
+    {
+        const int64_t secondStart = juce::jlimit<int64_t>(0, lengthSamples - samplesToRead,
+                                                          static_cast<int64_t>(lengthSamples * DrumBreakTranscriber::kSongSecondWindowStart));
+        juce::AudioBuffer<float> second(channels, samplesToRead);
+        if (secondStart > 0 && reader->read(&second, 0, samplesToRead, secondStart, true, channels > 1))
+        {
+            std::vector<float> secondMono;
+            featureExtractor.downmixToMono(second, secondMono, request.downmixToMono);
+            const auto secondTempo = breakTranscriber.analyze(secondMono, reader->sampleRate, breakOptionsFor(labelledRequest, hostBpm));
+            if (DrumBreakTranscriber::preferSecondWindowTempo(bundle.breakAnalysis, secondTempo))
+            {
+                labelledRequest.songWindowBpm = secondTempo.bpm;
+                labelledRequest.songWindowConfidence = secondTempo.tempoConfidence;
+                bundle = analyzeBufferExtended(buffer, reader->sampleRate, labelledRequest, hostBpm);
+            }
+        }
+    }
     bundle.labels = labels;
 
     if (errorMessage != nullptr && !bundle.summary.valid)

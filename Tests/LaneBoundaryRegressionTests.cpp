@@ -1169,6 +1169,25 @@ void runGuideBassFollowsSample(GenreType genre)
     }
     expect(checked > 0, "no 808 notes inside bars to check");
     std::cout << "    " << harmony.describe() << " | 808 notes checked " << checked << std::endl;
+
+    // A key the user picks in the Sample BPM / key dialog replaces the detected one, and the
+    // generated key follows it; "Auto key" detects again.
+    auto request = processor.getSampleAnalysisRequest();
+    request.manualKeyRoot = 2; // D minor
+    request.manualKeyMode = 0;
+    processor.setSampleAnalysisRequest(request);
+    expect(processor.analyzeAudioFile(file, &error), "analysis with a picked key failed: " + error);
+    const auto picked = processor.getSampleHarmony();
+    expect(picked.valid && picked.keyRoot == 2 && picked.scaleMode == 0 && picked.keyConfidence >= 0.99f,
+           "picked key D minor not used, got " + picked.keyName());
+    processor.generatePattern();
+    const auto pickedProject = processor.getProjectSnapshot();
+    expect(pickedProject.params.keyRoot == 2 && pickedProject.params.scaleMode == 0, "generation did not follow the picked key");
+    request.manualKeyRoot = -1;
+    request.manualKeyMode = -1;
+    processor.setSampleAnalysisRequest(request);
+    expect(processor.analyzeAudioFile(file, &error), "analysis after Auto key failed: " + error);
+    expect(processor.getSampleHarmony().keyRoot == 9, "Auto key did not detect A minor again");
     file.deleteFile();
 }
 

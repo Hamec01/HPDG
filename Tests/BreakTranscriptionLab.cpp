@@ -28,7 +28,8 @@ using namespace bbg;
 
 namespace
 {
-bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRate, juce::StringPairArray* metadata = nullptr)
+bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRate, juce::StringPairArray* metadata = nullptr, bool* cut = nullptr,
+              double startFraction = 0.0)
 {
     juce::AudioFormatManager manager;
     manager.registerBasicFormats();
@@ -39,7 +40,10 @@ bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRa
     const int length = static_cast<int>(std::min<juce::int64>(reader->lengthInSamples, static_cast<juce::int64>(reader->sampleRate * 64.0))); // as SampleAnalyzer (kMaxAnalysisSeconds)
     const int channels = static_cast<int>(reader->numChannels);
     juce::AudioBuffer<float> buffer(channels, length);
-    reader->read(&buffer, 0, length, 0, true, true);
+    // a later window of a long file (whole songs: SampleAnalyzer's second tempo window)
+    const juce::int64 start = juce::jlimit<juce::int64>(0, reader->lengthInSamples - length,
+                                                        static_cast<juce::int64>(reader->lengthInSamples * startFraction));
+    reader->read(&buffer, 0, length, start, true, true);
 
     mono.assign(static_cast<size_t>(length), 0.0f);
     for (int channel = 0; channel < channels; ++channel)
@@ -48,6 +52,8 @@ bool loadMono(const juce::File& file, std::vector<float>& mono, double& sampleRa
     sampleRate = reader->sampleRate;
     if (metadata != nullptr)
         *metadata = reader->metadataValues;
+    if (cut != nullptr)
+        *cut = reader->lengthInSamples > length; // longer than the analysis window, as SampleAnalyzer
     return true;
 }
 
@@ -120,6 +126,8 @@ int runAnalyze(const juce::StringArray& args)
             forcedLabelBpm = args[++i].getDoubleValue(); // inject a label (benchmarks: wrong labels)
         else if (args[i] == "--label-key" && i + 1 < args.size())
             forcedLabelKey = args[++i];
+        else if (args[i] == "--cut")
+            options.audioCut = true; // the file is an excerpt of a longer one (benchmarks)
     }
 
     juce::Array<juce::File> files;
@@ -139,7 +147,8 @@ int runAnalyze(const juce::StringArray& args)
         std::vector<float> mono;
         double sampleRate = 0.0;
         juce::StringPairArray metadata;
-        if (!loadMono(file, mono, sampleRate, &metadata))
+        bool cut = false;
+        if (!loadMono(file, mono, sampleRate, &metadata, &cut))
         {
             std::cout << file.getFileName() << ": cannot read\n";
             continue;
@@ -162,10 +171,31 @@ int runAnalyze(const juce::StringArray& args)
         }
         auto fileOptions = options;
         fileOptions.labelBpm = labels.bpm;
+        fileOptions.audioCut = options.audioCut || cut;
         if (readLabels || forcedLabelBpm > 0.0 || forcedLabelKey.isNotEmpty())
             std::cout << "    " << labels.describe() << "\n";
 
-        const auto analysis = transcriber.analyze(mono, sampleRate, fileOptions);
+        auto analysis = transcriber.analyze(mono, sampleRate, fileOptions);
+        // A whole song, as SampleAnalyzer: the tempo of a second window further in wins when it is
+        // more confident, and the first window is analysed again at that tempo.
+        if (cut && fileOptions.forcedBpm <= 20.0 && fileOptions.labelBpm <= 20.0)
+        {
+            std::vector<float> secondMono;
+            double secondRate = 0.0;
+            if (loadMono(file, secondMono, secondRate, nullptr, nullptr, DrumBreakTranscriber::kSongSecondWindowStart))
+            {
+                const auto second = transcriber.analyze(secondMono, secondRate, fileOptions);
+                std::cout << "    second window: bpm " << juce::String(second.bpm, 2) << " conf " << juce::String(second.tempoConfidence, 2)
+                          << " | first: bpm " << juce::String(analysis.bpm, 2) << " conf " << juce::String(analysis.tempoConfidence, 2) << "\n";
+                if (DrumBreakTranscriber::preferSecondWindowTempo(analysis, second))
+                {
+                    auto forced = fileOptions;
+                    forced.forcedBpm = second.bpm;
+                    analysis = transcriber.analyze(mono, sampleRate, forced);
+                    analysis.tempoConfidence = second.tempoConfidence; // as SampleAnalyzer
+                }
+            }
+        }
         std::cout << file.getFileName().paddedRight(' ', 36)
                   << " bpm " << juce::String(analysis.bpm, 2).paddedLeft(' ', 7)
                   << " bars " << analysis.bars

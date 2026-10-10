@@ -67,11 +67,26 @@ struct SampleAnalysisRequest
     double tempoRangeMax = 0.0;
     bool hasTempoRange() const { return tempoRangeMin > 20.0 && tempoRangeMax > tempoRangeMin; }
 
+    // Key the user picked for this sample (root 0-11 = C..B, mode 0 minor / 1 major; -1 =
+    // detect). Audio-only key sits near its limit on short loops (~0.65 MIREX), so a one-click
+    // correction replaces the detected key as it is (no check against the audio).
+    int manualKeyRoot = -1;
+    int manualKeyMode = -1;
+    bool hasManualKey() const { return manualKeyRoot >= 0 && manualKeyRoot < 12 && (manualKeyMode == 0 || manualKeyMode == 1); }
+
     // What the sample states about itself (SampleLabelReader: WAV acid chunk / file name), filled
     // by SampleAnalyzer::analyzeAudioFileExtended. Hints checked against the audio.
     double labelBpm = 0.0;
     int labelKeyRoot = -1;
     int labelKeyMode = -1;
+
+    // Set by SampleAnalyzer::analyzeAudioFileExtended when the file (or the trimmed fragment) is
+    // longer than the analysis window and was cut: the analysed length is then no loop length.
+    bool audioCut = false;
+    // Set by SampleAnalyzer for a whole song when a second window read the tempo more
+    // confidently (DrumBreakTranscriber::preferSecondWindowTempo): the analysed window takes it.
+    double songWindowBpm = 0.0;
+    float songWindowConfidence = 0.0f;
 
     bool hasTrim() const { return trimEndSeconds > trimStartSeconds; }
 };

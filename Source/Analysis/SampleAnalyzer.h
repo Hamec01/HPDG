@@ -57,6 +57,7 @@ private:
                                              const DrumBreakAnalysis& breakAnalysis) const;
 
     static void applyBreakTranscription(SampleAnalysisBundle& bundle);
+    static DrumBreakOptions breakOptionsFor(const SampleAnalysisRequest& request, double hostBpm);
 
     FeatureExtractor featureExtractor;
     DrumBreakTranscriber breakTranscriber;

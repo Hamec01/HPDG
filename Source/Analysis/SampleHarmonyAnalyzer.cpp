@@ -331,6 +331,19 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
     }
 
     harmony.keyConfidence = juce::jlimit(0.0f, 1.0f, (bestScore - 0.35f) / 0.45f) * juce::jlimit(0.3f, 1.0f, (bestScore - secondScore) / 0.08f);
+    // A key a fifth away (same mode) that fits the notes heard better than the chosen one: the
+    // choice came from the bass / opening bonuses, and it is right far less often (step 16: 38 %
+    // exact vs 64 %, lower in each of the 9 tonal packs, yet 86 % of these said >= 0.6). The cap
+    // stays above the 0.4 the key is applied / the lines are read in key with: a 38 % key is still
+    // better than none (a fifth away shares six notes), so only the shown confidence changes.
+    {
+        const auto& profile = harmony.scaleMode == 1 ? kMajorProfileAS : kMinorProfileAS;
+        const float chosen = correlation(chroma, profile, harmony.keyRoot);
+        const float neighbour = std::max(correlation(chroma, profile, (harmony.keyRoot + 7) % 12),
+                                         correlation(chroma, profile, (harmony.keyRoot + 5) % 12));
+        if (neighbour > chosen)
+            harmony.keyConfidence = std::min(harmony.keyConfidence, 0.45f);
+    }
     // The key the file name states (step 6). Fifth / relative / parallel keys share most notes
     // and are exactly where the audio is least sure, so the label wins there; a label whose scale
     // clashes with what is heard (wrong label, "Kit A" read as a key) is rejected.

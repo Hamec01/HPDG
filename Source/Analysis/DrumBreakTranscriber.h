@@ -48,6 +48,11 @@ struct BreakTempoCandidate
     float host = 0.0f;
     float label = 0.0f;       // 1: the tempo the sample's name / acid chunk states
     float score = 0.0f;
+    // Length evidence for the score's length / bar-count terms: the whole file, or the loop body
+    // when a decaying tail follows it (step 12). lengthFit / bars themselves stay the whole file.
+    float priorFit = 0.0f;
+    int bodyBars = 0;         // > 0: bars of the body before a tail
+    int priorBars() const { return bodyBars > 0 ? bodyBars : bars; }
 };
 
 struct DrumBreakOptions
@@ -58,6 +63,7 @@ struct DrumBreakOptions
     double minBpm = 55.0;
     double maxBpm = 200.0;
     double preferredBpm = 92.0;  // centre of the mild tempo prior
+    bool audioCut = false;       // the audio is the first part of a longer file (a song): its length says nothing about bars
     float quantizeAmount = 0.0f; // 0 = keep original groove, 1 = hard quantize
 };
 
@@ -67,6 +73,7 @@ struct DrumBreakAnalysis
 
     double sampleRate = 44100.0;
     double durationSeconds = 0.0;
+    double tailSeconds = 0.0;    // decaying tail after the loop body (reverb / release), 0 = none
 
     double bpm = 0.0;            // the loop's tempo (what the pattern is written at)
     // Tempo the hits' musical slots are read on, when the playing drifts from the stated tempo
@@ -105,5 +112,12 @@ public:
     // Re-derives ticks (and quantization) for an existing analysis at a different tempo or
     // quantize amount without re-running the audio stages.
     static void assignTicks(DrumBreakAnalysis& analysis, float quantizeAmount);
+
+    // Whole songs (a file longer than the analysis window): the tempo is also read on a second
+    // window starting this far into the file, and the reading with the higher tempo confidence
+    // wins (step 14: 611 songs, start alone 71.5 %, middle alone 70.8 %, the more confident of the
+    // two 80.3 % up to octave). True when the second window's tempo should replace the first's.
+    static constexpr double kSongSecondWindowStart = 0.3;
+    static bool preferSecondWindowTempo(const DrumBreakAnalysis& first, const DrumBreakAnalysis& second);
 };
 } // namespace bbg

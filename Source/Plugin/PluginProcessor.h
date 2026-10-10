@@ -265,6 +265,8 @@ public:
         double manualBpm = 0.0;
         double tempoRangeMin = 0.0;  // user-picked tempo range (0 = automatic)
         double tempoRangeMax = 0.0;
+        int manualKeyRoot = -1;      // user-picked key (-1 = detected)
+        int manualKeyMode = -1;
         float breakQuantizeAmount = 0.0f;
         AnalysisMode mode = AnalysisMode::GenerateFromSample;
         bool playWithPattern = false;

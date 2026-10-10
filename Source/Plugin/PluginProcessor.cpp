@@ -571,6 +571,8 @@ private:
         request.trimStartSeconds = 0.0;
         request.trimEndSeconds = 0.0;
         request.manualBpm = 0.0;
+        request.manualKeyRoot = -1;
+        request.manualKeyMode = -1;
         audioProcessor.setSampleAnalysisRequest(request);
         sampleStripError.clear();
 
@@ -856,8 +858,9 @@ private:
             return;
 
         const auto analysis = audioProcessor.getDrumBreakAnalysis();
-        auto* window = new juce::AlertWindow("Sample BPM",
-                                             "Type the tempo of the sample, or press Auto to detect it again (inside the range, when one is picked).",
+        auto* window = new juce::AlertWindow("Sample BPM / key",
+                                             "Type the tempo of the sample, or press Auto to detect it again (inside the range, when one is picked). "
+                                             "Pick the key when the detected one is wrong.",
                                              juce::MessageBoxIconType::NoIcon, this);
         window->setLookAndFeel(&sketchLookAndFeel);
         window->setColour(juce::AlertWindow::backgroundColourId, sketch::Theme::paperLight());
@@ -887,6 +890,22 @@ private:
             combo->setSelectedItemIndex(selected, juce::dontSendNotification);
             combo->setTooltip("Detect the tempo inside this range only (Auto: any tempo).");
         }
+        // Key: Auto = detected; otherwise the picked key replaces the detected one (item 0 = Auto,
+        // then C minor, C major, C# minor, ... B major).
+        static const char* const keyNames[12] { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+        juce::StringArray keyItems { "Auto key" };
+        for (int root = 0; root < 12; ++root)
+        {
+            keyItems.add(juce::String(keyNames[root]) + " minor");
+            keyItems.add(juce::String(keyNames[root]) + " major");
+        }
+        window->addComboBox("key", keyItems, "Key:");
+        if (auto* combo = window->getComboBoxComponent("key"))
+        {
+            combo->setSelectedItemIndex(request.hasManualKey() ? 1 + 2 * request.manualKeyRoot + request.manualKeyMode : 0,
+                                        juce::dontSendNotification);
+            combo->setTooltip("The key of the sample (Auto: detected). A picked key replaces the detected one.");
+        }
         window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
         window->addButton("Auto", 2);
         window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -912,6 +931,12 @@ private:
                 updated.tempoRangeMin = ranges[static_cast<size_t>(index)].first;
                 updated.tempoRangeMax = ranges[static_cast<size_t>(index)].second;
                 // a range picked with "Auto" detects again inside it (a typed BPM still wins)
+            }
+            if (auto* combo = window->getComboBoxComponent("key"))
+            {
+                const int index = combo->getSelectedItemIndex();
+                updated.manualKeyRoot = index >= 1 ? (index - 1) / 2 : -1;
+                updated.manualKeyMode = index >= 1 ? (index - 1) % 2 : -1;
             }
             safeEditor->audioProcessor.setSampleAnalysisRequest(updated);
             safeEditor->runSampleAnalysis();
@@ -1039,6 +1064,8 @@ private:
             request.trimStartSeconds = 0.0;
             request.trimEndSeconds = 0.0;
             request.manualBpm = 0.0;
+            request.manualKeyRoot = -1;
+            request.manualKeyMode = -1;
             audioProcessor.setSampleAnalysisRequest(request);
             closeTrimEditor();
             audioProcessor.clearSampleAnalysis();
@@ -3210,6 +3237,8 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
             sample.setProperty("manual_bpm", request.manualBpm, nullptr);
             sample.setProperty("tempo_range_min", request.tempoRangeMin, nullptr);
             sample.setProperty("tempo_range_max", request.tempoRangeMax, nullptr);
+            sample.setProperty("manual_key_root", request.manualKeyRoot, nullptr);
+            sample.setProperty("manual_key_mode", request.manualKeyMode, nullptr);
             sample.setProperty("quantize", request.breakQuantizeAmount, nullptr);
             sample.setProperty("mode", static_cast<int>(analysisMode), nullptr);
             sample.setProperty("play_with_pattern", playSampleWithPattern.load(), nullptr);
@@ -3285,6 +3314,8 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
             reference.manualBpm = static_cast<double>(sample.getProperty("manual_bpm", 0.0));
             reference.tempoRangeMin = static_cast<double>(sample.getProperty("tempo_range_min", 0.0));
             reference.tempoRangeMax = static_cast<double>(sample.getProperty("tempo_range_max", 0.0));
+            reference.manualKeyRoot = static_cast<int>(sample.getProperty("manual_key_root", -1));
+            reference.manualKeyMode = static_cast<int>(sample.getProperty("manual_key_mode", -1));
             reference.breakQuantizeAmount = static_cast<float>(static_cast<double>(sample.getProperty("quantize", 0.0)));
             const int mode = static_cast<int>(sample.getProperty("mode", static_cast<int>(AnalysisMode::GenerateFromSample)));
             reference.mode = mode == static_cast<int>(AnalysisMode::ExtractFromSample) ? AnalysisMode::ExtractFromSample
@@ -3332,6 +3363,8 @@ bool BoomBapGeneratorAudioProcessor::restoreSampleSource(const SampleSourceRefer
         currentAnalysisRequest.manualBpm = replaced ? 0.0 : reference.manualBpm;
         currentAnalysisRequest.tempoRangeMin = replaced ? 0.0 : reference.tempoRangeMin;
         currentAnalysisRequest.tempoRangeMax = replaced ? 0.0 : reference.tempoRangeMax;
+        currentAnalysisRequest.manualKeyRoot = replaced ? -1 : reference.manualKeyRoot;
+        currentAnalysisRequest.manualKeyMode = replaced ? -1 : reference.manualKeyMode;
     }
 
     if (!loadSampleSource(file, errorMessage))

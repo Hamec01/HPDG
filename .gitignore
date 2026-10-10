@@ -43,3 +43,5 @@ Thumbs.db
 
 # Quality-lab per-pattern dumps are regenerable (large); summaries stay in git.
 docs/audit/**/*_patterns.csv
+
+docs/audit/reference/corpus_roots.local.tsv

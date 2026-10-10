@@ -29,13 +29,20 @@ HIT = re.compile(r'^(Kick|Snare|HiHat)\s+t=([0-9.]+)', re.M)
 LANES = ('Kick', 'Snare', 'HiHat')
 
 
+def local_path(path):
+    """Corpus roots of this PC (tempo_bench.py: docs/audit/reference/corpus_roots.local.tsv)."""
+    sys.path.insert(0, os.path.dirname(__file__))
+    import tempo_bench
+    return tempo_bench.local_path(path)
+
+
 def load_corpus(path):
     rows = []
     for line in open(path, encoding='utf-8'):
         if line.startswith('#') or not line.strip():
             continue
         cid, folder, full, k, s, h = line.rstrip('\n').split('\t')
-        rows.append(dict(id=cid, folder=folder, full=re.compile(full), suffix=full.replace('\\', '').rstrip('$'),
+        rows.append(dict(id=cid, folder=local_path(folder), full=re.compile(full), suffix=full.replace('\\', '').rstrip('$'),
                          stems={'Kick': k, 'Snare': s, 'HiHat': h}))
     return rows
 
@@ -92,7 +99,18 @@ def stem_onsets(path):
             continue
         onsets.append((t, float(db[i:i + 6].max())))
         last = t
-    return onsets
+    # The rise test fires up to ~25 ms before the attack (the next 30 ms against the previous 60 ms):
+    # each onset moves to its attack, the first sample above 20 % of the hit's peak within 60 ms
+    # (step 17: the stem truth had been 8 / 23 / 9 ms early for kick / snare / hat).
+    ax = np.abs(x)
+    refined = []
+    for t, level in onsets:
+        a = max(0, int((t - 0.005) * sr))
+        seg = ax[a:a + int(0.060 * sr)]
+        if len(seg) and seg.max() > 0:
+            t = (a + int(np.argmax(seg > 0.2 * seg.max()))) / sr
+        refined.append((t, level))
+    return refined
 
 
 def run(corpus_path, out, exe):
@@ -112,11 +130,12 @@ def run(corpus_path, out, exe):
         print(corpus['id'], flush=True)
 
 
-def match(found, truth):
-    """Greedy one-to-one matching within TOL. Returns matched count."""
+def match(found, truth, pairs=None):
+    """Greedy one-to-one matching within TOL. Returns matched count; (found index, truth index)
+    pairs are appended to `pairs` when given."""
     used = set()
     hits = 0
-    for t in found:
+    for i, t in enumerate(found):
         best, bi = TOL, -1
         for j, u in enumerate(truth):
             if j not in used and abs(u - t) <= best:
@@ -124,12 +143,27 @@ def match(found, truth):
         if bi >= 0:
             used.add(bi)
             hits += 1
+            if pairs is not None:
+                pairs.append((i, bi))
     return hits
+
+
+# Copy Break plays a hit at origin + (grid + off) ticks (960 per quarter): the time it is placed at
+HIT_FULL = re.compile(r'^(Kick|Snare|HiHat)\s+t=([0-9.]+) bar \d+ 16th [0-9.]+ grid (-?\d+) off (-?\d+) vel (\d+)', re.M)
+BREAK = re.compile(r'Drum break: bpm ([0-9.]+) .*?origin ([-0-9.]+) ms')
+
+
+def spearman(a, b):
+    if len(a) < 3:
+        return float('nan')
+    ra = np.argsort(np.argsort(a)); rb = np.argsort(np.argsort(b))
+    return float(np.corrcoef(ra, rb)[0, 1])
 
 
 def report(corpus_path, out, list_files):
     total = {}
     confusion = {}
+    timing = {}
     for corpus in load_corpus(corpus_path):
         stats = {}
         for name, stems in loops(corpus):
@@ -138,13 +172,29 @@ def report(corpus_path, out, list_files):
                 continue
             text = open(path, encoding='utf-8', errors='replace').read()
             found = {lane: [] for lane in LANES}
-            for lane, t in HIT.findall(text):
+            placed = {lane: [] for lane in LANES}  # (time Copy Break plays it at, velocity)
+            b = BREAK.search(text)
+            for lane, t, grid, off, vel in HIT_FULL.findall(text):
                 found[lane].append(float(t))
+                tick = 60.0 / float(b.group(1)) / 960.0 if b else 0.0
+                placed[lane].append(((float(b.group(2)) / 1000.0 + (int(grid) + int(off)) * tick) if b else float(t), int(vel)))
             truth = {lane: [] for lane in LANES}
+            levels = {lane: [] for lane in LANES}
             for line in text.splitlines():
                 if line.startswith('TRUTH '):
                     _, lane, t, level = line.split()
                     truth[lane].append(float(t))
+                    levels[lane].append(float(level))
+            if not (corpus['stems']['Kick'] == corpus['stems']['Snare'] and corpus['stems']['Kick'] != '-'):
+                for lane in LANES:
+                    if lane not in stems:
+                        continue
+                    pairs = []
+                    match(found[lane], truth[lane], pairs)
+                    g = timing.setdefault(lane, [[], [], []])
+                    for i, j in pairs:
+                        g[0].append(abs(placed[lane][i][0] - truth[lane][j]) * 1000.0)
+                        g[1].append(placed[lane][i][1]); g[2].append(levels[lane][j])
             combined = corpus['stems']['Kick'] == corpus['stems']['Snare'] and corpus['stems']['Kick'] != '-'
             lanes = (('K+S', ('Kick', 'Snare')), ('HiHat', ('HiHat',))) if combined else tuple((l, (l,)) for l in LANES)
             for label, members in lanes:
@@ -173,6 +223,10 @@ def report(corpus_path, out, list_files):
             t[0] += tp; t[1] += nf; t[2] += nt
         print(line)
     print('ALL ' + ' | '.join(f"{l} P {v[0] / max(1, v[1]):.2f} R {v[0] / max(1, v[2]):.2f} F {2 * v[0] / max(1, v[1] + v[2]):.2f}" for l, v in total.items()))
+    for lane, (err, vel, lev) in timing.items():
+        err = np.array(err)
+        print(f'copy {lane:6s} matched {len(err):4d} | placed vs stem onset: mean {err.mean():.1f} ms, median {np.median(err):.1f}, '
+              f'p90 {np.percentile(err, 90):.1f}, > 10 ms {np.mean(err > 10):.2f} | velocity vs stem level Spearman {spearman(vel, lev):.2f}')
     if confusion:
         print('confusion (true lane -> found lane, matched within 30 ms), separated-stem loops:')
         for tl in LANES:

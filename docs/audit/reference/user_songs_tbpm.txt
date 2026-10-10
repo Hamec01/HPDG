@@ -1,0 +1,619 @@
+# 633 songs from the maintainer's mp3 library (D:/Downloads: mp3, Morricone, Theodor Bastard) with a
+# tempo in the ID3 TBPM tag (DJ / tagger software: not verified by ear, an octave reading is possible).
+# path <TAB> bpm <TAB> seconds <TAB> genre tag. Audio stays on the development PC.
+D:/Downloads/mp3/01 (1).mp3	84	163.6		
+D:/Downloads/mp3/01.mp3	84	163.6		
+D:/Downloads/mp3/fire-general_fyhulvvd.mp3	103.76	132.4	Blues	
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/01. Anarchy Music - Drone Incursion.mp3	140	74.2	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/02. Anarchy Music - Saber Rattling.mp3	130	68.8	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/03. Anarchy Music - Hysteria.mp3	175	61.3	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/04. Anarchy Music - The Titans Advance.mp3	76	69.7	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/05. Anarchy Music - Camouflage.mp3	150	67.8	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/06. Anarchy Music - Airborne Attack.mp3	160	76.1	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/07. Anarchy Music - Approaching The Abyss.mp3	80	64.3	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/08. Anarchy Music - Warfare.mp3	180	73.4	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/09. Anarchy Music - Counter Intelligence.mp3	135	70.6	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/10. Anarchy Music - Under Siege.mp3	78	60.4	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/11. Anarchy Music - Warhead Deployed.mp3	160	60.5	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/12. Anarchy Music - Duty And Honor.mp3	98	82.6	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/13. Anarchy Music - Gorilla Warfare.mp3	110	67.4	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/14. Anarchy Music - Sniper Fire.mp3	180	62.5	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/15. Anarchy Music - A Call to Arms.mp3	146	67.2	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/16. Anarchy Music - Stealth Ops.mp3	160	74.7	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/17. Anarchy Music - The Final Walk.mp3	86	61.9	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/18. Anarchy Music - Insurgency.mp3	150	64.3	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/19. Anarchy Music - On The Move.mp3	105	60.6	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM001 - Cinematic Drums/20. Anarchy Music - Sparring Metal.mp3	175	61.8	Action	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/01. Anarchy Music - Distant Caravan.mp3	85	138.2	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/02. Anarchy Music - Forbidden City.mp3	100	119.6	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/04. Anarchy Music - The Last Dynasty.mp3	80	131.5	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/05. Anarchy Music - Ancient Anasazi.mp3	110	146.7	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/06. Anarchy Music - Hindu Soul.mp3	75	129.7	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/07. Anarchy Music - Tabla Trance.mp3	135	134.9	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/08. Anarchy Music - Modern Mumbai.mp3	120	166.6	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/09. Anarchy Music - Dublin Dreams.mp3	120	134.3	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/10. Anarchy Music - Nile Reflections.mp3	60	138.8	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/11. Anarchy Music - Harem Dance.mp3	85	125.6	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/12. Anarchy Music - The Mirage.mp3	120	134.0	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/13. Anarchy Music - Hunting The Outback.mp3	100	138.5	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/14. Anarchy Music - Savannah Springs.mp3	134	142.4	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/15. Anarchy Music - Kenyan Journey.mp3	65	143.5	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/16. Anarchy Music - Bushmen Dance.mp3	125	132.8	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/17. Anarchy Music - Ethnic Textures.mp3	120	127.1	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/18. Anarchy Music - Mourning Cry.mp3	107	140.4	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/19. Anarchy Music - Night In Bali.mp3	73	135.9	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM002 - Ethnosphere/20. Anarchy Music - The Priests Prayer.mp3	120	133.3	World	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/01. Anarchy Music - Mad Made.mp3	190	137.3	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/02. Anarchy Music - Apocalypse.mp3	95	123.7	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/03. Anarchy Music - Screamin Deamon.mp3	193	119.8	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/04. Anarchy Music - Screamin Deamon (No Vocals).mp3	193	119.8	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/05. Anarchy Music - Clown Nightmare.mp3	200	133.0	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/06. Anarchy Music - Broken.mp3	190	130.7	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/07. Anarchy Music - Fanticied.mp3	120	124.8	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/08. Anarchy Music - Cold Steel.mp3	160	138.3	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/09. Anarchy Music - Cold Steel (No Vocals).mp3	160	138.3	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/10. Anarchy Music - Thorns of Metal.mp3	100	124.8	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/11. Anarchy Music - Nailin it Down.mp3	119	125.5	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/12. Anarchy Music - Deranged.mp3	150	155.4	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/13. Anarchy Music - Deranged (No Vocals).mp3	150	155.4	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/14. Anarchy Music - Oxide.mp3	170	123.9	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/15. Anarchy Music - Road Spike.mp3	150	132.8	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/16. Anarchy Music - Metal Mayhem.mp3	202	123.9	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/17. Anarchy Music - Metal Mayhem (No Vocals).mp3	202	123.9	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/18. Anarchy Music - Metal Haze.mp3	160	137.2	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/19. Anarchy Music - Metal Haze (No Vocals).mp3	160	137.2	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/20. Anarchy Music - Rage House.mp3	115	115.7	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/21. Anarchy Music - Winner Kills All.mp3	115	139.9	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/22. Anarchy Music - Unstable.mp3	180	122.9	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/23. Anarchy Music - Acid Tears.mp3	155	133.6	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/24. Anarchy Music - Psychotic.mp3	165	147.2	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/25. Anarchy Music - Psychotic (No Vocals).mp3	165	147.2	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Anarchy Music/AM003 - High Octane Metal/26. Anarchy Music - Corrosive.mp3	160	143.7	Rock (Hard-Metal)	Anarchy Music
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/01. Black Hawk (Full Mix).mp3	120	120.6	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/02. Black Hawk (Drum Mix).mp3	120	108.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/03. Black Hawk (No Orchestra).mp3	120	120.6	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/04. One Way Ride (Full Mix).mp3	120	106.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/05. One Way Ride (Drum Mix).mp3	120	106.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/06. One Way Ride (Orchestral Mix).mp3	120	106.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/07. The Hunted (Full Mix).mp3	120	116.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/08. The Hunted (Drum Mix).mp3	120	116.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/09. The Hunted (No Orchestra).mp3	120	116.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/10. Travel To Hell (Full Mix).mp3	70	144.9	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/11. Travel To Hell (Drum and Guitar Mix).mp3	70	144.9	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/15. Metal Gear (Full Mix).mp3	136	125.4	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/16. Metal Gear (Drum Mix).mp3	136	125.4	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/17. Metal Gear (No Orchestra).mp3	136	125.4	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/18. Trash And Sprayer (Full Mix).mp3	72	120.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/19. Trash And Sprayer (Instrumental Mix).mp3	72	120.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/20. Trash And Sprayer (Pop Mix).mp3	72	120.1	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/21. The Scheme (Full Mix).mp3	140	98.6	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/22. The Scheme (Drum Mix).mp3	140	99.5	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/23. The Scheme (No Orchestra).mp3	140	98.6	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/24. Helmet (Full Mix).mp3	130	105.3	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/25. Helmet (Drum Mix).mp3	130	105.3	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Cinema Sound Tools/CST009 - Underscore - 320 kbps/26. Helmet (No Orchestra).mp3	130	105.3	Drama	Cinema Sound Tools
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Alarming grYnd [alt mix].mp3	100	174.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Alarming grYnd [main mix].mp3	100	174.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Alarming grYnd [perc edit].mp3	100	174.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Buy the Pound [alt mix].mp3	120	140.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Buy the Pound [main mix].mp3	120	141.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Conquer Them Utility .mp3	142	81.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Conquer Them [alt one].mp3	142	81.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Conquer Them [alt two].mp3	142	80.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Conquer Them [main mix].mp3	142	86.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Contagious puls grYnd.mp3	70	200.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Cyanide grYnd Utility .mp3	90	151.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Cyanide grYnd [alt mix].mp3	90	154.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Cyanide grYnd [main mix].mp3	90	154.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Damaged grYnd Utility [A].mp3	135	113.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Damaged grYnd Utility [B].mp3	135	113.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Damaged grYnd [alt one].mp3	135	136.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Damaged grYnd [alt two].mp3	135	112.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Damaged grYnd [main mix].mp3	135	112.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Deemed to grYnd Utility.mp3	140	101.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Deemed to grYnd [alt one].mp3	140	114.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Deemed to grYnd [alt three].mp3	140	108.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Deemed to grYnd [alt two].mp3	140	108.8		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Deemed to grYnd [main mix].mp3	140	118.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Deth Mask [main mix].mp3	120	92.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Deth Mask [no piano].mp3	120	92.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Follow the grYnd [alt mix].mp3	160	142.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Follow the grYnd [main mix].mp3	160	165.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Frenetic grYnd [main mix].mp3	127	90.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Frenetic grYnd [no sirens alt].mp3	127	88.8		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Frenetic grYnd [swell alt].mp3	127	90.8		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Grime Time Utility.mp3	160	124.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Grime Time [alt mix].mp3	160	127.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Grime Time [main mix].mp3	160	127.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/grYnd FACE.mp3	170	146.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/grYnd them HARD utility.mp3	130	99.8		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/grYnd them HARD [alt one].mp3	130	92.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/grYnd them HARD [main mix].mp3	130	100.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/grYnd them HARD [ridley edit].mp3	130	96.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/grYnd Well my Friend.mp3	130	123.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Haight grYnd Utility .mp3	120	113.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Haight grYnd [alt mix].mp3	120	113.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Haight grYnd [main mix].mp3	120	113.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/League of DEATH [alt one].mp3	150	136.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/League of DEATH [alt two].mp3	150	137.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/League of DEATH [main mix].mp3	150	137.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Nails Tearing [alt one].mp3	145	152.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Nails Tearing [alt two].mp3	145	146.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Nails Tearing [main mix].mp3	145	158.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/OUCH grYnd [alt one].mp3	130	116.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/OUCH grYnd [alt two].mp3	130	116.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/OUCH grYnd [main mix].mp3	130	116.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/overShadow grYnded.mp3	100	129.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/para grYnd [alt mix].mp3	94	153.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/para grYnd [main mix].mp3	94	153.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/para grYnd [no piano].mp3	94	153.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/primary Grudge [alt mix].mp3	120	240.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/primary Grudge [main mix].mp3	120	240.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/see Sharper Utility.mp3	130	129.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/see Sharper [alt four].mp3	130	129.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/see Sharper [alt one].mp3	130	135.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/see Sharper [alt three].mp3	130	128.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/see Sharper [alt two].mp3	130	129.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/see Sharper [full].mp3	130	136.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Start Begging Utility.mp3	103	82.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Start Begging [alt mix].mp3	103	85.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Start Begging [main mix].mp3	103	87.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Truck King [alt four].mp3	130	99.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Truck King [alt one].mp3	130	108.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Truck King [alt three].mp3	130	74.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Truck King [alt two].mp3	130	100.8		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/grYnd/Gear Two/Truck King [main mix].mp3	130	107.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/01 KF002 - Beyond Control.mp3	103	179.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/02 KF002 - Burn Fretting.mp3	105	187.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/03 KF002 - Crimson Roses.mp3	124	183.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/04 KF002 - Darq Justice (Misery Mix).mp3	65	147.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/05 KF002 - Darq Justice (No Strings).mp3	65	142.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/06 KF002 - Die Near (Fist Mix).mp3	60	203.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/07 KF002 - Die Near (Mutant Mix).mp3	60	215.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/08 KF002 - Do Not Run (Tunnel Mix).mp3	70	184.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/09 KF002 - Do Not Run (Vent Mix).mp3	70	187.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/11 KF002 - Fate Delivered (Forth Mix).mp3	110	185.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/12 KF002 - Fate Delivered (No Drums).mp3	110	186.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/13 KF002 - Fate Delivered (Solush Mix).mp3	110	197.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/14 KF002 - Fate Delivered (Tower Mix).mp3	110	185.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/15 KF002 - Flat Line Thump (Buff Mix).mp3	65	192.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/16 KF002 - Flat Line Thump (DMT Mix).mp3	65	192.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/19 KF002 - Harsh Intentions (Lonely Mix).mp3	65	149.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/20 KF002 - Harsh Intentions (Solush Mix).mp3	65	165.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/24 KF002 - Hero to Be (Choir Version).mp3	100	127.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/25 KF002 - Hero to Be (Venus Mix).mp3	100	126.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/26 KF002 - Hero's Blood (Foe Mix).mp3	90	197.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/27 KF002 - Hero's Blood (Choir Version).mp3	90	197.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/28 KF002 - Hero's Blood (Nite Mix).mp3	90	202.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/29 KF002 - Hero's Origin (Dust Mix).mp3	100	177.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/36 KF002 - Inner Conspiracy (SS4).mp3	90	119.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/39 KF002 - Never Worry (Horizon Mix).mp3	75	156.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/40 KF002 - Never Worry (Mind Mix).mp3	75	145.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/41 KF002 - Never Worry (Origin Mix).mp3	75	151.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/42 KF002 - Never Worry (Spider Mix).mp3	75	167.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/46 KF002 - Predisposed (Awe Mix).mp3	95	127.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/47 KF002 - Process of Pain.mp3	135	148.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/48 KF002 - Reconditioned (Foe Mix).mp3	145	149.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/49 KF002 - Reconditioned (Mend Mix).mp3	145	111.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/50 KF002 - Say Goodbye (Guitar Mix).mp3	90	165.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/51 KF002 - Say Goodbye (Orch Mix).mp3	90	165.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/53 KF002 - Shadow Angel (Mood Mix).mp3	106	176.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/56 KF002 - The Bitter Essence (ReDux).mp3	82	152.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/57 KF002 - The Blue Leader (ReDux).mp3	135	268.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/59 KF002 - The Grey Devil.mp3	85	152.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/61 KF002 - The Obsidian.mp3	70	172.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/65 KF002 - The Reasons (Part One).mp3	93	142.8		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/69 KF002 - Trained to Ride (Grade Mix).mp3	75	153.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/70 KF002 - Trained to Ride (Origin Mix).mp3	75	154.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Kopius Few/Installment Two/73 KF002 - Walks the Path.mp3	110	202.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/01 MDM-INS01 - Agent Steps.mp3	135	192.1	Hybrid; Thriller; Trailer Rock Theme	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/02 MDM-INS01 - Allegiance Stone.mp3	74	227.1	Electronica CINEMATIC; Soundtrack / Score; Mystery Intrigue; Urban	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/03 MDM-INS01 - Atlantic City.mp3	60	208.1	Jazz; Urban	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/04 MDM-INS01 - Atlantic City Alt.mp3	60	208.1	Mystery Intrigue	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/06 MDM-INS01 - Bright Hopes Main Mix.mp3	110	135.3	Alternative Drama; Trailer LITE	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/08 MDM-INS01 - Crypto Collapse Main Mix.mp3	140	178.8	Alternative Drama; Mystery Intrigue; Dramatic; Epic; Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/09 MDM-INS01 - Crypto Collapse No Drums.mp3	140	178.3	Alternative Drama; Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/10 MDM-INS01 - Damaged Brains.mp3	132	135.0	Rock-Tronica; Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/18 MDM-INS01 - Grapple Action Mix One.mp3	145	131.2	Electronica MISC; Thriller; Action; Suspense	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/21 MDM-INS01 - Most Chosen Pron Mix.mp3	114	128.6	Electronica CINEMATIC; Suspense; Industrial	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS01 - Installment 1/23 MDM-INS01 - Slow Force.mp3	80	133.8	Electronica CINEMATIC; Thriller; Suspense	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS02 - Installment 2/02 MDM-INS02 - City Trippin.mp3	83	323.9	Urban; Electronica MISC	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS02 - Installment 2/03 MDM-INS02 - Crypto Collapse Alt Mix.mp3	70	177.9	Adventure; Alternative Drama; Epic; Dramatic	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS02 - Installment 2/12 MDM-INS02 - Grave Trip Inst Kf1.mp3	70	245.4	Urban; Electronica CINEMATIC	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS02 - Installment 2/16 MDM-INS02 - Prowl Under Subtle Alt.mp3	80	140.9	Electronica CINEMATIC; Suspense; Soundtrack / Score; New Age Ambient; Mystery Intrigue	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS02 - Installment 2/20 MDM-INS02 - Their Return Star Mix.mp3	85	193.2	Adventure; Electronica CINEMATIC; Urban; Dramatic	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS02 - Installment 2/21 MDM-INS02 - Their Return Worn Mix Kf2.mp3	85	191.7	Electronica MISC; Soundtrack / Score; Mystery Intrigue	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS03 - Installment 3/08 MDM-INS03 - Full Conversion Burn Alt.mp3	86	154.3	Thriller; Suspense; Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS03 - Installment 3/16 MDM-INS03 - Prowl Under.mp3	160	143.5	Action; Trailer Rock Theme; Thriller; Spy	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS03 - Installment 3/20 MDM-INS03 - Their Wrath Alt Mix.mp3	140	144.5	Action; Big Trailer Drums; Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS03 - Installment 3/21 MDM-INS03 - Their Wrath Main Mix.mp3	140	144.1	Action; Big Trailer Drums; Thriller; High Energy	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS04 - Installment 4/02 MDM-INS04 - Dark Dates Ahead.mp3	133	121.5	Electronica MISC; Action; Rock-Tronica	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS04 - Installment 4/04 MDM-INS04 - Detective Danger.mp3	125	149.7	Rockin; Urban; Spy; Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS04 - Installment 4/05 MDM-INS04 - Dirty Fists Inst Kf 1.mp3	80	146.8	Rock-Tronica	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS04 - Installment 4/18 MDM-INS04 - Most Chosen Chop Alt.mp3	114	125.6	Totes Rando	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS04 - Installment 4/19 MDM-INS04 - Most Chosen Star Mix.mp3	114	121.0	Rock-Tronica; Industrial; Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS04 - Installment 4/21 MDM-INS04 - Smack The Gorilla Rust Mix.mp3	120	121.9	Rock-Tronica; Action; Industrial	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS04 - Installment 4/23 MDM-INS04 - Their Return Boxer Mix.mp3	85	200.6	Urban; Rock-Tronica; Electronica MISC	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/03 MDM-INS05 - Better Weapons Main Mix.mp3	96	70.1		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/04 MDM-INS05 - Better Weapons No Strings.mp3	96	70.1		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/05 MDM-INS05 - Better Weapons No Synths.mp3	96	70.1		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/08 MDM-INS05 - Its Okay No Perc.mp3	103	69.9		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/09 MDM-INS05 - Its Okay Vocals Mix.mp3	103	70.0		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/10 MDM-INS05 - Its Okay Whistle Mix.mp3	103	70.0		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/11 MDM-INS05 - Kind Moments.mp3	80	117.8		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/12 MDM-INS05 - Late Temptation Main Mix.mp3	90	106.7		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/17 MDM-INS05 - Mission To Betray Main Mix.mp3	120	64.1		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/18 MDM-INS05 - Mission To Betray No Strings.mp3	120	64.1		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/19 MDM-INS05 - Mission To Betray No Synth.mp3	120	62.1		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/47 MDM-INS05 - Fools Gold One.mp3	110	154.4		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/48 MDM-INS05 - Creep Show Mix One.mp3	135	108.6		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS05 - Installment 5/49 MDM-INS05 - Flex All Low.mp3	120	275.8		methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/03 MDM-INS06 - Crypto Collapse Main Mix.mp3	70	178.8	Alternative Drama; Mystery / Intrigue; Drama; Epic; Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/04 MDM-INS06 - Dromeda Down.mp3	130	142.2	Action; Suspense; Industrial	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/06 MDM-INS06 - Last Confrontation Alt One.mp3	82	165.9	Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/07 MDM-INS06 - Last Confrontation Full.mp3	82	163.0	Action; Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/08 MDM-INS06 - Most Chosen Stomp Mix.mp3	114	132.8	Action; Rock-Tronica; Industrial	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/12 MDM-INS06 - The Northern Threat Frantic Mix.mp3	70	116.2	Adventure; Epic	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/13 MDM-INS06 - Their Return Star Mix.mp3	85	193.2	Adventure; Electronica Cinematic; Urban; Drama	Kopius Few
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/14 MDM-INS06 - Lady Spy Alt.mp3	100	126.5	Electronica Cinematic; Urban; Spy; Trailer Rock Theme	Kopius Few
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS06 - Action/15 MDM-INS06 - The Junction.mp3	135	117.4	Apocalyptic; Thriller; Suspense	Kopius Few
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS07 - Big Drums/08 MDM-INS07 - Last Confrontation Alt Two.mp3	82	165.9	Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS07 - Big Drums/09 MDM-INS07 - Mortals Beware Drum Mix.mp3	150	145.3	Action; Adventure; Thriller; Suspense	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS08 - Thriller/02 MDM-INS08 - Bot Symmetry Mix One.mp3	100	81.1	Industrial; Suspense	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS08 - Thriller/03 MDM-INS08 - Cell Phone Stalker Mix One.mp3	95	131.6	Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS08 - Thriller/05 MDM-INS08 - Cyborg Premonitions Crunch Mix.mp3	125	129.5	Industrial; Tension; Action; Trailer Percussive	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS08 - Thriller/06 MDM-INS08 - Forgiven Crimes Mix Two.mp3	140	130.4	Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS08 - Thriller/07 MDM-INS08 - Green Currency.mp3	90	157.4	Thriller; Hybrid; Epic; Urban	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS08 - Thriller/12 MDM-INS08 - The Helix Code Mix One.mp3	130	136.3	Thriller; Drama; Alternative Drama; Soundtrack / Score	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/04 MDM-INS09 - Chisel The Facts Mix One.mp3	165	137.7	Tension; Dramatic; Suspense; Soundtrack / Score	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/07 MDM-INS09 - Foes Of Time.mp3	60	124.1	Electronica CINEMATIC; Mystery Intrigue; Dramatic	Kopius Few
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/08 MDM-INS09 - Forward In Time.mp3	120	137.5	Action; Thriller; Trailer Rock Theme; Mystery Intrigue	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/11 MDM-INS09 - In The Center Rmx.mp3	120	152.1	Mystery Intrigue; Electronica CINEMATIC; New Age Ambient	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/13 MDM-INS09 - Missing Song Grit Utility.mp3	120	70.1	Electronica CINEMATIC; Industrial; Suspense	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/15 MDM-INS09 - Prowl Under Subtle Alt.mp3	80	140.9	Alternative Drama; Electronica CINEMATIC; Mystery Intrigue; Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/19 MDM-INS09 - Takers Return.mp3	65	213.4	Epic; Thriller; Soundtrack / Score; Mystery Intrigue	Kopius Few
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Installments/MDM-INS09 - Suspense & Mystery/20 MDM-INS09 - Vigilantes Return.mp3	130	144.3	Suspense; Soundtrack / Score; Mystery Intrigue	Kopius Few
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/03 MDM001 - Dirty Fists.mp3	80	146.8	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/07 MDM001 - Krime Depth.mp3	100	172.9	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/08 MDM001 - Lady Spy.mp3	100	131.3	Rock - Metal - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/09 MDM001 - Lady Spy Alt.mp3	100	126.5	Rock - Metal - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/15 MDM001 - Unwanted Answers.mp3	100	151.3	Science - Technology	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/17 MDM001 - Mental Conflict.mp3	90	224.1	Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/18 MDM001 - Path Of Circles.mp3	110	212.3	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/19 MDM001 - Price Of Life.mp3	100	286.9	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM001 - Methodic Doubt Vol. 1/20 MDM001 - The Junction.mp3	135	117.4	Rock - Metal - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/07 MDM002 - Fallen Chamber.mp3	80	80.1	Sound Design - Atmospheric	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/08 MDM002 - The Teton Chamber.mp3	150	141.4	Percussion - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/11 MDM002 - Trip To Booze.mp3	95	80.9	Lounge	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/12 MDM002 - Mister Surge.mp3	130	127.3	Percussion - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/15 MDM002 - Grynd War Notice.mp3	67	156.5	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/17 MDM002 - Burn Trickery.mp3	145	204.3	Rock - Metal - Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/22 MDM002 - Detective Danger.mp3	125	149.7	Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM002 - Methodic Doubt Vol. 2/26 MDM002 - Electric Pit Glow Mix.mp3	125	222.3	Dance - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM003 - Methodic Doubt Vol. 3/07 MDM003 - Foes Of Time.mp3	60	124.1	Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM003 - Methodic Doubt Vol. 3/11 MDM003 - Mortals Beware.mp3	150	145.3	Percussion - Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM003 - Methodic Doubt Vol. 3/18 MDM003 - Takers Return.mp3	65	213.4	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM003 - Methodic Doubt Vol. 3/21 MDM003 - Their Return.mp3	85	193.2	Orchestral - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM003 - Methodic Doubt Vol. 3/22 MDM003 - Vigilantes Return.mp3	130	144.3	Suspense; Soundtrack / Score; Mystery Intrigue	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/06 MDM004 - Bright Hopes.mp3	110	135.3	Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/07 MDM004 - Crypto Collapse.mp3	70	178.8	Orchestral - Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/08 MDM004 - Definite Conflict.mp3	140	136.9	Rock - Metal - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/09 MDM004 - Definite Conflict Alt.mp3	140	137.3	Rock - Metal - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/11 MDM004 - Drumasaurus Drums.mp3	140	142.8	Percussion - Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/14 MDM004 - Last Confrontation.mp3	82	163.0	Orchestral - Choral - Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/15 MDM004 - Last Confrontation Alt 1.mp3	82	165.9	Orchestral - Choral - Adventure	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/16 MDM004 - Last Confrontation Alt 2.mp3	82	165.9	Percussion - Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/17 MDM004 - Prowl Under.mp3	80	140.9	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/19 MDM004 - Set Place Now.mp3	117	113.9	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM004 - Methodic Doubt Vol. 4/20 MDM004 - The Helix Code.mp3	130	136.3	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/01 MDM005 - Mission To Betray.mp3	120	64.1	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/02 MDM005 - Mission To Betray No Strings.mp3	120	64.1	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/03 MDM005 - Mission To Betray No Synth.mp3	120	62.1	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/15 MDM005 - Its Okay No Perc.mp3	103	69.9	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/16 MDM005 - Its Okay Vocals Mix.mp3	103	70.0	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/17 MDM005 - Its Okay Whistle Mix.mp3	103	70.0	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/18 MDM005 - Kind Moments.mp3	80	117.8	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/21 MDM005 - Better Weapons.mp3	96	70.1	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/22 MDM005 - Better Weapons No Strings.mp3	96	70.1	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/23 MDM005 - Better Weapons No Synths.mp3	96	70.1	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM005 - Methodic Doubt Vol. 5/24 MDM005 - Late Temptation.mp3	90	106.7	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/06 MDM006 - Missing Song Grit.mp3	120	70.1	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/10 MDM006 - Dromeda Down.mp3	130	142.2	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/11 MDM006 - Colossal Waves.mp3	90	162.9	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/12 MDM006 - Green Currency.mp3	90	157.4	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/14 MDM006 - Angel Trip.mp3	105	116.0	Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/15 MDM006 - Chisel The Facts.mp3	165	137.7	Orchestral - Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/16 MDM006 - In The Center.mp3	120	152.1	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/19 MDM006 - Cell Phone Stalker.mp3	95	131.6	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/20 MDM006 - Bot Symmetry.mp3	100	81.1	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/21 MDM006 - Forgiven Crimes.mp3	140	130.4	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/23 MDM006 - Most Chosen.mp3	114	132.8	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/24 MDM006 - Cyborg Premonitions.mp3	125	129.5	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM006 - Methodic Doubt Vol. 6/25 MDM006 - Balloon Gang Noon.mp3	132	117.7	Dance - Dubstep	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/01 MDM007 - Mission To Betray Main Mix.mp3	120	64.1	Orchestral - Electronic - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/02 MDM007 - Mission To Betray No Strings.mp3	120	64.1	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/03 MDM007 - Mission To Betray No Synth.mp3	120	62.1	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/04 MDM007 - Spy Glance No Strings.mp3	100	91.8	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/05 MDM007 - Spy Glance Main Mix.mp3	100	91.7	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/07 MDM007 - Meet Your Team No Strings.mp3	95	112.3	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/08 MDM007 - Meet Your Team Main Mix.mp3	96	111.5	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/09 MDM007 - Red Mission Main Mix.mp3	95	67.9	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/10 MDM007 - Red Mission No Perc.mp3	95	66.5	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/11 MDM007 - Hidden Discovery No Strings.mp3	86	93.1	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/12 MDM007 - Better Weapons Main Mix.mp3	96	70.1	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/13 MDM007 - Better Weapons No Synths.mp3	96	70.1	Orchestral - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/14 MDM007 - Ammo Recovery.mp3	134	106.1	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM007 - Secret Agent Music/15 MDM007 - Crystal Technique.mp3	114	113.8	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/01 MDM008 - Apostles Anger Mix One.mp3	130	146.8	Orchestral - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/02 MDM008 - Beckons For More No Drums.mp3	120	145.9	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/03 MDM008 - Den Of Thieves Origins.mp3	140	106.4	Orchestral - Rock - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/05 MDM008 - Empathy Theory Mind Mix.mp3	70	163.0	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/06 MDM008 - Hidden Discovery Main Mix.mp3	86	92.9	Drama - Thriller	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/08 MDM008 - Holster Hipster No Drums.mp3	110	107.3	Western - Americana	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/09 MDM008 - Much Decided Time Lapse.mp3	70	158.3	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/11 MDM008 - Their Bravery Lunar Mix.mp3	75	217.7	Orchestral - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/12 MDM008 - Time Beckons West.mp3	120	112.4	Western - Americana	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/13 MDM008 - Tides Are High Mix One.mp3	80	76.1	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/14 MDM008 - Transforming One.mp3	80	135.4	Orchestral - Action	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM008 - Drama One/15 MDM008 - Winds On The Waterfront.mp3	120	133.7	Drama - Underscore	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM009 - Trailer Utilities Vol. 1/02 MDM009 - Battered Rupture Alt Utility.mp3	112	126.7	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM009 - Trailer Utilities Vol. 1/13 MDM009 - Dismantle Them Utility.mp3	120	140.9	Science - Technology	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM009 - Trailer Utilities Vol. 1/26 MDM009 - Missing Son Grit Utility.mp3	120	69.5	Crime - Drama	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM009 - Trailer Utilities Vol. 1/27 MDM009 - Murder Grynd Utility.mp3	140	156.1	Thriller - Horror	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM009 - Trailer Utilities Vol. 1/37 MDM009 - Shuttle Chamber.mp3	80	90.0	Sound Design - Elements	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Methodic Doubt Main Library/MDM009 - Trailer Utilities Vol. 1/48 MDM009 - Too Concussed No Gtr.mp3	110	113.9	Sound Design - Elements	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Bloody Thieves [mix one].mp3	140	112.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Bloody Thieves [mix two].mp3	140	118.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Cyborg Krunch [tredd mix].mp3	140	86.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Fast Forces [cyborg].mp3	150	120.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Fast Forces [grynd].mp3	150	119.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Grime Clamp [tech].mp3	150	126.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/grYnd Retribution [heavy].mp3	130	123.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Red Warriors [space mist].mp3	130	136.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Zero Rest [mix one].mp3	160	153.7	Tense, impending doom, fear, glitch, twitch 	Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/02 - Action Gritty/Zero Rest [mix two].mp3	160	153.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/All Forward hybrid [mix one].mp3	145	119.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Evolve Later [fraction].mp3	130	113.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Evolve Later [melodic].mp3	130	111.8		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Evolve Later [traction].mp3	130	115.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Fast Carbine [main].mp3	130	127.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Fast Carbine [no perc].mp3	130	150.6		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Fast Carbine [soy alt].mp3	130	150.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Fight Together [remix].mp3	125	140.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Glass Towers [crow].mp3	130	128.2		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Glass Towers [wolf].mp3	130	128.9		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Invasive Army [robots].mp3	130	128.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Land of Sand [destiny].mp3	150	135.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Land of Sand [intricate].mp3	150	141.7		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Land of Sand [razor alt].mp3	150	134.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Mighty Cassius [adagio].mp3	135	181.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Prevail and Reign [tame].mp3	176	140.3		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/The Strong Tree [prevails].mp3	140	123.5		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/03 - Action Dramatic/Too True [destiny].mp3	135	191.4		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/04 - Action Modern/FireFly Blastoff [mix one].mp3	150	105.1		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/04 - Action Modern/Jrive Thru [Sans alt].mp3	120	125.0	ActioN lite	Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/04 - Action Modern/Karnage Rocker [smash mix].mp3	145	110.2	musicRELIANT [Action Rock] guitar driving	Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/04 - Action Modern/You got BURNED [bash mix].mp3	128	119.0		Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/06 - Adventure/Watcher of Dreams [skunky].mp3	180	128.5	ActioN lite	Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Momentum/Momentum Two/06 - Adventure/Watcher of Dreams [zoo].mp3	180	127.7	ActioN lite	Methodic Doubt Music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/01. Mission To Betray (Main Mix).mp3	120	64.1	Suspense	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/02. Mission To Betray (No Strings).mp3	120	64.1	Hybrid	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/03. Mission To Betray (No Synth).mp3	120	62.1	Suspense	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/04. Spy Glance (Main Mix).mp3	100	91.7	Hybrid	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/05. Spy Glance (No Strings).mp3	100	91.8	Suspense	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/07. Meet Your Team (Main Mix).mp3	96	111.5	Suspense	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/08. Meet Your Team (No Strings).mp3	95	112.3	Thriller	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/09. Red Mission (Main Mix).mp3	95	67.9	Hybrid	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/10. Red Mission (No Perc).mp3	95	66.5	Suspense	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/11. Hidden Discovery (No Strings).mp3	86	93.1	Thriller	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/12. Better Weapons (Main Mix).mp3	96	70.1	Electronica Cinematic	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/13. Better Weapons (No Synths).mp3	96	70.1	Drama Trailer	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/14. Ammo Recovery One.mp3	134	106.1	Suspense	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/musicRELIANT/Secret Mission/15. Crystal Technique One.mp3	114	113.8	Electronica Cinematic	musicRELIANT
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/Threshold/Installment One - Distorted Anthems/Settle the Score [pron mix].mp3	120	147.7	Rock-tronic, remixy, edgy, dark	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/Machine Vandals Preview/Shell Hop.mp3	106	67.5	Fun / Urban / Comedy	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/Methodic Doubt Library Preview/Praise the Breaks 1.0.mp3	127	94.6	Instrumental  	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/Methodic Doubt Library Preview/Urban Prophets 1.0.mp3	100	92.5	Urban hip hop	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/musicRELIANT Preview/The Scooter Chase.mp3	124	154.9	Funn/Library	MusicReliant
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/unREALISED/Calculated Chaos [Arson].mp3	160	146.4	Trailer	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/unREALISED/Carcinogen Theory [piano alt].mp3	136	161.7	Trailer	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/unREALISED/Greed For Power [epic].mp3	128	116.9	Trailer	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/unREALISED/The Binary Star [mind alt].mp3	145	130.8	Trailer	methodic Doubt music
+D:/Downloads/mp3/Methodic Doubt Music (mp3)/unREALISED & Previews/unREALISED/The Reasons [part two].mp3	93	143.0	Trailer	methodic Doubt music
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/01. The New Black Gold.mp3	182	292.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/02. Sovngarde Song.mp3	184	335.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/03. Commander Shepard.mp3	170	208.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/04. Big Ten.mp3	164	167.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/05. Sweet L.A.mp3	185	244.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/06. Wheatley's Song.mp3	189	215.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/07. Redemption Blues.mp3	174	246.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/08. Age Of The Dragon.mp3	189	237.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/09. Little Sister.mp3	169	283.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/10. Mining All Day Long.mp3	190	189.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/11. The Mind Of The Bat.mp3	133	228.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/12. Normandy.mp3	196	300.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/13. The Dead Don't Shuffle (They Run).mp3	164	238.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/14. Wasteland Soul.mp3	135	270.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/15. Brothers Of The Creed.mp3	181	251.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/16. Beauty Bleak.mp3	161	240.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/17. I Suck At Call Of Duty.mp3	174	214.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/18. Necromorph Soup.mp3	139	160.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/19. Gordon Freeman Saved My Life.mp3	175	219.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/20. She Gonna Teach Ya (How To Rock N Rol).mp3	165	199.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/21. Santiago's Lament.mp3	77	229.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/22. Zombie Holiday.mp3	200	190.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/23. Goodbye Black Ops.mp3	194	198.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/24. Duke, You Used To Be Cool.mp3	160	277.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/25. Fire In Your Hole.mp3	154	211.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/26. Comin' For Your Tank.mp3	179	211.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/27. Thunder's Theme - Full Version.mp3	159	133.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/28. The Grind.mp3	196	203.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/29. Mortal Kombat Party.mp3	134	203.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/30. Second Chance Song.mp3	102	221.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/31. Trip To Vegas.mp3	149	156.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/32. The Ballad Of Clay Carmine.mp3	169	270.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2011 - Level 1/33. Thunder Mountain.mp3	185	107.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/01. Take It Back - Extended Cut.mp3	189	269.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/02. Nord Mead.mp3	185	190.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/03. Joker's Song.mp3	172	214.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/04. Shadows In The Moonlight.mp3	62	240.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/05. Shooter Guy.mp3	159	267.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/06. Legends Of The Frost (ft. Malukah).mp3	131	166.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/07. Life In Bullet Time.mp3	149	280.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/08. Crucible.mp3	183	213.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/09. Silver And Steel.mp3	84	185.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/10. DNA.mp3	199	218.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/11. Keep Drifting.mp3	149	251.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/12. Give Them Hell.mp3	171	141.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/13. You Died.mp3	141	183.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/14. Kalros.mp3	153	213.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/15. Khajiit Like To Sneak.mp3	183	196.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/16. Binary Divide.mp3	167	260.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/17. Survivorcraft Theme.mp3	104	66.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2012 - Level 2/18. Back In Time.mp3	130	187.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/01. City Of Night.mp3	89	241.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/02. Breaking Down The Borders.mp3	109	167.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/03. Rise.mp3	199	228.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/04. Dream Of The Sky.mp3	139	385.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/05. Reclaimer.mp3	179	223.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/06. Halfman's Song.mp3	183	196.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/07. Calamity.mp3	183	241.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/08. The Savage Side Of Me.mp3	140	232.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/09. The Best I Can.mp3	159	249.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/10. Distant Honor.mp3	59	234.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/11. Motor Girl.mp3	114	156.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/12. His Father's Son.mp3	181	207.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/14. The Call Of Duty Circus.mp3	188	187.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/15. Blood Of The Creed.mp3	89	122.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/16. The Spy Who Survived.mp3	194	216.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/17. Doorfighter.mp3	160	63.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/18. Hell In The Headspace.mp3	113	213.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/19. Roll Out.mp3	180	238.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 3/20. Hengsha.mp3	153	163.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/01 - The Crush.mp3	80	226.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/02 - Beneath The Black Flag.mp3	114	160.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/03 - The Call.mp3	183	257.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/04 - Forever Blue.mp3	79	253.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/05 - Higher Tonight.mp3	128	203.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/06 - Kickback.mp3	165	233.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/07 - Digital Shadow.mp3	170	229.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/08 - The Day The World Died.mp3	189	231.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/09 - Drive.mp3	173	203.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/10 - Rampage.mp3	125	167.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/11 - Hard Cash.mp3	57	251.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/12 - Cries Of A Dead World.mp3	139	159.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/13 - My Iron Skin.mp3	130	201.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/14 - The Best Of Us.mp3	171	369.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/15 - Hammers In My Head.mp3	150	196.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/16 - Nameless.mp3	181	180.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/17 - Niko It's Your Cousin.mp3	109	199.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/18 - Co-Optional.mp3	180	94.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2013 - Level 4/19 - The New Black Gold 2013.mp3	180	279.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/01. Welcome Home.mp3	159	237.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/02. Wake The White Wolf.mp3	158	226.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/03. Amnesia.mp3	191	311.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/04. My Revolution.mp3	152	255.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/05. All As One.mp3	185	318.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/06. A Dog's Life.mp3	99	238.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/07. Cataclysm.mp3	149	297.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/08. Messing With The Best.mp3	145	209.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/09. Perseverance.mp3	160	178.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/10. Uncivil War.mp3	151	100.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/11. Dream Of Goodbye.mp3	126	321.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/12. Every Time You Look Around.mp3	151	248.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/13. Shadow Of The Ash (Hard Vox).mp3	146	248.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/14. Fires Far.mp3	194	304.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/15. Jet Black Dress.mp3	175	221.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/16. Breathe.mp3	166	181.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/17. Into The Mind.mp3	160	271.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/18. Fistful Of Concrete.mp3	130	241.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/19. Call Of Home.mp3	61	332.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/20. Resistance.mp3	134	293.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/21. When Winter Comes.mp3	71	252.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/22. Machine.mp3	169	142.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/23. Man and Machine.mp3	169	241.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/24. The Strut.mp3	190	175.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/25. Ploughing A Troll.mp3	194	130.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/26. Voice Of A New Age.mp3	179	164.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/27. Cries Of A Dead World (Wasteland 2 Credits version).mp3	137	172.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/28. Digital Shadow 2014.mp3	172	229.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/29. Shadow Of The Ash (Soft Vox).mp3	146	246.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Level 5/30. Wake The White Wolf (Metal Version).mp3	160	226.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/01. 38th Street.mp3	164	168.4	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/02. 4am.mp3	163	160.6	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/03. Hitoshio.mp3	90	136.3	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/04. Electric Sky.mp3	182	115.0	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/05. Manhattan Midnight.mp3	32	149.6	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/06. Cosmic Slum.mp3	119	168.6	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/07. Gougane Barra.mp3	194	127.2	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/08. Downtime.mp3	182	154.9	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/09. Kakolukia.mp3	120	179.4	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/10. Lover Stone.mp3	193	154.0	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/11. Sunny Day Part 1.mp3	193	118.8	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/12. Sunny Day Part 2.mp3	120	117.6	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/13. Nimbus.mp3	193	116.0	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/14. Ocean Hotel.mp3	193	206.7	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2014 - Vistas/15. The Call (Instrumental Version).mp3	183	257.8	Instrumental	Miracle of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/01. Don't Say A Word.mp3	153	218.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/02. London Town.mp3	152	238.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/03. Lady Of Worlds.mp3	194	292.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/04. Road Rage.mp3	130	229.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/05. Stay By My Side.mp3	182	236.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/06. Going Nuclear.mp3	181	119.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/07. Friends.mp3	115	228.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/08. I Am The Night.mp3	105	218.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/09. Evacuate.mp3	190	229.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/10. My Shooting Star.mp3	129	256.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/11. Paleblood Moon.mp3	199	271.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/12. Friends To Foes.mp3	145	294.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/13. Metasonic.mp3	60	271.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/14. I Am Pudge.mp3	70	174.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Level 6/15. Hard Cash 2015.mp3	57	251.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/01. Sirona.mp3	130	338.0	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/02. I Am Alive (Ft. 331Erock).mp3	168	257.8	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/03. Next Empty Page.mp3	199	220.1	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/04. Convalescence.mp3	138	324.6	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/05. Celebrate And Rejoice.mp3	150	257.1	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/06. Compulsion.mp3	168	293.0	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/07. Gráinne Mhaol, Queen Of Pirates.mp3	148	184.3	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/08. Get Your Metal On.mp3	179	156.4	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/09. Spin The Venn Wheels.mp3	159	353.5	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/10. Into The Nothing.mp3	180	227.2	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2015 - Metal Up/11. Mother Earth.mp3	199	704.0	Celtic Metal	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/01. The Natural Heart.mp3	179	236.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/02. The Path.mp3	172	241.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/03. Get The Gang Back.mp3	151	195.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/04. The Man Who Rocked The World.mp3	100	267.0	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/05. Skellige Winds.mp3	57	149.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/06. Hell To Pay.mp3	199	197.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/07. Pawns Of War.mp3	180	156.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/08. Fires Fade.mp3	168	358.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/09. Clockworks.mp3	110	262.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/10. Some Things Never Change.mp3	90	310.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/11. Edge Of The World.mp3	156	261.6	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/12. The Lucky Ones.mp3	122	239.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/13. Mother Of Flame.mp3	156	239.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/14. Jet Fuel Heart.mp3	180	181.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/15. Forever Flame.mp3	197	251.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/16. Kana.mp3	170	181.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/17. Numbers.mp3	168	175.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/18. Ditto.mp3	105	288.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/19. Here We Go Again.mp3	154	214.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/20. Sovngarde Song 2016.mp3	184	358.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2016 - Level 7/21. Fires Fade (Male Version).mp3	168	354.2	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/01. The Great Unknown.mp3	122	309.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/02. Keepers (feat. Marcin Przybyłowicz).mp3	140	200.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/03. The Moment (feat. Karliene).mp3	149	233.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/04. Upside Down.mp3	170	250.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/05. When The Wolves Cry Out.mp3	115	257.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/06. Into The Wild.mp3	122	235.5	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/07. Force Of Nature (feat. Sarah Murray).mp3	32	245.1	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/08. Replica.mp3	94	259.7	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/09. Hallowed Land.mp3	195	209.8	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/10. No One (feat. Karliene).mp3	183	207.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/11. Welcome To The Family.mp3	105	174.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/12. Break Of Dawn.mp3	170	233.9	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/13. We Are War.mp3	129	219.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/14. Revolution Spark.mp3	170	232.4	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/15. Another Round Of Gwent.mp3	180	79.3	Alternative Rock	Miracle Of Sound
+D:/Downloads/mp3/Miracle Of Sound/2017 - Level 8/16. Mother Earth 2017.mp3	149	703.6	Alternative Rock	Miracle Of Sound

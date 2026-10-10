@@ -1,7 +1,7 @@
 """Tempo / phase benchmark for Sample Analysis (roadmap §24-29, RULES 24-27).
 
 usage:
-  python tools/tempo_bench.py run <corpus.tsv> <out folder> [--breaklab <exe>] [--only <corpus id>]
+  python tools/tempo_bench.py run <corpus.tsv> <out folder> [--breaklab <exe>] [--only <corpus id>] [--jobs N] [--lab-args "--cut ..."]
       Runs HPDG_BreakLab on every corpus file twice and caches the reports:
         <out>/auto/<id>/<file>.txt   analyze <file> --hits                (automatic tempo)
         <out>/typed/<id>/<file>.txt  analyze <file> --bpm <label> --hits  (typed tempo: phase only)
@@ -35,12 +35,38 @@ import sys
 DEFAULT_EXE = os.path.join(os.path.dirname(__file__), '..', 'build', 'Release', 'HPDG_BreakLab.exe')
 
 
+ROOTS_FILE = os.path.join(os.path.dirname(__file__), '..', 'docs', 'audit', 'reference', 'corpus_roots.local.tsv')
+
+
+def load_roots():
+    """Optional per-PC remap of corpus roots (not in git): '<old prefix>\\t<new prefix>' per line,
+    so the same corpus lists run on another PC where the library sits on another drive."""
+    roots = []
+    if os.path.isfile(ROOTS_FILE):
+        for line in open(ROOTS_FILE, encoding='utf-8'):
+            if line.strip() and not line.startswith('#'):
+                old, new = line.rstrip('\n').split('\t')
+                roots.append((old, new))
+    return roots
+
+
+ROOTS = load_roots()
+
+
+def local_path(path):
+    for old, new in ROOTS:
+        if path.lower().startswith(old.lower()):
+            return new + path[len(old):]
+    return path
+
+
 def load_corpus(path):
     rows = []
     for line in open(path, encoding='utf-8'):
         if line.startswith('#') or not line.strip():
             continue
         cid, category, genre, trimmed, folder, include, bpm_re = line.rstrip('\n').split('\t')
+        folder = local_path(folder)
         rows.append(dict(id=cid, category=category, genre=genre, trimmed=trimmed == 'yes', folder=folder,
                          include=re.compile(include, re.I), bpm=re.compile(bpm_re, re.I)))
     return rows
@@ -78,7 +104,19 @@ def files(corpus):
     if corpus['folder'].endswith('.txt'):
         if not os.path.isfile(corpus['folder']):
             return []
-        paths = [l.strip() for l in open(corpus['folder'], encoding='utf-8') if l.strip() and not l.startswith('#')]
+        lines = [l.rstrip('\n') for l in open(corpus['folder'], encoding='utf-8') if l.strip() and not l.startswith('#')]
+        if corpus['bpm'].pattern == 'list':
+            # '<path> TAB <bpm>' per line (songs: tempo from the ID3 TBPM tag). Song files repeat
+            # names across albums ('01.mp3'), so the line number makes the name unique.
+            out = []
+            for i, line in enumerate(lines):
+                path, bpm = line.split('\t')[:2]
+                name = f'{i:04d}_{os.path.basename(path)}'
+                if corpus['include'].search(name):
+                    out.append((name, float(bpm)))
+                    PATHS[(corpus['id'], name)] = local_path(path)
+            return out
+        paths = [local_path(l.strip()) for l in lines]
     elif os.path.isdir(corpus['folder']):
         paths = [os.path.join(corpus['folder'], n) for n in sorted(os.listdir(corpus['folder']))]
     else:
@@ -116,15 +154,34 @@ def label_args(labels, name, bpm):
     return []
 
 
-def run(corpus_path, out, exe, only, labels=None):
+def analyze_to(args, target):
+    result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    with open(target, 'w', encoding='utf-8') as f:
+        f.write(result.stdout)
+
+
+def run_all(tasks, jobs):
+    """Runs the lab on every (args, target); --jobs N runs N at once (each file is independent)."""
+    if jobs <= 1:
+        for args, target in tasks:
+            analyze_to(args, target)
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(jobs) as pool:
+        list(pool.map(lambda t: analyze_to(*t), tasks))
+
+
+def run(corpus_path, out, exe, only, labels=None, jobs=1, lab_args=()):
     for corpus in load_corpus(corpus_path):
         if only and corpus['id'] != only:
             continue
         items = files(corpus)
         print(f"{corpus['id']}: {len(items)} files", flush=True)
-        for mode in ('auto', 'typed'):
+        # songs: tempo only (an untrimmed song has no beat-1 truth for the typed-tempo phase)
+        for mode in ('auto',) if corpus['category'] == 'songs' else ('auto', 'typed'):
             folder = os.path.join(out, mode, corpus['id'])
             os.makedirs(folder, exist_ok=True)
+            tasks = []
             for name, bpm in items:
                 target = os.path.join(folder, name + '.txt')
                 if os.path.exists(target):
@@ -132,10 +189,9 @@ def run(corpus_path, out, exe, only, labels=None):
                 args = [exe, 'analyze', path_of(corpus, name), '--hits']
                 if mode == 'typed':
                     args[3:3] = ['--bpm', f'{bpm:g}']
-                args += label_args(labels, name, bpm)
-                result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8', errors='replace')
-                with open(target, 'w', encoding='utf-8') as f:
-                    f.write(result.stdout)
+                args += label_args(labels, name, bpm) + list(lab_args)
+                tasks.append((args, target))
+            run_all(tasks, jobs)
 
 
 def run_key(corpus_path, out, exe, only, labels=None):
@@ -370,8 +426,10 @@ def main():
     only = args[args.index('--only') + 1] if '--only' in args else None
     json_path = args[args.index('--json') + 1] if '--json' in args else None
     labels = args[args.index('--labels') + 1] if '--labels' in args else None
+    jobs = int(args[args.index('--jobs') + 1]) if '--jobs' in args else 1
+    lab_args = args[args.index('--lab-args') + 1].split() if '--lab-args' in args else []
     if args[0] == 'run':
-        run(args[1], args[2], exe, only, labels)
+        run(args[1], args[2], exe, only, labels, jobs, lab_args)
     elif args[0] == 'run-key':
         run_key(args[1], args[2], exe, only, labels)
     elif args[0] == 'key-report':

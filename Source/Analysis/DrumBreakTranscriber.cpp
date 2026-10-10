@@ -641,6 +641,29 @@ float phaseBackbeatScore(const std::vector<BreakDrumHit>& hits, double bpm, doub
     return std::max(backbeatScore(hits, bpm, origin), halfTime);
 }
 
+// Share of the strong kicks that sit on a beat (quarter note) for this origin. Only the beat 1
+// choice reads it: four-on-the-floor techno with claps off the backbeat had its grid a 16th or an
+// 8th off (kicks on the "e" / "and"), since the backbeat alone preferred a shifted phase (step 13).
+// Drum loops only: in a tonal loop the "kicks" are bass notes. Scaled by how well the K/S/H
+// templates explain the onsets (drum loops 0.89-0.95, techno music loops with percussion 0.55-0.88:
+// 0 at 0.75, full at 0.90) and by the high-band noise.
+float kickOnBeatShare(const std::vector<BreakDrumHit>& hits, double bpm, double origin)
+{
+    double onBeat = 0.0;
+    double total = 0.0;
+    for (const auto& hit : hits)
+    {
+        if (hit.lane != TrackType::Kick || hit.strength < 0.45f)
+            continue;
+        const double beat = (hit.timeSeconds - origin) * bpm / 60.0;
+        total += hit.strength;
+        if (std::abs(beat - std::round(beat)) < 0.14)
+            onBeat += hit.strength;
+    }
+    return total > 0.0 ? static_cast<float>(onBeat / total) : 0.0f;
+}
+constexpr float kKickOnBeatWeight = 0.5f;
+
 // Loops come in 4 or 8 bars, less often 2, 16 or 1, almost never 3 / 5 / 6 (step 7: bar counts of
 // the true tempo over the benchmark: drums 4 bars 267 / 2: 15 / 8: 14; tonal 4: 159, 8: 65, 2: 42;
 // the maintainer's renders 4: 63, 8: 19). A whole-bar reading with a usual bar count is preferred,
@@ -703,6 +726,54 @@ float lengthFit(double loopSeconds, double bpm, int& barsOut)
         return 0.0f;
     const double deviation = (bars - rounded) / 0.02; // 2% of a bar
     return static_cast<float>(std::exp(-0.5 * deviation * deviation));
+}
+
+// Start of a decaying tail (reverb / release) after the loop body, in seconds, or 0 when there
+// is none. Body loudness = 75th percentile of 20 ms frames; the body ends after its last frame
+// within 10 dB of it. A tail must be at least 1 s and 8 % of the file (a reverb decays over
+// seconds; a shorter quiet end is a note's release inside the last bar), hold no clear hit
+// (strength >= 0.5; reverb produces weak onsets) and decay (its second half quieter than its
+// first).
+double findTailStart(const std::vector<float>& padded, int padSamples, double sampleRate, const std::vector<BreakDrumHit>& hits)
+{
+    const int hop = static_cast<int>(0.020 * sampleRate);
+    const int length = static_cast<int>(padded.size()) - padSamples;
+    const int frames = hop > 0 ? length / hop : 0;
+    if (frames < 20)
+        return 0.0;
+    std::vector<float> db(static_cast<size_t>(frames));
+    for (int f = 0; f < frames; ++f)
+    {
+        double sum = 0.0;
+        for (int i = 0; i < hop; ++i)
+        {
+            const float v = padded[static_cast<size_t>(padSamples + f * hop + i)];
+            sum += static_cast<double>(v) * v;
+        }
+        db[static_cast<size_t>(f)] = static_cast<float>(10.0 * std::log10(sum / hop + 1.0e-18));
+    }
+    auto sorted = db;
+    const size_t p75 = sorted.size() * 3 / 4;
+    std::nth_element(sorted.begin(), sorted.begin() + static_cast<long>(p75), sorted.end());
+    const float level = sorted[p75];
+    int last = frames - 1;
+    while (last > 0 && db[static_cast<size_t>(last)] < level - 10.0f)
+        --last;
+    const double bodyEnd = (last + 1) * hop / sampleRate;
+    const double duration = length / sampleRate;
+    const double tail = duration - bodyEnd;
+    if (tail < 1.0 || tail < 0.08 * duration)
+        return 0.0;
+    for (const auto& hit : hits)
+        if (hit.timeSeconds > bodyEnd && hit.strength >= 0.5f)
+            return 0.0;
+    const int tailFrames = frames - (last + 1);
+    double first = 0.0, second = 0.0;
+    for (int f = 0; f < tailFrames; ++f)
+        (f < tailFrames / 2 ? first : second) += db[static_cast<size_t>(last + 1 + f)];
+    if (second / std::max(1, tailFrames - tailFrames / 2) >= first / std::max(1, tailFrames / 2))
+        return 0.0;
+    return bodyEnd;
 }
 
 struct PhasedFit
@@ -777,6 +848,9 @@ struct BreakContext
     double durationSeconds = 0.0;
     double leadSilenceEnd = 0.0; // start of audible material (loop start for trimmed loops)
     double firstHit = 0.0;
+    double bodyEnd = 0.0;        // > 0: the loop body ends here and a decaying tail follows
+    float drumNoise = 1.0f;      // 0..1: hats / snare noise present (0 = tonal loop: its "kicks" are bass notes)
+    float drumLike = 1.0f;       // 0..1: noise x K/S/H template fit - weight of the kick-on-beat phase term
 };
 
 BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
@@ -854,6 +928,33 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
     candidate.gridFit = tempoGridFit;
     candidate.swing = phased.swing;
     candidate.lengthFit = lengthFit(loopSeconds, candidate.bpm, candidate.bars);
+    // A song cut at the analysis window (64 s) is no loop: whole bars in exactly 64 s fit 60, 82.5,
+    // 97.5, 165, 195 BPM alike, and that false length evidence won over the onsets (x3/2 errors on
+    // whole songs; step 14).
+    if (options.audioCut)
+        candidate.lengthFit = 0.0f;
+    // A decaying tail after the loop body (reverb / release rendered past the last bar: Freaky DnB
+    // music loops are 8 or 16 bars + 1-4 bars of tail) makes the file length no evidence of the
+    // bar count: 13.79 s is 10 bars at 174 but 4 "exact" bars at 77.3. The length terms then read
+    // the body: its last loud frame lies within ~0.4 s of a bar line (a release ending just
+    // before or after it; 33 loops), so the body length is coarse evidence of the bar count.
+    candidate.priorFit = candidate.lengthFit;
+    if (context.bodyEnd > 0.0)
+    {
+        const double barSeconds = 240.0 / candidate.bpm;
+        const double body = context.bodyEnd - context.leadSilenceEnd;
+        const double nearest = std::round(body / barSeconds);
+        const double apart = std::abs(body - nearest * barSeconds);
+        const float fit = nearest < 1.0 ? 0.0f : static_cast<float>(juce::jlimit(0.0, 1.0, (0.55 - apart) / 0.15));
+        // A loop of usual length whose last bar simply ends quietly (a bass loop's rest) keeps its
+        // whole-file reading: the better of the two counts.
+        const bool wholeFileUsual = candidate.lengthFit >= 0.5f && barCountPrior(candidate.bars) >= 0.7f;
+        if (!wholeFileUsual || fit * barCountPrior(static_cast<int>(nearest)) > candidate.lengthFit * barCountPrior(candidate.bars))
+        {
+            candidate.bodyBars = static_cast<int>(nearest);
+            candidate.priorFit = fit;
+        }
+    }
 
     // Bar phase: which of the 16 grid positions is beat 1. Backbeat (snares on 2 & 4, kick on
     // 1) decides; a loop that starts right on a hit gets a bonus for starting on the downbeat.
@@ -884,7 +985,8 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
             tempoBarScore = backbeat + startBonus;
             bestBackbeat = backbeat;
         }
-        const float barScore = phaseBackbeatScore(hits, candidate.bpm, origin) + startBonus;
+        const float barScore = phaseBackbeatScore(hits, candidate.bpm, origin) + startBonus
+            + kKickOnBeatWeight * context.drumLike * kickOnBeatShare(hits, candidate.bpm, origin);
         if (barScore > bestBarScore)
         {
             bestBarScore = barScore;
@@ -909,12 +1011,12 @@ BreakTempoCandidate evaluateCandidate(const std::vector<BreakDrumHit>& hits,
         candidate.label = 1.0f;
 
     candidate.score = 1.00f * candidate.gridFit
-        + (trimmed ? 0.70f : 0.0f) * candidate.lengthFit
+        + (trimmed ? 0.70f : 0.0f) * candidate.priorFit
         + 0.60f * candidate.backbeat
         + 0.35f * candidate.prior
         + 0.08f * candidate.host
         + kLabelBonus * candidate.label
-        + (candidate.lengthFit >= 0.5f ? kBarCountWeight * barCountPrior(candidate.bars) : 0.0f)
+        + (candidate.priorFit >= 0.5f ? kBarCountWeight * barCountPrior(candidate.priorBars()) : 0.0f)
         - 0.50f * subdivisionOverload(hits, candidate.bpm);
     return candidate;
 }
@@ -1139,6 +1241,8 @@ juce::String DrumBreakAnalysis::describe(bool includeHits) const
               + " S " + juce::String(countLane(TrackType::Snare))
               + " H " + juce::String(countLane(TrackType::HiHat)));
 
+    if (tailSeconds > 0.0)
+        lines.add("Loop tail " + juce::String(tailSeconds, 2) + " s (body " + juce::String(durationSeconds - tailSeconds, 2) + " s)");
     juce::String candidatesLine = "Tempo candidates:";
     for (const auto& candidate : tempoCandidates)
     {
@@ -1146,6 +1250,7 @@ juce::String DrumBreakAnalysis::describe(bool includeHits) const
                        << " score " << juce::String(candidate.score, 2)
                        << " grid " << juce::String(candidate.gridFit, 2)
                        << " len " << juce::String(candidate.lengthFit, 2)
+
                        << " bb " << juce::String(candidate.backbeat, 2)
                        << (candidate.host > 0.0f ? " host" : "")
                        << (candidate.label > 0.0f ? " label" : "") << "]";
@@ -1170,6 +1275,19 @@ juce::String DrumBreakAnalysis::describe(bool includeHits) const
     }
 
     return lines.joinIntoString("\n");
+}
+
+bool DrumBreakTranscriber::preferSecondWindowTempo(const DrumBreakAnalysis& first, const DrumBreakAnalysis& second)
+{
+    if (!second.valid || second.bpm <= 20.0)
+        return false;
+    if (!first.valid || first.bpm <= 20.0)
+        return true;
+    // the same tempo up to an octave: the genre engines fold octaves, nothing to change
+    for (const double ratio : { 1.0, 2.0, 0.5 })
+        if (std::abs(second.bpm / (first.bpm * ratio) - 1.0) < 0.02)
+            return false;
+    return second.tempoConfidence > first.tempoConfidence;
 }
 
 DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoInput,
@@ -1342,6 +1460,13 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
             context.leadSilenceEnd = context.firstHit;
     }
     const double loopSeconds = analysis.durationSeconds - context.leadSilenceEnd;
+    context.bodyEnd = findTailStart(mono, padSamples, analysis.sampleRate, analysis.hits);
+    // Noise above 4 kHz (hats / snares): 1 from 0.4 % of the power, 0 at 0.1 % (log scale; step 4).
+    analysis.highBandShare = computeHighBandShare(spectrogram, layout);
+    context.drumNoise = juce::jlimit(0.0f, 1.0f, static_cast<float>(std::log10((analysis.highBandShare + 1.0e-5) / 0.001) / std::log10(4.0)));
+    context.drumLike = context.drumNoise * juce::jlimit(0.0f, 1.0f, (analysis.templateFit - 0.75f) / 0.15f);
+    if (context.bodyEnd > 0.0)
+        analysis.tailSeconds = analysis.durationSeconds - context.bodyEnd;
 
     // 5. tempo
     std::vector<double> seeds;
@@ -1427,10 +1552,10 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
         for (auto& entry : evaluated)
         {
             auto& candidate = entry.first;
-            if (candidate.lengthFit < 0.5f || weakOnsets <= 0.0f)
+            if (candidate.priorFit < 0.5f || weakOnsets <= 0.0f)
                 continue;
-            const bool tripleReading = candidate.bars == 3 || candidate.bars == 6 || candidate.bars == 12;
-            candidate.score += kWeakOnsetBarWeight * weakOnsets * (tripleReading ? -1.0f : barCountPrior(candidate.bars));
+            const bool tripleReading = candidate.priorBars() == 3 || candidate.priorBars() == 6 || candidate.priorBars() == 12;
+            candidate.score += kWeakOnsetBarWeight * weakOnsets * (tripleReading ? -1.0f : barCountPrior(candidate.priorBars()));
         }
     }
 
@@ -1603,9 +1728,7 @@ DrumBreakAnalysis DrumBreakTranscriber::analyze(const std::vector<float>& monoIn
     // A loop without noise above 4 kHz has no hats or snares: a percussive bass / pluck loop that
     // K/S/H templates still "explain" (docs/audit/SAMPLE_ANALYSIS_STAGE.md, step 4). Fades the
     // confidence to x0.6 from 0.4 % down to 0.1 % high-band power (log scale).
-    analysis.highBandShare = computeHighBandShare(spectrogram, layout);
-    const float noisy = juce::jlimit(0.0f, 1.0f, static_cast<float>(std::log10((analysis.highBandShare + 1.0e-5) / 0.001) / std::log10(4.0)));
-    analysis.drumLoopConfidence *= 0.6f + 0.4f * noisy;
+    analysis.drumLoopConfidence *= 0.6f + 0.4f * context.drumNoise;
 
     assignTicks(analysis, options.quantizeAmount);
     completeMaskedHats(analysis);

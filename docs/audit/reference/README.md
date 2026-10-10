@@ -11,6 +11,10 @@ checked without redistributing the audio.
 | `boombap_loops_transcribed/*.txt` | `HPDG_BreakLab analyze <loop> --bpm <label> --hits` reports of the 159 boom bap loops (per-hit lane / grid / offset / velocity / confidence). `tools/reference_kicks.py` reads these directly: the kick / hat reference comparison needs **no audio**. Transcribed with build `43e0dc9`+. |
 | `tempo_bench/typed_origin_*.txt` | typed-tempo beat-1 check of the 243 labeled loops before / after `43e0dc9` (`origin ms | labeled bpm | file`) |
 | `manifest_*.csv` | every corpus file with bytes, SHA-256 and the tempo parsed from its name |
+| `user_songs_tbpm.txt` | 616 whole songs from the maintainer's mp3 library (`D:/Downloads`: mp3, Morricone, Theodor Bastard) with a tempo in the ID3 TBPM tag: `path TAB bpm TAB seconds TAB genre`. Tempo benchmark corpus `user_songs` (bpm regex `list`); the tags come from DJ / tagger software and are not verified by ear |
+| `techno_fast_tops.tsv` | 16th positions (HiHat lane) of 40 faster techno top / ride loops (PML x Weska Peak Time Tops 128, PML Overdrive Top Loops 135-138), from `tools/loop_bars.py`; compare with the lab column `topBars` |
+| `techno_fast_hats.tsv` | the same for hat / ride loops: PML Overdrive Hat / Ride Loops (132-140) and Audentity Dark Techno 2 Hi-Hat loops (125) |
+| `techno_dasha_full.tsv` | every onset of 7 Dasha Rush "Techno Toys" full drum loops (131-140, TR-626); compare with `drumBars` |
 
 ## Corpora (local paths on the development PC)
 

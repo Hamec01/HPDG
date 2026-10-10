@@ -696,6 +696,183 @@ Thresholds 0.2-0.4 give nearly the same picture.
 Tests: CoreTests has a new check that Guide leaves out a 0.10-confidence kick and keeps a 0.50 snare
 and a 0.90 hat, while Copy keeps the kick. All suites pass.
 
+## Benchmark on the second PC (2026-10-09)
+
+The corpora sit on another drive here (`D:/Drums` instead of `E:/DRUMS/DRUMS`). `tempo_bench.py`
+maps the corpus paths through an untracked `docs/audit/reference/corpus_roots.local.tsv`
+(`old prefix TAB new prefix`), runs files in parallel (`--jobs N`) and passes extra lab arguments
+(`--lab-args "--cut"`). Missing here: Cr2 Trippy Trap and the other PC's FL renders. The baseline on
+this PC reproduces the documented numbers: drums 100 % up to octave, tonal 81 %, Freaky DnB music
+36-38 %.
+
+## Step 12 — loop tails (reverb after the loop body)
+
+**Cause.** Freaky DnB music loops are 8 or 16 bars followed by 1-4 bars of decaying reverb, rendered
+to whole bars (13.79 s = 8 + 2 bars at 174). At 77.3 BPM the same file is 4 "exact" bars, and the
+bar-count prior (step 7) preferred that.
+
+**Detection** (`findTailStart`): 20 ms frames; body loudness = 75th percentile; the body ends after
+its last frame within 10 dB of it. A tail must be at least 1 s and 8 % of the file (a reverb decays
+over seconds; a shorter quiet end is a note's release inside the last bar), hold no clear hit
+(strength >= 0.5) and decay (second half quieter than the first). The report prints `Loop tail`.
+
+**Scoring.** With a tail the length / bar-count terms read the body: its end lies within ~0.4 s of a
+bar line (a pad's release ends just before or after it), so a reading fits when the body end is
+within 0.4 s of a whole bar (fading out by 0.55 s). A loop of a usual length (2 / 4 / 8 / 16 bars)
+whose last bar just ends quietly keeps its whole-file reading: the better of the two counts.
+
+**Tried first** (same files):
+- tails from 0.25 s with a bar tolerance: Freaky music 36 -> 81 %, but Raw Hip-Hop bass 97 -> 78 %
+  (their "tail" is a rest in the last bar) — rejected;
+- tail = no length evidence at all: 58 % — weaker;
+- 1 s tails, body only: tonal 80.7 -> 82.6 %, Raw Hip-Hop bass 97 -> 90 % — replaced by "better of
+  the two".
+
+**Result** (audio only, same files):
+
+| | up to octave before -> after | exact (<= 2 %) |
+|---|---|---|
+| Freaky DnB music (32) | 38 -> **69 %** | 28 -> 38 % |
+| all tonal (379) | 80.7 -> **82.8 %** | 58.8 -> 59.1 % |
+| Raw Hip-Hop bass / GUT bass | 97 -> 95 % / 97 -> 95 % (one file each) | |
+| drums (327) / breaks (84) | identical (0 tempo changes) | |
+
+## Step 13 — 16th phase of four-on-the-floor loops
+
+**Cause.** In straight time every 16th is a candidate for beat 1 and only the backbeat decided. In
+techno loops whose claps are off the backbeat, the best backbeat put the grid an 8th or a 16th off:
+the kicks landed on the "e" / "and" (GUT 01 / 13 / 20 / 21 / 28 / 29 / 44 with the typed tempo).
+
+**Change.** The beat-1 choice adds 0.5 x the share of strong kicks on a quarter note
+(`kickOnBeatShare`; invariant to whole-quarter shifts, so it only picks the 16th inside the beat).
+Only for drum loops: scaled by the high-band noise and by the K/S/H template fit (0 at 0.75, full at
+0.90). Techno music loops with percussion have template fit 0.55-0.88 and their "kicks" are bass notes;
+without that gate their automatic beat 1 got worse (11 -> 16 loops a 16th off). The tempo score does
+not use the term (tempo choices identical).
+
+**Result** (origin more than 20 ms off, not a whole number of quarters):
+
+| | auto before -> after | typed before -> after |
+|---|---|---|
+| Techno Ghosthack (50) | 9 -> **3** | 7 -> **1** |
+| other drum corpora | identical | identical |
+| tonal techno music | 11 -> 12 | 7 -> 7 |
+| all drums, origin <= 20 ms | 92 -> **94 %** | 93 -> **95 %** (a quarter or more off 3 -> 1 %) |
+
+The 14 Boom Bap loops 0.5-1 16th "off" with the typed tempo are the same before and after; they start
+with a pickup and are not a phase error of this kind.
+
+## Step 14 — whole songs
+
+**Corpus.** `user_songs`: 616 songs from the maintainer's mp3 library with a tempo in the ID3 TBPM
+tag (`docs/audit/reference/user_songs_tbpm.txt`; mostly alternative rock, film scores, Morricone,
+Theodor Bastard). The tags are not verified by ear, so the numbers are a floor.
+
+**Cause 1: the 64 s window was read as a loop.** The plugin analyses the first 64 s of a long file.
+That excerpt is exactly 64 s, and whole bars fit it at 60, 82.5, 97.5, 165, 195 BPM: the reports
+said "exact loop" and the length terms chose x3/2 and x3/4 readings ("Gorilla Warfare": 110 BPM
+had the best grid, 0.42, and lost to 165, "44 bars, len 1.00").
+
+**Change 1.** `audioCut` (set by `SampleAnalyzer` when the file is longer than the window; the lab
+sets it the same way, or `--cut` for an excerpt): the cut audio has no length evidence.
+
+**Cause 2: the start of a song is often an intro.** Start 64 s alone 71.5 %, a window from 30 % of
+the song alone 70.8 %, but the more confident of the two 80.3 % (either right: 82.8 %; where the two
+agree, 84 % right).
+
+**Change 2.** For a whole song (cut, no selection, no typed or stated tempo) the tempo is also read
+on a second window from 30 % of the file (`DrumBreakTranscriber::preferSecondWindowTempo`). When it
+is more confident and not the same tempo up to an octave, the first window (the one that plays and
+whose hits are used) is analysed again at that tempo, keeping the second window's confidence.
+Cost: one more transcription of a 64 s window for songs, a third one when the windows disagree.
+
+**Result** (611 songs, audio only):
+
+| | up to octave | exact (<= 2 %) | confidence >= 0.8: n / right |
+|---|---|---|---|
+| before (first 64 s read as a loop) | 55.3 % | 42.2 % | 62 / 94 % |
+| change 1 (cut audio: no length evidence) | 71.3 % | 51.8 % | 39 / 95 % |
+| change 1 + 2 (second window) | **79.9 %** | **58.4 %** | 40 / 95 % |
+
+A first version kept the higher of the two confidences after the re-analysis at the given tempo:
+songs at >= 0.8 were then right only 78 % of the time (134 songs), so the re-analysis keeps the
+second window's own confidence. A margin before switching (0.05-0.2) changed little (78.5-80.5 %).
+
+Loops and drum loops are never cut, so they are identical.
+
+## Step 15 — the user's key (one-click correction)
+
+Audio-only key on short loops sits near MIREX 0.65 (step 5 and the experiments after it), so the
+Sample BPM dialog ("Sample BPM / key") gets a **Key** list: Auto key, C minor, C major … B major.
+- A picked key replaces the detected one as it is (`SampleAnalysisRequest::manualKeyRoot / Mode`,
+  confidence 1); the bass / melody lines are then read in that key and generation follows it.
+- It is saved with the sample in the project / preset (`manual_key_root`, `manual_key_mode`) and
+  cleared when another file is loaded. "Auto key" detects again.
+- Test (LaneBoundaryTests, "guide 808 follows sample bass and key"): the A minor test sample with
+  D minor picked gives D minor and a D minor pattern; Auto key gives A minor again.
+
+## Step 16 (roadmap stage 8) — key confidence: a fifth neighbour that fits better
+
+**Measured** (380 tonal loops, audio only): the key confidence did not predict a right key — 300 loops
+at >= 0.6 were 59 % exact, the 53 below 0.4 45 % (AUC 0.57). Offline predictors (AUC, exact key):
+the key's lead over its fifth neighbours on the chroma 0.65, agreement with the transcribed notes
+0.69 (needs a second line pass, not used), a logistic mix of nine features 0.65 leave-one-pack-out.
+
+**Change.** When a key a fifth away (same mode) correlates with the chroma better than the chosen one
+(the choice came from the bass / opening bonuses), the confidence is capped at 0.45. Those 113 loops
+are 38 % exact vs 64 % for the rest, lower in each of the 9 packs. The cap stays above 0.4, the
+confidence the key is applied to generation and the lines are read in key with
+(`SampleBassFollower::kMinKeyConfidence`, `SampleLineTranscriber` bias): a first version at 0.35 broke
+the "guide 808 follows sample key" tests and would have dropped the sample key for 30 % of tonal
+loops, whose key is still the better guess (a fifth away shares six notes).
+
+**Result.** Keys unchanged (MIREX 0.65, exact 56 %); only the shown confidence moves:
+confidence >= 0.6: 300 loops 59 % exact -> 203 loops 69 % exact; 0.4-0.6: 27 loops 52 % -> 124 loops
+40 %; below 0.4 unchanged (53 loops, 45 %). Bass lines on 20 stem sets of the maintainer's tracks and
+the generation key: identical by construction (nothing crosses 0.4); tests pass.
+
+## Step 17 (roadmap stage 9) — Copy Break accuracy
+
+`kshh_bench.py report` now also prints, for the hits matched to stem onsets:
+- the time Copy Break places each hit at (origin + (grid + off) ticks) against the stem onset;
+- the Spearman correlation of velocity with the stem's onset level.
+
+**Bench fix.** The stem truth fired on a rise of the next 30 ms over the previous 60 ms, 8 / 23 / 9 ms
+before the kick / snare / hat attack. Each truth onset now moves to its attack (first sample above
+20 % of the hit's peak). Snare recall 0.82 -> 0.83; the analyzer was right, the truth was early.
+
+**Result** (35 Ghosthack loops with stems):
+
+| | kick | snare | hat |
+|---|---|---|---|
+| P / R / F | 0.85 / 0.91 / 0.88 | 0.93 / 0.83 / 0.88 | 0.78 / 0.89 / 0.83 |
+| placed vs attack: median / p90 | 0.8 / 4.3 ms | 0.3 / 4.3 ms | 0.4 / 4.2 ms |
+| placed > 10 ms off | 1 % | 3 % | 1 % |
+| ticks vs analyzer time | < 0.5 ms | < 0.5 ms | < 0.5 ms |
+
+Microtiming survives the copy. Velocity: kicks are flat in 33 of 34 loops (nothing to follow);
+snares follow the level where it varies (within-loop Spearman median 0.78, 5 loops); hats do not
+(0.07, 15 loops: kick / snare energy leaks into the hat level in a mix). No change — a fix needs
+an experiment, not a threshold.
+
+## Step 18 (roadmap stage 10) — bass lines measured
+
+`HPDG_BreakLab lines` on 20 stem sets of the maintainer's tracks (zips in `D:/Downloads/mp3`, the
+mix of all stems but the vocals against the Bass stem, first 40 s): frames recall 0.97, exact note
+0.90, pitch class 0.94, 0.5 s windows right 0.95. Precision 0.59 is mostly the reference: in the
+"(Cover)" sets the stems come from source separation, and keyboard / synth low notes heard in the
+mix are not in the Bass stem; on the project stems (Hamilio160, i see dead people, Замарай мои
+следы) precision is 0.91-0.94. No change.
+
+## Step 19 (roadmap stage 11) — confidence in Guide, measured
+
+Guide extracts drums only from clear drum loops (drum-loop confidence >= 0.75): 346 of the benchmark
+loops. Their tempo is right up to octave in 345 (the engines fold octaves), at every tempo
+confidence; beat 1 within 20 ms in 94-95 %; doubtful hits (< 0.3) are already left out (step 11).
+Scaling the sample's blend weight by tempo confidence would only weaken right guidance — no change.
+Engines consuming GenerationHints directly (finding 4 of the baseline) is a design change for the
+maintainer to decide, not a calibration.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on
