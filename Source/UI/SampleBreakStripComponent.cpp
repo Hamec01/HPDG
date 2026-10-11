@@ -145,8 +145,7 @@ juce::String SampleBreakStripComponent::resultText() const
 void SampleBreakStripComponent::paint(juce::Graphics& g)
 {
     auto panel = getLocalBounds().toFloat().reduced(1.0f);
-    g.setColour(sketch::Theme::paperLight().withAlpha(0.90f));
-    g.fillRoundedRectangle(panel, 4.0f);
+    sketch::fillPanel(g, panel, sketch::Theme::paperLight().withAlpha(0.90f), 4.0f);
     sketch::drawFrame(g, panel, sketch::Theme::graphiteSoft(), 1.15f, 913, 4.0f);
 
     g.setColour(sketch::Theme::graphite());

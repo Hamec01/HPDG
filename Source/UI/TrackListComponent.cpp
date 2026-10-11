@@ -207,7 +207,10 @@ void TrackListComponent::setHatFxDragUiState(float density, bool locked)
 
 void TrackListComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(sketch::Theme::paper());
+    if (sketch::isHandDrawn())
+        g.fillAll(sketch::Theme::paper());
+    else
+        sketch::fillPanel(g, getLocalBounds().toFloat(), sketch::Theme::paper(), 0.0f, false);
 
     auto ribbon = juce::Rectangle<float>(0.0f, 0.0f, static_cast<float>(getWidth()), static_cast<float>(rulerHeight));
     g.setGradientFill(sketch::raisedPaperGradient(ribbon, sketch::Theme::ochreWash().withMultipliedAlpha(1.15f),

@@ -52,6 +52,7 @@ public:
     std::function<void()> onTransportStepForward;
     std::function<void()> onTransportToEnd;
     std::function<void()> onToggleStandaloneWindow;
+    std::function<void(sketch::Skin)> onSkinChosen; // live skin change (VST3 window); unset = applies on reopen
     std::function<void(float, float)> onZoomChanged;
     std::function<void(int)> onGridResolutionChanged;
     std::function<void(int)> onPreviewPlaybackModeChanged;
@@ -135,6 +136,7 @@ private:
     juce::Label masterSectionLabel;
     juce::Label masterVolumeLabel;
     juce::TextButton advancedModeButton { "ADV" };
+    juce::TextButton skinButton { "SKIN" }; // Sketch / Steel / Dark (applies when the window reopens)
 
 public:
     RotaryKnobSlider hatFxDensitySlider;

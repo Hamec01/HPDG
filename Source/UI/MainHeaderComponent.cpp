@@ -223,6 +223,36 @@ MainHeaderComponent::MainHeaderComponent()
     };
     standaloneWindowButton.setVisible(false);
 
+    addAndMakeVisible(skinButton);
+    skinButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::paperLight());
+    skinButton.setButtonText(juce::String("SKIN: ") + juce::String(sketch::skinName(sketch::activeSkin())).toUpperCase());
+    skinButton.setTooltip("Look of the plugin: Sketch (notebook), Steel (street / trap hardware), Dark. Applies when the HPDG window is reopened.");
+    skinButton.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        const auto saved = sketch::loadSavedSkinChoice();
+        for (const auto skin : sketch::allSkins())
+            menu.addItem(static_cast<int>(skin) + 1, sketch::skinName(skin), true, skin == saved);
+        auto safeThis = juce::Component::SafePointer<MainHeaderComponent>(this);
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&skinButton), [safeThis](int result)
+        {
+            if (result <= 0 || safeThis == nullptr)
+                return;
+            const auto chosen = static_cast<sketch::Skin>(result - 1);
+            if (safeThis->onSkinChosen)
+            {
+                if (chosen != sketch::activeSkin())
+                    safeThis->onSkinChosen(chosen); // rebuilds the window: this header is gone afterwards
+                return;
+            }
+            sketch::saveSkin(chosen);
+            safeThis->skinButton.setButtonText(juce::String("SKIN: ") + juce::String(sketch::skinName(chosen)).toUpperCase());
+            if (chosen != sketch::activeSkin())
+                juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::NoIcon, "HPDG skin",
+                                                       juce::String(sketch::skinName(chosen)) + " is saved. Close and reopen the HPDG window to apply it.");
+        });
+    };
+
     addAndMakeVisible(advancedModeButton);
     advancedModeButton.onClick = [this]
     {
@@ -396,8 +426,7 @@ MainHeaderComponent::MainHeaderComponent()
 void MainHeaderComponent::paint(juce::Graphics& g)
 {
     auto area = getLocalBounds().toFloat();
-    g.setColour(sketch::Theme::paperLight().withAlpha(0.96f));
-    g.fillRoundedRectangle(area.reduced(0.5f), 5.0f);
+    sketch::fillPanel(g, area.reduced(0.5f), sketch::Theme::paperLight().withAlpha(0.96f), 5.0f);
     sketch::drawFrame(g, area.reduced(0.5f), sketch::Theme::graphiteSoft(), 1.2f, 1101, 5.0f);
 
     g.setColour(sketch::Theme::ochreWash().withAlpha(0.50f));
@@ -533,6 +562,7 @@ void MainHeaderComponent::resized()
     };
 
     placeMaster(masterRow, 120, masterVolumeLabel, masterVolumeSlider);
+    skinButton.setBounds(masterRow.removeFromRight(104).reduced(2, 2));
 
     if (controlsMode == HeaderControlsMode::Hidden)
     {

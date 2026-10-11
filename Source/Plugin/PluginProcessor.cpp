@@ -265,17 +265,21 @@ public:
 // Standalone keeps the full authoring editor. VST3 uses this DAW-safe shell:
 // generator + rack + passive grid only. Analysis and sound shaping remain in
 // the codebase for their later redesign, but are intentionally hidden here.
-class Vst3SafeHeaderEditor final : public juce::AudioProcessorEditor,
-                                   private juce::Timer
+// Everything inside the VST3 window. Its components take their colours, font and textures from
+// the active skin while they are built, so a skin change builds a new content (the host keeps the
+// Vst3SafeHeaderEditor shell below).
+class Vst3EditorContent final : public juce::Component,
+                                private juce::Timer
 {
 public:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
-    explicit Vst3SafeHeaderEditor(BoomBapGeneratorAudioProcessor& processor)
-        : juce::AudioProcessorEditor(&processor)
-        , audioProcessor(processor)
+    std::function<void(sketch::Skin)> onSkinChosen; // set by the shell: rebuild in that skin
+
+    explicit Vst3EditorContent(BoomBapGeneratorAudioProcessor& processor)
+        : audioProcessor(processor)
         , commandController(processor)
         , soundModuleController(processor, soundModule)
     {
@@ -312,14 +316,13 @@ public:
         horizontalSplitterHandle.reset(horizontalSplitter);
         horizontalSplitterHandle->setVisible(false);
 
-        setResizable(true, true);
-        setResizeLimits(BoomBapGeneratorAudioProcessor::kVst3EditorMinWidth,
-                        BoomBapGeneratorAudioProcessor::kVst3EditorMinHeight,
-                        BoomBapGeneratorAudioProcessor::kVst3EditorMaxWidth,
-                        BoomBapGeneratorAudioProcessor::kVst3EditorMaxHeight);
         const auto savedEditorSize = audioProcessor.getVst3EditorSize();
         setSize(savedEditorSize.x, savedEditorSize.y);
-        canStoreEditorSize = true;
+        header.onSkinChosen = [this](sketch::Skin skin)
+        {
+            if (onSkinChosen)
+                onSkinChosen(skin);
+        };
 
         header.setStandaloneWindowButtonVisible(false);
         header.setHeaderControlsMode(MainHeaderComponent::HeaderControlsMode::Compact);
@@ -369,7 +372,7 @@ public:
                 header.onPlayToggled(start);
             return true;
         }
-        return juce::AudioProcessorEditor::keyPressed(key);
+        return juce::Component::keyPressed(key);
     }
 
     void mouseDown(const juce::MouseEvent& event) override
@@ -396,13 +399,12 @@ public:
         }
     }
 
-    ~Vst3SafeHeaderEditor() override
+    ~Vst3EditorContent() override
     {
         shutdownTrace("editor destructor begin");
         removeMouseListener(this);
         stopTimer();
         closeTrimEditor();
-        audioProcessor.setVst3EditorSize(getWidth(), getHeight());
         setLookAndFeel(nullptr);
         shutdownTrace("editor destructor body end");
     }
@@ -418,9 +420,6 @@ public:
 
     void resized() override
     {
-        if (canStoreEditorSize)
-            audioProcessor.setVst3EditorSize(getWidth(), getHeight());
-
         auto area = getWorkspaceBounds();
         header.setBounds(area.removeFromTop(header.getPreferredHeight()));
         area.removeFromTop(8);
@@ -629,7 +628,7 @@ private:
                                                          haveTempo ? request.trimStartSeconds + analysis.originSeconds : -1.0,
                                                          request.manualBpm > 20.0);
         trimEditor->setLookAndFeel(&sketchLookAndFeel);
-        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
         trimEditor->getPlayheadSeconds = [safeEditor]
         {
             return safeEditor != nullptr ? safeEditor->audioProcessor.getSampleAuditionPositionSeconds() : -1.0;
@@ -698,7 +697,7 @@ private:
         menu.addSeparator();
         menu.addItem(3, "Open presets folder");
 
-        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&header.presetsButton),
                            [safeEditor, presets](int result)
                            {
@@ -723,7 +722,7 @@ private:
     {
         const auto folder = BoomBapGeneratorAudioProcessor::getPresetsDirectory();
         folder.createDirectory();
-        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
         presetFileChooser = std::make_shared<juce::FileChooser>("Save preset", folder.getChildFile("My preset.hpdgpreset"), "*.hpdgpreset");
         presetFileChooser->launchAsync(juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                                            | juce::FileBrowserComponent::warnAboutOverwriting,
@@ -744,7 +743,7 @@ private:
 
     void choosePresetToLoad()
     {
-        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
         presetFileChooser = std::make_shared<juce::FileChooser>("Load preset", BoomBapGeneratorAudioProcessor::getPresetsDirectory(), "*.hpdgpreset");
         presetFileChooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                                        [safeEditor](const juce::FileChooser& chooser)
@@ -791,7 +790,7 @@ private:
         window->addButton("Load sample...", 1, juce::KeyPress(juce::KeyPress::returnKey));
         window->addButton("Skip", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
         window->enterModalState(true, juce::ModalCallbackFunction::create([safeEditor, reference](int result)
         {
             if (safeEditor == nullptr)
@@ -910,7 +909,7 @@ private:
         window->addButton("Auto", 2);
         window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-        auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
         window->enterModalState(true, juce::ModalCallbackFunction::create([safeEditor, window](int result)
         {
             if (safeEditor == nullptr || result == 0)
@@ -1008,7 +1007,7 @@ private:
     {
         sampleStrip.onChooseFile = [this]
         {
-            auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+            auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
             const auto current = audioProcessor.getSampleAnalysisRequest().audioFile;
             sampleFileChooser = std::make_shared<juce::FileChooser>(
                 "Select a drum break or sample",
@@ -1350,7 +1349,7 @@ private:
 
         analysisPanel.onChooseAnalysisFile = [this]
         {
-            auto safeEditor = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+            auto safeEditor = juce::Component::SafePointer<Vst3EditorContent>(this);
             auto chooser = std::make_shared<juce::FileChooser>("Select audio file for analysis",
                                                                juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
                                                                "*.wav;*.aif;*.aiff;*.flac;*.mp3");
@@ -1708,9 +1707,16 @@ private:
         auto shell = childBounds.expanded(5);
         const auto shellF = shell.toFloat();
         sketch::dropShadow(g, shellF, 4.0f, emphasise ? 3.4f : 2.4f, 0.9f);
-        g.setGradientFill(sketch::raisedPaperGradient(shellF, sketch::Theme::paperLight().withAlpha(0.7f),
-                                                      sketch::Theme::paperShadow().withAlpha(0.5f)));
-        g.fillRoundedRectangle(shellF, 4.0f);
+        if (sketch::isHandDrawn())
+        {
+            g.setGradientFill(sketch::raisedPaperGradient(shellF, sketch::Theme::paperLight().withAlpha(0.7f),
+                                                          sketch::Theme::paperShadow().withAlpha(0.5f)));
+            g.fillRoundedRectangle(shellF, 4.0f);
+        }
+        else
+        {
+            sketch::fillPanel(g, shellF, sketch::Theme::paperShadow(), 4.0f, false);
+        }
         sketch::drawFrame(g, shellF, emphasise ? sketch::Theme::ochre() : sketch::Theme::graphiteSoft(),
                           emphasise ? 1.7f : 1.2f, title.hashCode() + shell.getX(), 4.0f);
 
@@ -1781,7 +1787,6 @@ private:
     int topSectionHeight = 320;
     int visibleLaneCount = 1;
     int selectedSnapResolutionId = 14;
-    bool canStoreEditorSize = false;
     float hatFxDragDensityUi = 1.0f;
     bool hatFxDragLockedUi = false;
 
@@ -1803,6 +1808,122 @@ private:
     std::unique_ptr<SliderAttachment> rackVolumeAttachment;
     std::unique_ptr<SliderAttachment> sampleVolumeAttachment;
     int lastGenreChoice = -1;
+};
+
+// The window the host holds. It owns the content and rebuilds it when the skin changes, behind a
+// short "Loading interface..." screen; every open HPDG window follows the new skin.
+class Vst3SafeHeaderEditor final : public juce::AudioProcessorEditor
+{
+public:
+    explicit Vst3SafeHeaderEditor(BoomBapGeneratorAudioProcessor& processor)
+        : juce::AudioProcessorEditor(&processor)
+        , audioProcessor(processor)
+    {
+        addChildComponent(loadingScreen);
+        buildContent();
+        setResizable(true, true);
+        setResizeLimits(BoomBapGeneratorAudioProcessor::kVst3EditorMinWidth,
+                        BoomBapGeneratorAudioProcessor::kVst3EditorMinHeight,
+                        BoomBapGeneratorAudioProcessor::kVst3EditorMaxWidth,
+                        BoomBapGeneratorAudioProcessor::kVst3EditorMaxHeight);
+        const auto savedEditorSize = audioProcessor.getVst3EditorSize();
+        setSize(savedEditorSize.x, savedEditorSize.y);
+        canStoreEditorSize = true;
+        openEditors().push_back(this);
+    }
+
+    ~Vst3SafeHeaderEditor() override
+    {
+        auto& editors = openEditors();
+        editors.erase(std::remove(editors.begin(), editors.end(), this), editors.end());
+        audioProcessor.setVst3EditorSize(getWidth(), getHeight());
+        content.reset();
+    }
+
+    void resized() override
+    {
+        if (canStoreEditorSize)
+            audioProcessor.setVst3EditorSize(getWidth(), getHeight());
+        if (content != nullptr)
+            content->setBounds(getLocalBounds());
+        loadingScreen.setBounds(getLocalBounds());
+    }
+
+    // Saves the skin and rebuilds every open HPDG window in it.
+    static void applySkinEverywhere(sketch::Skin skin)
+    {
+        sketch::saveSkin(skin);
+        for (auto* editor : openEditors())
+            editor->showLoadingScreen();
+        // Let the loading screens paint before the heavy rebuild.
+        juce::Timer::callAfterDelay(40, [skin]
+        {
+            sketch::setActiveSkin(skin);
+            const auto editors = openEditors();
+            for (auto* editor : editors)
+                editor->rebuild();
+        });
+    }
+
+private:
+    struct LoadingScreen final : public juce::Component
+    {
+        void paint(juce::Graphics& g) override
+        {
+            g.fillAll(juce::Colour::fromRGB(12, 13, 15).withAlpha(0.92f));
+            g.setColour(juce::Colour::fromRGB(214, 220, 228));
+            g.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+            g.drawText("Loading interface...", getLocalBounds().withTrimmedBottom(18), juce::Justification::centred);
+            g.setColour(juce::Colour::fromRGB(140, 148, 160));
+            g.setFont(juce::Font(juce::FontOptions(13.0f)));
+            g.drawText(juce::String("Skin: ") + sketch::skinName(target), getLocalBounds().withTrimmedTop(26), juce::Justification::centred);
+        }
+        sketch::Skin target = sketch::Skin::Sketch;
+    };
+
+    // Open shells, message thread only (plain pointers: nothing to release at DLL unload).
+    static std::vector<Vst3SafeHeaderEditor*>& openEditors()
+    {
+        static std::vector<Vst3SafeHeaderEditor*> editors;
+        return editors;
+    }
+
+    void buildContent()
+    {
+        content = std::make_unique<Vst3EditorContent>(audioProcessor);
+        content->onSkinChosen = [](sketch::Skin skin) { applySkinEverywhere(skin); };
+        addAndMakeVisible(*content);
+        content->setBounds(getLocalBounds());
+        loadingScreen.toFront(false);
+    }
+
+    void showLoadingScreen()
+    {
+        loadingScreen.target = sketch::loadSavedSkinChoice();
+        loadingScreen.setVisible(true);
+        loadingScreen.toFront(false);
+        loadingScreen.repaint();
+    }
+
+    void rebuild()
+    {
+        content.reset();
+        buildContent();
+        resized();
+        auto safeThis = juce::Component::SafePointer<Vst3SafeHeaderEditor>(this);
+        juce::Timer::callAfterDelay(120, [safeThis]
+        {
+            if (safeThis != nullptr)
+                safeThis->loadingScreen.setVisible(false);
+        });
+    }
+
+    BoomBapGeneratorAudioProcessor& audioProcessor;
+    std::unique_ptr<Vst3EditorContent> content;
+    LoadingScreen loadingScreen;
+    bool canStoreEditorSize = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Vst3SafeHeaderEditor)
 };
 
 bool soundLayerHasActiveEq(const SoundLayerState& state)
@@ -3182,8 +3303,16 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     captureEqDisplayAnalyzer(buffer);
 }
 
+juce::AudioProcessorEditor* BoomBapGeneratorAudioProcessor::createVst3EditorForTests()
+{
+    return new Vst3SafeHeaderEditor(*this);
+}
+
 juce::AudioProcessorEditor* BoomBapGeneratorAudioProcessor::createEditor()
 {
+    // The skin is a user preference read when the window opens (every component takes its
+    // colours, font and textures from it while it is built).
+    sketch::loadSavedSkin();
     if (wrapperType == juce::AudioProcessor::wrapperType_VST3)
     {
         shutdownTrace("editor create");

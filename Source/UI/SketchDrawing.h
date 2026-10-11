@@ -12,6 +12,11 @@ juce::Image makePaperTexture(int width, int height);
 // Soft ambient drop shadow used to lift raised UI (buttons, cards, knobs) off the page.
 void dropShadow(juce::Graphics&, juce::Rectangle<float> bounds, float corner, float depth = 3.0f, float alphaScale = 1.0f);
 
+// A panel / card surface in the active skin: Sketch a flat fill; Steel a bevelled steel plate
+// (brushed, scratched texture, screws in the corners of large plates); Dark a matte grained
+// surface with a faint inner shadow. `colour` is the panel's base tone.
+void fillPanel(juce::Graphics&, juce::Rectangle<float> bounds, juce::Colour colour, float corner, bool screws = true);
+
 // Vertical "raised paper" gradient fill for buttons/cards/panels, from a light top edge to a deeper base.
 juce::ColourGradient raisedPaperGradient(juce::Rectangle<float> bounds, juce::Colour top, juce::Colour bottom);
 }

@@ -82,6 +82,8 @@ public:
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
+    // The VST3 editor whatever the wrapper (the UI snapshot tool renders it for each skin).
+    juce::AudioProcessorEditor* createVst3EditorForTests();
     bool hasEditor() const override;
 
     const juce::String getName() const override;

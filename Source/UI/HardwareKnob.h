@@ -45,7 +45,7 @@ struct LookAndFeel final : juce::LookAndFeel_V4
         const float angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
         const auto centre = bounds.getCentre();
         const float radius = diameter * 0.5f;
-        const auto knobFill = fill.isTransparent() ? amber() : fill;
+        const auto knobFill = sketch::toneForSkin(fill.isTransparent() ? amber() : fill);
 
         sketch::dropShadow(g, bounds, radius, 2.6f, 0.95f);
 

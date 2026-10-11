@@ -358,6 +358,24 @@ target_link_libraries(HPDG_LaneBoundaryTests
 
 add_test(NAME HPDG_LaneBoundaryTests COMMAND HPDG_LaneBoundaryTests)
 
+# Renders the VST3 editor to PNG files (one per UI skin) for checking the look without a host.
+add_executable(HPDG_UiSnapshot
+    Tests/UiSnapshot.cpp
+)
+
+target_link_libraries(HPDG_UiSnapshot
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
 # Scorer validation + candidate-count benchmark (roadmap sections 8 / 11).
 add_executable(HPDG_ScorerAudit
     Tests/ScorerAudit.cpp
@@ -427,6 +445,7 @@ add_executable(HPDG_SampleTrimTests
     Tests/SampleTrimTests.cpp
     Source/Analysis/SampleSourceAudio.cpp
     Source/UI/SampleTrimEditorComponent.cpp
+    Source/UI/SketchDrawing.cpp
 )
 
 target_include_directories(HPDG_SampleTrimTests PRIVATE Source)
@@ -439,6 +458,7 @@ target_compile_definitions(HPDG_SampleTrimTests PRIVATE
 target_link_libraries(HPDG_SampleTrimTests
     PRIVATE
         juce::juce_audio_formats
+        juce::juce_data_structures
         juce::juce_gui_basics
     PUBLIC
         juce::juce_recommended_config_flags

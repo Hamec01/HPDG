@@ -211,8 +211,15 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
 
     const auto frame = bounds.toFloat();
     sketch::dropShadow(g, frame, 4.0f, 3.0f, 0.9f);
-    g.setGradientFill(sketch::raisedPaperGradient(frame, sketch::Theme::paperLight().brighter(0.05f), sketch::Theme::paper()));
-    g.fillRoundedRectangle(frame, 3.0f);
+    if (sketch::isHandDrawn())
+    {
+        g.setGradientFill(sketch::raisedPaperGradient(frame, sketch::Theme::paperLight().brighter(0.05f), sketch::Theme::paper()));
+        g.fillRoundedRectangle(frame, 3.0f);
+    }
+    else
+    {
+        sketch::fillPanel(g, frame, sketch::Theme::paper(), 3.0f, false);
+    }
     sketch::drawFrame(g, frame, sketch::Theme::graphiteSoft(), 1.2f, getWidth() + getHeight(), 3.0f);
 
     auto rulerArea = bounds.removeFromTop(kRulerHeight);
