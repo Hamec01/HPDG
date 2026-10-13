@@ -376,6 +376,25 @@ target_link_libraries(HPDG_UiSnapshot
         juce::juce_recommended_warning_flags
 )
 
+# Plays a demo script against the VST3 editor and records frames + audio for the demo video
+# (tools/demo_reel).
+add_executable(HPDG_DemoReel
+    Tests/DemoReel.cpp
+)
+
+target_link_libraries(HPDG_DemoReel
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
 # Scorer validation + candidate-count benchmark (roadmap sections 8 / 11).
 add_executable(HPDG_ScorerAudit
     Tests/ScorerAudit.cpp

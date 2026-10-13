@@ -45,3 +45,6 @@ Thumbs.db
 docs/audit/**/*_patterns.csv
 
 docs/audit/reference/corpus_roots.local.tsv
+
+# Python bytecode
+__pycache__/

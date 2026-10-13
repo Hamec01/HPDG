@@ -1,0 +1,48 @@
+# Screenshots for the Kickstarter page and the tutorial (HPDG_DemoReel script).
+# Run from the repo root (snap paths are relative to it): buildReleaseHPDG_DemoReel.exe toolskickstarterscreens.txt buildkickstarterec
+skin Dark
+editor 1600 800 1.0
+set bars 2
+click-on row Sub808 "E"
+bass 2
+click "Generate Pattern"
+click row Sub808 "-"
+click "Generate Pattern"
+play
+bars 1.4
+snap "build/kickstarter/raw/boombap.png"
+stop
+combo genre "Trap"
+click "Generate Pattern"
+click row Sub808 "+"
+play
+bars 1.3
+snap "build/kickstarter/raw/trap.png"
+stop
+combo genre "Boom Bap"
+combo mode "Guide generation"
+drop "../demo_reel/media/sad piano 85Dm.wav"
+toggle "Play w/ HPDG"
+click "Generate Pattern"
+click-on row Sub808 "E"
+click row Sub808 "-"
+click row Sub808 "RG"
+play
+bars 1.6
+snap "build/kickstarter/raw/guide.png"
+stop
+click "Clear"
+click row Sub808 "C"
+combo mode "Copy break (K/S/H)"
+drop "../demo_reel/media/demo_break_96.wav"
+set bpm 96
+play
+bars 1.2
+snap "build/kickstarter/raw/copybreak.png"
+skin Steel
+snap "build/kickstarter/raw/skin_steel.png"
+skin Sketch
+snap "build/kickstarter/raw/skin_sketch.png"
+skin Dark
+snap "build/kickstarter/raw/skin_dark.png"
+stop

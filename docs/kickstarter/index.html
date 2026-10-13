@@ -1,0 +1,606 @@
+<title>HPDG Kickstarter Kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: one reading column with a sticky section rail on wide screens; the plugin's own Dark skin
+   (graphite panels, signal red) is the identity, so the page commits to a single dark look. */
+:root {
+  --bg: #0e0f12;
+  --panel: #17191e;
+  --panel-2: #1f2229;
+  --line: #2c3038;
+  --fg: #e8eaee;
+  --muted: #9aa1ad;
+  --red: #e23e3e;
+  --red-soft: #3a1c1e;
+  --warn: #f0b74a;
+  --ok: #5fbf7a;
+  --display: "Oswald", "Bahnschrift", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body); margin: 0; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 0 80px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; }
+nav.rail { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 24px); align-self: start; padding-top: 40px; display: flex; flex-direction: column; gap: 4px; }
+nav.rail a { color: var(--muted); text-decoration: none; font-size: 14px; padding: 6px 10px; border-left: 2px solid var(--line); }
+nav.rail a:hover, nav.rail a:focus-visible { color: var(--fg); border-left-color: var(--red); outline: none; }
+main { min-width: 0; }
+header.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding-block: 44px 28px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 14px; font: 600 15px var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.brand img { width: 33px; height: 40px; border: 0; }
+h1 { font: 600 clamp(36px, 6vw, 60px)/1.05 var(--display); margin: 0; text-wrap: balance; letter-spacing: .01em; }
+h1 em { font-style: normal; color: var(--red); }
+.lede { color: var(--muted); max-width: 64ch; margin: 0; font-size: 17px; }
+h2 { font: 600 30px/1.15 var(--display); margin: 56px 0 14px; letter-spacing: .02em; text-wrap: balance; }
+h2 .tag { font: 500 13px var(--mono); color: var(--red); display: block; letter-spacing: .12em; margin-bottom: 6px; }
+h3 { font: 600 20px/1.3 var(--display); margin: 30px 0 8px; letter-spacing: .02em; }
+p, li { max-width: 72ch; }
+a { color: #ff8a8a; }
+.muted { color: var(--muted); }
+code, .mono { font-family: var(--mono); font-size: .92em; }
+code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; }
+figure { margin: 18px 0 26px; }
+figure img { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line); background: #0c0d0f; }
+figcaption { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+.alert { border: 1px solid var(--line); border-left: 4px solid var(--warn); background: var(--panel); border-radius: 8px; padding: 16px 18px; margin: 14px 0; }
+.alert.stop { border-left-color: var(--red); }
+.alert h3 { margin: 0 0 6px; font-size: 18px; }
+.alert p { margin: 6px 0; }
+.alert ul { margin: 6px 0; padding-left: 20px; }
+
+.fields { display: grid; gap: 12px; margin: 16px 0; }
+.field { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+.field .k { font: 600 15px var(--display); letter-spacing: .03em; }
+.field .k small { display: block; font: 500 12px var(--mono); color: var(--muted); letter-spacing: 0; margin-top: 2px; }
+.field .v { min-width: 0; }
+.field .v p { margin: 0 0 6px; }
+.paste { font-family: var(--mono); font-size: 14px; background: var(--bg); border: 1px dashed var(--line); padding: 8px 10px; border-radius: 6px; display: block; white-space: pre-wrap; word-break: break-word; }
+
+.tablewrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 8px; }
+table { border-collapse: collapse; width: 100%; min-width: 640px; font-size: 15px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 13px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--panel); }
+td.num { font-family: var(--mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+
+.copyblock { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; margin: 16px 0; }
+.copyblock .bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.copyblock .bar span { font: 600 14px var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.copyblock .text { padding: 16px 18px; white-space: pre-wrap; font-size: 15px; max-height: 520px; overflow: auto; }
+button.copy { font: 600 13px var(--body); color: var(--fg); background: var(--red-soft); border: 1px solid var(--red); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.copy:hover { background: var(--red); }
+button.copy:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+.lang { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 8px 0 4px; }
+.lang button { font: 600 13px var(--body); background: transparent; color: var(--muted); border: 0; padding: 7px 14px; cursor: pointer; }
+.lang button[aria-pressed="true"] { background: var(--red); color: #fff; }
+.lang button:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+
+ol.steps { counter-reset: s; list-style: none; padding: 0; display: grid; gap: 8px; }
+ol.steps > li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; align-items: start; }
+ol.steps > li::before { content: counter(s); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--red); color: #fff; font: 600 14px var(--mono); margin-top: 1px; }
+.legend { columns: 2 300px; column-gap: 32px; padding: 0; list-style: none; margin: 10px 0 24px; }
+.legend li { break-inside: avoid; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; margin-bottom: 8px; }
+.legend b.n { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--red); color: #fff; font: 600 12px var(--mono); margin-top: 2px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+.gallery figure { margin: 0; }
+.gallery figcaption { font-family: var(--mono); font-size: 12px; }
+.checklist { list-style: none; padding: 0; display: grid; gap: 6px; }
+.checklist li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+.checklist li::before { content: ""; width: 14px; height: 14px; border: 2px solid var(--red); border-radius: 3px; margin-top: 5px; }
+@media (max-width: 860px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.rail { display: none; }
+  .field { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+[data-lang-block] [lang] { display: none; }
+[data-lang-block].ru [lang="ru"], [data-lang-block].en [lang="en"] { display: block; }
+</style>
+
+<div class="wrap">
+<nav class="rail" aria-label="Разделы">
+  <a href="#start">Перед запуском</a>
+  <a href="#fields">Поля Kickstarter</a>
+  <a href="#rewards">Награды и цель</a>
+  <a href="#story">Описание EN / RU</a>
+  <a href="#risks">Риски и AI</a>
+  <a href="#tutorial">Туториал</a>
+  <a href="#images">Картинки</a>
+  <a href="#checklist">Чек-лист</a>
+</nav>
+
+<main>
+<header class="hero">
+  <div class="brand">
+    <img src="images/logo.png" alt="" width="33" height="40">
+    HamloProd · HPDG 0.1 Beta
+  </div>
+  <h1>Первая бета на Kickstarter: <em>цель $1 000</em></h1>
+  <p class="lede">Как заполнить кампанию поле за полем, готовые тексты на английском и русском, туториал по плагину и все картинки. Тексты в серых рамках и блоки с кнопкой «Копировать» можно вставлять в Kickstarter как есть. Квадратные скобки [ ] — то, что нужно решить тебе.</p>
+</header>
+
+<!-- ============================================================ -->
+<h2 id="start"><span class="tag">ШАГ 0</span>Три вещи, которые нужно решить до запуска</h2>
+
+<div class="alert stop">
+  <h3>1. Страна создателя</h3>
+  <p>Kickstarter принимает авторов только из 25 стран: США, Великобритания, Канада, Австралия, Новая Зеландия, Япония, Сингапур, Гонконг, Мексика, Норвегия, Швейцария и часть ЕС (Германия, Франция, Италия, Испания, Нидерланды, Польша, Швеция, Дания, Ирландия, Австрия, Бельгия, Греция, Люксембург, Словения). Решает страна документа и банковского счёта, а не где живёт аудитория. <b>России и Кыргызстана в списке нет.</b></p>
+  <p>Варианты:</p>
+  <ul>
+    <li>запуск через человека или компанию из списка стран (партнёр с паспортом и счётом в этой стране — он формально создатель кампании);</li>
+    <li>своя компания в США, например через Stripe Atlas (это налоги и расходы, нужна консультация бухгалтера);</li>
+    <li>другая площадка: для русскоязычной аудитории — Boosty или Planeta.ru, для продажи беты по всему миру — предзаказ через Gumroad или itch.io.</li>
+  </ul>
+</div>
+
+<div class="alert stop">
+  <h3>2. Права на семплы в установщике</h3>
+  <p>В библиотеке HPDG сейчас лежат звуки из коммерческих паков: Cymatics (808 в Trap), BoombapClassics, Sample Magic, Production Music Live, Ghosthack. Лицензии таких паков обычно разрешают использовать звуки в своей музыке, но <b>не разрешают распространять их внутри другого продукта</b> — сэмплера, плагина, библиотеки. Kickstarter-награда — это продажа, значит, это распространение.</p>
+  <ul>
+    <li>Либо получить письменное разрешение от каждого правообладателя.</li>
+    <li>Либо заменить их своими звуками (HamloProd sample pack, свои записи) или звуками с явным разрешением на распространение в инструментах.</li>
+  </ul>
+  <p class="muted">Это стоит заложить в план и бюджет кампании. Я не юрист — финальные условия смотри в лицензии каждого пака.</p>
+</div>
+
+<div class="alert">
+  <h3>3. Бета сейчас бесплатна</h3>
+  <p>В README и RIGHTS сказано, что бета работает без ключа активации. Если её можно скачать бесплатно, награда «доступ к бете» ничего не стоит. Нужно выбрать одно:</p>
+  <ul>
+    <li>бета становится эксклюзивом для бэкеров (нужен ключ активации или закрытая ссылка);</li>
+    <li>бета остаётся бесплатной, а бэкеры получают лицензию на версию 1.0, ранний доступ к обновлениям и бонусы. Это честнее и проще — тексты ниже написаны под этот вариант.</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="fields"><span class="tag">ШАГ 1 · BASICS</span>Поля кампании</h2>
+<p>Kickstarter → <b>Start a project</b>. Интерфейс на английском, поэтому названия полей даю как на сайте. Тексты для вставки — на английском: это основной язык площадки. Русскую версию описания можно добавить в конец Story.</p>
+
+<div class="fields">
+  <div class="field"><div class="k">Category<small>категория</small></div><div class="v">
+    <p><b>Technology → Software.</b> Раздел Music рассчитан на альбомы, концерты и клипы, а HPDG — программа.</p></div></div>
+
+  <div class="field"><div class="k">Project title<small>до 60 символов</small></div><div class="v">
+    <span class="paste">HPDG — Drum &amp; Bass Generator VST3 for Beatmakers</span>
+    <p class="muted">49 символов. Запасной вариант: <span class="mono">HPDG: Generate Drums and 808s From Your Own Samples</span></p></div></div>
+
+  <div class="field"><div class="k">Subtitle<small>до 135 символов</small></div><div class="v">
+    <span class="paste">One click writes Boom Bap, Trap, DnB or Techno drums with bass. Drop a loop and HPDG builds the beat in its tempo and key.</span>
+    <p class="muted">121 символ.</p></div></div>
+
+  <div class="field"><div class="k">Project location<small>город</small></div><div class="v">
+    <p>Город, откуда реально идёт работа. Может отличаться от страны верификации (см. шаг 0).</p></div></div>
+
+  <div class="field"><div class="k">Project image<small>16:9, от 1024×576</small></div><div class="v">
+    <p><code>images/cover_1920x1080.png</code> или <code>images/cover_1024x576.png</code>. Это картинка в выдаче, в соцсетях и превью.</p></div></div>
+
+  <div class="field"><div class="k">Project video<small>сильно рекомендуется</small></div><div class="v">
+    <p><code>build/demo_reel/HPDG_demo.mp4</code> (3:41). Кампании с видео собирают заметно чаще. Можно сократить до 1–2 минут: интро, Boom Bap, Sample Analysis, Drag в DAW.</p></div></div>
+
+  <div class="field"><div class="k">Funding goal<small>всё или ничего</small></div><div class="v">
+    <p><b>$1 000</b> (или эквивалент в валюте страны запуска). Если цель не набрана, деньги не списываются ни с кого. Комиссия при успехе: 5% Kickstarter + примерно 3–5% платёжная обработка, на руки около <b>$900–920</b>.</p></div></div>
+
+  <div class="field"><div class="k">Campaign duration<small>1–60 дней</small></div><div class="v">
+    <p><b>30 дней.</b> Kickstarter сам советует 30 дней или меньше: длинные кампании проседают в середине.</p></div></div>
+
+  <div class="field"><div class="k">Launch date<small>запуск</small></div><div class="v">
+    <p>Вторник–четверг, утро по Нью-Йорку (EST). Заранее включи <b>Pre-launch page</b>: люди нажимают «Notify me on launch», и в первый день прилетает волна поддержки.</p></div></div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="rewards"><span class="tag">ШАГ 2 · REWARDS</span>Награды и как дойти до $1 000</h2>
+<p>Все награды цифровые, доставка без пересылки. Ориентир — примерно 50 бэкеров. Цены и лимиты — предложение, правь под себя.</p>
+
+<div class="tablewrap"><table>
+  <thead><tr><th>Цена</th><th>Название (EN)</th><th>Что получает бэкер</th><th>Лимит</th></tr></thead>
+  <tbody>
+    <tr><td class="num">$5</td><td>Thank You</td><td>Имя в списке поддержавших (About / сайт), все апдейты кампании.</td><td>—</td></tr>
+    <tr><td class="num">$19</td><td>Early Bird License</td><td>Лицензия HPDG 1.0 + доступ к бета-апдейтам с первого дня.</td><td class="num">50</td></tr>
+    <tr><td class="num">$29</td><td>Beta Backer License</td><td>То же, что Early Bird, когда ранние места закончатся.</td><td>—</td></tr>
+    <tr><td class="num">$45</td><td>Producer Pack</td><td>Лицензия + HamloProd Sample Pack 2 (лупы и one-shot'ы) + эксклюзивный скин для бэкеров.</td><td>—</td></tr>
+    <tr><td class="num">$99</td><td>Studio</td><td>2 лицензии + Producer Pack + голос за следующий жанр + имя крупно в титрах.</td><td class="num">30</td></tr>
+    <tr><td class="num">$249</td><td>Signature Kit</td><td>Всё из Studio + персональный кит: соберём набор звуков под твой стиль и добавим в HPDG.</td><td class="num">5</td></tr>
+  </tbody>
+</table></div>
+
+<p class="muted">Пример, как набирается цель: 25 × $19 + 10 × $29 + 6 × $45 + 2 × $99 = <span class="mono">$1 233</span>. Запас на тех, кто отменит, и на комиссии.</p>
+
+<h3>Stretch goals — если соберём больше</h3>
+<ul>
+  <li><b>$1 500</b> — дополнительный кит для каждого жанра (свои звуки, без чужих лицензий).</li>
+  <li><b>$2 500</b> — открываем жанры Drill и Rap: они уже есть в движке, их нужно довести до качества.</li>
+  <li><b>$4 000</b> — сертификат подписи кода (Windows перестанет предупреждать при установке) и сайт с документацией.</li>
+</ul>
+<p class="muted">Не обещай macOS, пока нет сборки и теста: невыполненная цель бьёт по репутации сильнее, чем её отсутствие.</p>
+
+<h3>Estimated delivery</h3>
+<p>Лицензии и бета: в течение 7 дней после окончания кампании. Версия 1.0: <b>[укажи реальный срок, например «апрель 2027»]</b>.</p>
+
+<!-- ============================================================ -->
+<h2 id="story"><span class="tag">ШАГ 3 · STORY</span>Описание кампании</h2>
+<p>Вставляй в редактор Story по частям, между частями ставь картинки, указанные в квадратных скобках. Кнопка копирует выбранный язык.</p>
+
+<div data-lang-block class="en" id="storyblock">
+  <div class="lang" role="group" aria-label="Язык описания">
+    <button type="button" aria-pressed="true" data-set="en">English</button>
+    <button type="button" aria-pressed="false" data-set="ru">Русский</button>
+  </div>
+  <div class="copyblock">
+    <div class="bar"><span>Story</span><button class="copy" type="button" data-copy="story">Копировать</button></div>
+<div class="text" lang="en" id="story-en">HPDG — HamloProd Drum Generator
+
+HPDG is a VST3 plugin that writes drums and bass for you. Pick a genre, press Generate Pattern, and a full beat appears in the grid: kick, snare, hats, percussion and an 808 or bass line. Listen right away, tweak it, then drag it into your DAW as MIDI or audio.
+
+[IMAGE: shot_boombap.png]
+
+FOUR GENRES, MANY STYLES
+• Boom Bap — Classic, Dusty, Jazzy, Gold, Russian Underground, Lo-fi Rap
+• Trap — ATL, Dark, Cloud, Rage, Memphis, Luxury: hi-hat rolls, 808 slides, half-time snares
+• Drum & Bass — Modern, Roller, Liquid, Neurofunk, Jump-Up, Breakbeat
+• Techno — Peak Time, Hypnotic, Minimal, Detroit, Dub, Acid, Hard
+
+Each style has its own rules for groove, swing and density. Every click gives a new beat in the same style, not random notes.
+
+[IMAGE: shot_trap.png]
+
+START FROM YOUR SAMPLE
+Drop a loop into Sample Analysis. HPDG detects its tempo, swing, key and the bass notes, then builds the beat for that sample: same tempo, an 808 in the right key, a groove that sits with the loop. Play the loop and the beat together inside the plugin before you export anything.
+
+[IMAGE: shot_guide.png]
+
+COPY A BREAK
+Drop a drum break and HPDG transcribes it hit by hit into Kick, Snare and Hi-Hat lanes with the original timing and swing. Then it's yours: swap the sounds, quantize as much as you like, add a bass line, mutate it.
+
+[IMAGE: shot_copybreak.png]
+
+CONTROL EVERY LANE
+• RG regenerates one lane and keeps the rest
+• Mutate makes a small variation of the whole beat
+• Lock, Solo, Mute, Clear on every lane
+• < > flips through the kit sounds
+• Bass amount 1 / 2 / 3 and quick octave up / down for the 808
+
+INTO YOUR DAW
+Drag Full drags the whole pattern as MIDI. Drag on a lane gives you just that part. WAV gives you the lane rendered with its sound and effects. Export Loop WAV saves the full mix.
+
+[IMAGE: shot_daw_drag.png]
+
+THREE SKINS
+Dark, Steel and Sketch — switch any time.
+
+[IMAGE: shot_skins.png]
+
+WHERE WE ARE
+HPDG 0.1 Beta 1 runs on Windows 10/11 (64-bit) as a VST3 plugin, with an installer and a factory sound library. The generation engines for all four genres work today; everything in the video is the real plugin and its real sound.
+
+WHAT YOUR PLEDGE PAYS FOR
+• Our own factory sound library, so every sound in HPDG is cleared for distribution
+• Finishing version 1.0: generation quality, more styles, stability fixes from beta feedback
+• A code-signing certificate and documentation
+
+Every backer at $19 and up gets an HPDG 1.0 license and beta updates from day one.
+
+Made by HamloProd — a beatmaker building the tool he wanted to use.</div>
+<div class="text" lang="ru" id="story-ru">HPDG — HamloProd Drum Generator
+
+HPDG — VST3-плагин, который пишет барабаны и бас за тебя. Выбираешь жанр, жмёшь Generate Pattern — и в сетке появляется готовый бит: бочка, снейр, хэты, перкуссия и 808 или бас-линия. Сразу слушаешь, правишь и перетаскиваешь в DAW как MIDI или аудио.
+
+[КАРТИНКА: shot_boombap.png]
+
+ЧЕТЫРЕ ЖАНРА И МНОГО СТИЛЕЙ
+• Boom Bap — Classic, Dusty, Jazzy, Gold, Russian Underground, Lo-fi Rap
+• Trap — ATL, Dark, Cloud, Rage, Memphis, Luxury: роллы хэтов, глайды 808, снейр в half-time
+• Drum & Bass — Modern, Roller, Liquid, Neurofunk, Jump-Up, Breakbeat
+• Techno — Peak Time, Hypnotic, Minimal, Detroit, Dub, Acid, Hard
+
+У каждого стиля свои правила грува, свинга и плотности. Каждый клик — новый бит в том же стиле, а не случайные ноты.
+
+[КАРТИНКА: shot_trap.png]
+
+ОТ ТВОЕГО СЕМПЛА
+Брось луп в Sample Analysis. HPDG определит темп, свинг, тональность и басовые ноты и соберёт бит под этот семпл: в его темпе, с 808 в нужной тональности и с грувом, который садится на луп. Луп и бит можно слушать вместе прямо в плагине, ещё до экспорта.
+
+[КАРТИНКА: shot_guide.png]
+
+КОПИЯ БРЕЙКА
+Брось барабанный брейк — HPDG расшифрует его по ударам в дорожки Kick, Snare и Hi-Hat с оригинальным таймингом и свингом. Дальше он твой: меняй звуки, квантуй сколько нужно, добавь бас, мутируй.
+
+[КАРТИНКА: shot_copybreak.png]
+
+КОНТРОЛЬ КАЖДОЙ ДОРОЖКИ
+• RG перегенерирует одну дорожку, остальное не трогает
+• Mutate слегка меняет весь бит
+• Lock, Solo, Mute, Clear на каждой дорожке
+• < > листает звуки кита
+• Количество баса 1 / 2 / 3 и быстрая смена октавы 808
+
+В ТВОЮ DAW
+Drag Full перетаскивает весь паттерн как MIDI. Drag на дорожке — только эту партию. WAV — дорожку, отрендеренную со звуком и эффектами. Export Loop WAV сохраняет весь микс.
+
+[КАРТИНКА: shot_daw_drag.png]
+
+ТРИ СКИНА
+Dark, Steel и Sketch — переключаются в любой момент.
+
+[КАРТИНКА: shot_skins.png]
+
+ГДЕ МЫ СЕЙЧАС
+HPDG 0.1 Beta 1 работает на Windows 10/11 (64-bit) как VST3-плагин, с установщиком и встроенной библиотекой звуков. Движки генерации всех четырёх жанров работают уже сейчас; всё, что в видео, — настоящий плагин и его настоящий звук.
+
+НА ЧТО ПОЙДУТ ДЕНЬГИ
+• Своя библиотека звуков, чтобы каждый звук в HPDG можно было законно распространять
+• Доводка версии 1.0: качество генерации, новые стили, исправления по отзывам беты
+• Сертификат подписи кода и документация
+
+Каждый, кто поддержит от $19, получает лицензию HPDG 1.0 и бета-обновления с первого дня.
+
+Сделано HamloProd — битмейкером, который делает инструмент, каким хотел пользоваться сам.</div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="risks"><span class="tag">ШАГ 4</span>Risks &amp; challenges и вопросы про AI</h2>
+
+<div data-lang-block class="en" id="riskblock">
+  <div class="lang" role="group" aria-label="Язык блока рисков">
+    <button type="button" aria-pressed="true" data-set="en">English</button>
+    <button type="button" aria-pressed="false" data-set="ru">Русский</button>
+  </div>
+  <div class="copyblock">
+    <div class="bar"><span>Risks and challenges</span><button class="copy" type="button" data-copy="risk">Копировать</button></div>
+<div class="text" lang="en" id="risk-en">HPDG already works: the beta is built, installs on Windows 10/11 and generates all four genres. The main risks are in finishing it.
+
+• Sound library. Part of the current factory library comes from third-party packs. Before 1.0 we replace it with our own sounds or sounds licensed for distribution. This is the first thing the funds pay for, and it is why the goal is modest.
+• Schedule. HPDG is made by a small independent team. If version 1.0 needs more time, backers keep getting beta updates in the meantime, and we post an honest update in the campaign.
+• Platforms. HPDG is VST3 for Windows. We do not promise macOS or AU until we can build and test them.
+• Compatibility. DAWs differ. We test in the major DAWs, and backers can report problems directly; fixes go out as beta updates.
+
+Licenses and beta access are delivered digitally within 7 days after the campaign ends.</div>
+<div class="text" lang="ru" id="risk-ru">HPDG уже работает: бета собрана, ставится на Windows 10/11 и генерирует все четыре жанра. Основные риски — в доводке.
+
+• Библиотека звуков. Часть текущих звуков — из сторонних паков. До версии 1.0 мы заменяем их своими или звуками с лицензией на распространение. На это в первую очередь и идут деньги, поэтому цель скромная.
+• Сроки. HPDG делает маленькая независимая команда. Если версии 1.0 понадобится больше времени, бэкеры продолжают получать бета-обновления, а мы честно пишем об этом в апдейтах кампании.
+• Платформы. HPDG — VST3 для Windows. macOS и AU не обещаем, пока не сможем собрать и протестировать.
+• Совместимость. DAW бывают разные. Мы тестируем в основных DAW, бэкеры могут сообщать о проблемах напрямую, исправления выходят в бета-обновлениях.
+
+Лицензии и доступ к бете приходят в цифровом виде в течение 7 дней после окончания кампании.</div>
+  </div>
+</div>
+
+<h3>Use of AI</h3>
+<p>В форме Kickstarter спросят, используется ли AI. Отвечать нужно правдиво: нераскрытое использование AI может привести к приостановке проекта. Проверь сам, что соответствует действительности:</p>
+<ul>
+  <li><b>Генерация битов.</b> Если движок HPDG работает на правилах и вероятностях, а не на нейросети, обученной на чужих треках, так и напиши. Если стили калибровались по замерам референсных паттернов, честно укажи, какие источники использовались.</li>
+  <li><b>Разработка.</b> Если часть кода, видео или картинок сделана с помощью AI-ассистента, это стоит упомянуть.</li>
+</ul>
+<span class="paste">HPDG's beat generator is algorithmic: rules and probabilities for each style, tuned by measuring reference patterns. It is not a neural network trained on other artists' music. [If true:] Parts of the code, the demo video and the campaign images were produced with the help of an AI coding assistant; the plugin's design, sound choices and music direction are our own.</span>
+
+<!-- ============================================================ -->
+<h2 id="tutorial"><span class="tag">ТУТОРИАЛ</span>Как пользоваться HPDG</h2>
+<p>Номера в тексте совпадают с номерами на картинках. Эти картинки и текст подходят и для Kickstarter (раздел Story или FAQ), и для документации к бете.</p>
+
+<div data-lang-block class="ru" id="tutblock">
+<div class="lang" role="group" aria-label="Язык туториала">
+  <button type="button" aria-pressed="true" data-set="ru">Русский</button>
+  <button type="button" aria-pressed="false" data-set="en">English</button>
+</div>
+
+<div lang="ru">
+<h3>Установка</h3>
+<ol class="steps">
+  <li>Запусти <code>HPDG_VST3_Setup_0.1.0-beta.1.exe</code> (Windows 10/11, 64-bit). Плагин встанет в <code>C:\Program Files\Common Files\VST3</code> вместе с библиотекой звуков.</li>
+  <li>Открой DAW и пересканируй плагины, если HPDG не появился сам.</li>
+  <li>Добавь HPDG на дорожку как инструмент.</li>
+</ol>
+
+<h3>Окно плагина</h3>
+<figure><img src="images/tut_0_overview.png" alt="Окно HPDG с четырьмя зонами: генератор, анализ семпла, рэк, паттерн" loading="lazy"><figcaption>A — генератор, B — анализ семпла, C — рэк дорожек, D — сетка паттерна.</figcaption></figure>
+
+<h3>A. Генератор</h3>
+<figure><img src="images/tut_1_header.png" alt="Верхняя панель HPDG с номерами 1–14" loading="lazy"></figure>
+<ul class="legend">
+  <li><b class="n">1</b><span><b>Generate Pattern</b> — новый бит в выбранном жанре и подстиле.</span></li>
+  <li><b class="n">2</b><span><b>Play / Stop</b> — прослушивание. Пробел делает то же самое.</span></li>
+  <li><b class="n">3</b><span><b>Genre</b> — Boom Bap, Trap, DnB, Techno.</span></li>
+  <li><b class="n">4</b><span><b>Substyle</b> — подстиль жанра. Подстили меняй при остановленном воспроизведении.</span></li>
+  <li><b class="n">5</b><span><b>Bars</b> — длина паттерна: 1, 2, 4, 8 или 16 тактов.</span></li>
+  <li><b class="n">6</b><span><b>Swing</b> — от ровной сетки до ленивого запаздывания.</span></li>
+  <li><b class="n">7</b><span><b>Density</b> — сколько ударов в паттерне.</span></li>
+  <li><b class="n">8</b><span><b>Mutate</b> — небольшая вариация текущего бита.</span></li>
+  <li><b class="n">9</b><span><b>BPM</b> — темп. <b>Lock</b> фиксирует его при генерации, <b>Sync</b> берёт темп из DAW.</span></li>
+  <li><b class="n">10</b><span><b>Export Loop WAV</b> — сохранить весь луп в аудио. Кнопку можно сразу перетащить в DAW.</span></li>
+  <li><b class="n">11</b><span><b>Drag Full</b> — перетащить весь паттерн в DAW как MIDI.</span></li>
+  <li><b class="n">12</b><span><b>Presets</b> — сохранить и загрузить настройки целиком.</span></li>
+  <li><b class="n">13</b><span><b>Seed</b> — номер генерации: тот же seed с теми же настройками даёт тот же бит.</span></li>
+  <li><b class="n">14</b><span><b>Skin</b> — Dark, Steel или Sketch.</span></li>
+</ul>
+
+<h3>C. Дорожки</h3>
+<figure><img src="images/tut_2_lanes.png" alt="Дорожки Kick и Sub808 с номерами 1–13" loading="lazy"></figure>
+<ul class="legend">
+  <li><b class="n">1</b><span><b>RG</b> — перегенерировать только эту дорожку.</span></li>
+  <li><b class="n">2</b><span><b>S</b> — соло.</span></li>
+  <li><b class="n">3</b><span><b>M</b> — заглушить.</span></li>
+  <li><b class="n">4</b><span><b>C</b> — очистить дорожку.</span></li>
+  <li><b class="n">5</b><span><b>L</b> — заблокировать: Generate и Mutate её не трогают.</span></li>
+  <li><b class="n">6</b><span><b>E</b> — включить или выключить дорожку.</span></li>
+  <li><b class="n">7</b><span><b>&lt;</b> — предыдущий звук кита.</span></li>
+  <li><b class="n">8</b><span><b>&gt;</b> — следующий звук кита.</span></li>
+  <li><b class="n">9</b><span>Громкость дорожки.</span></li>
+  <li><b class="n">10</b><span><b>Drag</b> (нота) — перетащить партию дорожки в DAW как MIDI.</span></li>
+  <li><b class="n">11</b><span><b>WAV</b> (волна) — перетащить дорожку как аудио, со звуком и эффектами.</span></li>
+  <li><b class="n">12</b><span><b>1 / 2 / 3</b> на Sub808 — сколько баса будет в следующей генерации: несколько длинных нот, больше или бас «всю дорогу».</span></li>
+  <li><b class="n">13</b><span><b>− / +</b> на Sub808 — октава ниже или выше. С Shift — на полутон.</span></li>
+</ul>
+
+<h3>B. Анализ семпла — Guide generation</h3>
+<figure><img src="images/tut_3_guide.png" alt="Панель Sample Analysis в режиме Guide generation с номерами 1–7" loading="lazy"></figure>
+<ul class="legend">
+  <li><b class="n">1</b><span><b>Open…</b> — выбрать файл. Или просто перетащи WAV, AIFF, FLAC или MP3 на панель.</span></li>
+  <li><b class="n">2</b><span><b>Trim…</b> — выбрать кусок длинного файла. Файл длиннее 20 секунд открывает это окно сам.</span></li>
+  <li><b class="n">3</b><span>Режим: <b>Guide generation</b> — бит строится под семпл.</span></li>
+  <li><b class="n">4</b><span><b>Quantize</b> — работает в режиме Copy break.</span></li>
+  <li><b class="n">5</b><span><b>Analyze</b> — проанализировать заново.</span></li>
+  <li><b class="n">6</b><span><b>Play w/ HPDG</b> — играть семпл вместе с паттерном.</span></li>
+  <li><b class="n">7</b><span>Результат: темп (карандаш — ввести вручную), такты, свинг, найденные удары K / S / H, тональность и басовые ноты.</span></li>
+</ul>
+<p>После анализа жми <b>Generate Pattern</b>: бит будет в темпе семпла, а Sub808 сыграет в его тональности.</p>
+
+<h3>B. Анализ брейка — Copy break</h3>
+<figure><img src="images/tut_4_copybreak.png" alt="Панель Sample Analysis в режиме Copy break" loading="lazy"></figure>
+<ol class="steps">
+  <li>Выбери режим <b>Copy break (K/S/H)</b> (3).</li>
+  <li>Перетащи брейк на панель — удары появятся точками K / S / H и сразу скопируются в дорожки Kick, Snare и HiHat.</li>
+  <li><b>Quantize</b> (4) подтягивает удары к сетке: 0% — оригинальный грув, 100% — ровно по сетке.</li>
+  <li><b>Play w/ HPDG</b> (6) — сравнить оригинал и копию.</li>
+  <li>Если нужно, выставь BPM паттерна под темп брейка (показан в зоне 7).</li>
+</ol>
+
+<h3>В DAW</h3>
+<figure><img src="images/shot_daw_drag.png" alt="Перетаскивание MIDI из HPDG в DAW" loading="lazy"></figure>
+<p>Зажми <b>Drag Full</b> или <b>Drag</b> / <b>WAV</b> на дорожке и тащи прямо на дорожку DAW. MIDI-партию можно отдать любому своему инструменту, WAV — это уже готовый звук.</p>
+</div>
+
+<div lang="en">
+<h3>Installing</h3>
+<ol class="steps">
+  <li>Run <code>HPDG_VST3_Setup_0.1.0-beta.1.exe</code> (Windows 10/11, 64-bit). The plugin and its sound library go to <code>C:\Program Files\Common Files\VST3</code>.</li>
+  <li>Open your DAW and rescan plugins if HPDG doesn't show up.</li>
+  <li>Load HPDG on a track as an instrument.</li>
+</ol>
+
+<h3>The window</h3>
+<figure><img src="images/tut_0_overview.png" alt="HPDG window with four areas: generator, sample analysis, rack, pattern" loading="lazy"><figcaption>A — generator, B — sample analysis, C — instrument rack, D — pattern grid.</figcaption></figure>
+
+<h3>A. Generator</h3>
+<figure><img src="images/tut_1_header.png" alt="HPDG top panel numbered 1–14" loading="lazy"></figure>
+<ul class="legend">
+  <li><b class="n">1</b><span><b>Generate Pattern</b> — a new beat in the chosen genre and substyle.</span></li>
+  <li><b class="n">2</b><span><b>Play / Stop</b> — listen. Space does the same.</span></li>
+  <li><b class="n">3</b><span><b>Genre</b> — Boom Bap, Trap, DnB, Techno.</span></li>
+  <li><b class="n">4</b><span><b>Substyle</b> — the style inside the genre. Change it while playback is stopped.</span></li>
+  <li><b class="n">5</b><span><b>Bars</b> — pattern length: 1, 2, 4, 8 or 16 bars.</span></li>
+  <li><b class="n">6</b><span><b>Swing</b> — from a straight grid to a lazy, late feel.</span></li>
+  <li><b class="n">7</b><span><b>Density</b> — how busy the pattern is.</span></li>
+  <li><b class="n">8</b><span><b>Mutate</b> — a small variation of the current beat.</span></li>
+  <li><b class="n">9</b><span><b>BPM</b> — tempo. <b>Lock</b> keeps it when generating, <b>Sync</b> follows the DAW.</span></li>
+  <li><b class="n">10</b><span><b>Export Loop WAV</b> — save the whole loop as audio. You can drag the button straight into the DAW.</span></li>
+  <li><b class="n">11</b><span><b>Drag Full</b> — drag the whole pattern into the DAW as MIDI.</span></li>
+  <li><b class="n">12</b><span><b>Presets</b> — save and load the full setup.</span></li>
+  <li><b class="n">13</b><span><b>Seed</b> — the generation number: the same seed with the same settings gives the same beat.</span></li>
+  <li><b class="n">14</b><span><b>Skin</b> — Dark, Steel or Sketch.</span></li>
+</ul>
+
+<h3>C. Lanes</h3>
+<figure><img src="images/tut_2_lanes.png" alt="Kick and Sub808 lanes numbered 1–13" loading="lazy"></figure>
+<ul class="legend">
+  <li><b class="n">1</b><span><b>RG</b> — regenerate just this lane.</span></li>
+  <li><b class="n">2</b><span><b>S</b> — solo.</span></li>
+  <li><b class="n">3</b><span><b>M</b> — mute.</span></li>
+  <li><b class="n">4</b><span><b>C</b> — clear the lane.</span></li>
+  <li><b class="n">5</b><span><b>L</b> — lock: Generate and Mutate leave it alone.</span></li>
+  <li><b class="n">6</b><span><b>E</b> — turn the lane on or off.</span></li>
+  <li><b class="n">7</b><span><b>&lt;</b> — previous kit sound.</span></li>
+  <li><b class="n">8</b><span><b>&gt;</b> — next kit sound.</span></li>
+  <li><b class="n">9</b><span>Lane volume.</span></li>
+  <li><b class="n">10</b><span><b>Drag</b> (note) — drag the lane into the DAW as MIDI.</span></li>
+  <li><b class="n">11</b><span><b>WAV</b> (wave) — drag the lane as audio, with its sound and effects.</span></li>
+  <li><b class="n">12</b><span><b>1 / 2 / 3</b> on Sub808 — how much bass the next generation writes: a few long notes, more, or a full line.</span></li>
+  <li><b class="n">13</b><span><b>− / +</b> on Sub808 — bass an octave down or up. Hold Shift for a semitone.</span></li>
+</ul>
+
+<h3>B. Sample analysis — Guide generation</h3>
+<figure><img src="images/tut_3_guide.png" alt="Sample Analysis panel in Guide generation mode numbered 1–7" loading="lazy"></figure>
+<ul class="legend">
+  <li><b class="n">1</b><span><b>Open…</b> — pick a file, or just drop a WAV, AIFF, FLAC or MP3 on the panel.</span></li>
+  <li><b class="n">2</b><span><b>Trim…</b> — pick a part of a long file. Files over 20 seconds open it automatically.</span></li>
+  <li><b class="n">3</b><span>Mode: <b>Guide generation</b> — the beat is built for the sample.</span></li>
+  <li><b class="n">4</b><span><b>Quantize</b> — used in Copy break mode.</span></li>
+  <li><b class="n">5</b><span><b>Analyze</b> — analyze again.</span></li>
+  <li><b class="n">6</b><span><b>Play w/ HPDG</b> — play the sample together with the pattern.</span></li>
+  <li><b class="n">7</b><span>Results: tempo (pencil to type it), bars, swing, the K / S / H hits found, key and bass notes.</span></li>
+</ul>
+<p>After the analysis press <b>Generate Pattern</b>: the beat follows the sample's tempo and the Sub808 plays in its key.</p>
+
+<h3>B. Break analysis — Copy break</h3>
+<figure><img src="images/tut_4_copybreak.png" alt="Sample Analysis panel in Copy break mode" loading="lazy"></figure>
+<ol class="steps">
+  <li>Choose <b>Copy break (K/S/H)</b> (3).</li>
+  <li>Drop a break on the panel. The hits appear as K / S / H dots and are copied into the Kick, Snare and HiHat lanes.</li>
+  <li><b>Quantize</b> (4) pulls the hits to the grid: 0% keeps the original groove, 100% is right on the grid.</li>
+  <li><b>Play w/ HPDG</b> (6) compares the original and the copy.</li>
+  <li>If needed, set the pattern BPM to the break's tempo (shown in area 7).</li>
+</ol>
+
+<h3>Into the DAW</h3>
+<figure><img src="images/shot_daw_drag.png" alt="Dragging MIDI from HPDG into a DAW" loading="lazy"></figure>
+<p>Hold <b>Drag Full</b>, or <b>Drag</b> / <b>WAV</b> on a lane, and drag it onto a DAW track. MIDI works with any instrument you like; WAV is the finished sound.</p>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="images"><span class="tag">ФАЙЛЫ</span>Картинки для кампании</h2>
+<p>Все файлы лежат в <code>docs/kickstarter/images/</code>. Пересобрать: <code>python tools/kickstarter/make_images.py</code>.</p>
+<div class="gallery">
+  <figure><img src="images/cover_1024x576.png" alt="Обложка кампании" loading="lazy"><figcaption>cover_1024x576.png · cover_1920x1080.png</figcaption></figure>
+  <figure><img src="images/shot_boombap.png" alt="Boom Bap с басом" loading="lazy"><figcaption>shot_boombap.png</figcaption></figure>
+  <figure><img src="images/shot_trap.png" alt="Trap" loading="lazy"><figcaption>shot_trap.png</figcaption></figure>
+  <figure><img src="images/shot_guide.png" alt="Анализ лупа" loading="lazy"><figcaption>shot_guide.png</figcaption></figure>
+  <figure><img src="images/shot_copybreak.png" alt="Копия брейка" loading="lazy"><figcaption>shot_copybreak.png</figcaption></figure>
+  <figure><img src="images/shot_daw_drag.png" alt="Перетаскивание в DAW" loading="lazy"><figcaption>shot_daw_drag.png</figcaption></figure>
+  <figure><img src="images/shot_skins.png" alt="Три скина" loading="lazy"><figcaption>shot_skins.png</figcaption></figure>
+  <figure><img src="images/shot_skin_steel.png" alt="Скин Steel" loading="lazy"><figcaption>shot_skin_*.png</figcaption></figure>
+</div>
+<p class="muted">Совет: из видео можно нарезать короткие GIF (5–8 секунд) — Generate, Drop loop, Drag в DAW. В Story они работают лучше статичных картинок.</p>
+
+<!-- ============================================================ -->
+<h2 id="checklist"><span class="tag">ФИНАЛ</span>Чек-лист перед кнопкой Launch</h2>
+<ul class="checklist">
+  <li>Страна создателя и банковский счёт из списка Kickstarter.</li>
+  <li>Решён вопрос с правами на семплы в установщике.</li>
+  <li>Выбрана модель: бета бесплатна, бэкеры получают лицензию 1.0 и бонусы (или ключи для беты).</li>
+  <li>Есть способ выдать лицензии: ключи, письмо со ссылкой или аккаунт.</li>
+  <li>Заполнены Basics, Rewards, Story, Risks, AI-вопросы.</li>
+  <li>Включена Pre-launch page, о ней рассказано в соцсетях и чатах битмейкеров.</li>
+  <li>Видео загружено, обложка 16:9.</li>
+  <li>Написан первый апдейт для бэкеров (выйдет в день запуска).</li>
+  <li>Указан реальный срок версии 1.0.</li>
+</ul>
+<p class="muted">Источники по правилам Kickstarter: <a href="https://help.kickstarter.com/en-us/articles/16236650-who-can-use-kickstarter" target="_blank" rel="noopener">кто может запускать</a>, <a href="https://updates.kickstarter.com/kickstarter-fees-a-comprehensive-guide-for-creators/" target="_blank" rel="noopener">комиссии</a>, <a href="https://updates.kickstarter.com/introducing-our-new-ai-policy/" target="_blank" rel="noopener">политика AI</a>, <a href="https://help.kickstarter.com/hc/en-us/articles/115005128434-What-is-the-maximum-project-duration" target="_blank" rel="noopener">длительность</a>. Правила меняются — перед запуском сверься с help center.</p>
+</main>
+</div>
+
+<script>
+document.querySelectorAll('[data-lang-block]').forEach(function (block) {
+  block.querySelectorAll('.lang button').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var lang = btn.getAttribute('data-set');
+      block.classList.remove('ru', 'en');
+      block.classList.add(lang);
+      block.querySelectorAll('.lang button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b === btn));
+      });
+    });
+  });
+});
+document.querySelectorAll('button.copy').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var block = btn.closest('[data-lang-block]');
+    var lang = block.classList.contains('ru') ? 'ru' : 'en';
+    var el = document.getElementById(btn.getAttribute('data-copy') + '-' + lang);
+    var done = function () { btn.textContent = 'Скопировано'; setTimeout(function () { btn.textContent = 'Копировать'; }, 1600); };
+    var fallback = function () {
+      var range = document.createRange(); range.selectNodeContents(el);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      btn.textContent = 'Выделено — Ctrl+C';
+    };
+    try {
+      navigator.clipboard.writeText(el.innerText).then(done, fallback);
+    } catch (e) { fallback(); }
+  });
+});
+</script>

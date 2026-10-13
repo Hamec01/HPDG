@@ -1,0 +1,236 @@
+# HPDG demo video script (YouTube overview). Run with tools/demo_reel/make_video.ps1.
+# Commands: see Tests/DemoReel.cpp. Sample paths are relative to this file.
+# media/demo_break_96.wav is synthesized by make_samples.py; media/sad piano 85Dm.wav is from the
+# HamloProd sample pack 2 (copied in by hand, not in git).
+
+skin Dark
+editor 1600 800 1.2
+
+# ---- Intro: logo + a beat already playing under the title -----------------------------------
+cursor-hide
+set bars 2
+generate-quiet
+title "HPDG" "HamloProd Drum Generator" "Drums + bass  ·  VST3  ·  Boom Bap  ·  Trap  ·  DnB  ·  Techno"
+wait 0.6
+play
+bars 2
+title-clear
+caption "Drums and bass in one click" "Generate · listen · tweak · drag into your DAW"
+note "Generate = a brand new beat"
+click "Generate Pattern"
+bars 1
+
+# ---- 01 Boom Bap ---------------------------------------------------------------------------
+chapter "01 · Boom Bap"
+wait 1.3
+caption "Boom Bap · Classic" "Every click is a new beat in the same style"
+click "Generate Pattern"
+bars 1
+click "Generate Pattern"
+bars 1
+caption "Substyles" "Classic · Dusty · Jazzy · Gold · Russian Underground · Lo-fi Rap"
+note "Pick a substyle"
+combo substyle "Dusty"
+click "Generate Pattern"
+bars 1
+combo substyle "Jazzy"
+click "Generate Pattern"
+bars 1
+caption "Swing" "From a straight grid to a lazy, late groove"
+note "Swing: drag the knob"
+knob swing 64 1.0
+bars 1
+caption "Mutate" "A small variation of the beat you already like"
+note "Mutate = same beat, new details"
+click "Mutate"
+bars 1
+caption "RG on a lane" "Regenerates just that lane - the rest stays"
+note "RG: only the hi-hats change"
+click row HiHat "RG"
+bars 1
+note "RG: only the kick changes"
+click row Kick "RG"
+bars 1
+caption "Sub808 bass lane" "Switch it on - the bass is written with the drums"
+note "E = lane on"
+click-on row Sub808 "E"
+note "How much bass: 1 / 2 / 3"
+bass 2
+click row Sub808 "RG"
+bars 1
+caption "Octave down / up" "- / + on the bass lane: pick the register you like"
+note "- : bass one octave lower"
+click row Sub808 "-"
+bars 2
+caption "[3] - bass plays all the way" "1: a few long notes   ·   3: a full bass line"
+bass 3
+click row Sub808 "RG"
+bars 2
+caption "Swap any sound" "< > on the lane flips through the kit"
+note "> : next snare"
+click row Snare ">"
+note "> : next kick"
+click row Kick ">"
+bars 1
+
+# ---- 02 Trap -------------------------------------------------------------------------------
+stop
+chapter "02 · Trap"
+wait 1.3
+caption "Trap · ATL Classic" "Hi-hat rolls, 808 slides, half-time snare"
+combo genre "Trap"
+click "Generate Pattern"
+note "+ : 808 back up an octave"
+click row Sub808 "+"
+play
+bars 2
+caption "Trap substyles" "ATL · Dark · Cloud · Rage · Memphis · Luxury"
+combo substyle "DarkTrap"
+click "Generate Pattern"
+bars 2
+combo substyle "RageTrap"
+click "Generate Pattern"
+bars 2
+caption "Only the hats" "RG on HiHat - new rolls, same kick and 808"
+note "New hi-hat rolls"
+click row HiHat "RG"
+bars 1
+click row HiHat "RG"
+bars 1
+
+# ---- 03 DnB --------------------------------------------------------------------------------
+stop
+chapter "03 · DnB"
+wait 1.3
+caption "Drum & Bass" "Two-step at 170+, ghost notes, breakbeat edits"
+combo genre "DnB"
+click "Generate Pattern"
+play
+bars 2
+combo substyle "Roller"
+click "Generate Pattern"
+bars 2
+combo substyle "Breakbeat"
+click "Generate Pattern"
+bars 2
+
+# ---- 04 Techno -----------------------------------------------------------------------------
+stop
+chapter "04 · Techno"
+wait 1.3
+caption "Techno" "Peak Time · Hypnotic · Minimal · Detroit · Dub · Acid · Hard"
+combo genre "Techno"
+click "Generate Pattern"
+play
+bars 2
+combo substyle "Detroit"
+click "Generate Pattern"
+bars 2
+combo substyle "Hard"
+click "Generate Pattern"
+bars 2
+stop
+
+# ---- 05 Sample analysis: Guide generation --------------------------------------------------
+chapter "05 · Sample Analysis"
+wait 1.3
+caption "Work from your sample" "Drop a loop - HPDG reads its tempo, key and groove"
+combo genre "Boom Bap"
+combo substyle "Classic"
+note "Guide = build the beat for the sample"
+combo mode "Guide generation"
+note "Drop any loop here"
+drop "media/sad piano 85Dm.wav"
+zoom strip 1.8 left
+highlight strip
+caption "Detected: 85 BPM · D minor" "Tempo, bars, swing and the bass notes of the loop"
+audition 0 11.3
+badge "The sample"
+wait 4.5
+audition-stop
+badge-clear
+highlight off
+zoom off
+caption "Guide generation" "The beat is built for the sample: its tempo, key and mood"
+note "Play the loop together with the beat"
+toggle "Play w/ HPDG"
+click "Generate Pattern"
+play
+bars 2
+click "Generate Pattern"
+bars 1
+caption "The bass follows the sample" "Sub808 plays in D minor, under the loop's chords"
+click-on row Sub808 "E"
+note "Bass in the sample's key"
+click row Sub808 "RG"
+note "- : deeper bass"
+click row Sub808 "-"
+bars 2
+click row Sub808 "RG"
+bars 2
+stop
+
+# ---- 06 Break analysis: Copy break ---------------------------------------------------------
+chapter "06 · Break Analysis"
+wait 1.3
+caption "Break analysis" "Drop a drum break - HPDG transcribes it hit by hit"
+click "Clear"
+combo genre "Boom Bap"
+click row Sub808 "C"
+note "Copy break = transcribe K / S / H"
+combo mode "Copy break (K/S/H)"
+drop "media/demo_break_96.wav"
+zoom strip 1.8 left
+highlight strip
+caption "Kick · Snare · Hi-hat found" "96 BPM, swing 58% - the groove of the original break"
+audition 0 10.0
+badge "The original break"
+wait 4.0
+audition-stop
+badge-clear
+highlight off
+zoom off
+highlight grid
+caption "Copied into the lanes" "Same hits, same timing - now played by the HPDG kit"
+set bpm 96
+play
+bars 2
+highlight off
+caption "Original + copy together" "Play w/ HPDG layers the break with the pattern"
+note "Layer the original break"
+toggle "Play w/ HPDG"
+bars 1
+toggle "Play w/ HPDG"
+caption "Quantize" "From the original feel to a tight grid"
+note "Quantize: tighten the timing"
+knob quantize 60 1.0
+bars 1
+caption "Now it's yours" "Swap the sounds, add an 808, mutate"
+click row Kick ">"
+click-on row Sub808 "E"
+click row Sub808 "RG"
+bars 1
+click "Mutate"
+bars 1
+
+# ---- 07 Into the DAW -----------------------------------------------------------------------
+chapter "07 · Into your DAW"
+wait 1.3
+caption "Drag straight into your DAW" "Drag = MIDI   ·   WAV = rendered audio   ·   Drag Full = the whole pattern"
+note "Drag Full: the whole beat as MIDI"
+dawdrag "Drag Full" "HPDG_Pattern.mid"
+note "Drag on a lane: just the kick (MIDI)"
+dawdrag row Kick "Drag" "Kick.mid"
+note "WAV: the lane rendered as audio"
+dawdrag row Snare "WAV" "Snare.wav"
+caption "Three skins" "Dark · Steel · Sketch"
+skin Steel
+bars 1
+skin Sketch
+bars 1
+skin Dark
+bars 1
+stop
+cursor-hide
+title "HPDG" "HamloProd Drum Generator" "VST3 for Windows 10/11  ·  Beta 0.1"
+wait 4.5
