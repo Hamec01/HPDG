@@ -134,6 +134,18 @@ public:
         g.setColour(sketch::Theme::graphite());
         g.drawText(label, juce::Rectangle<float>(labelX, bounds.getY() + 14.0f, 140.0f, 17.0f), juce::Justification::centredLeft, false);
 
+        // Play cursor (a plain click): where Play starts.
+        if (owner.playCursor >= viewStart && owner.playCursor <= viewEnd)
+        {
+            const float x = timeToX(owner.playCursor);
+            g.setColour(sketch::Theme::graphite().withAlpha(0.75f));
+            const float dashes[] = { 4.0f, 3.0f };
+            g.drawDashedLine(juce::Line<float>(x, bounds.getY() + 7.0f, x, bounds.getBottom()), dashes, 2, 1.2f);
+            juce::Path tri;
+            tri.addTriangle(x - 5.0f, bounds.getY(), x + 5.0f, bounds.getY(), x, bounds.getY() + 7.0f);
+            g.fillPath(tri);
+        }
+
         // Playhead.
         if (owner.getPlayheadSeconds)
         {
@@ -163,12 +175,15 @@ public:
         const double t = xToTime(e.position.x);
         dragOrigin = owner.snapTime(t);
         moveOffset = t - owner.selection.getStart();
-        if (drag == Drag::New)
-            owner.setSelection({ dragOrigin, dragOrigin });
+        dragged = false;
     }
 
     void mouseDrag(const juce::MouseEvent& e) override
     {
+        // The jitter of a click is not a drag (a click only sets the play cursor).
+        if (!dragged && e.getDistanceFromDragStart() < 3)
+            return;
+        dragged = true;
         const double t = juce::jlimit(0.0, duration(), xToTime(e.position.x));
         auto sel = owner.selection;
         switch (drag)
@@ -196,9 +211,14 @@ public:
         owner.setSelection(sel);
     }
 
-    void mouseUp(const juce::MouseEvent&) override
+    void mouseUp(const juce::MouseEvent& e) override
     {
-        // A plain click (no drag) keeps the previous selection instead of leaving an empty one.
+        if (!dragged)
+        {
+            // A plain click keeps the selection and sets the play cursor (Edison style).
+            owner.setPlayCursor(juce::jlimit(0.0, duration(), xToTime(e.position.x)));
+            return;
+        }
         if (drag == Drag::New && owner.selection.getLength() < 0.02)
             owner.setSelection(lastValidSelection);
         lastValidSelection = owner.selection;
@@ -250,6 +270,7 @@ private:
 
     SampleTrimEditorComponent& owner;
     Drag drag = Drag::New;
+    bool dragged = false;
     double dragOrigin = 0.0;
     double moveOffset = 0.0;
     std::vector<std::pair<float, float>> peaks;
@@ -283,9 +304,11 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
     scrollListener = std::make_unique<ScrollListener>(*waveView);
     scrollBar.addListener(scrollListener.get());
 
-    for (auto* c : std::initializer_list<juce::Component*> { &titleLabel, &bpmCaption, &bpmValue, &halfButton, &doubleButton, &fitButton, &anchorButton,
+    for (auto* c : std::initializer_list<juce::Component*> { &titleLabel, &bpmCaption, &bpmValue, &halfButton, &doubleButton,
+                                                             &barsCaption, &barsCombo, &barsSuffix, &fitButton, &anchorButton,
                                                              &snapCombo, &hitsToggle, &lengthCombo, &autoButton, &wholeButton,
-                                                             &infoLabel, &hintLabel, &playButton, &analyzeButton, &cancelButton })
+                                                             &infoLabel, &hintLabel, &loopButton, &playButton, &stopButton,
+                                                             &analyzeButton, &cancelButton })
         addAndMakeVisible(c);
 
     titleLabel.setFont(juce::Font(juce::FontOptions(14.0f, juce::Font::bold)));
@@ -308,7 +331,7 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
 
     // The dialog is its own window: give every caption dark text explicitly (the default
     // look-and-feel draws labels white, unreadable on the paper background).
-    for (auto* label : { &titleLabel, &bpmCaption, &bpmValue, &infoLabel })
+    for (auto* label : { &titleLabel, &bpmCaption, &bpmValue, &infoLabel, &barsCaption, &barsSuffix })
         label->setColour(juce::Label::textColourId, sketch::Theme::graphite());
     bpmValue.setColour(juce::Label::backgroundColourId, sketch::Theme::paperLight());
     bpmValue.setColour(juce::Label::textWhenEditingColourId, sketch::Theme::graphite());
@@ -330,7 +353,24 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
     // The selection is the loop: its length is a whole number of bars, so the tempo follows from
     // it exactly (bars x 240 / seconds). The bar count nearest the current grid is kept (1/2, x2
     // still switch the octave), and bar 1 moves to the selection start.
-    fitButton.setTooltip("The selection is exactly the loop: set the tempo from its length (whole bars) and start bar 1 there.");
+    // "Selection = N bars": the user says how many bars the loop is; the tempo follows from it.
+    barsCaption.setText("Selection =", juce::dontSendNotification);
+    barsCaption.setJustificationType(juce::Justification::centredRight);
+    barsSuffix.setText("bars", juce::dontSendNotification);
+    barsCombo.addItem("Auto", 100);
+    for (const int bars : { 1, 2, 3, 4, 5, 6, 7, 8, 12, 16 })
+        barsCombo.addItem(juce::String(bars), bars);
+    barsCombo.setSelectedId(100, juce::dontSendNotification);
+    barsCombo.setTooltip("How many bars the selection is. With a number the tempo follows the selection:\n"
+                         "drag its edges and it stays exactly that many bars (bar 1 at its start).\n"
+                         "Auto: the grid tempo stays as it is.");
+    barsCombo.onChange = [this]
+    {
+        const int id = barsCombo.getSelectedId();
+        setSelectionBars(id == 100 ? 0 : id);
+    };
+    fitButton.setTooltip("The selection is exactly the loop: set the tempo from its length (the bar count on the left, "
+                         "or whole bars nearest the grid on Auto) and start bar 1 there.");
     fitButton.onClick = [this] { fitBpmToSelection(); };
     anchorButton.setTooltip("Move the bar grid so that bar 1 starts at the selection start.");
     anchorButton.onClick = [this]
@@ -373,7 +413,14 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
                           : "Copy break: select whole bars of the break. Wheel = zoom, Shift+wheel = scroll, double click = one bar.",
                       juce::dontSendNotification);
 
+    loopButton.setClickingTogglesState(true);
+    loopButton.setToggleState(loopEnabled, juce::dontSendNotification);
+    loopButton.setColour(juce::TextButton::buttonOnColourId, sketch::Theme::ochre());
+    loopButton.setTooltip("Loop the selection while playing (off: play it once).");
+    loopButton.onClick = [this] { setLoopEnabled(loopButton.getToggleState()); };
+    playButton.setTooltip("Play the selection from the play cursor (click the waveform to set it). Space = play / pause.");
     playButton.onClick = [this] { togglePlayback(); };
+    stopButton.onClick = [this] { stopPlayback(); };
     analyzeButton.onClick = [this] { finishAnalyze(); };
     cancelButton.onClick = [this]
     {
@@ -397,7 +444,7 @@ SampleTrimEditorComponent::SampleTrimEditorComponent(std::shared_ptr<const Sampl
         waveView->setView(selection.getStart() - pad, selection.getEnd() + pad);
     }
     bpmValue.setText(juce::String(gridBpm, 2), juce::dontSendNotification);
-    setSize(1000, 380);
+    setSize(1100, 380);
     startTimerHz(30);
 }
 
@@ -416,8 +463,11 @@ void SampleTrimEditorComponent::setSelection(juce::Range<double> newSelection)
     if (end - start > kMaxSelectionSeconds)
         end = start + kMaxSelectionSeconds;
     selection = { start, end };
-    if (isPlaying() && onPlaySelection && selection.getLength() > 0.02)
-        onPlaySelection(selection); // keep the audition on the edited region
+    if (fixedBars > 0)
+        followSelectionWithTempo();
+    // While playing the new edges apply on the fly and the position keeps going (no restart).
+    if (isPlaying() && onRegionChanged && selection.getLength() > 0.02)
+        onRegionChanged(selection, loopEnabled);
     updateInfo();
     if (waveView != nullptr)
         waveView->repaint();
@@ -428,10 +478,53 @@ void SampleTrimEditorComponent::fitBpmToSelection()
     const double seconds = selection.getLength();
     if (seconds < 0.2)
         return;
-    const double bars = std::max(1.0, std::round(seconds * juce::jmax(20.0, gridBpm) / 240.0));
+    const double bars = fixedBars > 0 ? static_cast<double>(fixedBars)
+                                      : std::max(1.0, std::round(seconds * juce::jmax(20.0, gridBpm) / 240.0));
     bpmTypedByUser = true;
     gridAnchor = selection.getStart();
     setGridBpm(240.0 * bars / seconds);
+}
+
+void SampleTrimEditorComponent::setSelectionBars(int bars)
+{
+    fixedBars = juce::jmax(0, bars);
+    barsCombo.setSelectedId(fixedBars > 0 ? fixedBars : 100, juce::dontSendNotification);
+    if (fixedBars > 0)
+        followSelectionWithTempo();
+    updateInfo();
+    if (waveView != nullptr)
+        waveView->repaint();
+}
+
+void SampleTrimEditorComponent::followSelectionWithTempo()
+{
+    const double seconds = selection.getLength();
+    if (fixedBars <= 0 || seconds < 0.2)
+        return;
+    const double bpm = 240.0 * fixedBars / seconds;
+    if (bpm < 20.0 || bpm > 400.0)
+        return; // a tiny or huge selection while dragging: keep the last tempo
+    bpmTypedByUser = true;
+    gridAnchor = selection.getStart();
+    setGridBpm(bpm);
+}
+
+void SampleTrimEditorComponent::setLoopEnabled(bool shouldLoop)
+{
+    loopEnabled = shouldLoop;
+    loopButton.setToggleState(loopEnabled, juce::dontSendNotification);
+    if (isPlaying() && onRegionChanged)
+        onRegionChanged(selection, loopEnabled);
+}
+
+void SampleTrimEditorComponent::setPlayCursor(double seconds)
+{
+    playCursor = seconds;
+    // While playing, a click inside the selection jumps there.
+    if (isPlaying() && selection.contains(seconds))
+        startPlayback(seconds);
+    if (waveView != nullptr)
+        waveView->repaint();
 }
 
 void SampleTrimEditorComponent::setGridBpm(double bpm)
@@ -463,7 +556,9 @@ void SampleTrimEditorComponent::setSnapToHits(bool enabled)
 double SampleTrimEditorComponent::snapTime(double seconds) const
 {
     double t = seconds;
-    if (snap != Snap::Off)
+    // With a fixed bar count the grid follows the selection, so snapping its edges to that grid
+    // would lock them in place: only hits snap then.
+    if (snap != Snap::Off && fixedBars <= 0)
     {
         t = SampleSourceAudio::snapToGrid(t, gridBpm, gridAnchor, snap == Snap::Bar ? 4 : 1);
         // A real hit a few ms off the grid line wins over the line itself.
@@ -552,14 +647,21 @@ bool SampleTrimEditorComponent::isPlaying() const
 void SampleTrimEditorComponent::togglePlayback()
 {
     if (isPlaying())
-    {
-        if (onStopPlayback)
-            onStopPlayback();
-    }
-    else if (onPlaySelection && selection.getLength() > 0.02)
-    {
-        onPlaySelection(selection);
-    }
+        stopPlayback();
+    else
+        startPlayback(selection.contains(playCursor) ? playCursor : selection.getStart());
+}
+
+void SampleTrimEditorComponent::startPlayback(double fromSeconds)
+{
+    if (onPlaySelection && selection.getLength() > 0.02)
+        onPlaySelection(selection, loopEnabled, juce::jlimit(selection.getStart(), selection.getEnd(), fromSeconds));
+}
+
+void SampleTrimEditorComponent::stopPlayback()
+{
+    if (onStopPlayback)
+        onStopPlayback();
 }
 
 void SampleTrimEditorComponent::finishAnalyze()
@@ -575,7 +677,7 @@ void SampleTrimEditorComponent::finishAnalyze()
 void SampleTrimEditorComponent::timerCallback()
 {
     const bool playing = isPlaying();
-    playButton.setButtonText(playing ? "Stop [Space]" : "Play [Space]");
+    playButton.setButtonText(playing ? "Pause [Space]" : "Play [Space]");
     if (playing || wasPlaying)
         waveView->repaint();
     wasPlaying = playing;
@@ -636,6 +738,12 @@ void SampleTrimEditorComponent::resized()
     grid.removeFromLeft(2);
     doubleButton.setBounds(grid.removeFromLeft(36));
     grid.removeFromLeft(4);
+    barsCaption.setBounds(grid.removeFromLeft(78));
+    grid.removeFromLeft(2);
+    barsCombo.setBounds(grid.removeFromLeft(66));
+    grid.removeFromLeft(4);
+    barsSuffix.setBounds(grid.removeFromLeft(34));
+    grid.removeFromLeft(4);
     fitButton.setBounds(grid.removeFromLeft(118));
     grid.removeFromLeft(8);
     anchorButton.setBounds(grid.removeFromLeft(170));
@@ -647,8 +755,12 @@ void SampleTrimEditorComponent::resized()
     bottom.removeFromRight(6);
     analyzeButton.setBounds(bottom.removeFromRight(140));
     bottom.removeFromRight(6);
-    playButton.setBounds(bottom.removeFromRight(100));
-    bottom.removeFromRight(10);
+    loopButton.setBounds(bottom.removeFromLeft(56));
+    bottom.removeFromLeft(4);
+    playButton.setBounds(bottom.removeFromLeft(110));
+    bottom.removeFromLeft(4);
+    stopButton.setBounds(bottom.removeFromLeft(56));
+    bottom.removeFromLeft(12);
     infoLabel.setBounds(bottom);
 
     area.removeFromBottom(6);

@@ -1,4 +1,4 @@
-// HPDG_UiSnapshot <out folder> [width height]
+// HPDG_UiSnapshot <out folder> [width height]   or   <out folder> trim <audio file> [bars]
 // Renders the VST3 editor (after a generated pattern) to <out>/<skin>.png for every UI skin, so the
 // look can be checked without a DAW.
 #include <iostream>
@@ -7,6 +7,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "../Source/Plugin/PluginProcessor.h"
+#include "../Source/UI/SampleTrimEditorComponent.h"
 #include "../Source/UI/SketchTheme.h"
 
 using namespace bbg;
@@ -42,6 +43,23 @@ int main(int argc, char* argv[])
         }
         }
         juce::FileOutputStream stream(out.getChildFile("fonts.png"));
+        juce::PNGImageFormat().writeImageToStream(image, stream);
+        return 0;
+    }
+
+    if (argc > 3 && juce::String(argv[2]) == "trim")
+    {
+        // HPDG_UiSnapshot <out folder> trim <audio file> [bars]: the Trim dialog for that file.
+        auto source = std::make_shared<SampleSourceAudio>();
+        if (!source->load(juce::File(juce::String(argv[3]))))
+            return 1;
+        SampleTrimEditorComponent trim(source, { 0.0, juce::jmin(7.12, source->getDurationSeconds()) }, false);
+        trim.setLookAndFeel(nullptr);
+        if (argc > 4)
+            trim.setSelectionBars(juce::String(argv[4]).getIntValue());
+        trim.setPlayCursor(2.0);
+        const auto image = trim.createComponentSnapshot(trim.getLocalBounds(), true, 1.5f);
+        juce::FileOutputStream stream(out.getChildFile("trim.png"));
         juce::PNGImageFormat().writeImageToStream(image, stream);
         return 0;
     }

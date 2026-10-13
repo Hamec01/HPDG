@@ -638,10 +638,15 @@ private:
         {
             return safeEditor != nullptr ? safeEditor->audioProcessor.getSampleAuditionPositionSeconds() : -1.0;
         };
-        trimEditor->onPlaySelection = [safeEditor](juce::Range<double> range)
+        trimEditor->onPlaySelection = [safeEditor](juce::Range<double> range, bool loop, double from)
         {
             if (safeEditor != nullptr)
-                safeEditor->audioProcessor.auditionSampleRegion(range.getStart(), range.getEnd(), true);
+                safeEditor->audioProcessor.auditionSampleRegion(range.getStart(), range.getEnd(), loop, from);
+        };
+        trimEditor->onRegionChanged = [safeEditor](juce::Range<double> range, bool loop)
+        {
+            if (safeEditor != nullptr)
+                safeEditor->audioProcessor.updateSampleAuditionRegion(range.getStart(), range.getEnd(), loop);
         };
         trimEditor->onStopPlayback = [safeEditor]
         {
@@ -6267,7 +6272,7 @@ BoomBapGeneratorAudioProcessor::SampleTimeline BoomBapGeneratorAudioProcessor::g
     return sampleTimeline;
 }
 
-void BoomBapGeneratorAudioProcessor::auditionSampleRegion(double startSeconds, double endSeconds, bool loop)
+void BoomBapGeneratorAudioProcessor::auditionSampleRegion(double startSeconds, double endSeconds, bool loop, double fromSeconds)
 {
     const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
     if (sampleSource == nullptr || !sampleSource->isLoaded())
@@ -6277,12 +6282,32 @@ void BoomBapGeneratorAudioProcessor::auditionSampleRegion(double startSeconds, d
     const double end = juce::jlimit(start, duration, endSeconds > start ? endSeconds : duration);
     if (end - start < 0.01)
         return;
+    const double from = fromSeconds >= start && fromSeconds < end ? fromSeconds : start;
     sampleAudition.active = true;
     sampleAudition.loop = loop;
     sampleAudition.startSeconds = start;
     sampleAudition.endSeconds = end;
-    sampleAudition.positionSeconds = start;
-    sampleAuditionPosition.store(start);
+    sampleAudition.positionSeconds = from;
+    sampleAuditionPosition.store(from);
+}
+
+void BoomBapGeneratorAudioProcessor::updateSampleAuditionRegion(double startSeconds, double endSeconds, bool loop)
+{
+    const juce::SpinLock::ScopedLockType sourceLock(sampleSourceLock);
+    if (sampleSource == nullptr || !sampleSource->isLoaded() || !sampleAudition.active)
+        return;
+    const double duration = sampleSource->getDurationSeconds();
+    const double start = juce::jlimit(0.0, duration, startSeconds);
+    const double end = juce::jlimit(start, duration, endSeconds);
+    if (end - start < 0.01)
+        return;
+    sampleAudition.loop = loop;
+    sampleAudition.startSeconds = start;
+    sampleAudition.endSeconds = end;
+    // Edison-style: moving an edge never restarts the sound. A position the new region no longer
+    // contains continues from its start (otherwise it would wait in silence or overrun the end).
+    if (sampleAudition.positionSeconds < start || sampleAudition.positionSeconds >= end)
+        sampleAudition.positionSeconds = start;
 }
 
 void BoomBapGeneratorAudioProcessor::stopSampleAudition()

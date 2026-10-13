@@ -197,13 +197,62 @@ int main()
         editor.keyPressed(juce::KeyPress(juce::KeyPress::returnKey));
         check(analyzed == editor.getSelection(), "Enter sends the selection to the analyzer");
 
+        double playedFrom = -1.0;
+        bool playedLoop = false;
+        int playStarts = 0;
+        int regionUpdates = 0;
+        juce::Range<double> updatedRegion;
+        bool updatedLoop = true;
         editor.getPlayheadSeconds = [&playing] { return playing ? 13.0 : -1.0; };
-        editor.onPlaySelection = [&](juce::Range<double> r) { played = r; playing = true; };
+        editor.onPlaySelection = [&](juce::Range<double> r, bool loop, double from)
+        {
+            played = r; playing = true; playedFrom = from; playedLoop = loop; ++playStarts;
+        };
+        editor.onRegionChanged = [&](juce::Range<double> r, bool loop) { updatedRegion = r; updatedLoop = loop; ++regionUpdates; };
         editor.onStopPlayback = [&] { playing = false; };
         editor.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey));
         check(playing && played == editor.getSelection(), "Space plays the selection");
+        check(std::abs(playedFrom - editor.getSelection().getStart()) < 1.0e-9 && playedLoop, "... looped, from its start");
+
+        // Edison-style: editing the selection while it plays updates the region, never restarts it.
+        editor.setSelection({ kPadSeconds, kPadSeconds + 7.2 });
+        check(playStarts == 1, "moving an edge while playing does not restart playback");
+        check(regionUpdates == 1 && updatedRegion == editor.getSelection(), "... the new region is applied on the fly");
+        editor.setLoopEnabled(false);
+        check(regionUpdates == 2 && !updatedLoop, "loop off applies while playing");
+        editor.setLoopEnabled(true);
+        editor.setPlayCursor(kPadSeconds + 2.0);
+        check(playStarts == 2 && std::abs(playedFrom - (kPadSeconds + 2.0)) < 1.0e-9, "a click inside the selection jumps there");
         editor.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey));
         check(!playing, "Space again stops");
+        editor.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey));
+        check(std::abs(playedFrom - (kPadSeconds + 2.0)) < 1.0e-9, "Play starts at the play cursor");
+        editor.setPlayCursor(1.0); // outside the selection
+        editor.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey));
+        editor.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey));
+        check(std::abs(playedFrom - editor.getSelection().getStart()) < 1.0e-9, "a cursor outside the selection plays from its start");
+        editor.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey));
+    }
+
+    {
+        // "Selection = 4 bars": the user decides how many bars the loop is (the detected grid said 3).
+        bbg::SampleTrimEditorComponent barsEditor(source, {}, false);
+        barsEditor.setGridBpm(101.16);
+        barsEditor.setSelection({ 0.5, 0.5 + 7.12 });
+        barsEditor.fitBpmToSelection();
+        check(std::abs(barsEditor.getGridBpm() - 240.0 * 3.0 / 7.12) < 0.01, "Auto: nearest whole bars (3) - as before");
+        barsEditor.setSelectionBars(4);
+        check(std::abs(barsEditor.getGridBpm() - 240.0 * 4.0 / 7.12) < 0.01, "4 bars: tempo = 4 x 240 / 7.12 s = " + juce::String(barsEditor.getGridBpm(), 2));
+        check(std::abs(barsEditor.selectionBars() - 4.0) < 1.0e-6 && std::abs(barsEditor.getGridAnchor() - 0.5) < 1.0e-9,
+              "the selection is exactly 4 bars, bar 1 at its start");
+        barsEditor.setSelection({ 0.5, 0.5 + 8.0 });
+        check(std::abs(barsEditor.getGridBpm() - 120.0) < 1.0e-6, "dragging an edge: the tempo follows, still 4 bars");
+        barsEditor.setSnap(bbg::SampleTrimEditorComponent::Snap::Bar);
+        barsEditor.setSnapToHits(false);
+        check(std::abs(barsEditor.snapTime(3.3) - 3.3) < 1.0e-9, "fixed bars: edges do not snap to the moving grid");
+        barsEditor.setSelectionBars(0);
+        barsEditor.setSelection({ 0.5, 0.5 + 6.0 });
+        check(std::abs(barsEditor.getGridBpm() - 120.0) < 1.0e-6, "Auto again: the tempo stays when the selection changes");
     }
 
     std::cout << (failures == 0 ? "ALL PASSED" : juce::String(failures) + " FAILED") << std::endl;

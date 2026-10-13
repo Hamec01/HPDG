@@ -14,7 +14,12 @@ namespace bbg
 //  - full-width waveform, mouse wheel zooms around the cursor, shift+wheel / scrollbar scrolls;
 //  - drag on empty space selects, drag the edges to adjust, drag inside to move;
 //  - snap to beat / bar of the detected tempo grid and to transients (hits);
-//  - Space plays / stops the selection (looped) with a playhead; Enter analyzes;
+//  - Edison-style transport: Loop on/off, Play, Stop (Space = play / stop). Editing the selection
+//    while it plays never restarts it: the new edges apply on the fly. A plain click sets the play
+//    cursor (Play starts there; while playing, a click inside the selection jumps there);
+//  - "Selection = N bars": the tempo follows the selection so it is exactly N bars (Auto = the
+//    bar count nearest the current grid, used only by "BPM = selection");
+//  - Enter analyzes;
 //  - auto-select finds the most drum-like fragment of a long song;
 //  - length hint on the selection: "4.00 bars · 8.5 s".
 class SampleTrimEditorComponent final : public juce::Component,
@@ -46,7 +51,10 @@ public:
 
     std::function<void(juce::Range<double>)> onAnalyzeSelection;
     std::function<void()> onCancel;
-    std::function<void(juce::Range<double>)> onPlaySelection;
+    // Starts playing `region` from `fromSeconds` (inside it); loop = repeat the region.
+    std::function<void(juce::Range<double> region, bool loop, double fromSeconds)> onPlaySelection;
+    // The region / loop changed while playing: apply it without restarting (keep the position).
+    std::function<void(juce::Range<double> region, bool loop)> onRegionChanged;
     std::function<void()> onStopPlayback;
     std::function<double()> getPlayheadSeconds; // < 0 when stopped
 
@@ -58,7 +66,16 @@ public:
     void setGridBpm(double bpm);
     // The selection is exactly the loop: tempo = whole bars (nearest the current grid) x 240 /
     // its length, bar 1 at its start; the tempo counts as typed (used by Analyze selection).
+    // With a fixed bar count (setSelectionBars) that count is used instead.
     void fitBpmToSelection();
+    // 0 = Auto. N > 0: the tempo follows the selection so that it is exactly N bars, bar 1 at its
+    // start; grid snapping of the edges is off meanwhile (hits still snap).
+    void setSelectionBars(int bars);
+    int getSelectionBars() const { return fixedBars; }
+    void setLoopEnabled(bool shouldLoop);
+    bool isLoopEnabled() const { return loopEnabled; }
+    void setPlayCursor(double seconds);
+    double getPlayCursor() const { return playCursor; }
     double getGridAnchor() const { return gridAnchor; }
     void setSnap(Snap newSnap);
     void setSnapToHits(bool enabled);
@@ -78,6 +95,9 @@ private:
     void timerCallback() override;
     void updateInfo();
     void togglePlayback();
+    void startPlayback(double fromSeconds);
+    void stopPlayback();
+    void followSelectionWithTempo();
     void finishAnalyze();
     bool isPlaying() const;
 
@@ -94,11 +114,17 @@ private:
     std::unique_ptr<juce::ScrollBar::Listener> scrollListener;
     bool wasPlaying = false;
     bool bpmTypedByUser = false;
+    int fixedBars = 0;
+    bool loopEnabled = true;
+    double playCursor = -1.0; // < 0: none
     juce::Label titleLabel;
     juce::Label bpmCaption;
     juce::Label bpmValue;
     juce::TextButton halfButton { "1/2" };
     juce::TextButton doubleButton { "x2" };
+    juce::Label barsCaption;
+    juce::ComboBox barsCombo;
+    juce::Label barsSuffix;
     juce::TextButton fitButton { "BPM = selection" };
     juce::TextButton anchorButton { "Bar 1 = selection start" };
     juce::ComboBox snapCombo;
@@ -108,7 +134,9 @@ private:
     juce::TextButton wholeButton { "Whole file" };
     juce::Label infoLabel;
     juce::Label hintLabel;
+    juce::TextButton loopButton { "Loop" };
     juce::TextButton playButton { "Play [Space]" };
+    juce::TextButton stopButton { "Stop" };
     juce::TextButton analyzeButton { "Analyze selection" };
     juce::TextButton cancelButton { "Cancel" };
 

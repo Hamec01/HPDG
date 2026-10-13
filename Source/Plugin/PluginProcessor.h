@@ -249,7 +249,11 @@ public:
     SampleTimeline getSampleTimeline() const;
 
     // Trim editor / dot audition: plays [start, end) of the sample (looped or once).
-    void auditionSampleRegion(double startSeconds, double endSeconds, bool loop);
+    // fromSeconds >= 0: start there (inside the region) instead of at its start.
+    void auditionSampleRegion(double startSeconds, double endSeconds, bool loop, double fromSeconds = -1.0);
+    // Changes the playing region / loop without restarting: the position keeps going (a position
+    // outside the new region continues from its start). Does nothing when not playing.
+    void updateSampleAuditionRegion(double startSeconds, double endSeconds, bool loop);
     void stopSampleAudition();
     bool isSampleAuditionPlaying() const;
     double getSampleAuditionPositionSeconds() const;
