@@ -1,5 +1,5 @@
 ﻿; Windows x64 VST3-only beta. The complete library is already inside the bundle.
-#define MyAppVersion "0.1.0 Beta 1"
+#define MyAppVersion "0.1.0 Beta 2"
 #ifndef SourceVst3Dir
 #define SourceVst3Dir "..\build\HPDG_artefacts\Release\VST3\HPDG.vst3"
 #endif
@@ -19,11 +19,11 @@ OutputBaseFilename=HPDG_Beta_InstallTest
 #else
 AppId={{8D83F55D-9437-4AF5-B77D-8D3D2C1C1A5D}
 PrivilegesRequired=admin
-OutputBaseFilename=HPDG_VST3_Setup_0.1.0-beta.1
+OutputBaseFilename=HPDG_VST3_Setup_0.1.0-beta.2
 #endif
 AppName=HPDG VST3
 AppVersion={#MyAppVersion}
-AppVerName=HPDG VST3 0.1.0 Beta 1
+AppVerName=HPDG VST3 0.1.0 Beta 2
 AppPublisher=HamloProd
 VersionInfoVersion=0.1.0.1
 VersionInfoCompany=HamloProd

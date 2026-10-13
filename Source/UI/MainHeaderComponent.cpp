@@ -10,7 +10,7 @@ namespace bbg
 {
 namespace
 {
-constexpr auto kUiBuildVersion = "0.1.0 Beta 1";
+constexpr auto kUiBuildVersion = "0.1.0 Beta 2";
 
 double parseKnobText(const juce::String& text)
 {

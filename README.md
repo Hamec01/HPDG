@@ -5,7 +5,7 @@
 <h1 align="center">HPDG — HamloProd Drum Generator</h1>
 
 <p align="center">
-  VST3 генератор барабанов и баса для бит-мейкеров — 0.1.0 Beta 1.<br>
+  VST3 генератор барабанов и баса для бит-мейкеров — 0.1.0 Beta 2.<br>
   Boom Bap · Trap · DnB · Techno
 </p>
 
@@ -13,8 +13,8 @@
 
 ## Что это
 
-Первая бета для Windows 10/11 x64 поставляется установщиком
-`Releases/HPDG_VST3_Setup_0.1.0-beta.1.exe` с полной библиотекой из 749
+Бета для Windows 10/11 x64 поставляется установщиком
+`Releases/HPDG_VST3_Setup_0.1.0-beta.2.exe` с полной библиотекой из 849
 аудиосемплов. Активация не требуется. Standalone будет подготовлен отдельно.
 См. [FAQ](FAQ.md), [права HamloProd](RIGHTS.txt) и [сборку беты](Installer/README.md).
 

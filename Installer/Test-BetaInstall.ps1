@@ -12,7 +12,7 @@ New-Item -ItemType Directory -Path $obsoleteDir -Force | Out-Null
 $setupArgs = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + $pluginDir + '" /LOG="' + (Join-Path $testDir 'setup.log') + '"'
 $process = Start-Process -FilePath $testExe -ArgumentList $setupArgs -WindowStyle Hidden -PassThru -Wait
 if ($process.ExitCode -ne 0) { throw "Isolated installation failed: $($process.ExitCode). See $testDir\setup.log" }
-$manifest = Get-Content (Join-Path $repoDir 'Releases\HPDG_0.1.0-beta.1_samples.sha256.json') -Raw | ConvertFrom-Json
+$manifest = Get-Content (Join-Path $repoDir 'Releases\HPDG_0.1.0-beta.2_samples.sha256.json') -Raw | ConvertFrom-Json
 $sampleDir = Join-Path $pluginDir 'Contents\x86_64-win\Samples'
 foreach ($entry in $manifest) {
     $samplePath = Join-Path $sampleDir $entry.path
