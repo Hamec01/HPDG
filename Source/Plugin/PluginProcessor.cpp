@@ -126,7 +126,11 @@ std::vector<juce::String> preferredSampleTagsForProject(const PatternProject& pr
 // (LaneSampleBank::resolveRoot: its name and its sound), so a bass sample in D plays a written D2
 // at its original speed instead of assuming every sample is C, and a sample tuned 40 cents flat
 // is raised by 40 cents to sit on the note.
-float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass, double rootCents = 0.0)
+// rootMidi: the sample's own note with its octave (from its sound, LaneSampleBank); when known
+// a written note sounds exactly as written, as in any sampler / 808 instrument. Before, the
+// sample was placed in the octave nearest the lane's default note, so a C1 808 played every
+// written note an octave lower (20-50 Hz fundamentals: "low, droning", 2026-10-13).
+float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass, double rootCents = 0.0, int rootMidi = -1)
 {
     const auto* info = TrackRegistry::find(track);
     const int defaultPitch = info != nullptr ? info->defaultMidiNote : 36;
@@ -137,7 +141,8 @@ float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass, 
     // default A#1 -> a "C" sample is C2 = 36). Adding the pitch class to the default note
     // itself would treat a C sample as A#1 and play every bass note a whole tone sharp.
     const int defaultPitchClass = defaultPitch % 12;
-    const int basePitch = defaultPitch + ((juce::jlimit(0, 11, rootPitchClass) - defaultPitchClass + 18) % 12 - 6);
+    const int basePitch = rootMidi >= 0 ? rootMidi
+                                        : defaultPitch + ((juce::jlimit(0, 11, rootPitchClass) - defaultPitchClass + 18) % 12 - 6);
     const int clampedPitch = juce::jlimit(0, 127, pitch);
     const double cents = juce::jlimit(-100.0, 100.0, rootCents);
     return static_cast<float>(std::pow(2.0, (static_cast<double>(clampedPitch - basePitch) - cents / 100.0) / 12.0));
@@ -3097,10 +3102,16 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         }
     }
 
+    // the Sub808 lane's +/- transpose also applies to a single auditioned note
+    auto auditionTranspose = [this](TrackType track)
+    {
+        const auto* lane = track == TrackType::Sub808 ? findTrackState(TrackType::Sub808) : nullptr;
+        return lane != nullptr ? lane->sub808Settings.transposeSemitones : 0;
+    };
     for (const auto& audition : pendingPreviewNotes)
     {
         PreviewEngine::TriggerOptions options;
-        options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch, laneSampleBank.getSelectedRootPitchClass(audition.track), laneSampleBank.getSelectedRootCents(audition.track));
+        options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch + auditionTranspose(audition.track), laneSampleBank.getSelectedRootPitchClass(audition.track), laneSampleBank.getSelectedRootCents(audition.track), laneSampleBank.getSelectedRootMidi(audition.track));
         if (audition.track == TrackType::Sub808)
         {
             if (const auto* subTrack = findTrackState(TrackType::Sub808); subTrack != nullptr)
@@ -3172,7 +3183,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     PreviewEngine::TriggerOptions options;
                     if (event.track == TrackType::Sub808)
                     {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track));
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track), laneSampleBank.getSelectedRootMidi(event.track));
                         options.legato = event.legato;
                         options.glide = event.glide;
                         options.mono = event.mono;
@@ -3234,7 +3245,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                     PreviewEngine::TriggerOptions options;
                     if (event.track == TrackType::Sub808)
                     {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track));
+                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track), laneSampleBank.getSelectedRootMidi(event.track));
                         options.legato = event.legato;
                         options.glide = event.glide;
                         options.mono = event.mono;
@@ -4581,7 +4592,7 @@ PreviewEngine::TriggerOptions BoomBapGeneratorAudioProcessor::triggerOptionsFor(
     PreviewEngine::TriggerOptions options;
     if (event.track == TrackType::Sub808)
     {
-        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track));
+        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track), laneSampleBank.getSelectedRootMidi(event.track));
         options.legato = event.legato;
         options.glide = event.glide;
         options.mono = event.mono;
@@ -5542,7 +5553,7 @@ std::vector<BoomBapGeneratorAudioProcessor::PreviewEvent> BoomBapGeneratorAudioP
             const int noteTicks = clampTickToPattern(note.startTick(), sourceProject.params.bars);
             event.sample = ticksToSamples(noteTicks, sampleRate, sourceProject.params.bpm);
             event.track = track.type;
-            event.pitch = juce::jlimit(0, 127, note.pitch);
+            event.pitch = juce::jlimit(0, 127, note.pitch + (track.type == TrackType::Sub808 ? track.sub808Settings.transposeSemitones : 0));
             event.mono = track.sub808Settings.mono;
             event.cutItself = track.sub808Settings.cutItself;
             event.glideDurationSamples = static_cast<int>((static_cast<double>(track.sub808Settings.glideTimeMs) / 1000.0) * sampleRate);

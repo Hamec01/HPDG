@@ -229,7 +229,8 @@ Done:
     dialog like FL and "BPM = selection" in the Trim window (10).
 - Tonal loops are not drum loops (4).
 - Key of the loop (5): peak chroma, Albrecht-Shanahan profiles, opening bass note, minor prior.
-- Bass / 808 one-shot root from the sound (9). The register stays low: the maintainer's decision.
+- Bass / 808 one-shot root from the sound (9). Since 2026-10-13 the Sub808 lane plays notes as written
+  (the octave from the sound) and has -/+ transpose buttons (octave, Shift = semitone).
 - Guide leaves out drum hits with confidence < 0.3 (11).
 
 Numbers now:

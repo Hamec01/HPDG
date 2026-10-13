@@ -133,6 +133,12 @@ private:
 
     ClickableLabel nameLabel;
     BassAmountSelector bassAmountSelector; // bass lane only: [1][2][3]
+    // bass lane only: quick transpose, click = octave, Shift+click = semitone (playback + MIDI export)
+    juce::TextButton transposeDownButton { "-" };
+    juce::TextButton transposeUpButton { "+" };
+    juce::Label transposeLabel;
+    void setTranspose(int semitones);
+    void refreshTransposeLabel();
     juce::Label roleLabel;
     juce::TextButton rgButton { "RG" };
     juce::ToggleButton soloButton { "S" };

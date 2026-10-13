@@ -1535,6 +1535,16 @@ void testVisibleTransformExportConsistencySmoke()
     const auto subNoteOns = collectMidiNoteOns(subSequence);
     expect(static_cast<int>(subNoteOns.size()) == static_cast<int>(sub->sub808Notes.size()),
         "Export consistency smoke should let track-only export/drag follow the visible transformed Sub808 notes exactly.");
+
+    // The bass lane's +/- transpose is exported: what is dragged out is what was heard.
+    if (!subNoteOns.empty())
+    {
+        sub->sub808Settings.transposeSemitones = 12;
+        const auto upOns = collectMidiNoteOns(MidiExportEngine::patternToSequence(project, TrackType::Sub808, 960, false, false));
+        expect(upOns.size() == subNoteOns.size() && upOns.front().note == subNoteOns.front().note + 12,
+            "Sub808 transpose +12 must raise the exported notes by an octave.");
+        sub->sub808Settings.transposeSemitones = 0;
+    }
 }
 
 void testStyleDefaultsSmoke()
@@ -4757,6 +4767,11 @@ void testBoomBapBassRegenerateAndAmount()
     PatternProject restored;
     expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), restored), "project round trip failed");
     expect(findTrackByType(restored, TrackType::Sub808)->sub808Settings.bassAmount == 2, "bass amount not saved with the project");
+
+    findTrackByType(project, TrackType::Sub808)->sub808Settings.transposeSemitones = -12;
+    PatternProject transposed;
+    expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), transposed), "project round trip failed");
+    expect(findTrackByType(transposed, TrackType::Sub808)->sub808Settings.transposeSemitones == -12, "bass transpose not saved with the project");
 }
 
 

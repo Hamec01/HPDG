@@ -88,7 +88,9 @@ int exportMidiPitch(const TrackState& track, const NoteEvent& note)
         return 60; // C5 in FL Studio note naming
 
     const auto* info = TrackRegistry::find(track.type);
-    return std::clamp(note.pitch > 0 ? note.pitch : (info != nullptr ? info->defaultMidiNote : 34), 0, 127);
+    const int pitch = note.pitch > 0 ? note.pitch : (info != nullptr ? info->defaultMidiNote : 34);
+    // the lane's +/- transpose: what is dragged out is what was heard
+    return std::clamp(pitch + track.sub808Settings.transposeSemitones, 0, 127);
 }
 
 const TrackState* findTrackState(const PatternProject& project, TrackType type)

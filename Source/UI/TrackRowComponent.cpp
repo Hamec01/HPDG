@@ -217,6 +217,20 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     };
     addChildComponent(bassAmountSelector);
 
+    // Bass lane: move the whole line up / down without regenerating (octave; Shift = semitone).
+    auto stepFor = [] { return juce::ModifierKeys::getCurrentModifiers().isShiftDown() ? 1 : 12; };
+    transposeDownButton.setTooltip("Bass down an octave (Shift: a semitone)");
+    transposeUpButton.setTooltip("Bass up an octave (Shift: a semitone)");
+    transposeDownButton.onClick = [this, stepFor] { setTranspose(currentSub808Settings.transposeSemitones - stepFor()); };
+    transposeUpButton.onClick = [this, stepFor] { setTranspose(currentSub808Settings.transposeSemitones + stepFor()); };
+    transposeLabel.setJustificationType(juce::Justification::centred);
+    transposeLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    transposeLabel.setTooltip("Bass transpose in semitones");
+    addChildComponent(transposeDownButton);
+    addChildComponent(transposeUpButton);
+    addChildComponent(transposeLabel);
+    refreshTransposeLabel();
+
     nameLabel.setText(initialState.laneName, juce::dontSendNotification);
     nameLabel.setJustificationType(juce::Justification::centredLeft);
     nameLabel.setInterceptsMouseClicks(true, false);
@@ -594,10 +608,18 @@ void TrackRowComponent::resized()
 {
     auto area = getLocalBounds().reduced(6, 4);
     bassAmountSelector.setVisible(isSub808Lane());
+    transposeDownButton.setVisible(isSub808Lane());
+    transposeUpButton.setVisible(isSub808Lane());
+    transposeLabel.setVisible(isSub808Lane());
     const auto placeBassKnob = [this](juce::Rectangle<int>& nameArea)
     {
         if (!isSub808Lane())
             return;
+        const int rowHeight = juce::jmin(20, getHeight() - 4);
+        auto transposeArea = nameArea.removeFromRight(juce::jmin(58, nameArea.getWidth() / 3));
+        transposeDownButton.setBounds(transposeArea.removeFromLeft(16).withSizeKeepingCentre(16, rowHeight));
+        transposeUpButton.setBounds(transposeArea.removeFromRight(16).withSizeKeepingCentre(16, rowHeight));
+        transposeLabel.setBounds(transposeArea);
         auto knobArea = nameArea.removeFromRight(juce::jmin(60, nameArea.getWidth() / 2));
         bassAmountSelector.setBounds(knobArea.withSizeKeepingCentre(knobArea.getWidth(), juce::jmin(24, getHeight() - 2)));
     };
@@ -863,6 +885,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     sampleNameLabel.setText(sampleText, juce::dontSendNotification);
     currentSub808Settings = state.sub808Settings;
     bassAmountSelector.setValue(currentSub808Settings.bassAmount, juce::dontSendNotification);
+    refreshTransposeLabel();
 
     rgButton.setEnabled(hasRuntimeTrack());
     soloButton.setEnabled(hasRuntimeTrack());
@@ -918,6 +941,21 @@ void TrackRowComponent::setSub808Settings(const Sub808LaneSettings& settings)
 
     currentSub808Settings = settings;
     bassAmountSelector.setValue(settings.bassAmount, juce::dontSendNotification);
+    refreshTransposeLabel();
+}
+
+void TrackRowComponent::setTranspose(int semitones)
+{
+    currentSub808Settings.transposeSemitones = juce::jlimit(-24, 24, semitones);
+    refreshTransposeLabel();
+    if (onSub808SettingsChanged)
+        onSub808SettingsChanged(laneId, currentSub808Settings);
+}
+
+void TrackRowComponent::refreshTransposeLabel()
+{
+    const int t = currentSub808Settings.transposeSemitones;
+    transposeLabel.setText(t == 0 ? juce::String("0") : (t > 0 ? "+" : "") + juce::String(t), juce::dontSendNotification);
 }
 
 void TrackRowComponent::setHatFxDragState(float density, bool locked)

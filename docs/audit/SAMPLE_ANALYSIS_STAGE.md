@@ -873,6 +873,26 @@ Scaling the sample's blend weight by tempo confidence would only weaken right gu
 Engines consuming GenerationHints directly (finding 4 of the baseline) is a design change for the
 maintainer to decide, not a calibration.
 
+## Sub808 plays notes as written; quick transpose on the bass lane (2026-10-13)
+
+**Report (maintainer).** Trap 808 sounds "very low, droning, like a tone lower". The same MIDI in
+their own 808 sounds right.
+
+**Cause.** The roots were right: the bundled trap 808s are C1 at 0-2 cents. The playback placed
+the sample in the octave nearest the lane default (A#1), so a C1 808 played every written note an
+octave lower: trap writes E1-C3, which sounded as E0-C2, with 20-50 Hz fundamentals.
+
+**Change.**
+- `playbackRateForTrackPitch` uses the sample's detected note with its octave (step 9's
+  `getSelectedRootMidi`) when it is known, so written notes sound as written, as in any sampler.
+- The bass row has -/+ buttons: a click moves the line an octave, Shift+click a semitone.
+  - The value is stored as `Sub808LaneSettings::transposeSemitones` (±24, saved with the project).
+  - It is applied to playback, auditioning, rendering and MIDI export.
+- This replaces the 2026-10-09 decision to keep the old register.
+
+Tests: CoreTests (transpose saved with the project, exported notes +12 with +12 transpose), all
+suites pass.
+
 ## Open (next steps)
 
 1. **Tempo of tonal loops: loop tails (NEXT).** After step 7: 78 % up to octave on tonal packs, 79 % on
