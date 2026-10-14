@@ -291,3 +291,88 @@ No source gives substyle-specific **kick positions**, and the references are not
 substyle, so the shared kick vocabulary stays (inventing per-substyle kick tables would be tuning by
 vibe, RULE 51). Hat 16th fill (candidate 3B) also re-checked: HPDG odd 16ths average 0.33 a position,
 reference calibration 0.25 / validation 0.42 — inside, no change.
+
+## Step 6 — the 808 register after "notes as written" (2026-10-14; waits for listening)
+
+**Report (maintainer).** Trap bass "sounds bad" (with and without a sample); the kick seems to throw
+the tempo off and the bass does not land on it.
+
+**Measured** (`HPDG_GenerationQualityLab --genre trap --notes [--key K] [--perf s h] [--render N]`,
+new lab options; 100 seeds x 6 substyles x 12 keys):
+- Timing is not the cause. Bass notes on a kick share its tick exactly (0 ms); after moving Swing +4 /
+  Humanize +0.3 they differ by <= 0.5 ms; in the rendered audio the 808 attack is 0.3 ms and the kick
+  1.8 ms (p90 4 ms) after the note.
+- The register is. Since 2026-10-13 the lane plays notes as written; `phrase808PitchForTrapAlgebraNote`
+  still put the root in E1-E2 and answers up to C3 (it was written for the old playback, an octave
+  lower). Keys C-D# put the whole line in octave 2: a C1 808 sample played 2-4x faster (short, thin,
+  clicky), and 22 % of 808 notes are not on a kick, so they read as extra kicks.
+- Reference: 1289 808 loops from the maintainer's packs (`D:/Drums`, files with 808 + loop / BPM in the
+  name), autocorrelation f0 below 300 Hz: per-file median F1 (44 Hz), quartiles D1-A#1; 21 % of
+  frames at or above C2.
+
+**Change.** Root in octave 1 (C1-B1), answers folded to <= A2 — the window the sample-led Trap 808
+already uses (`SampleBassLineComposer`: anchor C1-B1, high 45).
+
+| 808 pitch, all keys | median | quartiles | >= C2 | >= G2 | max |
+|---|---|---|---|---|---|
+| before | C2 (65 Hz) | G#1-D#2 | 0.54 | 0.13 | C3 |
+| after | G#1 (52 Hz) | E1-B1 | 0.22 | 0.02 | A2 |
+| references | F1 (44 Hz) | D1-A#1 | 0.21 | | |
+
+Only pitches changed (19 258 of 120 060 kick / 808 notes, every other field identical); keys E-B are
+unchanged, C-D# one octave lower. Rendered: notes sound as written once the 808's own pitch drop has
+settled (200 ms after the attack: 67 / 67 exact). CoreTests 77 / 77, LaneBoundaryTests and
+SampleTrimTests pass. Listening pairs (before / after, same seeds, C minor):
+`TempAudio/trap_808_listen/` (not in git).
+
+## Step 7 — 808 lines, kick and snare from the maintainer's trap packs (2026-10-14; waits for listening)
+
+**Request (maintainer).** Look at the trap packs in `D:/Drums`, their bass lines, and improve the Trap
+engine (kick and snare too), without touching the other engines.
+
+**Reference.** `tools/trap_pack_reference.py` (new): 39 trap folders, byte-identical kits counted once;
+70 808 / bass MIDI lines (16 packs: HamloProd, GH Trap Kit 01-10, Dirty Trap Vocal Kits, Progressive
+Trap 3, Origin Sound Unorthodox Trap 2 / Warfare, Sonic Mechanics UTT2) and 12 kits with kick + snare
+put on the HPDG grid by their snare (GH Kit 09, 7 kicks a bar in another notation, kept out of the
+reading). HPDG is measured by the same code from `HPDG_GenerationQualityLab --genre trap --notes`
+(the lab now dumps Kick, GhostKick, Snare, ClapGhostSnare and Sub808). Full table:
+`docs/audit/reference/trap_pack_reference.md`.
+
+**Changes (Trap files only).**
+1. 808 pitches (`assignTrap808Line`, TrapEngine): written over the whole line once its rhythm is final.
+   Bars 1 / 3 start on the tonic, bars 2 / 4 move to iv / v / bVI / bVII / III (major: IV / V / vi / ii /
+   iii), bar 3 sometimes repeats bar 1's degree; inside a bar repeat / octave / third / fourth / step
+   moves, a pickup into the next bar's degree; glides on some pitch changes (the note rings into the
+   next, `glideToNext` / `isSlide` as in Drill). Replaces the per-note root / fifth / octave rule.
+2. 808 length (`shape808Durations`): the note rings to the next 808 note, through the snare, by a
+   substyle share (Cloud 0.80 ... Rage 0.97; anchors +0.04, answers -0.04, pickups 0.66). The 808
+   occupancy bands of the repair and the scorer moved up with it (Cloud 0.55-0.92 ... Rage 0.70-1.00).
+3. Kick: up to two articulation kicks a bar, weighted to the packs' second half (10 / 12 / 14); the
+   third bar of a phrase repeats the first (0.45), the fourth the second (0.22).
+4. Snare: bounce snares (`addBounceSnares`): one place a pattern (sometimes two) among 2 / 6 / 14 / 10 /
+   4, most bars, velocity 68-92, never on a kick or an 808 note; chance per substyle 0.45-0.75.
+
+**Result** (300 seeds x 6 substyles, defaults; packs = medians, means in brackets):
+
+| | packs | before (step 6) | after |
+|---|---|---|---|
+| 808 intervals: fifths / thirds / octaves / fourths | 0.06 / 0.13 / 0.10 / 0.08 | **0.40** / 0.01 / 0.10 / 0.03 | **0.04** / 0.09 / 0.11 / 0.11 |
+| 808 scale degrees: tonic / iv / v / bVII | 0.54 / 0.10 / 0.08 / 0.04 | 0.72 / 0.04 / 0.23 / 0 | 0.56 / 0.10 / 0.08 / 0.07 |
+| 808 distinct pitches, span (semitones) | 4, 14 | 2, 7 | 4, 15 |
+| 808 glides / note (mean) | 0.12 | 0 | 0.12 |
+| 808 note length (16ths), gap fill | 6.0, 1.00 (0.93) | 4.0, 0.62 | 6.0, 1.00 (0.96) |
+| 808 starts / bar (mean) | 2.24 | 2.06 | 2.16 |
+| kicks / bar (mean) | 2.98 (median 2.75) | 2.16 | 2.43 |
+| kicks in the 2nd half of the bar | 0.48 | 0.34 | 0.39 |
+| kick bar = bar two before (mean) | 0.30 | 0.10 | 0.33 |
+| snare-lane hits off the 8 / bar | ≈ 0.6 (8 of 12 kits) | 0 | 0.40 |
+
+Unchanged on purpose: kicks with an 808 0.72-0.75 (packs 0.52) — the maintainer's open decision
+(every kick carries an 808); the clap layered on the 8 (6 of 12 kits) is a sound layer and the Clap
+Ghost lane stays off by default.
+
+Checks: failures 0, exact / near duplicates 0, determinism 0 (6 x 300 seeds); density matrix
+monotone 18 / 18, "density barely changes" 0 / 18; Boom Bap, DnB and Techno lab output byte-identical
+before / after (150 seeds each, patterns and notes). CoreTests 77 / 77 (the Trap smoke check's 808
+ceiling 0.65 became 0.45-1.00, the measured played range), LaneBoundaryTests, TrackSemanticsTests,
+SampleTrimTests pass. Listening pairs (step 6 vs step 7, same seeds): `TempAudio/trap_step7_listen/`.

@@ -6,7 +6,14 @@
 //
 //   HPDG_GenerationQualityLab [--seeds N] [--genre boombap|trap|dnb|techno|all]
 //                             [--density default|matrix] [--bars 2|4|8|matrix]
-//                             [--out <folder>] [--tag <name>]
+//                             [--out <folder>] [--tag <name>] [--notes] [--key 0-11] [--perf s h] [--render N]
+//
+// --notes also writes <out>/<tag>_notes.csv: every Kick / GhostKick / Snare / ClapGhostSnare / Sub808 note of every pattern (grid tick,
+// timing offset, pitch, length, glide) for kick / bass alignment and register checks.
+// --perf <swing delta> <humanize delta>: the notes are dumped after the live performance layer
+// (PatternPerformanceTransformEngine, as when the Swing / Humanize knobs move after Generate).
+// --render N: the first N seeds of every configuration are rendered as the plugin renders a lane for
+// drag-and-drop (Kick, Sub808, full mix); the file paths go to <out>/<tag>_renders.csv.
 //
 // Writes <out>/<tag>_patterns.csv (one row per generated pattern) and <out>/<tag>_summary.json
 // (one entry per configuration: means / percentiles / rates). Generation does not change.
@@ -20,6 +27,7 @@
 #include <juce_events/juce_events.h>
 
 #include "../Source/Core/ProjectLaneAccess.h"
+#include "../Source/Engine/PatternPerformanceTransformEngine.h"
 #include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Plugin/PluginProcessor.h"
 #include "QualityMetrics.h"
@@ -83,6 +91,10 @@ int main(int argc, char** argv)
     juce::String barsMode = "4";
     juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile("quality-lab");
     juce::String tag = "run";
+    bool dumpNotes = false;
+    float perfSwingDelta = 0.0f, perfHumanizeDelta = 0.0f;
+    int renderSeeds = 0;
+    int keyRoot = -1;
     for (int i = 1; i < argc; ++i)
     {
         const juce::String a(argv[i]);
@@ -93,6 +105,14 @@ int main(int argc, char** argv)
         else if (a == "--bars") barsMode = next();
         else if (a == "--out") out = juce::File(next());
         else if (a == "--tag") tag = next();
+        else if (a == "--notes") dumpNotes = true;
+        else if (a == "--render") renderSeeds = next().getIntValue();
+        else if (a == "--key") keyRoot = next().getIntValue(); // 0 = C ... 11 = B (after the style preset)
+        else if (a == "--perf")
+        {
+            perfSwingDelta = next().getFloatValue();
+            perfHumanizeDelta = next().getFloatValue();
+        }
     }
     out.createDirectory();
 
@@ -105,6 +125,20 @@ int main(int argc, char** argv)
                 "snareInvalidPerBar,hatsPerBar,openHatsPerBar,hatEighthCoverage,hatMaxGapSteps,hatRollNotesPerBar,openClosedCollisions,"
                 "barSimilarity,identicalBarRate,lastBarDifference,velocityStd,identicalVelocityRate,anchorTimingMeanAbs,"
                 "secondaryTimingMeanAbs,timingOutlierRate,bassNotesPerBar,bassOnKickRate,eventsPerBar,syncopation,hardFailures,failure,skeletonHash,kickHash,snareHash,hatHash,otherHash,firstTwoHash,firstTwoKickHash,kickBars,hatBars,kickAllBars,hatAllBars,hatAllPerBar,displacedBackbeatPerBar,snareBars,bassOnSnareRate,drumBars,topBars\n";
+
+    std::ofstream notesCsv;
+    if (dumpNotes)
+    {
+        notesCsv.open(out.getChildFile(tag + "_notes.csv").getFullPathName().toStdString());
+        notesCsv << "genre,substyle,bars,seed,bpm,key,lane,gridTick,offset,pitch,length,velocity,glide\n";
+    }
+
+    std::ofstream rendersCsv;
+    if (renderSeeds > 0)
+    {
+        rendersCsv.open(out.getChildFile(tag + "_renders.csv").getFullPathName().toStdString());
+        rendersCsv << "genre,substyle,seed,bpm,key,lane,file\n";
+    }
 
     juce::String json = "{\n  \"tag\": \"" + tag + "\",\n  \"seeds\": " + juce::String(seeds) + ",\n  \"configurations\": [\n";
     bool firstConfig = true;
@@ -129,6 +163,8 @@ int main(int argc, char** argv)
                     if (density >= 0.0f)
                         setChoice(apvts, ParamIds::densityAmount, density);
                     setChoice(apvts, ParamIds::seedLock, 1.0f);
+                    if (keyRoot >= 0)
+                        setChoice(apvts, ParamIds::keyRoot, static_cast<float>(keyRoot % 12));
                     const float effectiveDensity = apvts.getRawParameterValue(ParamIds::densityAmount)->load();
 
                     std::map<juce::String, Stat> stats;
@@ -146,6 +182,34 @@ int main(int argc, char** argv)
                         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
                         const auto project = processor.getProjectSnapshot();
                         auto m = measure(project, g.genre);
+                        if (seed <= renderSeeds)
+                            for (const auto lane : { std::optional<TrackType>(TrackType::Kick), std::optional<TrackType>(TrackType::Sub808), std::optional<TrackType>() })
+                            {
+                                const auto file = processor.createTemporaryWavFile(lane);
+                                rendersCsv << g.key << "," << sub << "," << seed << "," << project.params.bpm << "," << project.params.keyRoot
+                                           << (project.params.scaleMode == 1 ? "M" : "m") << ","
+                                           << (lane.has_value() ? (*lane == TrackType::Kick ? "kick" : "bass") : "mix") << ","
+                                           << file.getFullPathName() << "\n";
+                            }
+                        auto dumped = project;
+                        if (dumpNotes && (perfSwingDelta != 0.0f || perfHumanizeDelta != 0.0f))
+                        {
+                            auto live = dumped.params;
+                            live.swingPercent = juce::jlimit(50.0f, 75.0f, live.swingPercent + perfSwingDelta);
+                            live.humanizeAmount = juce::jlimit(0.0f, 1.0f, live.humanizeAmount + perfHumanizeDelta);
+                            PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(dumped, dumped.params);
+                            dumped.params = live;
+                            PatternPerformanceTransformEngine::applyPerformanceFromBase(dumped, live);
+                        }
+                        if (dumpNotes)
+                            for (const auto lane : { TrackType::Kick, TrackType::GhostKick, TrackType::Snare, TrackType::ClapGhostSnare, TrackType::Sub808 })
+                                for (const auto& n : notesOf(dumped, lane))
+                                    notesCsv << g.key << "," << sub << "," << bars << "," << seed << "," << project.params.bpm << ","
+                                             << project.params.keyRoot << (project.params.scaleMode == 1 ? "M" : "m") << ","
+                                             << (lane == TrackType::Kick ? "kick" : lane == TrackType::GhostKick ? "ghostkick" : lane == TrackType::Snare ? "snare"
+                                                 : lane == TrackType::ClapGhostSnare ? "clapghost" : "bass")
+                                             << "," << n.gridTick << "," << n.timingOffsetTicks
+                                             << "," << n.pitch << "," << n.lengthTicks << "," << n.velocity << "," << (n.glideToNext ? 1 : 0) << "\n";
                         m.ms = ms;
                         timings.add(ms);
 

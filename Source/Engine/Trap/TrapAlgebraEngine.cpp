@@ -274,6 +274,60 @@ std::vector<RollZone> rollZones(bool bar4, bool doubleTime)
     return zones;
 }
 
+// Bounce snares (step 7, 2026-10-14): 8 of 12 kits of the maintainer's trap packs add softer snare /
+// clap hits to the snare on 8, 0.4-2 a bar, at the same place every bar (16ths 2, 6, 14, less often
+// 10, 4), velocity median 90 against 100-127 for the main snare. One place a pattern (sometimes two),
+// never on a kick or an 808 note (the lane checks would drop the kick / move the 808).
+void addBounceSnares(TrapPatternMatrix& matrix, const TrapAlgebraParams& params, std::mt19937& rng)
+{
+    if (params.tempoContext.doubleTime)
+        return;
+    float presence = 0.70f;
+    switch (params.substyle)
+    {
+        case TrapAlgebraSubstyle::CloudTrap: presence = 0.45f; break;
+        case TrapAlgebraSubstyle::LuxuryTrap: presence = 0.55f; break;
+        case TrapAlgebraSubstyle::DarkTrap: presence = 0.65f; break;
+        case TrapAlgebraSubstyle::RageTrap: presence = 0.75f; break;
+        default: break;
+    }
+    if (!chance(rng, presence))
+        return;
+    static constexpr std::array<std::pair<int, float>, 5> places {{ { 8, 0.30f }, { 24, 0.28f }, { 56, 0.24f }, { 40, 0.12f }, { 16, 0.06f } }};
+    auto pickPlace = [&rng](int exclude)
+    {
+        float total = 0.0f;
+        for (const auto& p : places)
+            total += p.first == exclude ? 0.0f : p.second;
+        float r = std::uniform_real_distribution<float>(0.0f, total)(rng);
+        for (const auto& p : places)
+        {
+            if (p.first == exclude)
+                continue;
+            if (r < p.second)
+                return p.first;
+            r -= p.second;
+        }
+        return places[0].first;
+    };
+    const int first = pickPlace(-1);
+    const int second = chance(rng, 0.35f) ? pickPlace(first) : -1;
+    for (int bar = 0; bar < matrix.getBars(); ++bar)
+    {
+        for (const int place : { first, second })
+        {
+            if (place < 0 || !chance(rng, place == first ? 0.80f : 0.60f))
+                continue;
+            const int tick = barStart(bar) + place;
+            if (matrix.hasNote(TrapAlgebraLanes::Kick, tick) || matrix.hasNote(TrapAlgebraLanes::Sub808, tick)
+                || matrix.hasNote(TrapAlgebraLanes::Snare, tick))
+                continue;
+            matrix.setNote(TrapAlgebraLanes::Snare, tick, randomInt(rng, 68, 92), 2,
+                           microTimingForLane(TrapAlgebraLanes::Snare, tick, params, rng), TrapAlgebraRole::Support);
+        }
+    }
+}
+
 bool inRollZone(int tick, bool bar4, bool doubleTime)
 {
     const int local = tickInBar(tick);
@@ -574,6 +628,7 @@ TrapAlgebraPattern TrapAlgebraEngine::generateCandidate(const TrapAlgebraParams&
 
     for (int bar = 0; bar < params.bars; ++bar)
         generateBarAdditions(pattern.matrix, params, bar, candidateIndex, rng);
+    addBounceSnares(pattern.matrix, params, rng);
 
     shape808Durations(pattern.matrix, params);
     return pattern;
@@ -698,6 +753,26 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
     const auto& motif = phraseMotifs[static_cast<size_t>((candidateIndex + params.seed) % static_cast<int>(phraseMotifs.size()))]
                                     [static_cast<size_t>(bar % 4)];
 
+    // Phrases come back: in 6 of 11 kits of the maintainer's trap packs a kick bar equals the bar two
+    // before about half the time (A B A B'; HPDG 0.10, step 7). The third bar may repeat the first, the
+    // fourth (the turnaround) the second less often.
+    const float repeatChance = (bar % 4) == 2 ? 0.45f : ((bar % 4) == 3 ? 0.22f : 0.0f);
+    if (bar >= 2 && repeatChance > 0.0f && chance(rng, repeatChance))
+    {
+        const int sourceStart = barStart(bar - 2);
+        for (int tick = 0; tick < 64; ++tick)
+        {
+            const auto* source = matrix.cellAt(TrapAlgebraLanes::Kick, sourceStart + tick);
+            if (source != nullptr && source->active && !matrix.hasNote(TrapAlgebraLanes::Kick, start + tick))
+            {
+                matrix.setNote(TrapAlgebraLanes::Kick, start + tick, std::clamp(source->velocity + randomInt(rng, -6, 6), 80, 124), 2, 0, source->role);
+                selectedKicks.push_back(tick);
+            }
+        }
+        std::sort(selectedKicks.begin(), selectedKicks.end());
+    }
+    const bool repeatedBar = !selectedKicks.empty() && bar >= 2 && repeatChance > 0.0f;
+
     const int motifKickCount = static_cast<int>(std::count_if(motif.begin(), motif.end(), [](int tick) { return tick >= 0; }));
     const int styleKickLimit = style.kickIrregularity >= 0.54f ? 3 : 2;
     const int targetKicks = std::clamp(motifKickCount, 1, bar4 ? std::max(2, styleKickLimit) : styleKickLimit);
@@ -728,7 +803,7 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
 
     // Played trap phrases answer in pairs of bars: the A bars (1, 3) start on the kick in 85-100 % of the
     // reference, the B bars (2, 4) in 16-38 % (docs/audit/TRAP_STAGE.md step 1).
-    if (bar % 2 == 0 && bar != 0 && !matrix.hasNote(TrapAlgebraLanes::Kick, start)
+    if (!repeatedBar && bar % 2 == 0 && bar != 0 && !matrix.hasNote(TrapAlgebraLanes::Kick, start)
         && std::none_of(selectedKicks.begin(), selectedKicks.end(), [](int tick) { return tick < 8; })
         && chance(rng, 0.80f))
     {
@@ -750,12 +825,19 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
 
     std::sort(selectedKicks.begin(), selectedKicks.end());
 
-    // Articulation: the phrase fixes the kick identity, density adds one kick around it. Position weights
-    // are the off-downbeat kick probabilities of the calibration split (docs/audit/TRAP_STAGE.md step 1).
-    if (chance(rng, 0.10f + density * 0.45f + style.kickIrregularity * 0.20f))
+    // Articulation: the phrase fixes the kick identity, density adds kicks around it. Played trap bars
+    // carry 2.75 kicks (median of 11 kits of the maintainer's packs; HPDG 2.15) and put half of them in
+    // the second half of the bar, most on the 16ths 10 / 12 / 14 (0.37 / 0.40 / 0.31 of the bars; HPDG
+    // 0.27 / 0.17 / 0.27), fewer on 2 / 6 (step 7): up to two articulation kicks, weighted by that
+    // profile. A repeated bar stays a copy.
+    for (int extra = 0; extra < 2 && !repeatedBar; ++extra)
     {
+        const float extraChance = extra == 0 ? 0.30f + density * 0.45f + style.kickIrregularity * 0.20f
+                                             : 0.12f + density * 0.35f + style.kickIrregularity * 0.15f;
+        if (!chance(rng, extraChance))
+            break;
         static constexpr std::array<std::pair<int, float>, 6> articulation {{
-            { 8, 0.15f }, { 16, 0.24f }, { 24, 0.25f }, { 40, 0.26f }, { 48, 0.24f }, { 56, 0.26f } }};
+            { 8, 0.05f }, { 16, 0.22f }, { 24, 0.08f }, { 40, 0.30f }, { 48, 0.42f }, { 56, 0.30f } }};
         float total = 0.0f;
         std::array<float, articulation.size()> weights {};
         for (size_t i = 0; i < articulation.size(); ++i)
@@ -766,19 +848,18 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
             weights[i] = free ? articulation[i].second : 0.0f;
             total += weights[i];
         }
-        if (total > 0.0f)
-        {
-            float pick = std::uniform_real_distribution<float>(0.0f, total)(rng);
-            size_t index = 0;
-            while (index + 1 < weights.size() && pick >= weights[index])
-                pick -= weights[index++];
-            if (weights[index] <= 0.0f)
-                for (index = 0; weights[index] <= 0.0f; ++index) {}
-            const int tick = articulation[index].first;
-            matrix.setNote(TrapAlgebraLanes::Kick, start + tick, randomInt(rng, 86, 116), 2, 0, TrapAlgebraRole::Accent);
-            selectedKicks.push_back(tick);
-            std::sort(selectedKicks.begin(), selectedKicks.end());
-        }
+        if (total <= 0.0f)
+            break;
+        float pick = std::uniform_real_distribution<float>(0.0f, total)(rng);
+        size_t index = 0;
+        while (index + 1 < weights.size() && pick >= weights[index])
+            pick -= weights[index++];
+        if (weights[index] <= 0.0f)
+            for (index = 0; weights[index] <= 0.0f; ++index) {}
+        const int tick = articulation[index].first;
+        matrix.setNote(TrapAlgebraLanes::Kick, start + tick, randomInt(rng, 86, 116), 2, 0, TrapAlgebraRole::Accent);
+        selectedKicks.push_back(tick);
+        std::sort(selectedKicks.begin(), selectedKicks.end());
     }
 
     if (params.substyle == TrapAlgebraSubstyle::RageTrap && bar4 && chance(rng, 0.04f + density * 0.04f))
@@ -957,20 +1038,32 @@ void TrapAlgebraEngine::shape808Durations(TrapPatternMatrix& matrix,
         const int available = std::max(1, nextTick - note.tick64);
         // Played 808 notes fill 0.81 of the gap to the next one on average (GH Trap Kit 0.87-1.00), only
         // 6 % are shorter than an 8th: near-legato keeps the bounce (docs/audit/TRAP_STAGE.md step 5).
-        float articulation = 0.90f;
+        // How far a note rings into its gap, per substyle (step 7): airy Cloud lines leave the most
+        // space, Rage rings through (packs: 0.73-1.00 between the quartiles).
+        float articulation = 0.92f;
+        switch (params.substyle)
+        {
+            case TrapAlgebraSubstyle::CloudTrap: articulation = 0.80f; break;
+            case TrapAlgebraSubstyle::DarkTrap: articulation = 0.85f; break;
+            case TrapAlgebraSubstyle::LuxuryTrap: articulation = 0.85f; break;
+            case TrapAlgebraSubstyle::MemphisTrap: articulation = 0.88f; break;
+            case TrapAlgebraSubstyle::RageTrap: articulation = 0.97f; break;
+            case TrapAlgebraSubstyle::ATLClassic:
+            default: break;
+        }
         if (note.role == TrapAlgebraRole::BassAnchor)
-            articulation = 0.96f;
+            articulation += 0.04f;
         else if (note.role == TrapAlgebraRole::BassAnswer)
-            articulation = 0.86f;
+            articulation -= 0.04f;
         else if (note.role == TrapAlgebraRole::BassPickup)
             articulation = 0.66f;
+        articulation = std::clamp(articulation, 0.35f, 1.0f);
 
-        if (params.substyle == TrapAlgebraSubstyle::RageTrap)
-            articulation += 0.02f;
-        articulation = std::clamp(articulation, 0.35f, 0.98f);
-
+        // The 808 rings to the next 808 note, through the snare (step 7, 2026-10-14): in 70 lines of the
+        // maintainer's trap packs a note fills a median 1.00 of its gap (mean 0.93) and lasts a median 6
+        // 16ths; the note's creation length (cut before the snare) left HPDG at 0.62 and 4 16ths.
         const int roleDuration = std::max(2, static_cast<int>(std::floor(static_cast<float>(available) * articulation)));
-        cell->durationTicks = std::clamp(std::min(cell->durationTicks, roleDuration), 2, available);
+        cell->durationTicks = std::clamp(roleDuration, 2, available);
     }
 }
 
@@ -1090,14 +1183,16 @@ std::pair<float, float> occupancyBand(TrapAlgebraSubstyle substyle)
     {
         // Share of the time the 808 sounds. Played trap 808 lines: GH Trap Kit median 0.91 (0.81-1.00),
         // Cr2 Trippy Trap 0.67 (0.41-0.89); the old bands (0.22-0.55) rewarded a choppy 808 without
-        // bounce (docs/audit/TRAP_STAGE.md step 5). Substyle order kept; HPDG keeps a breath before the snare.
-        case TrapAlgebraSubstyle::RageTrap: return { 0.50f, 0.85f };
-        case TrapAlgebraSubstyle::CloudTrap: return { 0.38f, 0.72f };
-        case TrapAlgebraSubstyle::DarkTrap: return { 0.40f, 0.75f };
-        case TrapAlgebraSubstyle::MemphisTrap: return { 0.42f, 0.78f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.40f, 0.76f };
+        // bounce (docs/audit/TRAP_STAGE.md step 5). Substyle order kept.
+        // Step 7 (2026-10-14): 70 808 lines of the maintainer's packs sound 0.96 of the time (median;
+        // quartiles 0.73-1.00) - the 808 rings to the next note, through the snare.
+        case TrapAlgebraSubstyle::RageTrap: return { 0.70f, 1.00f };
+        case TrapAlgebraSubstyle::CloudTrap: return { 0.55f, 0.92f };
+        case TrapAlgebraSubstyle::DarkTrap: return { 0.58f, 0.95f };
+        case TrapAlgebraSubstyle::MemphisTrap: return { 0.62f, 0.97f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.58f, 0.95f };
         case TrapAlgebraSubstyle::ATLClassic:
-        default: return { 0.45f, 0.80f };
+        default: return { 0.65f, 0.98f };
     }
 }
 

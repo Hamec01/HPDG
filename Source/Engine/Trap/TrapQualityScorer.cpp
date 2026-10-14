@@ -53,14 +53,16 @@ std::pair<float, float> targetOccupancyBand(TrapAlgebraSubstyle substyle)
     {
         // Share of the time the 808 sounds. Played trap 808 lines: GH Trap Kit median 0.91 (0.81-1.00),
         // Cr2 Trippy Trap 0.67 (0.41-0.89); the old bands (0.22-0.55) rewarded a choppy 808 without
-        // bounce (docs/audit/TRAP_STAGE.md step 5). Substyle order kept; HPDG keeps a breath before the snare.
-        case TrapAlgebraSubstyle::RageTrap: return { 0.50f, 0.85f };
-        case TrapAlgebraSubstyle::CloudTrap: return { 0.38f, 0.72f };
-        case TrapAlgebraSubstyle::DarkTrap: return { 0.40f, 0.75f };
-        case TrapAlgebraSubstyle::MemphisTrap: return { 0.42f, 0.78f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.40f, 0.76f };
+        // bounce (docs/audit/TRAP_STAGE.md step 5). Substyle order kept.
+        // Step 7 (2026-10-14): 70 808 lines of the maintainer's packs sound 0.96 of the time (median;
+        // quartiles 0.73-1.00) - the 808 rings to the next note, through the snare.
+        case TrapAlgebraSubstyle::RageTrap: return { 0.70f, 1.00f };
+        case TrapAlgebraSubstyle::CloudTrap: return { 0.55f, 0.92f };
+        case TrapAlgebraSubstyle::DarkTrap: return { 0.58f, 0.95f };
+        case TrapAlgebraSubstyle::MemphisTrap: return { 0.62f, 0.97f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.58f, 0.95f };
         case TrapAlgebraSubstyle::ATLClassic:
-        default: return { 0.45f, 0.80f };
+        default: return { 0.65f, 0.98f };
     }
 }
 

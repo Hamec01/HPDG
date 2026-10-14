@@ -3704,8 +3704,10 @@ void testTrapAlgebraEngineSmoke()
     }
     expect(stronglyCoupled >= 30,
            "Trap Algebra Engine should strongly couple kick starts with 808 starts (>= 60 % of seeds).");
-    expect(first.score.sub808Density >= 0.18f && first.score.sub808Density <= 0.65f,
-           "Trap Algebra Engine should keep 808 density inside the musical negative-space range.");
+    // The 808 rings to its next note (Trap step 7): 70 808 lines of the maintainer's trap packs sound a
+    // median 0.96 of the time, quartiles 0.73-1.00; the old 0.65 ceiling predates step 5's bands.
+    expect(first.score.sub808Density >= 0.45f && first.score.sub808Density <= 1.0f,
+           "Trap Algebra Engine should keep 808 density inside the played trap range.");
     expect(first.score.hatVelocityVariance >= 40.0f,
            "Trap Algebra Engine hats should have non-flat velocity variance.");
     expect(first.score.kick808CouplingScore >= 0.60f,

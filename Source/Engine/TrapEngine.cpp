@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <array>
 #include <optional>
+#include <random>
 
 #include "../Core/TrackRegistry.h"
 #include "../Core/Sub808Types.h"
@@ -146,6 +148,140 @@ void clampLowEndPitchChanges(TrackState& sub, int bars, int maxPitchChangesPerTw
     }
 }
 
+// The 808 line's pitches, written over the whole line once its rhythm is final (2026-10-14,
+// docs/audit/TRAP_STAGE.md step 7). The old per-note rule gave root / fifth / octave by position:
+// fifths were 40 % of the moves (packs 6 %), two distinct pitches a line (packs 4), a 7-semitone span
+// (packs 14). Reference: 70 808 / bass MIDI lines of the maintainer's trap packs
+// (tools/trap_pack_reference.py): each bar starts on the tonic 59 %, else on iv 9 %, v 8 %, bVII 5 %,
+// bVI / III; inside a bar the 808 repeats 44 %, jumps an octave 10 % (+ 8 % beyond), thirds 13 %,
+// steps 9 %, fourths 8 %; half the notes sit an octave above the line's lowest; the 2-bar phrase
+// comes back (bar = 2 before 25 %); 12 % of the notes glide into another pitch.
+void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
+{
+    auto& notes = sub.notes;
+    if (notes.empty())
+        return;
+    std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) { return a.gridTick < b.gridTick; });
+
+    std::uint32_t hash = static_cast<std::uint32_t>(params.seed) * 2654435761u + static_cast<std::uint32_t>(params.keyRoot) * 97u;
+    for (const auto& n : notes)
+        hash = (hash ^ static_cast<std::uint32_t>(n.gridTick + 7)) * 16777619u;
+    std::mt19937 rng(hash);
+    auto unit = [&rng] { return std::uniform_real_distribution<float>(0.0f, 1.0f)(rng); };
+    auto pick = [&](std::initializer_list<std::pair<int, float>> options)
+    {
+        float total = 0.0f;
+        for (const auto& o : options)
+            total += o.second;
+        float r = unit() * total;
+        for (const auto& o : options)
+        {
+            if (r < o.second)
+                return o.first;
+            r -= o.second;
+        }
+        return options.begin()->first;
+    };
+
+    const bool major = params.scaleMode == 1;
+    const int root = ((params.keyRoot % 12) + 12) % 12;
+    const int base = 24 + root; // C1-B1
+    auto fold = [](int pitch)
+    {
+        while (pitch > 47)
+            pitch -= 12;
+        while (pitch < 24)
+            pitch += 12;
+        return pitch;
+    };
+    auto barDegreeMove = [&]
+    {
+        return major ? pick({ { 0, 0.30f }, { 5, 0.22f }, { 7, 0.18f }, { 9, 0.12f }, { 2, 0.08f }, { 4, 0.10f } })
+                     : pick({ { 0, 0.30f }, { 5, 0.20f }, { 7, 0.15f }, { 8, 0.15f }, { 10, 0.12f }, { 3, 0.08f } });
+    };
+    std::vector<int> barDegree(static_cast<size_t>(std::max(1, bars)), 0);
+    for (int bar = 0; bar < bars; ++bar)
+    {
+        const int inPhrase = bar % 4;
+        if (inPhrase == 0)
+            barDegree[static_cast<size_t>(bar)] = 0;
+        else if (inPhrase == 2)
+            barDegree[static_cast<size_t>(bar)] = unit() < 0.85f ? 0 : barDegreeMove();
+        else if (inPhrase == 3 && bar >= 2 && unit() < 0.5f)
+            barDegree[static_cast<size_t>(bar)] = barDegree[static_cast<size_t>(bar - 2)];
+        else
+            barDegree[static_cast<size_t>(bar)] = barDegreeMove();
+    }
+    // Scale tones near the bar's degree for a move inside the bar (third, fourth, step, fifth).
+    const std::array<int, 7> scale = major ? std::array<int, 7> { 0, 2, 4, 5, 7, 9, 11 } : std::array<int, 7> { 0, 2, 3, 5, 7, 8, 10 };
+    auto inScale = [&](int degree) { return std::find(scale.begin(), scale.end(), ((degree % 12) + 12) % 12) != scale.end(); };
+
+    int previous = -1;
+    int previousBar = -1;
+    // The line sits low (the root octave) or high (an octave up) per 2-bar phrase half the time.
+    for (size_t i = 0; i < notes.size(); ++i)
+    {
+        auto& note = notes[i];
+        const int step = note.gridTick / HiResTiming::kTicks1_16;
+        const int bar = std::clamp(step / 16, 0, bars - 1);
+        const int local = step % 16;
+        const int degreePitch = fold(base + barDegree[static_cast<size_t>(bar)]);
+        int pitch = degreePitch;
+        if (bar != previousBar || previous < 0)
+        {
+            // The bar's first note is its degree, in the octave nearer the previous note.
+            if (previous >= 0 && std::abs(degreePitch + 12 - previous) < std::abs(degreePitch - previous) && degreePitch + 12 <= 47)
+                pitch = degreePitch + 12;
+        }
+        else
+        {
+            const float r = unit();
+            if (r < 0.50f)
+                pitch = previous;
+            else if (r < 0.62f)
+                pitch = previous + 12 <= 47 && (previous - 12 < 24 || unit() < 0.6f) ? previous + 12 : previous - 12;
+            else if (r < 0.90f)
+            {
+                int interval = pick({ { 3, 0.36f }, { 4, 0.12f }, { 5, 0.12f }, { 2, 0.16f }, { -2, 0.12f }, { 7, 0.12f } });
+                if (!inScale(barDegree[static_cast<size_t>(bar)] + interval))
+                    interval += interval > 0 ? 1 : -1;
+                pitch = fold(degreePitch + interval);
+                // Now and then the move lands an octave up (a leap over the octave, 8 % in the packs).
+                if (pitch + 12 <= 47 && std::abs(pitch + 12 - previous) > 12 && std::abs(pitch + 12 - previous) <= 19 && unit() < 0.40f)
+                    pitch += 12;
+            }
+            else
+                pitch = degreePitch != previous ? degreePitch : fold(degreePitch + 12);
+        }
+        // A pickup in the bar's last beat leads into the next bar's degree.
+        const bool lastInBar = i + 1 >= notes.size() || (notes[i + 1].gridTick / HiResTiming::kTicks1_16) / 16 != bar;
+        if (lastInBar && local >= 12 && bar + 1 < bars && barDegree[static_cast<size_t>(bar + 1)] != barDegree[static_cast<size_t>(bar)]
+            && unit() < 0.45f)
+            pitch = fold(base + barDegree[static_cast<size_t>(bar + 1)] + (previous >= 36 ? 12 : 0));
+        note.pitch = std::clamp(pitch, 24, 47);
+        note.glideToNext = false;
+        note.isSlide = false;
+        previous = note.pitch;
+        previousBar = bar;
+    }
+
+    // Glides: a pitch change the 808 reaches by sliding (the note rings into the next one).
+    for (size_t i = 0; i + 1 < notes.size(); ++i)
+    {
+        auto& a = notes[i];
+        auto& b = notes[i + 1];
+        const int gap = b.gridTick - (a.gridTick + a.lengthTicks);
+        if (a.pitch == b.pitch || gap > 4 * HiResTiming::kTicks1_16 || std::abs(a.pitch - b.pitch) > 12)
+            continue;
+        if (unit() < (std::abs(a.pitch - b.pitch) == 12 ? 0.33f : 0.20f))
+        {
+            a.lengthTicks = std::max(a.lengthTicks, b.gridTick - a.gridTick);
+            a.glideToNext = true;
+            b.isSlide = true;
+        }
+    }
+}
+
 void ensureLowEndPhraseEnding(TrackState& sub, int bars)
 {
     if (sub.notes.empty())
@@ -277,12 +413,13 @@ int phrase808PitchForTrapAlgebraNote(const TrapAlgebraNote& note, const Generato
     if (note.laneIndex != TrapAlgebraLanes::Sub808)
         return pitchForTrapAlgebraLane(note.laneIndex);
 
+    // The root in octave 1 (C1-B1, 33-62 Hz), answers up to A2: the same window as the sample-led
+    // 808 (SampleBassLineComposer). Since the lane plays notes as written (2026-10-13) the old
+    // window (root E1-E2, answers to C3) sounded a fifth above trap references: 1289 pack 808
+    // loops have a median of F1 (44 Hz), D1-A#1 between the quartiles; HPDG had C2 (65 Hz), and
+    // keys C-D# put the whole line in octave 2 (the 808 sample sped up 2-4x: short, thin, clicky).
     const int root = ((params.keyRoot % 12) + 12) % 12;
-    int base = 24 + root;
-    if (base < 28)
-        base += 12;
-    while (base > 40)
-        base -= 12;
+    const int base = 24 + root;
 
     const bool major = params.scaleMode == 1;
     const int third = major ? 4 : 3;
@@ -306,11 +443,11 @@ int phrase808PitchForTrapAlgebraNote(const TrapAlgebraNote& note, const Generato
         interval = third;
 
     int pitch = base + interval;
-    while (pitch > 48)
+    while (pitch > 45)
         pitch -= 12;
-    while (pitch < 28)
+    while (pitch < 24)
         pitch += 12;
-    return std::clamp(pitch, 28, 48);
+    return std::clamp(pitch, 24, 45);
 }
 
 TrapAlgebraSubstyle trapAlgebraSubstyleForProject(int trapSubstyle)
@@ -523,6 +660,8 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
             return note.semanticRole.startsWith("trap_algebra_");
         });
         clampLowEndStartsPerBar(*sub, bars, algebraSub ? 4 : 3);
+        if (algebraSub)
+            assignTrap808Line(*sub, project.params, bars);
         clampLowEndPitchChanges(*sub, bars, 3);
         if (!algebraSub)
             ensureLowEndPhraseEnding(*sub, bars);
