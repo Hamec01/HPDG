@@ -1,0 +1,55 @@
+## A straight kick + clap on 2 / 4, sidechain bass: 27 tracks, 761 bars, bpm [118, 125, 126, 126, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 130, 130, 130, 130, 130, 132, 132, 132]
+    01 - Ash(Original Mix), 02 - W.a.y.n., 02 - You will(Like it), 02. see (instinct vers, 03 - Feala, 03 - Fly(Original Mix), 03. behind (instinct v, 04 - Run from(Original, 04 - Samsara, 04 - Say, 04. meela (instinct ve, 05 - Blow, 05 - Catch Me, 05. instinct, 06 - Time, 07 - Y.W.Y.H., 07. night (instinct ve, 08 - Cherry(Original M, 08 - Mini Mal, 08 - Not So Far, 09 - Black Magic, 09 - Sxx(Original Mix), 10 - Breathe In, 10 - Missed (Original , 11 - Tonight, 13 - Escape, 13 - Sai
+    k 0.72 0.00 0.03 0.00 0.50 0.00 0.04 0.00 0.70 0.00 0.03 0.00 0.51 0.00 0.04 0.02
+    s 0.08 0.02 0.05 0.07 0.25 0.03 0.08 0.04 0.07 0.03 0.05 0.07 0.28 0.01 0.09 0.02
+    h 0.21 0.03 0.45 0.14 0.32 0.05 0.42 0.09 0.22 0.04 0.43 0.16 0.27 0.06 0.41 0.15
+    K/bar 2.6 S/bar 1.1 H/bar 3.6 | K bar = previous 0.54 | hats on 8ths 0.83 | swing 50
+    kicks off the beat 0.00 | snares off 2 / 4 0.50 | bars heard once 0.29 | tempo conf 0.82
+    bass notes/bar 2.4, pitch changes/bar 1.6, median length 0.96 beats, >=2 beats 0.26, register midi 34
+    ducking median 16 dB, >=10 dB in 18/27; recover 222 ms
+    intervals step 1-2 0.29, repeat 0.22, fourth/fifth 5-7 0.19, third 3-4 0.14, other leap 0.09, octave 12 0.07
+    bass vs kick away from kicks 0.31, after kick (<= 2 16ths) 0.26, on kick 0.23, before kick (<= 2 16ths) 0.20, no kicks 0.01
+## B two-step / drum & bass bar (kick 1 + 11, snare 5 + 13): 9 tracks, 249 bars, bpm [120, 120, 128, 128, 136, 142, 160, 170, 170]
+    03 - Want Take, 05 - Ghost(Original Mi, 06 - Ayrton Senna, 06 - Crystal(Original , 07 - Champion(Album Ve, 07 - Speed Up, 09. outside, 10 - Stop, 16 - I Feel
+    k 0.65 0.00 0.03 0.02 0.04 0.01 0.03 0.06 0.10 0.02 0.67 0.04 0.08 0.05 0.03 0.03
+    s 0.08 0.02 0.12 0.02 0.72 0.00 0.04 0.12 0.04 0.15 0.02 0.06 0.72 0.03 0.14 0.09
+    h 0.45 0.07 0.35 0.16 0.30 0.02 0.34 0.26 0.55 0.24 0.43 0.11 0.31 0.04 0.31 0.11
+    K/bar 1.8 S/bar 2.1 H/bar 3.5 | K bar = previous 0.50 | hats on 8ths 0.76 | swing 50
+    kicks off the beat 0.54 | snares off 2 / 4 0.35 | bars heard once 0.31 | tempo conf 0.90
+    bass notes/bar 1.5, pitch changes/bar 1.0, median length 0.79 beats, >=2 beats 0.11, register midi 34
+    ducking median 0 dB, >=10 dB in 2/9; recover 0 ms
+    intervals repeat 0.32, step 1-2 0.25, third 3-4 0.19, fourth/fifth 5-7 0.12, other leap 0.10, octave 12 0.02
+    bass vs kick away from kicks 0.47, on kick 0.30, after kick (<= 2 16ths) 0.14, before kick (<= 2 16ths) 0.08
+## C dubstep / half-time: 5 tracks, 121 bars, bpm [75, 75, 75, 75, 150]
+    01 - Wakez Up, 03 - Shutdown, 15 - Tonight (Dubstep , 16 - The Drum'ma, 18 - Exit
+    k 0.77 0.00 0.20 0.47 0.19 0.00 0.17 0.12 0.07 0.01 0.54 0.40 0.02 0.00 0.23 0.06
+    s 0.01 0.08 0.13 0.02 0.68 0.01 0.00 0.00 0.21 0.10 0.02 0.03 0.60 0.02 0.02 0.03
+    h 0.61 0.40 0.48 0.47 0.44 0.29 0.71 0.60 0.71 0.65 0.68 0.64 0.54 0.36 0.79 0.56
+    K/bar 3.4 S/bar 1.7 H/bar 9.0 | K bar = previous 0.15 | hats on 8ths 0.47 | swing 50
+    kicks off the beat 0.66 | snares off 2 / 4 0.08 | bars heard once 0.23 | tempo conf 0.72
+    bass notes/bar 3.1, pitch changes/bar 3.0, median length 0.66 beats, >=2 beats 0.12, register midi 32
+    ducking median 4 dB, >=10 dB in 0/5; recover 88 ms
+    intervals other leap 0.36, fourth/fifth 5-7 0.24, step 1-2 0.18, third 3-4 0.18, octave 12 0.02, repeat 0.02
+    bass vs kick on kick 0.41, away from kicks 0.27, before kick (<= 2 16ths) 0.24, after kick (<= 2 16ths) 0.08
+## D1 broken (syncopated, through-composed): 6 tracks, 181 bars, bpm [75, 115, 124, 128, 140, 150]
+    01 - Run, 01 - Sun, 01. azi, 12 - Mad, 14 - Autumn, 18 - Вселенная (Cover 
+    k 0.25 0.14 0.16 0.06 0.19 0.23 0.13 0.10 0.17 0.17 0.15 0.05 0.20 0.30 0.02 0.23
+    s 0.19 0.14 0.20 0.18 0.59 0.12 0.21 0.30 0.20 0.14 0.11 0.22 0.57 0.12 0.22 0.25
+    h 0.19 0.25 0.30 0.29 0.20 0.23 0.41 0.14 0.24 0.31 0.29 0.24 0.29 0.16 0.44 0.29
+    K/bar 2.5 S/bar 3.7 H/bar 4.3 | K bar = previous 0.11 | hats on 8ths 0.51 | swing 50
+    kicks off the beat 0.68 | snares off 2 / 4 0.70 | bars heard once 0.44 | tempo conf 0.75
+    bass notes/bar 2.3, pitch changes/bar 2.1, median length 1.27 beats, >=2 beats 0.35, register midi 36
+    ducking median 3 dB, >=10 dB in 2/6; recover 55 ms
+    intervals third 3-4 0.35, step 1-2 0.32, fourth/fifth 5-7 0.18, other leap 0.08, repeat 0.06, octave 12 0.01
+    bass vs kick away from kicks 0.39, on kick 0.34, before kick (<= 2 16ths) 0.16, after kick (<= 2 16ths) 0.11
+## D2 sparse / unclear sections: 5 tracks, 145 bars, bpm [87, 128, 128, 128, 128]
+    02 - Blow ya, 05 - Reflect, 06. say it, 08 - We go out, 17 - Red Rozze
+    k 0.39 0.10 0.09 0.09 0.17 0.08 0.14 0.09 0.18 0.08 0.14 0.06 0.23 0.08 0.09 0.10
+    s 0.11 0.12 0.14 0.04 0.54 0.08 0.22 0.22 0.20 0.08 0.16 0.05 0.38 0.10 0.18 0.08
+    h 0.28 0.05 0.23 0.06 0.35 0.01 0.47 0.03 0.57 0.02 0.41 0.12 0.27 0.05 0.27 0.03
+    K/bar 1.2 S/bar 2.7 H/bar 2.8 | K bar = previous 0.41 | hats on 8ths 0.91 | swing 50
+    kicks off the beat 0.38 | snares off 2 / 4 0.57 | bars heard once 0.52 | tempo conf 0.54
+    bass notes/bar 2.3, pitch changes/bar 1.8, median length 0.69 beats, >=2 beats 0.05, register midi 32
+    ducking median 10 dB, >=10 dB in 2/4; recover 54 ms
+    intervals step 1-2 0.53, repeat 0.23, fourth/fifth 5-7 0.12, third 3-4 0.10, other leap 0.01, octave 12 0.01
+    bass vs kick away from kicks 0.66, on kick 0.17, after kick (<= 2 16ths) 0.09, before kick (<= 2 16ths) 0.08
