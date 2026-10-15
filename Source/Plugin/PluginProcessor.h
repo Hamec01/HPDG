@@ -21,6 +21,7 @@
 #include "../Engine/BoomBapEngine.h"
 #include "../Engine/DnBEngine.h"
 #include "../Engine/TechnoEngine.h"
+#include "../Engine/AtmosphericEngine.h"
 #include "../Engine/DrillEngine.h"
 #include "../Engine/RapEngine.h"
 #include "../Engine/TrapEngine.h"
@@ -59,6 +60,7 @@ static constexpr auto trapSubstyle = "trap_substyle";
 static constexpr auto drillSubstyle = "drill_substyle";
 static constexpr auto dnbSubstyle = "dnb_substyle";
 static constexpr auto technoSubstyle = "techno_substyle";
+static constexpr auto atmosphericSubstyle = "atmospheric_substyle";
 static constexpr auto seed = "seed";
 static constexpr auto seedLock = "seed_lock";
 static constexpr auto masterVolume = "master_volume";
@@ -158,6 +160,9 @@ public:
     void setTrackEnabled(TrackType track, bool value);
     void setTrackEnabled(const RuntimeLaneId& laneId, bool value);
     void setTrackLaneVolume(TrackType track, float volume);
+    // Lane strength (-1 fewer hits .. 0 as generated .. +1 more hits), applied live (LaneStrength.h).
+    void setTrackStrength(TrackType track, float strength);
+    void setTrackStrength(const RuntimeLaneId& laneId, float strength);
     void setTrackLaneVolume(const RuntimeLaneId& laneId, float volume);
     void setTrackNotes(TrackType track, const std::vector<NoteEvent>& notes);
     void setTrackNotes(const RuntimeLaneId& laneId, const std::vector<NoteEvent>& notes);
@@ -393,6 +398,8 @@ private:
     void setFloatParameterValue(const juce::String& paramId, float value);
     void syncLivePerformanceStateLocked(const GeneratorParams& liveParams);
     void captureEditedTrackPerformanceBaseLocked(TrackType trackType);
+    void selectDefaultSynthSubLocked();
+    static std::vector<NoteEvent> buildStrengthReserve(PatternProject variantBase, TrackType trackType);
     void rebuildMidiCache();
     void refreshHatFxDragSourceLocked();
     void applyHatFxDragDensityLocked();
@@ -457,6 +464,7 @@ private:
     DrillEngine drillEngine;
     DnBEngine dnbEngine;
     TechnoEngine technoEngine;
+    AtmosphericEngine atmosphericEngine;
     RapEngine rapEngine;
     TrapEngine trapEngine;
     juce::AudioProcessorValueTreeState apvts;
@@ -493,6 +501,7 @@ private:
     int lastAppliedDrillSubstyleChoice = -1;
     int lastAppliedDnBSubstyleChoice = -1;
     int lastAppliedTechnoSubstyleChoice = -1;
+    int lastAppliedAtmosphericSubstyleChoice = -1;
 
     float hatFxDragDensity = 1.0f;
     bool hatFxDragDensityLocked = false;

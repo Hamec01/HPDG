@@ -376,3 +376,25 @@ monotone 18 / 18, "density barely changes" 0 / 18; Boom Bap, DnB and Techno lab 
 before / after (150 seeds each, patterns and notes). CoreTests 77 / 77 (the Trap smoke check's 808
 ceiling 0.65 became 0.45-1.00, the measured played range), LaneBoundaryTests, TrackSemanticsTests,
 SampleTrimTests pass. Listening pairs (step 6 vs step 7, same seeds): `TempAudio/trap_step7_listen/`.
+
+## 2026-10-14 — listening with a sample (Guide mode): "mush, no breath, the kick hammers"
+
+Reproduced with the maintainer's sample (`Pattern 2_128.wav`, a tonal loop, 90 / 180 BPM, tempo conf 0.55)
+through the real processor (`HPDG_DemoReel` + new `dumpgrid` command): Trap / DarkTrap, 8 bars, Guide.
+
+- Sample kicks drifted: the beat ran at the panel tempo (180) but the sample peaks were mapped with the
+  bundle's harmonyBpm, which falls back to the host tempo for an untrusted tonal sample (92 x 2 = 184):
+  2-3 16ths off by bar 8, kicks clustered. Fix (PluginProcessor, shared Guide path): the grid uses the
+  tempo the beat was generated for. Report now "grid 180.00 bpm (sample tempo)".
+- Sample kicks a 16th next to a kick ("xx"): Trap / Drill keep a full 16th away, across the loop wrap
+  (SampleGuideAccents; other genres unchanged).
+- Sample kicks were re-added on every pass (RG Snare, RG 808 ...) and piled up: now only on passes that
+  write the kick (Generate, Mutate, Kick RG).
+- Bounce snares (step 7) played on the main snare at 68-92 read as misplaced snares: now a ghost layer
+  (velocity 40-60, ghost role) and never a 16th or an 8th after a kick (maintainer's choice).
+- RG / mutate on the 808 re-generated the kick too (coupled lanes): now the kick stays; the 808 rhythm
+  comes from the candidate whose kick is closest to the written one, starts a 16th off a kick snap onto it
+  (maintainer's choice).
+
+Lab (200 seeds): Trap 0 failures, kicks/bar 2.36-2.72 (unchanged within 0.02); Boom Bap / DnB / Techno
+pattern rows identical. Core and lane-boundary tests pass.

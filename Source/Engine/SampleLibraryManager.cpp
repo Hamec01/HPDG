@@ -74,6 +74,30 @@ void SampleLibraryManager::scan()
                 genreRoot = hasWavs(resolvedRootDirectory.getChildFile("DnB")) ? resolvedRootDirectory.getChildFile("DnB")
                                                                                : resolvedRootDirectory.getChildFile("BoomBap");
         }
+        // Atmospheric uses Samples/Atmospheric; a lane without its own sounds borrows the Techno
+        // kit (claps from its ClapGhost), then DnB, then Boom Bap.
+        if (currentGenre == GenreType::Atmospheric)
+        {
+            auto hasWavs = [](const juce::File& folder)
+            {
+                return folder.isDirectory() && !folder.findChildFiles(juce::File::findFiles, false, "*.wav").isEmpty();
+            };
+            if (!hasWavs(genreRoot.getChildFile(laneFolderName)))
+            {
+                const auto techno = resolvedRootDirectory.getChildFile("Techno");
+                if (hasWavs(techno.getChildFile(laneFolderName)))
+                    genreRoot = techno;
+                else if (track == TrackType::Snare && hasWavs(techno.getChildFile("ClapGhost")))
+                {
+                    genreRoot = techno;
+                    laneFolderName = "ClapGhost";
+                }
+                else if (hasWavs(resolvedRootDirectory.getChildFile("DnB").getChildFile(laneFolderName)))
+                    genreRoot = resolvedRootDirectory.getChildFile("DnB");
+                else
+                    genreRoot = resolvedRootDirectory.getChildFile("BoomBap");
+            }
+        }
         auto folder = genreRoot.exists() && genreRoot.isDirectory()
             ? genreRoot.getChildFile(laneFolderName)
             : resolvedRootDirectory.getChildFile(folderNameForTrack(track));
@@ -105,6 +129,34 @@ void SampleLibraryManager::scan()
         auto& out = laneSamples[static_cast<size_t>(trackIndex(track))];
         out.reserve(files.size());
 
+        for (const auto& file : files)
+            out.push_back({ file, file.getFileNameWithoutExtension(), sourceNameFor(file) });
+    }
+
+    // The synthesized sub basses, on every genre after its own 808s.
+    synthSubStart = -1;
+    const auto synthFolder = resolvedRootDirectory.getChildFile("Synth").getChildFile(folderNameForTrack(TrackType::Sub808));
+    if (synthFolder.isDirectory())
+    {
+        auto files = synthFolder.findChildFiles(juce::File::findFiles, false, "*.wav");
+        const auto aliases = juce::JSON::parse(synthFolder.getChildFile("sample-names.json").loadFileAsString());
+        const auto sourceNameFor = [&aliases](const juce::File& file)
+        {
+            if (const auto* names = aliases.getDynamicObject())
+            {
+                const auto original = names->getProperty(juce::Identifier(file.getFileName())).toString();
+                if (original.isNotEmpty())
+                    return original;
+            }
+            return file.getFileNameWithoutExtension();
+        };
+        std::sort(files.begin(), files.end(), [&sourceNameFor](const juce::File& a, const juce::File& b)
+        {
+            return sourceNameFor(a).compareIgnoreCase(sourceNameFor(b)) < 0;
+        });
+        auto& out = laneSamples[static_cast<size_t>(trackIndex(TrackType::Sub808))];
+        if (!files.isEmpty())
+            synthSubStart = static_cast<int>(out.size());
         for (const auto& file : files)
             out.push_back({ file, file.getFileNameWithoutExtension(), sourceNameFor(file) });
     }
@@ -145,6 +197,7 @@ juce::String SampleLibraryManager::folderNameForGenre(GenreType genre)
         case GenreType::Drill: return kShowRapAndDrillGenres ? "Drill" : "Trap";
         case GenreType::DnB: return "DnB";
         case GenreType::Techno: return "Techno";
+        case GenreType::Atmospheric: return "Atmospheric";
         default: return "BoomBap";
     }
 }

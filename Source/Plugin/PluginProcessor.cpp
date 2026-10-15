@@ -107,6 +107,7 @@ GenreType genreFromChoice(int choice)
         case 3: return kShowRapAndDrillGenres ? GenreType::Drill : GenreType::Trap;
         case 4: return GenreType::DnB;
         case 5: return GenreType::Techno;
+        case 6: return GenreType::Atmospheric;
         default: return GenreType::BoomBap;
     }
 }
@@ -545,6 +546,7 @@ private:
             case 3: choices = getDrillSubstyleNames(); substyleParamId = ParamIds::drillSubstyle; break;
             case 4: choices = getDnBSubstyleNames(); substyleParamId = ParamIds::dnbSubstyle; break;
             case 5: choices = getTechnoSubstyleNames(); substyleParamId = ParamIds::technoSubstyle; break;
+            case 6: choices = getAtmosphericSubstyleNames(); substyleParamId = ParamIds::atmosphericSubstyle; break;
             case 0:
             default: choices = getBoomBapSubstyleNames(); substyleParamId = ParamIds::boombapSubstyle; break;
         }
@@ -1276,6 +1278,11 @@ private:
         trackList.onLaneVolumeTrack = [this](const RuntimeLaneId& laneId, float volume)
         {
             applyProcessorProjectMutation([this, laneId, volume] { audioProcessor.setTrackLaneVolume(laneId, volume); }, false);
+        };
+
+        trackList.onLaneStrengthTrack = [this](const RuntimeLaneId& laneId, float strength)
+        {
+            applyProcessorProjectMutation([this, laneId, strength] { audioProcessor.setTrackStrength(laneId, strength); }, false);
         };
 
         trackList.onLaneSoundTrack = [this](const RuntimeLaneId& laneId, const SoundLayerState& state)
@@ -2022,6 +2029,7 @@ juce::String genreDisplayName(GenreType genre)
         case GenreType::Drill: return "Drill";
         case GenreType::DnB: return "DnB";
         case GenreType::Techno: return "Techno";
+        case GenreType::Atmospheric: return "Atmospheric";
         case GenreType::BoomBap:
         default: return "Boom Bap";
     }
@@ -2782,7 +2790,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
                                                                    1));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::genre,
                                                                    "Genre",
-                                                                   juce::StringArray { "Boom Bap", "Rap", "Trap", "Drill", "DnB", "Techno" },
+                                                                   juce::StringArray { "Boom Bap", "Rap", "Trap", "Drill", "DnB", "Techno", "Atmospheric" },
                                                                    0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::sampleApplyMode,
                                                                    "Sample Apply Mode",
@@ -2817,6 +2825,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
                                                                    "Techno Substyle",
                                                                    getTechnoSubstyleNames(),
                                                                    0));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::atmosphericSubstyle,
+                                                                   "Atmospheric Substyle",
+                                                                   getAtmosphericSubstyleNames(),
+                                                                   0));
     params.push_back(std::make_unique<juce::AudioParameterInt>(ParamIds::seed, "Seed", 1, 999999, 1));
     params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::seedLock, "Seed Lock", false));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::masterVolume, "Master Volume", juce::NormalisableRange<float>(0.0f, 1.5f, 0.01f), 1.0f));
@@ -2843,6 +2855,7 @@ BoomBapGeneratorAudioProcessor::BoomBapGeneratorAudioProcessor()
             track.selectedSampleName = laneSampleBank.getSelectedName(track.type);
             track.selectedSampleIndex = laneSampleBank.getSelectedIndex(track.type);
         }
+        selectDefaultSynthSubLocked();
     }
 
     applySelectedStylePreset(true);
@@ -3438,6 +3451,8 @@ void BoomBapGeneratorAudioProcessor::setStateInformation(const void* data, int s
     lastAppliedDnBSubstyleChoice = dnbSubstyleValue != nullptr ? static_cast<int>(dnbSubstyleValue->load()) : 0;
     const auto* technoSubstyleValue = apvts.getRawParameterValue(ParamIds::technoSubstyle);
     lastAppliedTechnoSubstyleChoice = technoSubstyleValue != nullptr ? static_cast<int>(technoSubstyleValue->load()) : 0;
+    const auto* atmosphericSubstyleValue = apvts.getRawParameterValue(ParamIds::atmosphericSubstyle);
+    lastAppliedAtmosphericSubstyleChoice = atmosphericSubstyleValue != nullptr ? static_cast<int>(atmosphericSubstyleValue->load()) : 0;
 
     {
         std::scoped_lock lock(projectMutex);
@@ -3571,6 +3586,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
     bool boomBapBassEnabled = false;
     bool dnbBassEnabled = false;
     bool technoBassEnabled = false;
+    bool atmosphericBassEnabled = false;
     double sampleBpm = 0.0;
     {
         std::scoped_lock lock(projectMutex);
@@ -3584,6 +3600,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
         boomBapBassEnabled = genreHasActiveBassLocked(GenreType::BoomBap);
         dnbBassEnabled = genreHasActiveBassLocked(GenreType::DnB);
         technoBassEnabled = genreHasActiveBassLocked(GenreType::Techno);
+        atmosphericBassEnabled = genreHasActiveBassLocked(GenreType::Atmospheric);
         followSampleKey = analysisReady
             && analysisMode == AnalysisMode::GenerateFromSample
             && SampleBassFollower::shouldApplyKey(harmony);
@@ -3609,7 +3626,8 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
     const bool applySampleKey = followSampleKey
         && (initialParams.genre == GenreType::Trap || (initialParams.genre == GenreType::BoomBap && boomBapBassEnabled)
             || (initialParams.genre == GenreType::DnB && dnbBassEnabled)
-            || (initialParams.genre == GenreType::Techno && technoBassEnabled));
+            || (initialParams.genre == GenreType::Techno && technoBassEnabled)
+            || (initialParams.genre == GenreType::Atmospheric && atmosphericBassEnabled));
     if (applySampleKey)
     {
         setBassKeyRootChoice(harmony.keyRoot);
@@ -3636,6 +3654,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
                               case GenreType::Drill: drillEngine.generate(working); break;
                               case GenreType::DnB: dnbEngine.generate(working); break;
                               case GenreType::Techno: technoEngine.generate(working); break;
+                              case GenreType::Atmospheric: atmosphericEngine.generate(working); break;
                               case GenreType::Rap: rapEngine.generate(working); break;
                               case GenreType::Trap: trapEngine.generate(working); break;
                               case GenreType::BoomBap:
@@ -3643,6 +3662,38 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
                           }
                       });
 }
+
+namespace
+{
+// A lane re-generated by a fresh engine of the project's genre (the plugin's engines keep no state
+// a variant should touch).
+void generateLaneVariant(PatternProject& p, TrackType trackType)
+{
+    switch (p.params.genre)
+    {
+        case GenreType::Drill: { DrillEngine e; e.generateTrackNew(p, trackType); break; }
+        case GenreType::DnB: { DnBEngine e; e.generateTrackNew(p, trackType); break; }
+        case GenreType::Techno: { TechnoEngine e; e.generateTrackNew(p, trackType); break; }
+        case GenreType::Atmospheric: { AtmosphericEngine e; e.generateTrackNew(p, trackType); break; }
+        case GenreType::Rap: { RapEngine e; e.generateTrackNew(p, trackType); break; }
+        case GenreType::Trap: { TrapEngine e; e.generateTrackNew(p, trackType); break; }
+        case GenreType::BoomBap:
+        default: { BoomBapEngine e; e.generateTrackNew(p, trackType); break; }
+    }
+}
+
+std::vector<NoteEvent> laneBaseNotes(const TrackState& track)
+{
+    return track.type == TrackType::Sub808 ? toLegacyNoteEvents(track.baseSub808Notes) : track.baseNotes;
+}
+
+bool sameNotes(const std::vector<NoteEvent>& a, const std::vector<NoteEvent>& b)
+{
+    return a.size() == b.size()
+        && std::equal(a.begin(), a.end(), b.begin(), [](const NoteEvent& x, const NoteEvent& y)
+                      { return x.gridTick == y.gridTick && x.pitch == y.pitch && x.lengthTicks == y.lengthTicks; });
+}
+} // namespace
 
 void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& reportLabel,
                                                        std::optional<TrackType> focusTrack,
@@ -3667,6 +3718,23 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
     // the current pattern meanwhile, and switches to the new one at the swap below.
     engineStep(working);
     const auto engineReport = working.generationDebugReport;
+
+    // Lane strength survives a generation: a lane whose base changed gets a fresh reserve (only
+    // lanes turned to "more"; the others build it when the knob goes right).
+    for (auto& track : working.tracks)
+    {
+        const auto* previous = ProjectLaneAccess::findTrackState(beforeProject, track.type);
+        if (previous == nullptr)
+            continue;
+        track.strength = previous->strength;
+        const bool baseChanged = !sameNotes(laneBaseNotes(track), laneBaseNotes(*previous));
+        if (!baseChanged)
+            track.strengthReserve = previous->strengthReserve;
+        else if (track.strength > 0.005f)
+            track.strengthReserve = buildStrengthReserve(working, track.type);
+        else
+            track.strengthReserve.clear();
+    }
 
     std::scoped_lock lock(projectMutex);
     project = std::move(working);
@@ -3711,6 +3779,9 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
         project.generationDebugReport += "\n" + lastSampleApplyDebug;
     if (engineReport.isNotEmpty())
         project.generationDebugReport += "\n" + engineReport; // the genre engine's own summary
+    for (auto& track : project.tracks)
+        if (std::abs(track.strength) >= 0.005f)
+            PatternPerformanceTransformEngine::applyPerformanceToTrack(project, track, project.params);
     ++project.generationCounter;
     rebuildMidiCache();
 }
@@ -3729,6 +3800,7 @@ void BoomBapGeneratorAudioProcessor::generateTrackNew(TrackType track)
                               case GenreType::Drill: drillEngine.generateTrackNew(working, track); break;
                               case GenreType::DnB: dnbEngine.generateTrackNew(working, track); break;
                               case GenreType::Techno: technoEngine.generateTrackNew(working, track); break;
+                              case GenreType::Atmospheric: atmosphericEngine.generateTrackNew(working, track); break;
                               case GenreType::Rap: rapEngine.generateTrackNew(working, track); break;
                               case GenreType::Trap: trapEngine.generateTrackNew(working, track); break;
                               case GenreType::BoomBap:
@@ -3751,6 +3823,7 @@ void BoomBapGeneratorAudioProcessor::regenerateTrack(TrackType track)
                               case GenreType::Drill: drillEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::DnB: dnbEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::Techno: technoEngine.regenerateTrackVariation(working, track); break;
+                              case GenreType::Atmospheric: atmosphericEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::Rap: rapEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::Trap: trapEngine.regenerateTrackVariation(working, track); break;
                               case GenreType::BoomBap:
@@ -3782,6 +3855,7 @@ void BoomBapGeneratorAudioProcessor::mutatePattern()
                               case GenreType::Drill: drillEngine.mutatePattern(working); break;
                               case GenreType::DnB: dnbEngine.mutatePattern(working); break;
                               case GenreType::Techno: technoEngine.mutatePattern(working); break;
+                              case GenreType::Atmospheric: atmosphericEngine.mutatePattern(working); break;
                               case GenreType::Rap: rapEngine.mutatePattern(working); break;
                               case GenreType::Trap: trapEngine.mutatePattern(working); break;
                               case GenreType::BoomBap:
@@ -3804,6 +3878,7 @@ void BoomBapGeneratorAudioProcessor::mutateTrack(TrackType track)
                               case GenreType::Drill: drillEngine.mutateTrack(working, track); break;
                               case GenreType::DnB: dnbEngine.mutateTrack(working, track); break;
                               case GenreType::Techno: technoEngine.mutateTrack(working, track); break;
+                              case GenreType::Atmospheric: atmosphericEngine.mutateTrack(working, track); break;
                               case GenreType::Rap: rapEngine.mutateTrack(working, track); break;
                               case GenreType::Trap: trapEngine.mutateTrack(working, track); break;
                               case GenreType::BoomBap:
@@ -3992,6 +4067,21 @@ void BoomBapGeneratorAudioProcessor::reloadLaneSamplesForGenre(GenreType genre)
     sampleLibraryManager = library;
     laneSampleBank.adoptPreparedLibrary(std::move(prepared));
     syncTrackSampleSelectionsLocked();
+    selectDefaultSynthSubLocked(); // a genre starts on the synthesized sub (the 808s stay one < > away)
+}
+
+// The Sub808 lane's default sound: HPDG's clean synthesized sub, exactly in tune (maintainer,
+// 2026-10-15: "a good quality sub by default, for every style").
+void BoomBapGeneratorAudioProcessor::selectDefaultSynthSubLocked()
+{
+    const int index = sampleLibraryManager.firstSynthSubIndex();
+    if (index < 0 || !laneSampleBank.selectIndex(TrackType::Sub808, index))
+        return;
+    if (auto* track = ProjectLaneAccess::findTrackState(project, TrackType::Sub808))
+    {
+        track->selectedSampleIndex = laneSampleBank.getSelectedIndex(TrackType::Sub808);
+        track->selectedSampleName = laneSampleBank.getSelectedName(TrackType::Sub808);
+    }
 }
 
 void BoomBapGeneratorAudioProcessor::rotateLaneSamplesForGenerationLocked(const PatternProject& previousProject, std::optional<TrackType> focusTrack)
@@ -4055,6 +4145,9 @@ void BoomBapGeneratorAudioProcessor::rotateLaneSamplesForGenerationLocked(const 
             continue;
 
         const auto trackType = static_cast<TrackType>(typeIndex);
+        // The bass keeps the sound the user chose (the synthesized sub by default): only < > changes it.
+        if (trackType == TrackType::Sub808)
+            continue;
         laneSampleBank.selectIndex(trackType, desiredIndices[static_cast<size_t>(typeIndex)]);
         rotatedType[static_cast<size_t>(typeIndex)] = preferredTags.empty()
             ? laneSampleBank.selectNext(trackType)
@@ -4289,6 +4382,75 @@ void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(TrackType track, float v
     std::scoped_lock lock(projectMutex);
     ProjectStateController::setTrackLaneVolume(project, track, volume);
     rebuildMidiCache();
+}
+
+
+// The hits the strength knob can add: the lane generated again by its genre engine with other
+// seeds; positions the variants play most often first (LaneStrength::buildReserve).
+std::vector<NoteEvent> BoomBapGeneratorAudioProcessor::buildStrengthReserve(PatternProject variantBase, TrackType trackType)
+{
+    const auto* track = ProjectLaneAccess::findTrackState(variantBase, trackType);
+    if (track == nullptr)
+        return {};
+    const auto current = laneBaseNotes(*track);
+    const int loopTicks = juce::jmax(1, variantBase.params.bars) * TimingGrid::TicksPerBar4_4;
+    std::vector<std::vector<NoteEvent>> variants;
+    for (int k = 0; k < 5; ++k)
+    {
+        auto p = variantBase;
+        p.params.seed = variantBase.params.seed + 7919 * (k + 1);
+        p.generationCounter = variantBase.generationCounter + 101 + 13 * k;
+        p.mutationCounter = variantBase.mutationCounter + 101 + 13 * k;
+        if (auto* t = ProjectLaneAccess::findTrackState(p, trackType); t != nullptr)
+        {
+            t->locked = false;
+            t->enabled = true;
+        }
+        generateLaneVariant(p, trackType);
+        if (const auto* t = ProjectLaneAccess::findTrackState(p, trackType); t != nullptr)
+            variants.push_back(t->type == TrackType::Sub808 && !t->sub808Notes.empty() ? toLegacyNoteEvents(t->sub808Notes) : t->notes);
+    }
+    return LaneStrength::buildReserve(current, variants, loopTicks);
+}
+
+void BoomBapGeneratorAudioProcessor::setTrackStrength(TrackType trackType, float strength)
+{
+    strength = juce::jlimit(-1.0f, 1.0f, strength);
+    PatternProject snapshot;
+    bool needReserve = false;
+    {
+        std::scoped_lock lock(projectMutex);
+        const auto* track = ProjectLaneAccess::findTrackState(project, trackType);
+        if (track == nullptr)
+            return;
+        needReserve = strength > 0.005f && track->strengthReserve.empty();
+        if (needReserve)
+            snapshot = project;
+    }
+    // The variants run without the lock (the audio thread keeps playing meanwhile).
+    std::vector<NoteEvent> reserve;
+    if (needReserve)
+        reserve = buildStrengthReserve(std::move(snapshot), trackType);
+
+    std::scoped_lock lock(projectMutex);
+    auto* track = ProjectLaneAccess::findTrackState(project, trackType);
+    if (track == nullptr)
+        return;
+    if (needReserve)
+        track->strengthReserve = std::move(reserve);
+    track->strength = strength;
+    PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, project.params);
+    PatternPerformanceTransformEngine::applyPerformanceToTrack(project, *track, project.params);
+    rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::setTrackStrength(const RuntimeLaneId& laneId, float strength)
+{
+    const auto type = resolveTrackTypeFromLane(laneId);
+    if (!type.has_value())
+        return;
+
+    setTrackStrength(*type, strength);
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackLaneVolume(const RuntimeLaneId& laneId, float volume)
@@ -5136,7 +5298,7 @@ bool BoomBapGeneratorAudioProcessor::genreHasActiveBassLocked(GenreType genre) c
     // Trap always has its 808. Boom Bap's bass is opt-in: only when the user enabled the lane.
     if (genre == GenreType::Trap)
         return true;
-    if (genre != GenreType::BoomBap && genre != GenreType::DnB && genre != GenreType::Techno)
+    if (genre != GenreType::BoomBap && genre != GenreType::DnB && genre != GenreType::Techno && genre != GenreType::Atmospheric)
         return false;
     const auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
     return bass != nullptr && bass->enabled;
@@ -5159,9 +5321,13 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
     // The pattern may run at double / half the sample's tempo (DnB at 172 over an 86 BPM loop):
     // map sample time onto pattern ticks with that octave relation so a sample peak lands on the
     // pattern position that sounds at the same moment.
+    // The base is the tempo the beat was generated for: the sample panel's tempo whatever its
+    // confidence (generatePattern). The bundle's harmonyBpm falls back to the host tempo for an
+    // untrusted tonal sample; mapping with it while the beat ran at the sample's tempo (184 vs 180)
+    // drifted the added kicks / bass off the grid by 2-3 16ths over 8 bars (maintainer, 2026-10-14).
     const double sampleGridBpm = [&]
     {
-        const double base = currentAnalysisBundle.harmonyBpm;
+        const double base = breakAnalysis.valid && breakAnalysis.bpm > 20.0 ? breakAnalysis.bpm : currentAnalysisBundle.harmonyBpm;
         const double pattern = static_cast<double>(project.params.bpm);
         if (base <= 0.0 || pattern <= 0.0)
             return base;
@@ -5173,13 +5339,23 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
             + "\nTechno: four-on-the-floor axis kept; the bass reads the sample's roots (engine lens).";
         return false;
     }
+    if (analysisMode == AnalysisMode::GenerateFromSample && !drumLoop && project.params.genre == GenreType::Atmospheric)
+    {
+        lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext)
+            + "\nAtmospheric: the substyle grammar is kept; the bass plays in the sample's key.";
+        return false;
+    }
     if (analysisMode == AnalysisMode::GenerateFromSample && !drumLoop)
     {
-        const auto report = SampleGuideAccents::apply(project,
-                                                      breakAnalysis,
-                                                      sampleGridBpm,
-                                                      currentAnalysisBundle.harmonyOriginSeconds,
-                                                      currentSampleContext.reactivity);
+        // Sample kicks join a pass that writes the kick (Generate, Mutate, the kick's RG); on another
+        // lane's RG they were added again on top of the last ones and piled up (maintainer, 2026-10-14).
+        const bool kickPass = !focusTrack.has_value() || *focusTrack == TrackType::Kick || *focusTrack == TrackType::GhostKick;
+        const auto report = kickPass ? SampleGuideAccents::apply(project,
+                                                                 breakAnalysis,
+                                                                 sampleGridBpm,
+                                                                 currentAnalysisBundle.harmonyOriginSeconds,
+                                                                 currentSampleContext.reactivity)
+                                     : SampleGuideAccentReport {};
         lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext) + "\n" + describeSampleGuideAccentReport(report);
 
         std::unordered_set<TrackType> changed;
@@ -5282,6 +5458,7 @@ bool BoomBapGeneratorAudioProcessor::extractPatternFromAnalyzedSampleLocked()
             case GenreType::Drill: drillEngine.generate(project); break;
             case GenreType::DnB: dnbEngine.generate(project); break;
             case GenreType::Techno: technoEngine.generate(project); break;
+            case GenreType::Atmospheric: atmosphericEngine.generate(project); break;
             case GenreType::Rap: rapEngine.generate(project); break;
             case GenreType::Trap: trapEngine.generate(project); break;
             case GenreType::BoomBap:
@@ -5328,6 +5505,8 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
     const int dnbChoice = dnbSubstyleValue != nullptr ? static_cast<int>(dnbSubstyleValue->load()) : 0;
     const auto* technoSubstyleValue = apvts.getRawParameterValue(ParamIds::technoSubstyle);
     const int technoChoice = technoSubstyleValue != nullptr ? static_cast<int>(technoSubstyleValue->load()) : 0;
+    const auto* atmosphericSubstyleValue = apvts.getRawParameterValue(ParamIds::atmosphericSubstyle);
+    const int atmosphericChoice = atmosphericSubstyleValue != nullptr ? static_cast<int>(atmosphericSubstyleValue->load()) : 0;
 
     const bool changed = force
         || genreChoice != lastAppliedGenreChoice
@@ -5336,7 +5515,8 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
         || trapChoice != lastAppliedTrapSubstyleChoice
         || drillChoice != lastAppliedDrillSubstyleChoice
         || dnbChoice != lastAppliedDnBSubstyleChoice
-        || technoChoice != lastAppliedTechnoSubstyleChoice;
+        || technoChoice != lastAppliedTechnoSubstyleChoice
+        || atmosphericChoice != lastAppliedAtmosphericSubstyleChoice;
     if (!changed)
         return;
 
@@ -5354,6 +5534,8 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
         selectedSubstyle = dnbChoice;
     else if (genreType == GenreType::Techno)
         selectedSubstyle = technoChoice;
+    else if (genreType == GenreType::Atmospheric)
+        selectedSubstyle = atmosphericChoice;
     const auto& style = getGenreStyleDefaults(genreType, selectedSubstyle);
 
     setFloatParameterValue(ParamIds::swingPercent, style.swingDefault);
@@ -5385,6 +5567,7 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
     lastAppliedDrillSubstyleChoice = drillChoice;
     lastAppliedDnBSubstyleChoice = dnbChoice;
     lastAppliedTechnoSubstyleChoice = technoChoice;
+    lastAppliedAtmosphericSubstyleChoice = atmosphericChoice;
 }
 
 GeneratorParams BoomBapGeneratorAudioProcessor::buildParamsFromState(const TransportSnapshot& snapshot) const
@@ -5433,6 +5616,8 @@ GeneratorParams BoomBapGeneratorAudioProcessor::buildParamsFromState(const Trans
     p.dnbSubstyle = dnbSubstyleValue != nullptr ? static_cast<int>(dnbSubstyleValue->load()) : 0;
     const auto* technoSubstyleValue = apvts.getRawParameterValue(ParamIds::technoSubstyle);
     p.technoSubstyle = technoSubstyleValue != nullptr ? static_cast<int>(technoSubstyleValue->load()) : 0;
+    const auto* atmosphericSubstyleValue = apvts.getRawParameterValue(ParamIds::atmosphericSubstyle);
+    p.atmosphericSubstyle = atmosphericSubstyleValue != nullptr ? static_cast<int>(atmosphericSubstyleValue->load()) : 0;
     p.seed = seedValue != nullptr ? static_cast<int>(seedValue->load()) : 1;
     p.seedLock = seedLockValue != nullptr && seedLockValue->load() > 0.5f;
 
@@ -5501,7 +5686,12 @@ void BoomBapGeneratorAudioProcessor::syncLivePerformanceStateLocked(const Genera
 void BoomBapGeneratorAudioProcessor::captureEditedTrackPerformanceBaseLocked(TrackType trackType)
 {
     if (auto* track = ProjectLaneAccess::findTrackState(project, trackType); track != nullptr)
+    {
         PatternPerformanceTransformEngine::captureBasePattern(*track, project.params);
+        // A hand edit keeps what is on screen: the strength is baked into the new base.
+        track->strength = 0.0f;
+        track->strengthReserve.clear();
+    }
 }
 
 void BoomBapGeneratorAudioProcessor::rebuildMidiCache()

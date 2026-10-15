@@ -34,6 +34,10 @@ inline float generationBpmForSample(float sampleBpm, GenreType genre)
     if (genre == GenreType::Techno)
         while (bpm < 100.0f)
             bpm *= 2.0f;
+    // Atmospheric (Pulse 118-132, Two-Step up to 174): a loop under 90 BPM runs at double time.
+    if (genre == GenreType::Atmospheric)
+        while (bpm < 90.0f)
+            bpm *= 2.0f;
     return bpm;
 }
 
@@ -53,6 +57,10 @@ inline float interpretedBpmForGenre(float bpm, GenreType genre)
 
     // - Techno is authored at 120-150; a half-time host tempo (~65) means the same groove.
     if (genre == GenreType::Techno && clamped <= 80.0f)
+        return std::clamp(clamped * 2.0f, 40.0f, 240.0f);
+
+    // - Atmospheric is authored at 118-174; a half-time host tempo (~64) means the same groove.
+    if (genre == GenreType::Atmospheric && clamped <= 70.0f)
         return std::clamp(clamped * 2.0f, 40.0f, 240.0f);
 
     if (genre == GenreType::BoomBap && clamped >= 120.0f)

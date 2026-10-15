@@ -2,6 +2,7 @@
 
 #include "DnB/DnBTypes.h"
 #include "Techno/TechnoTypes.h"
+#include "Atmospheric/AtmosphericTypes.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -716,6 +717,43 @@ const std::array<GenreStyleDefaults, static_cast<size_t>(TechnoSubstyle::Count)>
     return table;
 }
 
+// Atmospheric: one entry per substyle (tempo / feel from AtmosStyleProfile). The grammar writes
+// Kick, Snare (clap), HiHat, OpenHat and the Sub808 bass; the other lanes stay off.
+std::array<LaneStyleDefaults, 11> makeBaseAtmosphericLanes()
+{
+    // HiHat, HatFX, OpenHat, Snare (clap), ClapGhost (hidden), Kick, GhostKick, Sub808 (bass), Ride, Cymbal, Perc
+    return {
+        lane(true, 0.70f, 1.0f, 0.70f, 0.60f, { "offbeat", "eighths", "motif" }, 1.0f, 0.30f, 0.70f, 0.80f, 0.0f, 0.0f),
+        lane(false, 0.56f, 0.0f, 0.80f, 0.70f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f),
+        lane(true, 0.66f, 0.60f, 0.80f, 0.70f, { "offbeat", "open", "lift" }, 0.80f, 0.40f, 0.60f, 0.70f, 0.0f, 0.0f),
+        lane(true, 0.84f, 1.0f, 0.50f, 0.40f, { "clap", "backbeat", "pickup" }, 1.0f, 0.40f, 0.70f, 0.80f, 0.0f, 0.0f),
+        lane(false, 0.60f, 0.20f, 0.80f, 0.70f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f),
+        lane(true, 0.94f, 1.0f, 0.30f, 0.20f, { "four", "two_step", "broken" }, 1.0f, 0.30f, 0.50f, 0.60f, 0.0f, 0.0f),
+        lane(false, 0.60f, 0.20f, 0.60f, 0.50f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f),
+        lane(true, 0.86f, 1.0f, 0.50f, 0.40f, { "sidechain", "sparse", "melodic" }, 1.0f, 0.40f, 0.80f, 0.90f, 0.0f, 0.80f),
+        lane(false, 0.58f, 0.20f, 0.80f, 0.70f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f),
+        lane(false, 0.58f, 0.20f, 0.60f, 0.50f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f),
+        lane(false, 0.60f, 0.20f, 0.80f, 0.70f, { "off", "off", "off" }, 0.0f, 0.0f, 0.50f, 0.50f, 0.0f, 0.0f)
+    };
+}
+
+const std::array<GenreStyleDefaults, static_cast<size_t>(AtmosphericSubstyle::Count)>& atmosphericStyles()
+{
+    static const std::array<GenreStyleDefaults, static_cast<size_t>(AtmosphericSubstyle::Count)> table = []
+    {
+        std::array<GenreStyleDefaults, static_cast<size_t>(AtmosphericSubstyle::Count)> styles;
+        for (int i = 0; i < static_cast<int>(AtmosphericSubstyle::Count); ++i)
+        {
+            const auto& profile = getAtmosStyleProfile(i);
+            styles[static_cast<size_t>(i)] = { GenreType::Atmospheric, profile.name, profile.bpmDefault, profile.bpmMin, profile.bpmMax,
+                                               profile.swingDefault, 0.50f, 0.30f, profile.humanizeDefault, profile.densityDefault,
+                                               makeBaseAtmosphericLanes() };
+        }
+        return styles;
+    }();
+    return table;
+}
+
 const std::array<GenreStyleDefaults, 1>& drillStyles()
 {
     static const std::array<GenreStyleDefaults, 1> table = []
@@ -757,6 +795,7 @@ int getSelectedSubstyleIndex(const GeneratorParams& params)
         case GenreType::Drill: return params.drillSubstyle;
         case GenreType::DnB: return params.dnbSubstyle;
         case GenreType::Techno: return params.technoSubstyle;
+        case GenreType::Atmospheric: return params.atmosphericSubstyle;
         case GenreType::BoomBap:
         default: return params.boombapSubstyle;
     }
@@ -764,6 +803,13 @@ int getSelectedSubstyleIndex(const GeneratorParams& params)
 
 const GenreStyleDefaults& getGenreStyleDefaults(GenreType genre, int substyleIndex)
 {
+    if (genre == GenreType::Atmospheric)
+    {
+        const auto& styles = atmosphericStyles();
+        const int idx = std::clamp(substyleIndex, 0, static_cast<int>(styles.size()) - 1);
+        return styles[static_cast<size_t>(idx)];
+    }
+
     if (genre == GenreType::Techno)
     {
         const auto& styles = technoStyles();
@@ -872,6 +918,11 @@ juce::StringArray getDnBSubstyleNames()
 juce::StringArray getTechnoSubstyleNames()
 {
     return getTechnoStyleNames();
+}
+
+juce::StringArray getAtmosphericSubstyleNames()
+{
+    return getAtmosStyleNames();
 }
 
 juce::StringArray getDrillSubstyleNames()

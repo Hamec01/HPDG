@@ -40,5 +40,9 @@ struct TrackState
     GeneratorParams performanceBaseParams;
     bool hasPerformanceBaseParams = false;
     Sub808LaneSettings sub808Settings;
+    // Lane strength (LaneStrength.h): -1 fewer hits .. 0 as generated .. +1 more hits, applied live
+    // on top of the base pattern; the reserve holds the hits it can add (rebuilt after a generation).
+    float strength = 0.0f;
+    std::vector<NoteEvent> strengthReserve;
 };
 } // namespace bbg

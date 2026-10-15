@@ -4,7 +4,7 @@
 // post-processing) for every production genre / substyle and measures the SAME metrics on the
 // resulting pattern for all of them, so a change can be compared against a stored baseline.
 //
-//   HPDG_GenerationQualityLab [--seeds N] [--genre boombap|trap|dnb|techno|all]
+//   HPDG_GenerationQualityLab [--seeds N] [--genre boombap|trap|dnb|techno|atmospheric|all]
 //                             [--density default|matrix] [--bars 2|4|8|matrix]
 //                             [--out <folder>] [--tag <name>] [--notes] [--key 0-11] [--perf s h] [--render N]
 //
@@ -54,6 +54,7 @@ std::vector<GenreInfo> genres()
         { "trap", GenreType::Trap, 2, ParamIds::trapSubstyle, getTrapSubstyleNames() },
         { "dnb", GenreType::DnB, 4, ParamIds::dnbSubstyle, getDnBSubstyleNames() },
         { "techno", GenreType::Techno, 5, ParamIds::technoSubstyle, getTechnoSubstyleNames() },
+        { "atmospheric", GenreType::Atmospheric, 6, ParamIds::atmosphericSubstyle, getAtmosphericSubstyleNames() },
     };
 }
 

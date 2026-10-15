@@ -640,6 +640,41 @@ private:
             file.withFileExtension("json").replaceWithText("[\n" + items.joinIntoString(",\n") + "\n]\n");
             return true;
         }
+        if (cmd == "strength") // strength <Lane> <-1..1>: the lane strength knob
+        {
+            for (const auto& track : processor.getProjectSnapshot().tracks)
+                if (juce::String(toString(track.type)).equalsIgnoreCase(t[1]))
+                {
+                    processor.setTrackStrength(track.type, static_cast<float>(num(2, 0.0)));
+                    settle();
+                    return true;
+                }
+            return false;
+        }
+        if (cmd == "dumpgrid") // every lane as a 16th grid (x = hit, g = ghost) + the generation report
+        {
+            const auto project = processor.getProjectSnapshot();
+            const int steps = std::max(1, project.params.bars) * 16;
+            std::cout << "bpm " << project.params.bpm << " | bars " << project.params.bars << "\n";
+            for (const auto& track : project.tracks)
+            {
+                if (track.notes.empty())
+                    continue;
+                juce::String row = juce::String::repeatedString(".", steps);
+                for (const auto& n : track.notes)
+                {
+                    const int s = static_cast<int>(std::lround((n.gridTick + n.timingOffsetTicks) / 240.0));
+                    if (s >= 0 && s < steps)
+                        row = row.replaceSection(s, 1, n.isGhost ? "g" : "x");
+                }
+                juce::String bars;
+                for (int b = 0; b < steps / 16; ++b)
+                    bars << row.substring(b * 16, b * 16 + 16) << " ";
+                std::cout << juce::String(toString(track.type)).paddedRight(' ', 14) << bars << "\n";
+            }
+            std::cout << processor.getGenerationDebugSummary() << "\n";
+            return true;
+        }
         if (cmd == "dump808") // Sub808 notes + the lane rendered alone (for checking the register)
         {
             const auto project = processor.getProjectSnapshot();

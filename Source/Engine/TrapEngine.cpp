@@ -86,6 +86,72 @@ void expandCoupledTracks(TrackType trigger, std::unordered_set<TrackType>& track
     }
 }
 
+int nearest16th(int ppqTick)
+{
+    return static_cast<int>(std::lround(static_cast<double>(ppqTick) / HiResTiming::kTicks1_16));
+}
+
+std::unordered_set<int> kickSteps(PatternProject& project)
+{
+    std::unordered_set<int> steps;
+    if (const auto* kick = findTrack(project, TrackType::Kick); kick != nullptr)
+        for (const auto& n : kick->notes)
+            if (!n.isGhost)
+                steps.insert(nearest16th(n.gridTick));
+    return steps;
+}
+
+// RG / mutate on the 808 keeps the kick (maintainer, 2026-10-14): of the engine's candidates the one
+// whose kick is closest to the written kick gives the 808 rhythm.
+const TrapAlgebraPattern& closestToKicks(const std::vector<TrapAlgebraPattern>& candidates, const TrapAlgebraPattern& selected,
+                                         const std::unordered_set<int>& kicks)
+{
+    const TrapAlgebraPattern* best = &selected;
+    float bestScore = -1.0f;
+    for (const auto& c : candidates)
+    {
+        if (!c.acceptedByThreshold)
+            continue;
+        std::unordered_set<int> ck;
+        for (const auto& n : c.matrix.notesForLane(TrapAlgebraLanes::Kick))
+            ck.insert(n.barIndex * 16 + (n.tick64 % 64) / 4);
+        int shared = 0;
+        for (const int k : ck)
+            shared += kicks.count(k) > 0 ? 1 : 0;
+        const auto unionSize = ck.size() + kicks.size() - static_cast<size_t>(shared);
+        const float score = (unionSize > 0 ? static_cast<float>(shared) / static_cast<float>(unionSize) : 1.0f) + 0.1f * c.selectionQuality;
+        if (score > bestScore)
+        {
+            bestScore = score;
+            best = &c;
+        }
+    }
+    return *best;
+}
+
+// An 808 start a 16th off a written kick moves onto it (the kick it was written against).
+void snap808ToKicks(TrackState& sub, const std::unordered_set<int>& kicks)
+{
+    std::unordered_set<int> taken;
+    for (const auto& n : sub.notes)
+        taken.insert(nearest16th(n.gridTick));
+    for (auto& n : sub.notes)
+    {
+        const int step = nearest16th(n.gridTick);
+        if (kicks.count(step) > 0)
+            continue;
+        for (const int target : { step - 1, step + 1 })
+            if (kicks.count(target) > 0 && taken.count(target) == 0)
+            {
+                taken.erase(step);
+                taken.insert(target);
+                n.gridTick = target * HiResTiming::kTicks1_16;
+                n.timingOffsetTicks = 0;
+                break;
+            }
+    }
+}
+
 void applyTrapStyleInfluence(PatternProject& project)
 {
     juce::String applyError;
@@ -529,6 +595,9 @@ void TrapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
 
     std::unordered_set<TrackType> mutableTracks { trackType };
     expandCoupledTracks(trackType, mutableTracks);
+    const bool bassOnly = trackType == TrackType::Sub808;
+    if (bassOnly)
+        mutableTracks.erase(TrackType::Kick);
     for (auto it = mutableTracks.begin(); it != mutableTracks.end();)
     {
         const auto* coupled = findTrack(project, *it);
@@ -551,8 +620,13 @@ void TrapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
     algebraParams.candidateCount = 24;
     algebraParams.substyle = trapAlgebraSubstyleForProject(project.params.trapSubstyle);
 
-    const auto algebraPattern = TrapAlgebraEngine().generate(algebraParams);
-    applyTrapAlgebraPattern(project, algebraPattern, mutableTracks);
+    std::vector<TrapAlgebraPattern> candidates;
+    const auto algebraPattern = TrapAlgebraEngine().generate(algebraParams, bassOnly ? &candidates : nullptr);
+    const auto kicks = kickSteps(project);
+    applyTrapAlgebraPattern(project, bassOnly ? closestToKicks(candidates, algebraPattern, kicks) : algebraPattern, mutableTracks);
+    if (bassOnly)
+        if (auto* sub = findTrack(project, TrackType::Sub808); sub != nullptr)
+            snap808ToKicks(*sub, kicks);
 
     juce::ignoreUnused(style);
     validatePattern(project, mutableTracks);

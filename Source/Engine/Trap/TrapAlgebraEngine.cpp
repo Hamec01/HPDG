@@ -278,6 +278,8 @@ std::vector<RollZone> rollZones(bool bar4, bool doubleTime)
 // clap hits to the snare on 8, 0.4-2 a bar, at the same place every bar (16ths 2, 6, 14, less often
 // 10, 4), velocity median 90 against 100-127 for the main snare. One place a pattern (sometimes two),
 // never on a kick or an 808 note (the lane checks would drop the kick / move the 808).
+// Played as a quiet ghost layer (velocity 40-60) and never a 16th or an 8th right after a kick: on the main
+// snare at 68-92 they read as misplaced snares (maintainer, 2026-10-14: "the snares hit").
 void addBounceSnares(TrapPatternMatrix& matrix, const TrapAlgebraParams& params, std::mt19937& rng)
 {
     if (params.tempoContext.doubleTime)
@@ -320,10 +322,11 @@ void addBounceSnares(TrapPatternMatrix& matrix, const TrapAlgebraParams& params,
                 continue;
             const int tick = barStart(bar) + place;
             if (matrix.hasNote(TrapAlgebraLanes::Kick, tick) || matrix.hasNote(TrapAlgebraLanes::Sub808, tick)
-                || matrix.hasNote(TrapAlgebraLanes::Snare, tick))
+                || matrix.hasNote(TrapAlgebraLanes::Snare, tick) || matrix.hasNote(TrapAlgebraLanes::Kick, tick - 4)
+                || matrix.hasNote(TrapAlgebraLanes::Kick, tick - 8))
                 continue;
-            matrix.setNote(TrapAlgebraLanes::Snare, tick, randomInt(rng, 68, 92), 2,
-                           microTimingForLane(TrapAlgebraLanes::Snare, tick, params, rng), TrapAlgebraRole::Support);
+            matrix.setNote(TrapAlgebraLanes::Snare, tick, randomInt(rng, 40, 60), 2,
+                           microTimingForLane(TrapAlgebraLanes::Snare, tick, params, rng), TrapAlgebraRole::Ghost);
         }
     }
 }

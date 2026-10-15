@@ -21,6 +21,8 @@
 #include "../Source/Engine/DnB/DnBScorer.h"
 #include "../Source/Engine/DnB/DnBBass.h"
 #include "../Source/Engine/TechnoEngine.h"
+#include "../Source/Engine/AtmosphericEngine.h"
+#include "../Source/Engine/LaneStrength.h"
 #include "../Source/Engine/DrillEngine.h"
 #include "../Source/Engine/Drill/DrillPatternValidator.h"
 #include "../Source/Engine/Drill/DrillPhrasePlanner.h"
@@ -4963,6 +4965,309 @@ void testTechnoDeterministicVariedAndCalibration()
     }
 }
 
+// Atmospheric (docs/audit/atmos/ATMOS_ENGINE_SPEC.md): every search inside the gates; Pulse keeps
+// the kick on the beat, Two-Step its 5 + 13 snare, Broken its 2 / 4 anchor in every bar.
+void testAtmosphericGrammarInvariants()
+{
+    for (int sub = 0; sub < static_cast<int>(AtmosphericSubstyle::Count); ++sub)
+        for (const int bars : { 1, 2, 4, 8 })
+            for (int seed = 1; seed <= 12; ++seed)
+            {
+                AtmosGenerationParams params;
+                params.seed = seed * 97 + sub;
+                params.bars = bars;
+                params.substyle = sub;
+                params.density = 0.25f + 0.05f * static_cast<float>(seed % 10);
+                const auto pattern = AtmosphericEngine::search(params);
+                const auto& style = getAtmosStyleProfile(sub);
+                const juce::String label = juce::String(style.name) + " " + juce::String(bars) + " bars seed " + juce::String(seed);
+                expect(pattern.score.passedGates, label + ": failed gate " + pattern.score.failedGate);
+                for (int bar = 0; bar < bars; ++bar)
+                {
+                    int stacked = 0;
+                    for (int step = 0; step < 16; ++step)
+                        stacked += pattern.has(TrackType::Kick, bar, step) && pattern.has(TrackType::Snare, bar, step) ? 1 : 0;
+                    if (style.substyle == AtmosphericSubstyle::Pulse)
+                        expect(pattern.has(TrackType::Kick, bar, 0), label + ": no downbeat kick in bar " + juce::String(bar + 1));
+                    if (style.substyle == AtmosphericSubstyle::TwoStep)
+                        expect(pattern.has(TrackType::Snare, bar, 4) && pattern.has(TrackType::Snare, bar, 12),
+                               label + ": two-step snare missing in bar " + juce::String(bar + 1));
+                    if (style.substyle == AtmosphericSubstyle::Broken)
+                    {
+                        expect(pattern.has(TrackType::Snare, bar, 4) || pattern.has(TrackType::Snare, bar, 12),
+                               label + ": no 2 / 4 anchor in bar " + juce::String(bar + 1));
+                        expect(stacked <= 1, label + ": kick stacked on the clap twice in bar " + juce::String(bar + 1));
+                    }
+                }
+                for (const auto& e : pattern.events)
+                {
+                    if (style.substyle == AtmosphericSubstyle::Pulse && e.lane == TrackType::Kick)
+                        expect(e.step % 4 == 0, label + ": Pulse kick off the beat");
+                    if (e.lane == TrackType::HiHat)
+                        expect(!pattern.has(TrackType::OpenHat, e.bar, e.step), label + ": closed hat under the open hat");
+                }
+            }
+}
+
+// The bass is written in key and register, never overlaps itself, and does not double the kick.
+void testAtmosphericBassRules()
+{
+    for (int sub = 0; sub < static_cast<int>(AtmosphericSubstyle::Count); ++sub)
+        for (int amount = 0; amount < 3; ++amount)
+            for (int seed = 1; seed <= 8; ++seed)
+            {
+                AtmosGenerationParams params;
+                params.seed = seed * 31 + amount;
+                params.bars = 4;
+                params.substyle = sub;
+                const auto drums = AtmosphericEngine::search(params);
+                std::vector<std::vector<int>> kicks(4);
+                for (const auto& e : drums.events)
+                    if (e.lane == TrackType::Kick)
+                        kicks[static_cast<size_t>(e.bar)].push_back(e.step);
+
+                AtmosBassParams bassParams;
+                bassParams.seed = seed * 7 + sub;
+                bassParams.bars = 4;
+                bassParams.substyle = sub;
+                bassParams.keyRoot = 9; // A minor
+                bassParams.amount = amount;
+                const auto line = AtmosphericBassGenerator::search(bassParams, kicks);
+                const auto& style = getAtmosStyleProfile(sub);
+                const juce::String label = juce::String(style.name) + " amount " + juce::String(amount + 1) + " seed " + juce::String(seed);
+                expect(!line.notes.empty(), label + ": no bass");
+                expect(line.passedGates, label + ": failed gate " + line.failedGate);
+                expect(line.traits.kickRelation[0] <= 0.5f, label + ": the bass doubles the kick");
+                static const std::set<int> aMinor { 9, 11, 0, 2, 4, 5, 7 };
+                for (size_t i = 0; i < line.notes.size(); ++i)
+                {
+                    const auto& n = line.notes[i];
+                    expect(aMinor.count(n.pitch % 12) > 0, label + ": out of key " + juce::String(n.pitch));
+                    expect(n.pitch >= style.bassRegister - 9 && n.pitch <= style.bassRegister + 14, label + ": out of register " + juce::String(n.pitch));
+                    if (i + 1 < line.notes.size())
+                        expect(n.step + n.lengthSteps <= line.notes[i + 1].step, label + ": overlapping bass notes");
+                }
+            }
+}
+
+// Same settings -> same loop; Generate presses -> different loops. Prints the selected patterns'
+// traits next to the passport numbers (ATMOS_ENGINE_SPEC.md, section 6: within +-25 %).
+void testAtmosphericDeterministicVariedAndCalibration()
+{
+    AtmosGenerationParams params;
+    params.seed = 4242;
+    params.bars = 4;
+    const auto a = AtmosphericEngine::search(params);
+    const auto b = AtmosphericEngine::search(params);
+    expect(a.events.size() == b.events.size() && a.plan == b.plan, "atmospheric search is not deterministic");
+
+    for (int sub = 0; sub < static_cast<int>(AtmosphericSubstyle::Count); ++sub)
+    {
+        const auto& style = getAtmosStyleProfile(sub);
+        std::set<juce::String> loops;
+        AtmosTraits mean;
+        mean.motifShare = 0.0f;
+        AtmosBassTraits bass;
+        const int n = 200;
+        const float w = 1.0f / static_cast<float>(n);
+        for (int seed = 1; seed <= n; ++seed)
+        {
+            params.seed = seed * 131;
+            params.substyle = sub;
+            params.density = style.densityDefault;
+            const auto pattern = AtmosphericEngine::search(params);
+            const auto& t = pattern.score.traits;
+            mean.kicksPerBar += t.kicksPerBar * w;
+            mean.snaresPerBar += t.snaresPerBar * w;
+            mean.hatsPerBar += t.hatsPerBar * w;
+            mean.kickOffBeat += t.kickOffBeat * w;
+            mean.snareOff24 += t.snareOff24 * w;
+            mean.kickRepeat += t.kickRepeat * w;
+            mean.motifShare += t.motifShare * w;
+            std::vector<std::vector<int>> kicks(static_cast<size_t>(params.bars));
+            for (const auto& e : pattern.events)
+                if (e.lane == TrackType::Kick)
+                    kicks[static_cast<size_t>(e.bar)].push_back(e.step);
+            AtmosBassParams bassParams;
+            bassParams.seed = params.seed;
+            bassParams.bars = params.bars;
+            bassParams.substyle = sub;
+            const auto bt = AtmosphericBassGenerator::search(bassParams, kicks).traits;
+            bass.notesPerBar += bt.notesPerBar * w;
+            bass.pitchChangesPerBar += bt.pitchChangesPerBar * w;
+            bass.medianBeats += bt.medianBeats * w;
+            bass.longShare += bt.longShare * w;
+            for (size_t i = 0; i < bass.intervals.size(); ++i)
+                bass.intervals[i] += bt.intervals[i] * w;
+            for (size_t i = 0; i < bass.kickRelation.size(); ++i)
+                bass.kickRelation[i] += bt.kickRelation[i] * w;
+            if (seed <= 20)
+            {
+                juce::String key;
+                for (const auto& e : pattern.events)
+                    key << static_cast<int>(e.lane) << ":" << e.bar << ":" << e.step << " ";
+                loops.insert(key);
+            }
+        }
+        std::cout << "    " << style.name << ": kicks/bar " << mean.kicksPerBar << " (" << style.kicksPerBar << ") | snares/bar "
+                  << mean.snaresPerBar << " (" << style.snaresPerBar << ") | hats/bar " << mean.hatsPerBar << " (" << style.hatsPerBar
+                  << ") | kick off-beat " << mean.kickOffBeat << " (" << style.kickOffBeat << ") | snare off 2/4 " << mean.snareOff24
+                  << " (" << style.snareOff24 << ") | kick repeat " << mean.kickRepeat << " (" << style.kickRepeat << ") | motif share "
+                  << mean.motifShare << std::endl;
+        std::cout << "      bass: notes/bar " << bass.notesPerBar << " (" << style.bassNotesPerBar << ") | changes/bar " << bass.pitchChangesPerBar
+                  << " (" << style.bassPitchChangesPerBar << ") | median " << bass.medianBeats << " (" << style.bassMedianBeats << ") | >=2 beats "
+                  << bass.longShare << " (" << style.bassLongShare << ") | repeat/step/third/45/oct";
+        for (size_t i = 0; i < bass.intervals.size(); ++i)
+            std::cout << " " << bass.intervals[i] << "(" << style.intervalMix[i] << ")";
+        std::cout << " | on/after/before/away";
+        for (size_t i = 0; i < bass.kickRelation.size(); ++i)
+            std::cout << " " << bass.kickRelation[i] << "(" << style.kickRelation[i] << ")";
+        std::cout << std::endl;
+        expect(loops.size() >= 12, juce::String(style.name) + ": 20 generations gave only " + juce::String(static_cast<int>(loops.size())) + " loops");
+    }
+}
+
+// Genre, substyle names and defaults reach the style table; the kit falls back lane by lane.
+void testAtmosphericStyleDefaultsAndKit()
+{
+    const auto names = getAtmosphericSubstyleNames();
+    expect(names.size() == static_cast<int>(AtmosphericSubstyle::Count) && names[0] == "Pulse" && names[1] == "Two-Step" && names[2] == "Broken",
+           "Atmospheric substyle names");
+    for (int sub = 0; sub < names.size(); ++sub)
+    {
+        const auto& d = getGenreStyleDefaults(GenreType::Atmospheric, sub);
+        expect(d.genre == GenreType::Atmospheric && d.substyleName == names[sub], "Atmospheric style defaults for " + names[sub]);
+        expect(d.bpmDefault >= static_cast<float>(d.bpmMin) && d.bpmDefault <= static_cast<float>(d.bpmMax), "Atmospheric BPM range " + names[sub]);
+    }
+    GeneratorParams p;
+    p.genre = GenreType::Atmospheric;
+    p.atmosphericSubstyle = 2;
+    expect(getSelectedSubstyleIndex(p) == 2, "Atmospheric substyle index");
+
+    const auto root = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("hpdg_atmos_kit_test");
+    root.deleteRecursively();
+    const auto ownKick = root.getChildFile("Atmospheric/Kick");
+    const auto technoClap = root.getChildFile("Techno/ClapGhost");
+    const auto dnbRide = root.getChildFile("DnB/Ride");
+    expect(ownKick.createDirectory() && technoClap.createDirectory() && dnbRide.createDirectory(), "Create kit test directories.");
+    expect(ownKick.getChildFile("AKk1.wav").replaceWithText("placeholder") && technoClap.getChildFile("TCG1.wav").replaceWithText("placeholder")
+               && dnbRide.getChildFile("DRD1.wav").replaceWithText("placeholder"),
+           "Create kit fixtures.");
+    SampleLibraryManager library;
+    library.setRootDirectory(root);
+    library.setGenre(GenreType::Atmospheric);
+    library.scan();
+    expect(!library.getSamples(TrackType::Kick).empty() && library.getSamples(TrackType::Kick).front().file == ownKick.getChildFile("AKk1.wav"),
+           "Atmospheric uses its own kick kit.");
+    expect(!library.getSamples(TrackType::Snare).empty() && library.getSamples(TrackType::Snare).front().file == technoClap.getChildFile("TCG1.wav"),
+           "Atmospheric without its own clap borrows the Techno clap.");
+    expect(!library.getSamples(TrackType::Ride).empty() && library.getSamples(TrackType::Ride).front().file == dnbRide.getChildFile("DRD1.wav"),
+           "Atmospheric falls back to the DnB kit.");
+    root.deleteRecursively();
+}
+
+// Lane strength (LaneStrength.h): 0 leaves the lane as generated; the knob is monotonic; full left
+// keeps the backbone (kick on 1, backbeat snare, first 808 of a bar); right never puts a kick / 808
+// a 16th next to another one; added 808 notes do not overlap and repeat the sounding pitch.
+void testLaneStrength()
+{
+    auto note = [](int step, int velocity, const juce::String& role, bool ghost = false, int pitch = 36, int length = 1)
+    {
+        NoteEvent n;
+        n.gridTick = step * TimingGrid::Sixteenth;
+        n.velocity = velocity;
+        n.semanticRole = role;
+        n.isGhost = ghost;
+        n.pitch = pitch;
+        n.lengthTicks = length * TimingGrid::Sixteenth;
+        return n;
+    };
+    const int loop = 4 * TimingGrid::TicksPerBar4_4;
+    std::vector<NoteEvent> kicks;
+    for (int bar = 0; bar < 4; ++bar)
+    {
+        kicks.push_back(note(bar * 16, 120, "kick_anchor"));
+        kicks.push_back(note(bar * 16 + 6, 90, "kick_support"));
+        kicks.push_back(note(bar * 16 + 10, 100, "kick_support"));
+    }
+    std::vector<std::vector<NoteEvent>> variants;
+    for (int v = 0; v < 5; ++v)
+    {
+        std::vector<NoteEvent> var;
+        for (int bar = 0; bar < 4; ++bar)
+        {
+            var.push_back(note(bar * 16 + 3, 100, "kick_support"));   // 4 of 5 variants
+            var.push_back(note(bar * 16 + 7, 100, "kick_support"));   // next to the kick on 6: never added
+            if (v < 2)
+                var.push_back(note(bar * 16 + 13, 100, "kick_support"));
+        }
+        if (v == 4)
+            var.erase(var.begin());
+        variants.push_back(var);
+    }
+    const auto reserve = LaneStrength::buildReserve(kicks, variants, loop);
+    expect(!reserve.empty() && (reserve.front().gridTick / TimingGrid::Sixteenth) % 16 == 7, "reserve: most frequent position first");
+    for (const auto& r : reserve)
+        expect(std::none_of(kicks.begin(), kicks.end(), [&](const NoteEvent& k) { return k.gridTick == r.gridTick; }), "reserve excludes current hits");
+
+    const auto same = LaneStrength::apply(TrackType::Kick, kicks, 0.0f, reserve, loop);
+    expect(same.size() == kicks.size(), "strength 0 keeps the lane");
+
+    size_t previous = kicks.size();
+    for (float s = -0.1f; s >= -1.0f; s -= 0.1f)
+    {
+        const auto out = LaneStrength::apply(TrackType::Kick, kicks, s, reserve, loop);
+        expect(out.size() <= previous, "strength left is monotonic");
+        previous = out.size();
+    }
+    const auto minimal = LaneStrength::apply(TrackType::Kick, kicks, -1.0f, reserve, loop);
+    expect(minimal.size() == 4, "full left keeps the first kick of every bar, got " + juce::String(static_cast<int>(minimal.size())));
+
+    previous = kicks.size();
+    for (float s = 0.1f; s <= 1.0f; s += 0.1f)
+    {
+        const auto out = LaneStrength::apply(TrackType::Kick, kicks, s, reserve, loop);
+        expect(out.size() >= previous, "strength right is monotonic");
+        previous = out.size();
+        for (size_t i = 1; i < out.size(); ++i)
+            expect(out[i].gridTick - out[i - 1].gridTick > TimingGrid::Sixteenth, "strength right puts a kick a 16th next to a kick");
+    }
+    expect(previous > kicks.size(), "full right adds kicks");
+
+    // Snare backbone: the snare on 3 (step 8) of every bar stays at full left.
+    std::vector<NoteEvent> snares;
+    for (int bar = 0; bar < 4; ++bar)
+    {
+        snares.push_back(note(bar * 16 + 8, 115, "snare_backbone"));
+        snares.push_back(note(bar * 16 + 2, 50, "snare_ghost", true));
+    }
+    const auto snareMin = LaneStrength::apply(TrackType::Snare, snares, -1.0f, {}, loop);
+    expect(snareMin.size() == 4 && std::all_of(snareMin.begin(), snareMin.end(), [](const NoteEvent& n) { return (n.gridTick / TimingGrid::Sixteenth) % 16 == 8; }),
+           "full left keeps the backbeat snare");
+
+    // 808: first note of each bar stays; added notes repeat the sounding pitch, no overlap.
+    std::vector<NoteEvent> bass;
+    for (int bar = 0; bar < 4; ++bar)
+    {
+        bass.push_back(note(bar * 16, 110, "trap_sub", false, 31 + bar, 8));
+        bass.push_back(note(bar * 16 + 10, 100, "trap_sub", false, 38, 6));
+    }
+    const auto bassMin = LaneStrength::apply(TrackType::Sub808, bass, -1.0f, {}, loop);
+    expect(bassMin.size() == 4, "full left keeps the first 808 of every bar");
+    expect(bassMin.front().lengthTicks >= 16 * TimingGrid::Sixteenth, "a removed 808 lets the note before it ring on");
+    std::vector<std::vector<NoteEvent>> bassVariants(3, { note(5, 100, "trap_sub", false, 40, 2), note(21, 100, "trap_sub", false, 40, 2) });
+    const auto bassReserve = LaneStrength::buildReserve(bass, bassVariants, loop);
+    const auto bassMax = LaneStrength::apply(TrackType::Sub808, bass, 1.0f, bassReserve, loop);
+    expect(bassMax.size() == bass.size() + 2, "808 adds from the reserve");
+    for (size_t i = 0; i < bassMax.size(); ++i)
+    {
+        if (i + 1 < bassMax.size())
+            expect(bassMax[i].gridTick + bassMax[i].lengthTicks <= bassMax[i + 1].gridTick, "808 notes overlap after adding");
+        if (bassMax[i].semanticRole == "strength_add")
+            expect(bassMax[i].pitch == bassMax[i - 1].pitch, "an added 808 repeats the sounding pitch");
+    }
+}
+
 // Same settings -> same loop; consecutive seeds (Generate presses) -> different loops.
 void testDnBDeterministicAndVaried()
 {
@@ -7333,6 +7638,11 @@ int main()
     failures += runTest("Techno grammar invariants", testTechnoGrammarInvariants);
     failures += runTest("Techno bass rules", testTechnoBassRules);
     failures += runTest("Techno deterministic, varied, calibration", testTechnoDeterministicVariedAndCalibration);
+    failures += runTest("Atmospheric grammar invariants", testAtmosphericGrammarInvariants);
+    failures += runTest("Atmospheric bass rules", testAtmosphericBassRules);
+    failures += runTest("Atmospheric deterministic, varied, calibration", testAtmosphericDeterministicVariedAndCalibration);
+    failures += runTest("Atmospheric style defaults and kit", testAtmosphericStyleDefaultsAndKit);
+    failures += runTest("Lane strength", testLaneStrength);
     failures += runTest("DnB engine in a project", testDnBEngineInProject);
     failures += runTest("DnB bass line", testDnBBassLine);
     failures += runTest("DnB bass follows the sample's roots", testDnBBassFollowsSampleRoots);

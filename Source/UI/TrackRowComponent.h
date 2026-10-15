@@ -51,6 +51,7 @@ struct RuntimeLaneRowState
     bool isGhostTrack = false;
     std::optional<TrackType> runtimeTrackType;
     float laneVolume = 0.85f;
+    float strength = 0.0f; // -1 .. 1
     SoundLayerState sound;
     juce::String selectedSampleName;
     Sub808LaneSettings sub808Settings;
@@ -92,6 +93,7 @@ public:
     std::function<void(const RuntimeLaneId&)> onRenameLaneRequested;
     std::function<void(const RuntimeLaneId&)> onDeleteLaneRequested;
     std::function<void(const RuntimeLaneId&, float)> onLaneVolumeChanged;
+    std::function<void(const RuntimeLaneId&, float)> onLaneStrengthChanged;
     std::function<void(const RuntimeLaneId&, const SoundLayerState&)> onLaneSoundChanged;
     std::function<void(const RuntimeLaneId&)> onMoveLaneUp;
     std::function<void(const RuntimeLaneId&)> onMoveLaneDown;
@@ -149,9 +151,10 @@ private:
     juce::Label volumeLabel;
     juce::Label volumeValueLabel;
     RotaryKnobSlider volumeSlider;
-    juce::Label panLabel;
-    juce::Label panValueLabel;
-    RotaryKnobSlider panSlider;
+    // Lane strength (in place of pan): fewer / more hits than generated, applied live.
+    juce::Label strengthLabel;
+    juce::Label strengthValueLabel;
+    RotaryKnobSlider strengthSlider;
     juce::Label widthLabel;
     juce::Label widthValueLabel;
     juce::Slider widthSlider;

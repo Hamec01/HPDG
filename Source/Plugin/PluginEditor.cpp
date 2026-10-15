@@ -2170,6 +2170,10 @@ void BoomBGeneratorAudioProcessorEditor::refreshSubstyleBindingForGenre()
             choices = getTechnoSubstyleNames();
             substyleParamId = ParamIds::technoSubstyle;
             break;
+        case 6:
+            choices = getAtmosphericSubstyleNames();
+            substyleParamId = ParamIds::atmosphericSubstyle;
+            break;
         case 0:
         default:
             choices = getBoomBapSubstyleNames();
@@ -2318,6 +2322,14 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         applyProcessorProjectMutation([this, laneId, volume]
         {
             audioProcessor.setTrackLaneVolume(laneId, volume);
+        }, false);
+    };
+
+    trackList.onLaneStrengthTrack = [this](const RuntimeLaneId& laneId, float strength)
+    {
+        applyProcessorProjectMutation([this, laneId, strength]
+        {
+            audioProcessor.setTrackStrength(laneId, strength);
         }, false);
     };
 
@@ -3284,6 +3296,8 @@ void BoomBGeneratorAudioProcessorEditor::showStyleLabWindow()
                                                                  return getDnBSubstyleNames();
                                                              if (genre.equalsIgnoreCase("Techno"))
                                                                  return getTechnoSubstyleNames();
+                                                             if (genre.equalsIgnoreCase("Atmospheric"))
+                                                                 return getAtmosphericSubstyleNames();
                                                              return getBoomBapSubstyleNames();
                                                          });
     component->onStateChanged = [this](const StyleLabState& state)

@@ -139,6 +139,7 @@ MainHeaderComponent::MainHeaderComponent()
         genreCombo.addItem("Drill", 4);
     genreCombo.addItem("DnB", 5);
     genreCombo.addItem("Techno", 6);
+    genreCombo.addItem("Atmospheric", 7);
     addAndMakeVisible(genreCombo);
 
     substyleLabel.setText("Substyle", juce::dontSendNotification);

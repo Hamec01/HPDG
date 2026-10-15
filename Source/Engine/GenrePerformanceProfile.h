@@ -195,6 +195,25 @@ inline GenrePerformanceProfile getGenrePerformanceProfile(const GeneratorParams&
             profile.lanes[trackTypeIndex(TrackType::Cymbal)].swingWeight = 0.0f;
             break;
 
+        case GenreType::Atmospheric:
+            // Straight grid (passport swing 50): tight kick / clap, a little life on the hats.
+            profile.timingScaleAmount = 0.45f;
+            profile.swingTicksPerPercent = 1.6f;
+            profile.zeroTimingTicks = 5.0f;
+            profile.humanizeTimingTicks = 6.0f;
+            profile.humanizeVelocityRange = 5.0f;
+            profile.velocityRange = 9.0f;
+            profile.anchorSwingTightness = 1.0f;
+            profile.anchorTimingTightness = 0.95f;
+            profile.supportLateBias = 0.03f;
+            profile.accentVelocityDepth = 1.0f;
+            profile.lanes[trackTypeIndex(TrackType::Kick)].swingWeight = 0.0f;
+            profile.lanes[trackTypeIndex(TrackType::Snare)].swingWeight = 0.05f;
+            profile.lanes[trackTypeIndex(TrackType::Sub808)].swingWeight = 0.0f;
+            profile.lanes[trackTypeIndex(TrackType::HiHat)].swingWeight = 0.70f;
+            profile.lanes[trackTypeIndex(TrackType::OpenHat)].swingWeight = 0.30f;
+            break;
+
         case GenreType::Drill:
             profile.timingScaleAmount = 0.56f;
             profile.swingTicksPerPercent = 0.9f;

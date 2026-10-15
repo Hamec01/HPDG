@@ -81,6 +81,7 @@ public:
     std::function<void(const RuntimeLaneId&)> onRenameLaneRequested;
     std::function<void(const RuntimeLaneId&)> onDeleteLaneRequested;
     std::function<void(const RuntimeLaneId&, float)> onLaneVolumeTrack;
+    std::function<void(const RuntimeLaneId&, float)> onLaneStrengthTrack;
     std::function<void(const RuntimeLaneId&, const SoundLayerState&)> onLaneSoundTrack;
     std::function<void(const RuntimeLaneId&)> onLaneMoveUpTrack;
     std::function<void(const RuntimeLaneId&)> onLaneMoveDownTrack;

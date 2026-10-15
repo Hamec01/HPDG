@@ -28,6 +28,19 @@ bool isBackbeatSlot(GenreType genre, int stepInBar)
     return stepInBar == 4 || stepInBar == 12;
 }
 
+// Trap / Drill: an added kick never sits a 16th next to a kick (a stumbling double at 140-180 BPM:
+// "the kick hammers", maintainer 2026-10-14); the loop wraps (step 16 against the next bar's 1).
+int kickKeepAwayTicks(GenreType genre)
+{
+    return genre == GenreType::Trap || genre == GenreType::Drill ? TimingGrid::Sixteenth : kKeepAwayTicks;
+}
+
+int loopDistance(int a, int b, int loopTicks)
+{
+    const int d = std::abs(a - b) % loopTicks;
+    return std::min(d, loopTicks - d);
+}
+
 bool hasNoteNear(const TrackState* state, int tick, int distance)
 {
     if (state == nullptr)
@@ -101,7 +114,8 @@ SampleGuideAccentReport SampleGuideAccents::apply(PatternProject& project,
         const int bar = slot / TimingGrid::TicksPerBar4_4;
         if (perBar[bar] >= maxPerBar)
             continue;
-        if (std::any_of(notes.begin(), notes.end(), [&](const NoteEvent& note) { return std::abs(note.gridTick - slot) <= kKeepAwayTicks; }))
+        const int keepAway = kickKeepAwayTicks(project.params.genre);
+        if (std::any_of(notes.begin(), notes.end(), [&](const NoteEvent& note) { return loopDistance(note.gridTick, slot, loopTicks) <= keepAway; }))
             continue;
 
         NoteEvent note;

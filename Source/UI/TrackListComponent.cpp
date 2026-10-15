@@ -46,6 +46,7 @@ RuntimeLaneRowState buildLaneRowState(const RuntimeLaneDefinition& lane, const s
         row.solo = trackIt->solo;
         row.locked = trackIt->locked;
         row.laneVolume = trackIt->laneVolume;
+        row.strength = trackIt->strength;
         row.sound = trackIt->sound;
         row.selectedSampleName = trackIt->selectedSampleName;
         row.sub808Settings = trackIt->sub808Settings;
@@ -481,6 +482,11 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
         {
             if (onLaneVolumeTrack)
                 onLaneVolumeTrack(laneId, volume);
+        };
+        row->onLaneStrengthChanged = [this](const RuntimeLaneId& laneId, float strength)
+        {
+            if (onLaneStrengthTrack)
+                onLaneStrengthTrack(laneId, strength);
         };
         row->onLaneSoundChanged = [this](const RuntimeLaneId& laneId, const SoundLayerState& state)
         {

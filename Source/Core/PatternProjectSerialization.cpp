@@ -121,7 +121,8 @@ void sanitizeGeneratorParams(GeneratorParams& params)
     params.drillSubstyle = std::max(0, params.drillSubstyle);
     params.dnbSubstyle = std::max(0, params.dnbSubstyle);
     params.technoSubstyle = std::max(0, params.technoSubstyle);
-    params.genre = static_cast<GenreType>(juce::jlimit(0, 5, static_cast<int>(params.genre)));
+    params.atmosphericSubstyle = std::max(0, params.atmosphericSubstyle);
+    params.genre = static_cast<GenreType>(juce::jlimit(0, 6, static_cast<int>(params.genre)));
 }
 
 void serializePerformanceBaseParams(juce::ValueTree& node, const TrackState& track)
@@ -146,6 +147,7 @@ void serializePerformanceBaseParams(juce::ValueTree& node, const TrackState& tra
     node.setProperty("performance_base_drill_substyle", params.drillSubstyle, nullptr);
     node.setProperty("performance_base_dnb_substyle", params.dnbSubstyle, nullptr);
     node.setProperty("performance_base_techno_substyle", params.technoSubstyle, nullptr);
+    node.setProperty("performance_base_atmospheric_substyle", params.atmosphericSubstyle, nullptr);
 }
 
 void deserializePerformanceBaseParams(const juce::ValueTree& node, TrackState& track)
@@ -170,6 +172,7 @@ void deserializePerformanceBaseParams(const juce::ValueTree& node, TrackState& t
     params.drillSubstyle = safeInt(node, "performance_base_drill_substyle", params.drillSubstyle);
     params.dnbSubstyle = safeInt(node, "performance_base_dnb_substyle", params.dnbSubstyle);
     params.technoSubstyle = safeInt(node, "performance_base_techno_substyle", params.technoSubstyle);
+    params.atmosphericSubstyle = safeInt(node, "performance_base_atmospheric_substyle", params.atmosphericSubstyle);
     sanitizeGeneratorParams(params);
 }
 
@@ -1167,6 +1170,7 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
         track.subProfile = trackNode.getProperty("sub_profile", {}).toString();
         track.laneRole = trackNode.getProperty("lane_role", {}).toString();
         track.laneVolume = static_cast<float>(trackNode.getProperty("lane_volume", track.laneVolume));
+        track.strength = juce::jlimit(-1.0f, 1.0f, static_cast<float>(trackNode.getProperty("lane_strength", track.strength)));
         track.selectedSampleIndex = safeInt(trackNode, "selected_sample_index", 0);
         track.selectedSampleName = trackNode.getProperty("selected_sample_name", {}).toString();
         deserializeSoundLayer(trackNode, track.sound, "sound");
@@ -1265,6 +1269,7 @@ juce::ValueTree PatternProjectSerialization::serializeTrack(const TrackState& tr
     node.setProperty("sub_profile", track.subProfile, nullptr);
     node.setProperty("lane_role", track.laneRole, nullptr);
     node.setProperty("lane_volume", track.laneVolume, nullptr);
+    node.setProperty("lane_strength", track.strength, nullptr);
     node.setProperty("selected_sample_index", track.selectedSampleIndex, nullptr);
     node.setProperty("selected_sample_name", track.selectedSampleName, nullptr);
     node.setProperty("sub808_mono", track.sub808Settings.mono, nullptr);

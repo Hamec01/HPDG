@@ -11,15 +11,6 @@ namespace bbg
 {
 namespace
 {
-double panUiFromState(float pan)
-{
-    return juce::jlimit(-100.0, 100.0, static_cast<double>(pan) * 100.0);
-}
-
-float panStateFromUi(double panUi)
-{
-    return juce::jlimit(-1.0f, 1.0f, static_cast<float>(panUi / 100.0));
-}
 
 double widthUiFromState(float width)
 {
@@ -36,13 +27,13 @@ juce::String formatVolumeValue(double value)
     return juce::String(value, 2) + "x";
 }
 
-juce::String formatPanValue(double value)
+juce::String formatStrengthValue(double value)
 {
     const int rounded = static_cast<int>(std::round(value));
     if (rounded == 0)
-        return "C";
+        return "0";
 
-    return juce::String(rounded < 0 ? "L" : "R") + juce::String(std::abs(rounded));
+    return (rounded > 0 ? "+" : "-") + juce::String(std::abs(rounded));
 }
 
 juce::String formatWidthValue(double value)
@@ -55,17 +46,9 @@ double parseNumericText(const juce::String& text)
     return text.retainCharacters("0123456789.-").getDoubleValue();
 }
 
-double parsePanText(const juce::String& text)
+double parseStrengthText(const juce::String& text)
 {
-    const auto trimmed = text.trim().toUpperCase();
-    if (trimmed.isEmpty() || trimmed == "C")
-        return 0.0;
-
-    const double value = parseNumericText(trimmed);
-    if (trimmed.startsWith("L") || trimmed.startsWith("-"))
-        return -value;
-
-    return value;
+    return juce::jlimit(-100.0, 100.0, parseNumericText(text.trim()));
 }
 
 void configureRackKnob(RotaryKnobSlider& knob,
@@ -260,9 +243,9 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     addAndMakeVisible(volumeLabel);
     addAndMakeVisible(volumeValueLabel);
     addAndMakeVisible(volumeSlider);
-    addAndMakeVisible(panLabel);
-    addAndMakeVisible(panValueLabel);
-    addAndMakeVisible(panSlider);
+    addAndMakeVisible(strengthLabel);
+    addAndMakeVisible(strengthValueLabel);
+    addAndMakeVisible(strengthSlider);
     addAndMakeVisible(widthLabel);
     addAndMakeVisible(widthValueLabel);
     addAndMakeVisible(widthSlider);
@@ -362,24 +345,25 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     volumeSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(248, 196, 126));
     volumeSlider.setTooltip("Lane volume");
 
-    panLabel.setText("Pan", juce::dontSendNotification);
-    panLabel.setJustificationType(juce::Justification::centredLeft);
-    panLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
-    panValueLabel.setJustificationType(juce::Justification::centred);
-    panValueLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
-    panValueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-    configureRackKnob(panSlider,
-                      "Pan",
+    strengthLabel.setText("Strength", juce::dontSendNotification);
+    strengthLabel.setJustificationType(juce::Justification::centredLeft);
+    strengthLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
+    strengthValueLabel.setJustificationType(juce::Justification::centred);
+    strengthValueLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
+    strengthValueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    configureRackKnob(strengthSlider,
+                      "Strength",
                       -100.0,
                       100.0,
                       1.0,
-                      [] (double value) { return formatPanValue(value); },
-                      [] (const juce::String& text) { return parsePanText(text); });
-    panSlider.setValue(0.0, juce::dontSendNotification);
-    panSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(110, 168, 236));
-    panSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(118, 176, 244));
-    panSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(190, 224, 255));
-    panSlider.setTooltip("Pan: -100 left, 0 center, +100 right");
+                      [] (double value) { return formatStrengthValue(value); },
+                      [] (const juce::String& text) { return parseStrengthText(text); });
+    strengthSlider.setValue(0.0, juce::dontSendNotification);
+    strengthSlider.setDoubleClickReturnValue(true, 0.0);
+    strengthSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(110, 168, 236));
+    strengthSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(118, 176, 244));
+    strengthSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(190, 224, 255));
+    strengthSlider.setTooltip("Strength: left = fewer hits, right = more hits, 0 = as generated (double-click resets)");
 
     widthLabel.setText("Width", juce::dontSendNotification);
     widthLabel.setJustificationType(juce::Justification::centredLeft);
@@ -479,18 +463,12 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
             onLaneVolumeChanged(laneId, static_cast<float>(volumeSlider.getValue()));
     };
 
-    auto emitLaneSoundChange = [this]
+    strengthSlider.onValueChange = [this]
     {
         updateParameterValueLabels();
-        if (!onLaneSoundChanged)
-            return;
-
-        currentSoundState.pan = panStateFromUi(panSlider.getValue());
-        currentSoundState.width = widthStateFromUi(widthSlider.getValue());
-        onLaneSoundChanged(laneId, currentSoundState);
+        if (onLaneStrengthChanged)
+            onLaneStrengthChanged(laneId, static_cast<float>(strengthSlider.getValue() / 100.0));
     };
-
-    panSlider.onValueChange = emitLaneSoundChange;
 
     overflowMenuButton.onClick = [this]
     {
@@ -736,11 +714,11 @@ void TrackRowComponent::resized()
     layoutKnobColumn(volumeArea, volumeValueLabel, volumeSlider);
 
     area.removeFromLeft(4);
-    auto panArea = area.removeFromLeft(58);
-    layoutKnobColumn(panArea, panValueLabel, panSlider);
+    auto strengthArea = area.removeFromLeft(58);
+    layoutKnobColumn(strengthArea, strengthValueLabel, strengthSlider);
 
     volumeLabel.setBounds({});
-    panLabel.setBounds({});
+    strengthLabel.setBounds({});
     widthLabel.setBounds({});
     widthValueLabel.setBounds({});
     widthSlider.setBounds({});
@@ -814,9 +792,9 @@ void TrackRowComponent::applyDisplayModeVisibility()
     volumeLabel.setVisible(false);
     volumeValueLabel.setVisible(full);
     volumeSlider.setVisible(full);
-    panLabel.setVisible(false);
-    panValueLabel.setVisible(full);
-    panSlider.setVisible(full);
+    strengthLabel.setVisible(false);
+    strengthValueLabel.setVisible(full);
+    strengthSlider.setVisible(full);
     widthLabel.setVisible(false);
     widthValueLabel.setVisible(false);
     widthSlider.setVisible(false);
@@ -843,7 +821,7 @@ void TrackRowComponent::applyDisplayModeVisibility()
     dragDensityLockButton.setVisible(false);
 
     volumeSlider.setEnabled(hasRuntimeTrack());
-    panSlider.setEnabled(hasRuntimeTrack());
+    strengthSlider.setEnabled(hasRuntimeTrack());
     widthSlider.setEnabled(false);
     dragDensitySlider.setEnabled(false);
     dragDensityLockButton.setEnabled(false);
@@ -875,7 +853,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     enableButton.setToggleState(state.enabled, juce::dontSendNotification);
     currentSoundState = state.sound;
     volumeSlider.setValue(state.laneVolume, juce::dontSendNotification);
-    panSlider.setValue(panUiFromState(state.sound.pan), juce::dontSendNotification);
+    strengthSlider.setValue(juce::jlimit(-100.0, 100.0, static_cast<double>(state.strength) * 100.0), juce::dontSendNotification);
     widthSlider.setValue(widthUiFromState(state.sound.width), juce::dontSendNotification);
     updateParameterValueLabels();
 
@@ -899,7 +877,7 @@ void TrackRowComponent::syncFromState(const RuntimeLaneRowState& state)
     wavDragButton.setEnabled(hasRuntimeTrack() && supportsDragExport);
     overflowMenuButton.setEnabled(true);
     volumeSlider.setEnabled(hasRuntimeTrack());
-    panSlider.setEnabled(hasRuntimeTrack());
+    strengthSlider.setEnabled(hasRuntimeTrack());
     widthSlider.setEnabled(false);
     dragDensitySlider.setEnabled(false);
     dragDensityLockButton.setEnabled(false);
@@ -975,7 +953,7 @@ void TrackRowComponent::setHatFxDragState(float density, bool locked)
 void TrackRowComponent::updateParameterValueLabels()
 {
     volumeValueLabel.setText(formatVolumeValue(volumeSlider.getValue()), juce::dontSendNotification);
-    panValueLabel.setText(formatPanValue(panSlider.getValue()), juce::dontSendNotification);
+    strengthValueLabel.setText(formatStrengthValue(strengthSlider.getValue()), juce::dontSendNotification);
 }
 
 void TrackRowComponent::showOverflowMenu()

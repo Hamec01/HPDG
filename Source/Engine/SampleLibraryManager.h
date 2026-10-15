@@ -27,6 +27,10 @@ public:
 
     const std::vector<LaneSampleInfo>& getSamples(TrackType track) const;
     juce::File getResolvedRootDirectory() const { return resolvedRootDirectory; }
+    // HPDG's synthesized sub basses (Samples/Synth/Sub808, tools/make_synth_sub.py) follow every
+    // genre's own 808s in the Sub808 list (appended: saved sample indices stay valid). Index of the
+    // first one, -1 when they are missing.
+    int firstSynthSubIndex() const { return synthSubStart; }
 
     static juce::String folderNameForTrack(TrackType track);
     static juce::String folderNameForGenre(GenreType genre);
@@ -39,5 +43,6 @@ private:
     juce::File resolvedRootDirectory;
     GenreType currentGenre = GenreType::BoomBap;
     std::array<std::vector<LaneSampleInfo>, 11> laneSamples;
+    int synthSubStart = -1;
 };
 } // namespace bbg

@@ -8,6 +8,7 @@
 #include "../Core/PatternProject.h"
 #include "../Core/TimingGrid.h"
 #include "GenrePerformanceProfile.h"
+#include "LaneStrength.h"
 
 namespace bbg::PatternPerformanceTransformEngine
 {
@@ -948,38 +949,49 @@ inline void backfillMissingPerformanceBaseParams(PatternProject& project, const 
     }
 }
 
+// One lane: base -> lane strength -> live performance (swing / timing / humanize / density).
+inline void applyPerformanceToTrack(PatternProject& project, TrackState& track, const GeneratorParams& currentParams)
+{
+    if (track.locked || !track.hasPerformanceBaseParams)
+        return;
+
+    const auto profile = getGenrePerformanceProfile(track.performanceBaseParams);
+
+    const int loopTicks = std::max(1, track.performanceBaseParams.bars) * TimingGrid::TicksPerBar4_4;
+    const bool strengthOn = std::abs(track.strength) >= 0.005f;
+    if (track.type == TrackType::Sub808)
+    {
+        const auto strengthBase = strengthOn ? toSub808NoteEvents(LaneStrength::apply(track.type, toLegacyNoteEvents(track.baseSub808Notes),
+                                                                                       track.strength, track.strengthReserve, loopTicks))
+                                             : std::vector<Sub808NoteEvent> {};
+        detail::applySub808TransformSequence(track.sub808Notes,
+                                             strengthOn ? strengthBase : track.baseSub808Notes,
+                                             project.authoring,
+                                             track,
+                                             currentParams,
+                                             track.performanceBaseParams,
+                                             profile);
+        track.notes = toLegacyNoteEvents(track.sub808Notes);
+        return;
+    }
+
+    const auto strengthBase = strengthOn ? LaneStrength::apply(track.type, track.baseNotes, track.strength, track.strengthReserve, loopTicks)
+                                         : std::vector<NoteEvent> {};
+    detail::applyTransformSequence(track.notes,
+                                   strengthOn ? strengthBase : track.baseNotes,
+                                   project.authoring,
+                                   track,
+                                   currentParams,
+                                   track.performanceBaseParams,
+                                   profile);
+}
+
 inline void applyPerformanceFromBase(PatternProject& project, const GeneratorParams& currentParams)
 {
     backfillMissingPerformanceBaseParams(project, currentParams);
 
     for (auto& track : project.tracks)
-    {
-        if (track.locked || !track.hasPerformanceBaseParams)
-            continue;
-
-        const auto profile = getGenrePerformanceProfile(track.performanceBaseParams);
-
-        if (track.type == TrackType::Sub808)
-        {
-            detail::applySub808TransformSequence(track.sub808Notes,
-                                                 track.baseSub808Notes,
-                                                 project.authoring,
-                                                 track,
-                                                 currentParams,
-                                                 track.performanceBaseParams,
-                                                 profile);
-            track.notes = toLegacyNoteEvents(track.sub808Notes);
-            continue;
-        }
-
-        detail::applyTransformSequence(track.notes,
-                                       track.baseNotes,
-                                       project.authoring,
-                                       track,
-                                       currentParams,
-                                       track.performanceBaseParams,
-                                       profile);
-    }
+        applyPerformanceToTrack(project, track, currentParams);
 }
 
 inline void applyPerformanceFromBase(PatternProject& project)

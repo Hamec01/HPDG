@@ -90,6 +90,10 @@ target_sources(HPDG
     Source/Engine/Techno/TechnoStyleProfile.cpp
     Source/Engine/Techno/TechnoGrammar.cpp
     Source/Engine/Techno/TechnoBass.cpp
+    Source/Engine/AtmosphericEngine.cpp
+    Source/Engine/Atmospheric/AtmosphericStyleProfile.cpp
+    Source/Engine/Atmospheric/AtmosphericGrammar.cpp
+    Source/Engine/Atmospheric/AtmosphericBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
@@ -190,6 +194,10 @@ add_executable(HPDG_CoreTests
     Source/Engine/Techno/TechnoStyleProfile.cpp
     Source/Engine/Techno/TechnoGrammar.cpp
     Source/Engine/Techno/TechnoBass.cpp
+    Source/Engine/AtmosphericEngine.cpp
+    Source/Engine/Atmospheric/AtmosphericStyleProfile.cpp
+    Source/Engine/Atmospheric/AtmosphericGrammar.cpp
+    Source/Engine/Atmospheric/AtmosphericBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
@@ -271,6 +279,10 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/Techno/TechnoStyleProfile.cpp
     Source/Engine/Techno/TechnoGrammar.cpp
     Source/Engine/Techno/TechnoBass.cpp
+    Source/Engine/AtmosphericEngine.cpp
+    Source/Engine/Atmospheric/AtmosphericStyleProfile.cpp
+    Source/Engine/Atmospheric/AtmosphericGrammar.cpp
+    Source/Engine/Atmospheric/AtmosphericBass.cpp
     Source/Engine/Drill/Drill808Generator.cpp
     Source/Engine/Drill/DrillHatFxGenerator.cpp
     Source/Engine/Drill/DrillHatGenerator.cpp
