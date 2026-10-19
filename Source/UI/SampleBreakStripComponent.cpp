@@ -2,6 +2,7 @@
 
 #include <array>
 
+#include "ExternalDragWindowFade.h"
 #include "SketchDrawing.h"
 #include "SketchTheme.h"
 #include "../Core/TimingGrid.h"
@@ -406,6 +407,8 @@ void SampleBreakStripComponent::resized()
 
 bool SampleBreakStripComponent::isInterestedInFileDrag(const juce::StringArray& files)
 {
+    if (ExternalDragWindowFade::isDragOutInProgress()) // our own WAV on its way to the DAW
+        return false;
     for (const auto& file : files)
         if (isSupportedAudioFile(file))
             return true;

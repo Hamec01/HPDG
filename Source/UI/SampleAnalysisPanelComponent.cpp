@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "ExternalDragWindowFade.h"
 #include "SketchDrawing.h"
 #include "SketchTheme.h"
 
@@ -113,6 +114,8 @@ void SampleAnalysisPanelComponent::resized()
 
 bool SampleAnalysisPanelComponent::isInterestedInFileDrag(const juce::StringArray& files)
 {
+    if (ExternalDragWindowFade::isDragOutInProgress()) // our own WAV on its way to the DAW
+        return false;
     return std::any_of(files.begin(), files.end(), [](const juce::String& path)
     {
         return isSupportedAnalysisFile(path);

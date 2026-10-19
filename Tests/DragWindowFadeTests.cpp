@@ -41,25 +41,32 @@ int main()
     const HWND frame = make(workspace, 100, 100, 640, 460);
     const HWND editor = make(frame, 10, 40, 600, 400);
     expect(findPluginFrame(editor) == frame, "Docked: the frame is the host's plugin window, not the workspace or the DAW.");
-    bool faded = false, behind = false;
-    expect(fadeAndRestoreForTest(frame, faded, behind), "Docked: the window style is restored after the drag.");
-    expect(behind, "Docked: the plugin window goes behind its siblings (the playlist shows).");
-    std::cout << "  docked translucent: " << (faded ? "yes" : "no (layered child windows not available here)") << "\n";
-    expect(GetWindow(frame, GW_HWNDPREV) == nullptr, "Docked: the plugin window is back on top after the drag.");
+    const HWND aboveBefore = GetWindow(frame, GW_HWNDPREV);
+    bool hidden = false;
+    expect(hideAndShowForTest(frame, hidden), "Docked: the window is shown again with its style after the drag.");
+    expect(hidden, "Docked: the plugin window is hidden while the file is over the DAW (the playlist takes the drop).");
+    expect(GetWindow(frame, GW_HWNDPREV) == aboveBefore, "Docked: the plugin window keeps its place among the DAW's windows.");
     (void) playlist;
+
+    // FL Studio as logged (2026-10-19): the plugin window sits in a TWPControl spanning the workspace.
+    const HWND flMain = make(nullptr, 0, 0, 1920, 1040);
+    const HWND twp = make(flMain, 372, 82, 1548, 950);
+    const HWND flPlugin = make(twp, 140, 230, 1470, 560);
+    const HWND flEditor = make(flPlugin, 5, 30, 1460, 520);
+    expect(findPluginFrame(flEditor) == flPlugin, "FL: the frame is the plugin window, not the workspace-wide TWPControl.");
 
     // A floating plugin window (top-level).
     const HWND floating = make(nullptr, 200, 200, 640, 470);
     const HWND floatingEditor = make(floating, 10, 40, 600, 400);
     expect(findPluginFrame(floatingEditor) == floating, "Floating: the frame is the top-level plugin window.");
-    expect(fadeAndRestoreForTest(floating, faded, behind), "Floating: the window style is restored after the drag.");
-    expect(faded, "Floating: the plugin window turns translucent.");
+    expect(hideAndShowForTest(floating, hidden), "Floating: the window is shown again with its style after the drag.");
+    expect(hidden, "Floating: the plugin window is hidden while the file is over the DAW.");
 
     // An editor that fills its own top-level window.
     const HWND bare = make(nullptr, 300, 300, 600, 400);
     expect(findPluginFrame(bare) == bare, "Bare: a top-level editor is its own frame.");
 
-    for (const HWND w : { editor, frame, playlist, workspace, daw, floatingEditor, floating, bare })
+    for (const HWND w : { flEditor, flPlugin, twp, flMain, editor, frame, playlist, workspace, daw, floatingEditor, floating, bare })
         DestroyWindow(w);
     return failures == 0 ? 0 : 1;
 }

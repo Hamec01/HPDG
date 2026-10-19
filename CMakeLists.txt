@@ -503,7 +503,7 @@ target_link_libraries(HPDG_BreakLab
         juce::juce_recommended_warning_flags
 )
 
-# Drag-out window step back against real Win32 windows (Source/UI/ExternalDragWindowFade.cpp).
+# Drag-out window hide / show against real Win32 windows (Source/UI/ExternalDragWindowFade.cpp).
 if (WIN32)
     add_executable(HPDG_DragWindowFadeTests
         Tests/DragWindowFadeTests.cpp
