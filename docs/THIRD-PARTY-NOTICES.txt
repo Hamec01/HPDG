@@ -1,4 +1,4 @@
-﻿HPDG 0.1.0 Beta 2 — third-party notices
+﻿HPDG 0.1.0 Beta 3 — third-party notices
 
 JUCE: copyright its contributors; its original LICENSE.md is distributed
 under Documentation/ThirdParty/JUCE. See that file for applicable terms.
@@ -13,7 +13,10 @@ one-shots (re-pitched to C) and source packs identified
 by original filenames in each sample-names.json. These filenames and
 original text notices in Samples/Rap/Dirty South Drum Kit are retained.
 Techno bass additions preserve their original names in
-Samples/Techno/Sub808/sample-names.json.
+Samples/Techno/Sub808/sample-names.json. The Atmospheric kit comes from
+the free FAKE - TOOLBOX pack; its original names are kept in each
+Samples/Atmospheric/*/sample-names.json. The Synth sub basses
+(Samples/Synth/Sub808) are synthesized by HamloProd.
 
 Audio filenames were shortened for HPDG's interface. Renaming does not
 change authorship, ownership or the terms of the original assets.

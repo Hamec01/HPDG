@@ -642,6 +642,28 @@ private:
         }
         if (cmd == "strength") // strength <Lane> <-1..1>: the lane strength knob
         {
+            // Turn the knob itself (it drives the processor), so snapshots show where it stands.
+            juce::Slider* knob = nullptr;
+            std::function<void(juce::Component&)> findKnob = [&](juce::Component& c)
+            {
+                if (auto* row = dynamic_cast<TrackRowComponent*>(&c))
+                {
+                    if (auto type = row->getRuntimeTrackType(); type && juce::String(toString(*type)).equalsIgnoreCase(t[1]))
+                        for (auto* child : row->getChildren())
+                            if (auto* s = dynamic_cast<juce::Slider*>(child); s != nullptr && s->getMinimum() == -100.0 && s->getMaximum() == 100.0)
+                                knob = s;
+                    return;
+                }
+                for (auto* child : c.getChildren())
+                    findKnob(*child);
+            };
+            findKnob(*editor);
+            if (knob != nullptr)
+            {
+                knob->setValue(num(2, 0.0) * 100.0, juce::sendNotificationSync);
+                settle();
+                return true;
+            }
             for (const auto& track : processor.getProjectSnapshot().tracks)
                 if (juce::String(toString(track.type)).equalsIgnoreCase(t[1]))
                 {

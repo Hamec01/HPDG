@@ -5,7 +5,7 @@ project(HPDG VERSION 0.1.0)
 # The only place the release version is written. The label follows the number ("beta.2";
 # empty for a final release). The plugin header, the update check and Installer/Build-Beta.ps1
 # all read the version from these two lines.
-set(HPDG_VERSION_LABEL "beta.2")
+set(HPDG_VERSION_LABEL "beta.3")
 if (HPDG_VERSION_LABEL)
     set(HPDG_VERSION_TAG "${PROJECT_VERSION}-${HPDG_VERSION_LABEL}")
 else()

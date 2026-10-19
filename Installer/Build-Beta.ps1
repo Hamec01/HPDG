@@ -53,7 +53,7 @@ try {
     })
     if (@(Get-ChildItem -LiteralPath $bundleSampleRoot -Recurse -File).Count -ne $manifest.Count) { throw 'Bundle contains stale sample files.' }
     $audioCount = @($manifest | Where-Object { [IO.Path]::GetExtension($_.path) -in '.wav', '.aif', '.aiff', '.flac', '.ogg' }).Count
-    if ($audioCount -ne 849) { throw "Expected 849 beta audio files; found $audioCount. Update release notes before publishing." }
+    if ($audioCount -ne 913) { throw "Expected 913 beta audio files; found $audioCount. Update release notes before publishing." }
     $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $releaseDir "HPDG_${versionTag}_samples.sha256.json") -Encoding utf8
 
     # Build a standalone, offline HTML FAQ from the authoritative Markdown text.
