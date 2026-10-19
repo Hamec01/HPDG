@@ -40,6 +40,7 @@
 #include "../Source/Engine/SampleLibraryManager.h"
 #include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Engine/StyleDefinitionLoader.h"
+#include "../Source/Services/UpdateCheckService.h"
 #include "../Source/Engine/StyleInfluence.h"
 #include "../Source/Engine/SubstyleRuleEnforcer.h"
 #include "../Source/Engine/TempoInterpretation.h"
@@ -7560,12 +7561,171 @@ int runTest(const char* name, const std::function<void()>& test)
 } // namespace
 } // namespace bbg
 
+void testRackIntensityFormula()
+{
+    using namespace bbg;
+    const int bar = TimingGrid::TicksPerBar4_4;
+    std::vector<NoteEvent> kicks, hats, snares;
+    for (const int step : { 0, 3, 6, 10, 14 })
+    {
+        NoteEvent n;
+        n.gridTick = step * TimingGrid::Sixteenth;
+        n.timingOffsetTicks = 12;
+        kicks.push_back(n);
+    }
+    for (int step = 0; step < 16; ++step)
+    {
+        NoteEvent n;
+        n.gridTick = step * TimingGrid::Sixteenth;
+        n.semanticRole = step == 13 ? "trap_algebra_roll" : "support";
+        n.isGhost = step == 7;
+        hats.push_back(n);
+    }
+    for (const int step : { 4, 7, 12 })
+    {
+        NoteEvent n;
+        n.gridTick = step * TimingGrid::Sixteenth;
+        n.isGhost = step == 7;
+        snares.push_back(n);
+    }
+
+    for (const auto lane : { TrackType::Kick, TrackType::HiHat, TrackType::Snare })
+    {
+        const auto& source = lane == TrackType::Kick ? kicks : lane == TrackType::HiHat ? hats : snares;
+        const auto same = LaneStrength::shapeForIntensity(lane, source, 3, {}, bar, GenreType::Trap);
+        expect(same.size() == source.size(), "Intensity 3 writes the lanes exactly as the engine does.");
+    }
+
+    // Level 1, Boom Bap: hats on quarters, kick on 1 and 3, backbeat snare, no swing offsets.
+    const auto bbKicks = LaneStrength::shapeForIntensity(TrackType::Kick, kicks, 1, {}, bar, GenreType::BoomBap);
+    expect(bbKicks.size() == 2 && bbKicks[0].gridTick == 0 && bbKicks[1].gridTick == 8 * TimingGrid::Sixteenth,
+           "Boom Bap intensity 1: kick on 1 and 3.");
+    for (const auto& n : bbKicks)
+        expect(n.timingOffsetTicks == 0, "Intensity 1 writes the notes straight on the grid.");
+    const auto bbHats = LaneStrength::shapeForIntensity(TrackType::HiHat, hats, 1, {}, 2 * bar, GenreType::BoomBap);
+    expect(bbHats.size() == 8, "Boom Bap intensity 1: hats on quarter notes.");
+    for (const auto& n : bbHats)
+        expect(n.gridTick % (4 * TimingGrid::Sixteenth) == 0, "Boom Bap intensity 1: only quarter-note hats.");
+    const auto bbSnares = LaneStrength::shapeForIntensity(TrackType::Snare, snares, 1, {}, bar, GenreType::BoomBap);
+    expect(bbSnares.size() == 2, "Intensity 1 keeps the backbeat snare only.");
+
+    // Level 1, other genres: straight 8ths, kicks on quarters + the first of the bar.
+    expect(LaneStrength::shapeForIntensity(TrackType::HiHat, hats, 1, {}, 2 * bar, GenreType::Trap).size() == 16,
+           "Trap intensity 1: hats on every straight 8th.");
+    expect(LaneStrength::shapeForIntensity(TrackType::Kick, kicks, 1, {}, bar, GenreType::Trap).size() == 1,
+           "Trap intensity 1: kicks on quarter notes plus the first of the bar.");
+    expect(LaneStrength::shapeForIntensity(TrackType::Perc, hats, 1, {}, bar, GenreType::Techno).empty()
+               && LaneStrength::shapeForIntensity(TrackType::GhostKick, kicks, 1, {}, bar, GenreType::BoomBap).empty(),
+           "Intensity 1 silences percussion and ghosts.");
+
+    // Level 2: no ghosts, no rolls, fewer hits than level 3.
+    const auto hats2 = LaneStrength::shapeForIntensity(TrackType::HiHat, hats, 2, {}, bar, GenreType::BoomBap);
+    expect(hats2.size() <= hats.size() / 2, "Intensity 2 clearly thins the hats.");
+    for (const auto& n : hats2)
+        expect(!n.isGhost && !n.semanticRole.contains("roll"), "Intensity 2 drops ghost notes and rolls.");
+    expect(LaneStrength::shapeForIntensity(TrackType::ClapGhostSnare, snares, 2, {}, bar, GenreType::BoomBap).empty(),
+           "Intensity 2 silences the ghost lanes.");
+
+    PatternProject project = createDefaultProject();
+    project.intensity = 2;
+    PatternProject restored;
+    expect(PatternProjectSerialization::deserialize(wrapSerializedProject(project), restored) && restored.intensity == 2,
+           "Intensity is saved with the project.");
+}
+
+void testTrapHatStrengthRemovesWholeRolls()
+{
+    using namespace bbg;
+    // One bar of straight 8ths plus a 32nd roll before the snare.
+    std::vector<NoteEvent> hats;
+    for (int step = 0; step < 16; step += 2)
+    {
+        NoteEvent n;
+        n.gridTick = step * TimingGrid::Sixteenth;
+        n.velocity = 90;
+        n.semanticRole = "trap_algebra_support";
+        hats.push_back(n);
+    }
+    for (int k = 0; k < 4; ++k)
+    {
+        NoteEvent n;
+        n.gridTick = 13 * TimingGrid::Sixteenth + k * (TimingGrid::Sixteenth / 2);
+        n.velocity = 100;
+        n.semanticRole = "trap_algebra_roll";
+        hats.push_back(n);
+    }
+    const int loop = TimingGrid::TicksPerBar4_4;
+    const auto countRoll = [](const std::vector<NoteEvent>& v)
+    {
+        return std::count_if(v.begin(), v.end(), [](const NoteEvent& n) { return n.semanticRole.contains("roll"); });
+    };
+
+    const auto light = LaneStrength::apply(TrackType::HiHat, hats, -0.1f, {}, loop, GenreType::Trap);
+    expect(countRoll(light) == 0 && light.size() == 8, "Trap hats: a small cut removes the whole roll and nothing else.");
+
+    for (const float s : { -0.3f, -0.6f, -0.9f })
+    {
+        const auto out = LaneStrength::apply(TrackType::HiHat, hats, s, {}, loop, GenreType::Trap);
+        expect(countRoll(out) == 0 || countRoll(out) == 4, "Trap hats: a roll is never cut into a fragment.");
+    }
+
+    const auto full = LaneStrength::apply(TrackType::HiHat, hats, -1.0f, {}, loop, GenreType::Trap);
+    expect(full.size() == 4, "Trap hats at full left keep the four quarter notes.");
+    for (const auto& n : full)
+        expect(n.gridTick % (4 * TimingGrid::Sixteenth) == 0, "Trap hats at full left keep only quarter notes.");
+
+    const auto boomBap = LaneStrength::apply(TrackType::HiHat, hats, -0.5f, {}, loop, GenreType::BoomBap);
+    const auto boomBapDefault = LaneStrength::apply(TrackType::HiHat, hats, -0.5f, {}, loop);
+    expect(boomBap.size() == boomBapDefault.size(), "Other genres keep their lane strength behaviour.");
+}
+
+void testUpdateCheckVersionsAndManifest()
+{
+    using namespace bbg;
+    using update::ReleaseVersion;
+    const auto older = [](const char* a, const char* b)
+    {
+        return update::compare(ReleaseVersion::parse(a), ReleaseVersion::parse(b)) < 0;
+    };
+
+    expect(older("0.1.0-beta.2", "0.1.0-beta.3"), "Beta 2 must be older than Beta 3.");
+    expect(older("0.1.0-beta.9", "0.1.0-beta.10"), "Beta numbers compare as numbers, not text.");
+    expect(older("0.1.0-beta.3", "0.1.0"), "A final release must be newer than its betas.");
+    expect(older("0.1.0", "0.1.1-beta.1"), "A higher patch must be newer even as a beta.");
+    expect(older("0.1.0-beta.5", "0.2.0-beta.1"), "A higher minor must be newer.");
+    expect(older("0.1.0-beta.1", "0.1.0-rc.1"), "rc must be newer than beta.");
+    expect(update::compare(ReleaseVersion::parse("v0.1.0-beta2"), ReleaseVersion::parse("0.1.0-beta.2")) == 0,
+           "\"v\" prefix and \"beta2\" spelling must parse the same.");
+    expect(!ReleaseVersion::parse("").valid && !ReleaseVersion::parse("abc").valid
+               && !ReleaseVersion::parse("0.1.x").valid && !ReleaseVersion::parse("0.1.0-").valid,
+           "Malformed tags must be rejected.");
+    expect(ReleaseVersion::parse("0.1.0-beta.2").toDisplayString() == "0.1.0 Beta 2", "Display form of a beta.");
+    expect(ReleaseVersion::parse("1.0.0").toDisplayString() == "1.0.0", "Display form of a final release.");
+    expect(update::currentVersion().valid, "HPDG_VERSION_TAG from CMakeLists.txt must parse.");
+
+    update::LatestRelease release;
+    expect(update::parseManifest(R"({"version":"0.1.0-beta.3","title":"HPDG 0.1.0 Beta 3","notes":"Atmospheric","url":"https://hamloprod.org/en/vst"})",
+                                 release),
+           "A well-formed manifest must parse.");
+    expect(release.version.labelNumber == 3 && release.notes == "Atmospheric"
+               && release.pageUrl.toString(false) == "https://hamloprod.org/en/vst",
+           "Manifest fields must be read.");
+    expect(!update::parseManifest(R"({"version":"0.1.0-beta.3","url":"https://example.com/x"})", release),
+           "A page outside hamloprod.org must be rejected.");
+    expect(!update::parseManifest(R"({"version":"soon","url":"https://hamloprod.org/en/vst"})", release),
+           "A bad version must be rejected.");
+    expect(!update::parseManifest("<html>404</html>", release), "A non-JSON answer must be rejected.");
+}
+
 int main()
 {
     using namespace bbg;
 
     int failures = 0;
     failures += runTest("Compact sample names and own Techno kit", testCompactSampleNamesAndTechnoKit);
+    failures += runTest("Update check versions and manifest", testUpdateCheckVersionsAndManifest);
+    failures += runTest("Trap hat strength removes whole rolls", testTrapHatStrengthRemovesWholeRolls);
+    failures += runTest("Rack intensity formula", testRackIntensityFormula);
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);
     failures += runTest("EQ state serialization and legacy migration smoke", testEqStateSerializationAndLegacyMigrationSmoke);
     failures += runTest("Compressor state serialization and legacy migration smoke", testCompressorStateSerializationAndLegacyMigrationSmoke);

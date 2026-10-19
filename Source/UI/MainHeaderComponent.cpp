@@ -3,6 +3,7 @@
 #include <ImageAssets.h>
 
 #include "../Core/GeneratorParams.h"
+#include "../Services/UpdateCheckService.h"
 #include "SketchDrawing.h"
 #include "SketchTheme.h"
 
@@ -10,8 +11,6 @@ namespace bbg
 {
 namespace
 {
-constexpr auto kUiBuildVersion = "0.1.0 Beta 2";
-
 double parseKnobText(const juce::String& text)
 {
     return text.retainCharacters("0123456789.-").getDoubleValue();
@@ -31,7 +30,7 @@ MainHeaderComponent::MainHeaderComponent()
     titleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
     addAndMakeVisible(titleLabel);
 
-    subtitleLabel.setText("HamloProd " + juce::String(kUiBuildVersion), juce::dontSendNotification);
+    subtitleLabel.setText("HamloProd " + update::currentDisplayVersion(), juce::dontSendNotification);
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
     subtitleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
     subtitleLabel.setFont(juce::Font(juce::FontOptions(10.5f)));
@@ -42,6 +41,16 @@ MainHeaderComponent::MainHeaderComponent()
     diagnosticsLabel.setColour(juce::Label::textColourId, sketch::Theme::blue().darker(0.25f));
     diagnosticsLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(diagnosticsLabel);
+
+    // Shown only after the update check finds a newer release; opens its page in the browser.
+    updateButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blue().withAlpha(0.18f));
+    updateButton.setColour(juce::TextButton::textColourOffId, sketch::Theme::blue().darker(0.35f));
+    updateButton.onClick = [this]
+    {
+        if (updatePageUrl.isWellFormed())
+            updatePageUrl.launchInDefaultBrowser();
+    };
+    addChildComponent(updateButton);
 
     bpmLabel.setText("BPM", juce::dontSendNotification);
     addAndMakeVisible(bpmLabel);
@@ -454,7 +463,19 @@ void MainHeaderComponent::setGridModeIndicatorText(const juce::String& text)
 void MainHeaderComponent::setStyleLabDiagnosticsText(const juce::String& text)
 {
     diagnosticsLabel.setText(text, juce::dontSendNotification);
-    diagnosticsLabel.setVisible(text.isNotEmpty() && controlsMode != HeaderControlsMode::Hidden);
+    diagnosticsLabel.setVisible(text.isNotEmpty() && controlsMode != HeaderControlsMode::Hidden
+                                && !updateButton.isVisible());
+}
+
+void MainHeaderComponent::setAvailableUpdate(const juce::String& versionText,
+                                             const juce::String& notes,
+                                             const juce::URL& pageUrl)
+{
+    updatePageUrl = pageUrl;
+    updateButton.setButtonText("Update: " + versionText);
+    updateButton.setTooltip(notes.isNotEmpty() ? notes : "Open the HPDG page");
+    updateButton.setVisible(true);
+    diagnosticsLabel.setVisible(false); // the update takes the diagnostics row
 }
 
 void MainHeaderComponent::setPreviewPlaybackModeId(int id)
@@ -484,7 +505,9 @@ void MainHeaderComponent::resized()
     auto titleArea = fixedRow.removeFromLeft(160).reduced(2);
     titleLabel.setBounds(titleArea.removeFromTop(28));
     subtitleLabel.setBounds(titleArea.removeFromTop(10));
-    diagnosticsLabel.setBounds(titleArea.removeFromTop(14));
+    const auto statusRow = titleArea.removeFromTop(14);
+    diagnosticsLabel.setBounds(statusRow);
+    updateButton.setBounds(statusRow.withWidth(juce::jmin(statusRow.getWidth(), 150)));
 
     fixedRow.removeFromLeft(4);
     generateButton.setBounds(fixedRow.removeFromLeft(124).reduced(2));
@@ -684,7 +707,7 @@ void MainHeaderComponent::setHeaderControlsMode(HeaderControlsMode mode)
     laneHeightLabel.setVisible(expanded);
     laneHeightSlider.setVisible(expanded);
     gridModeIndicatorLabel.setVisible(expanded || controlsMode == HeaderControlsMode::Compact || hidden);
-    diagnosticsLabel.setVisible(!hidden && diagnosticsLabel.getText().isNotEmpty());
+    diagnosticsLabel.setVisible(!hidden && diagnosticsLabel.getText().isNotEmpty() && !updateButton.isVisible());
     hatFxDensityLabel.setVisible(expanded);
     hatFxDensitySlider.setVisible(expanded);
     hatFxDensityValueLabel.setVisible(expanded);

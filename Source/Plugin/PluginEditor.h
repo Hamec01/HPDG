@@ -8,6 +8,7 @@
 
 #include "PluginProcessor.h"
 #include "../Services/StyleLabReferenceService.h"
+#include "../Services/UpdateCheckService.h"
 #include "../UI/EditorCommandController.h"
 #include "../UI/EditorHistoryController.h"
 #include "../UI/EditorLayoutController.h"
@@ -151,6 +152,8 @@ private:
     BoomBapGeneratorAudioProcessor& audioProcessor;
 
     MainHeaderComponent header;
+    // Only inside a real host (VST3 / Standalone); the snapshot and demo tools stay offline.
+    std::optional<juce::SharedResourcePointer<update::UpdateChecker>> updateChecker;
     juce::Component laneSurface;
     TrackListComponent trackList;
     SampleAnalysisPanelComponent analysisPanel;

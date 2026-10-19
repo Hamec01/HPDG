@@ -77,9 +77,10 @@ SampleBreakStripComponent::SampleBreakStripComponent()
             onPlayWithPatternChanged(playWithToggle.getToggleState());
     };
 
-    modeCombo.addItem("Copy break (K/S/H)", static_cast<int>(Mode::CopyBreak));
+    // Guide generation is the default (maintainer, 2026-10-17); Copy break is the second choice.
     modeCombo.addItem("Guide generation", static_cast<int>(Mode::Guide));
-    modeCombo.setSelectedId(static_cast<int>(Mode::CopyBreak), juce::dontSendNotification);
+    modeCombo.addItem("Copy break (K/S/H)", static_cast<int>(Mode::CopyBreak));
+    modeCombo.setSelectedId(static_cast<int>(Mode::Guide), juce::dontSendNotification);
     modeCombo.setTooltip("Copy break: transcribe Kick / Snare / HiHat with the original groove.\n"
                          "Guide generation: the sample steers the selected genre engine.");
     modeCombo.onChange = [this]

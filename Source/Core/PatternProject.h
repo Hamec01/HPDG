@@ -167,6 +167,7 @@ struct PatternProject
     int generationCounter = 0;
     int mutationCounter = 0;
     int phraseLengthBars = 1;
+    int intensity = 3; // rack Intensity 1-5: the mode the next generation writes in (LaneStrength::shapeForIntensity)
     juce::String phraseRoleSummary;
     juce::String generationDebugReport;
     int previewStartStep = 0;

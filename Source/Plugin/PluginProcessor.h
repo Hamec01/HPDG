@@ -163,6 +163,9 @@ public:
     // Lane strength (-1 fewer hits .. 0 as generated .. +1 more hits), applied live (LaneStrength.h).
     void setTrackStrength(TrackType track, float strength);
     void setTrackStrength(const RuntimeLaneId& laneId, float strength);
+    // Rack Intensity 1-5 (3 = the engines as they are): the mode the next generation writes in.
+    void setIntensity(int level);
+    int getIntensity() const;
     void setTrackLaneVolume(const RuntimeLaneId& laneId, float volume);
     void setTrackNotes(TrackType track, const std::vector<NoteEvent>& notes);
     void setTrackNotes(const RuntimeLaneId& laneId, const std::vector<NoteEvent>& notes);

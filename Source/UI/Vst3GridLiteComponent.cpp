@@ -111,6 +111,11 @@ void Vst3GridLiteComponent::setLoopRegion(const std::optional<juce::Range<int>>&
     repaint();
 }
 
+int Vst3GridLiteComponent::getLaneTop()
+{
+    return kOuterPadding + kRulerHeight;
+}
+
 int Vst3GridLiteComponent::getPreferredContentHeight() const
 {
     return kRulerHeight + rowHeight * static_cast<int>(orderedVisibleLanes().size()) + kOuterPadding * 2;

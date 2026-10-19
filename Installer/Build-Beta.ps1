@@ -4,6 +4,11 @@ $ErrorActionPreference = 'Stop'
 $repoDir = Split-Path $PSScriptRoot -Parent
 Push-Location $repoDir
 try {
+    . (Join-Path $PSScriptRoot 'HpdgVersion.ps1')
+    $version = Get-HpdgVersion $repoDir
+    $versionTag = $version.Tag
+    Write-Output "HPDG version: $($version.Tag) ($($version.Display))"
+
     $releaseDir = Join-Path $repoDir 'Releases'
     $toolDir = Join-Path $repoDir 'build\tools'
     $runtimeFile = Join-Path $repoDir 'build\prerequisites\vc_redist.x64.exe'
@@ -49,7 +54,7 @@ try {
     if (@(Get-ChildItem -LiteralPath $bundleSampleRoot -Recurse -File).Count -ne $manifest.Count) { throw 'Bundle contains stale sample files.' }
     $audioCount = @($manifest | Where-Object { [IO.Path]::GetExtension($_.path) -in '.wav', '.aif', '.aiff', '.flac', '.ogg' }).Count
     if ($audioCount -ne 849) { throw "Expected 849 beta audio files; found $audioCount. Update release notes before publishing." }
-    $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $releaseDir 'HPDG_0.1.0-beta.2_samples.sha256.json') -Encoding utf8
+    $manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $releaseDir "HPDG_${versionTag}_samples.sha256.json") -Encoding utf8
 
     # Build a standalone, offline HTML FAQ from the authoritative Markdown text.
     $htmlLines = [Collections.Generic.List[string]]::new()
@@ -67,7 +72,8 @@ try {
     if ($paragraph.Count) { $htmlLines.Add('<p>' + ($paragraph -join "`n") + '</p>') }
     $htmlLines.Add('</body></html>')
     $htmlLines | Set-Content (Join-Path $repoDir 'docs\FAQ.html') -Encoding utf8
-    $compilerArgs = @('/Qp', "/DSourceVst3Dir=$bundleDir", "/DVCRedistFile=$runtimeFile")
+    $compilerArgs = @('/Qp', "/DSourceVst3Dir=$bundleDir", "/DVCRedistFile=$runtimeFile",
+        "/DMyAppVersion=$($version.Display)", "/DMyVersionTag=$versionTag", "/DMyFileVersion=$($version.FileVersion)")
     if ($TestInstaller) {
         $testOutput = Join-Path $repoDir 'build\installer-test-output'
         New-Item -ItemType Directory -Force $testOutput | Out-Null
@@ -76,7 +82,7 @@ try {
     & $CompilerPath @compilerArgs (Join-Path $PSScriptRoot 'HPDG_VST3.iss')
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
     if (!$TestInstaller) {
-        $installer = Join-Path $releaseDir 'HPDG_VST3_Setup_0.1.0-beta.2.exe'
+        $installer = Join-Path $releaseDir "HPDG_VST3_Setup_$versionTag.exe"
         $installerHash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
         "$installerHash  $([IO.Path]::GetFileName($installer))" | Set-Content "$installer.sha256" -Encoding ascii
         Copy-Item FAQ.md, RIGHTS.txt, docs\FAQ.html, docs\BETA-RELEASE.txt -Destination $releaseDir -Force

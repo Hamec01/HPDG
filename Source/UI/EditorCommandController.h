@@ -10,6 +10,7 @@
 #include "../Core/TrackRegistry.h"
 #include "../Plugin/PluginProcessor.h"
 #include "../Services/MidiImportService.h"
+#include "ExternalDragWindowFade.h"
 
 namespace bbg
 {
@@ -135,10 +136,9 @@ public:
 
         try
         {
-            const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() },
-                                                                                             false,
-                                                                                             parent,
-                                                                                             [logDrag]
+            const bool started = ExternalDragWindowFade::performFileDrag(file.getFullPathName(),
+                                                                                    parent,
+                                                                                    [logDrag]
                                                                                              {
                                                                                                  logDrag("dragFullPatternExternal callback end");
                                                                                              });
@@ -203,7 +203,7 @@ public:
             return;
         }
         logDrag("dragFullWavExternal " + file.getFullPathName());
-        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() }, false, parent, nullptr);
+        const bool started = ExternalDragWindowFade::performFileDrag(file.getFullPathName(), parent);
         if (!started)
             file.revealToUser();
     }
@@ -218,7 +218,7 @@ public:
             logDrag("dragTrackWavExternal no file lane=" + laneId);
             return;
         }
-        const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() }, false, parent, nullptr);
+        const bool started = ExternalDragWindowFade::performFileDrag(file.getFullPathName(), parent);
         if (!started)
             file.revealToUser();
     }
@@ -235,10 +235,9 @@ public:
 
         try
         {
-            const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() },
-                                                                                             false,
-                                                                                             parent,
-                                                                                             [logDrag]
+            const bool started = ExternalDragWindowFade::performFileDrag(file.getFullPathName(),
+                                                                                    parent,
+                                                                                    [logDrag]
                                                                                              {
                                                                                                  logDrag("dragTrackExternal callback end");
                                                                                              });
@@ -268,10 +267,9 @@ public:
 
         try
         {
-            const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ file.getFullPathName() },
-                                                                                             false,
-                                                                                             parent,
-                                                                                             [logDrag]
+            const bool started = ExternalDragWindowFade::performFileDrag(file.getFullPathName(),
+                                                                                    parent,
+                                                                                    [logDrag]
                                                                                              {
                                                                                                  logDrag("dragTrackExternal callback end");
                                                                                              });

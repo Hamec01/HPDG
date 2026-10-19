@@ -33,6 +33,7 @@ public:
     void setGridModeIndicatorText(const juce::String& text);
     void setStyleLabDiagnosticsText(const juce::String& text);
     void setPreviewPlaybackModeId(int id);
+    void setAvailableUpdate(const juce::String& versionText, const juce::String& notes, const juce::URL& pageUrl);
     HeaderControlsMode getHeaderControlsMode() const { return controlsMode; }
     int getPreferredHeight() const;
     void setHatFxDensityState(float density, bool locked);
@@ -109,6 +110,8 @@ private:
     juce::Label titleLabel;
     juce::Label subtitleLabel;
     juce::Label diagnosticsLabel;
+    juce::TextButton updateButton;
+    juce::URL updatePageUrl;
 
     juce::Label bpmLabel;
     juce::Label swingLabel;

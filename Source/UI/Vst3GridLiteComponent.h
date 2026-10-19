@@ -23,6 +23,9 @@ public:
     void setPreviewStartStep(int step);
     void setLoopRegion(const std::optional<juce::Range<int>>& tickRange);
     int getPreferredContentHeight() const;
+    // Where the first lane row starts (outer padding + ruler): the rack's header is made this tall so
+    // its rows sit level with the grid's.
+    static int getLaneTop();
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& event) override;

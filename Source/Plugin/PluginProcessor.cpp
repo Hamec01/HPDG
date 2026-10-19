@@ -24,6 +24,7 @@
 #include "../Engine/StyleDefaults.h"
 #include "../Engine/SubstyleRuleEnforcer.h"
 #include "../Services/TemporaryMidiExportService.h"
+#include "../Services/UpdateCheckService.h"
 #include "../UI/EditorCommandController.h"
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
@@ -294,8 +295,8 @@ public:
         addAndMakeVisible(sampleStrip);
         addAndMakeVisible(trackListViewport);
         analysisPanel.setVisible(false);
-        if (processor.getAnalysisMode() == AnalysisMode::GenerateFromSample)
-            sampleStripMode = SampleBreakStripComponent::Mode::Guide;
+        if (processor.getAnalysisMode() == AnalysisMode::ExtractFromSample)
+            sampleStripMode = SampleBreakStripComponent::Mode::CopyBreak;
         soundModule.setVisible(false);
 
         laneGridWorkspace.addAndMakeVisible(trackList);
@@ -484,6 +485,11 @@ private:
         const auto transport = audioProcessor.getLastTransportSnapshot();
         header.setPreviewPlaying(previewPlaying);
 
+        // A genre / substyle picked while the beat plays: the substyle box follows the new genre
+        // and its style applies now, not after Stop.
+        refreshSubstyleBindingForGenre();
+        audioProcessor.applySelectedStylePreset(false);
+
         if (previewPlaying)
         {
             gridLite.setPlayheadStep(audioProcessor.getPreviewPlayheadStep());
@@ -498,8 +504,6 @@ private:
             return;
         }
 
-        refreshSubstyleBindingForGenre();
-        audioProcessor.applySelectedStylePreset(false);
         refreshFromProcessor(false);
     }
 
@@ -1091,6 +1095,18 @@ private:
     {
         wireSampleStrip();
 
+        // Only inside a real host; the snapshot and demo tools stay offline.
+        if (audioProcessor.wrapperType != juce::AudioProcessor::wrapperType_Undefined)
+        {
+            updateChecker.emplace();
+            (*updateChecker)->whenNewerReleaseAvailable(
+                [safeThis = juce::Component::SafePointer<Vst3EditorContent>(this)](const update::LatestRelease& release)
+                {
+                    if (safeThis != nullptr)
+                        safeThis->header.setAvailableUpdate(release.version.toDisplayString(), release.notes, release.pageUrl);
+                });
+        }
+
         header.onGeneratePressed = [this]
         {
             audioProcessor.applySelectedStylePreset(false);
@@ -1285,6 +1301,11 @@ private:
             applyProcessorProjectMutation([this, laneId, strength] { audioProcessor.setTrackStrength(laneId, strength); }, false);
         };
 
+        trackList.onIntensityChanged = [this](int level)
+        {
+            applyProcessorProjectMutation([this, level] { audioProcessor.setIntensity(level); }, false);
+        };
+
         trackList.onLaneSoundTrack = [this](const RuntimeLaneId& laneId, const SoundLayerState& state)
         {
             applyProcessorProjectMutation([this, laneId, state] { audioProcessor.setTrackSoundLayer(laneId, state); }, false);
@@ -1466,6 +1487,7 @@ private:
                                 audioProcessor.getBassScaleModeChoice());
         }
         trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
+        trackList.setIntensity(project.intensity);
 
         juce::String status;
         juce::String details;
@@ -1533,6 +1555,7 @@ private:
         const int stretchedRowHeight = juce::jlimit(22,
                                                     80,
                                                     (availableHeight - 42) / juce::jmax(1, visibleLaneCount));
+        trackList.setHeaderHeight(Vst3GridLiteComponent::getLaneTop()); // rack rows level with the grid rows
         trackList.setRowHeight(stretchedRowHeight);
         gridLite.setRowHeight(stretchedRowHeight);
         const int laneContentHeight = juce::jmax(trackList.getLaneSectionHeight(), gridLite.getPreferredContentHeight());
@@ -1781,13 +1804,14 @@ private:
     SketchLookAndFeel sketchLookAndFeel;
     juce::Image paperTexture;
     MainHeaderComponent header;
+    std::optional<juce::SharedResourcePointer<update::UpdateChecker>> updateChecker;
     juce::Viewport trackListViewport;
     juce::Component laneGridWorkspace;
     TrackListComponent trackList;
     Vst3GridLiteComponent gridLite;
     SampleAnalysisPanelComponent analysisPanel;
     SampleBreakStripComponent sampleStrip;
-    SampleBreakStripComponent::Mode sampleStripMode = SampleBreakStripComponent::Mode::CopyBreak;
+    SampleBreakStripComponent::Mode sampleStripMode = SampleBreakStripComponent::Mode::Guide;
     juce::String sampleStripError;
     std::shared_ptr<juce::FileChooser> sampleFileChooser;
     std::shared_ptr<juce::FileChooser> presetFileChooser;
@@ -3719,8 +3743,12 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
     engineStep(working);
     const auto engineReport = working.generationDebugReport;
 
-    // Lane strength survives a generation: a lane whose base changed gets a fresh reserve (only
-    // lanes turned to "more"; the others build it when the knob goes right).
+    // The rack Intensity (generation mode) shapes every lane this pass wrote; the result is the
+    // lane's new base. Lane strength survives a generation: a lane whose base changed gets a fresh
+    // reserve (lanes turned to "more" or written at Intensity 4 / 5; the others build it when the
+    // knob goes right).
+    working.intensity = beforeProject.intensity;
+    std::vector<TrackType> shapedLanes;
     for (auto& track : working.tracks)
     {
         const auto* previous = ProjectLaneAccess::findTrackState(beforeProject, track.type);
@@ -3728,12 +3756,37 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
             continue;
         track.strength = previous->strength;
         const bool baseChanged = !sameNotes(laneBaseNotes(track), laneBaseNotes(*previous));
-        if (!baseChanged)
+        // Written by this pass: every unlocked, enabled lane of a full pass (or the RG lane), even when
+        // a locked seed gave the same notes again (they still have to be written in the current mode).
+        const bool written = baseChanged
+                             || (!track.locked && track.enabled && (!focusTrack.has_value() || track.type == *focusTrack));
+        if (!written)
+        {
             track.strengthReserve = previous->strengthReserve;
-        else if (track.strength > 0.005f)
+            continue;
+        }
+        if (track.strength > 0.005f || working.intensity >= 4)
             track.strengthReserve = buildStrengthReserve(working, track.type);
         else
             track.strengthReserve.clear();
+        if (working.intensity != 3 && !track.locked)
+        {
+            const int loopTicks = std::max(1, working.params.bars) * TimingGrid::TicksPerBar4_4;
+            const auto shaped = LaneStrength::shapeForIntensity(track.type, laneBaseNotes(track), working.intensity,
+                                                                track.strengthReserve, loopTicks, working.params.genre);
+            // Notes too: a later pass (sample guide accents) captures the base again from them.
+            if (track.type == TrackType::Sub808)
+            {
+                track.baseSub808Notes = toSub808NoteEvents(shaped);
+                track.sub808Notes = track.baseSub808Notes;
+            }
+            else
+            {
+                track.baseNotes = shaped;
+            }
+            track.notes = shaped;
+            shapedLanes.push_back(track.type);
+        }
     }
 
     std::scoped_lock lock(projectMutex);
@@ -3780,7 +3833,8 @@ void BoomBapGeneratorAudioProcessor::runGenerationPass(const juce::String& repor
     if (engineReport.isNotEmpty())
         project.generationDebugReport += "\n" + engineReport; // the genre engine's own summary
     for (auto& track : project.tracks)
-        if (std::abs(track.strength) >= 0.005f)
+        if (std::abs(track.strength) >= 0.005f
+            || std::find(shapedLanes.begin(), shapedLanes.end(), track.type) != shapedLanes.end())
             PatternPerformanceTransformEngine::applyPerformanceToTrack(project, track, project.params);
     ++project.generationCounter;
     rebuildMidiCache();
@@ -4442,6 +4496,19 @@ void BoomBapGeneratorAudioProcessor::setTrackStrength(TrackType trackType, float
     PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, project.params);
     PatternPerformanceTransformEngine::applyPerformanceToTrack(project, *track, project.params);
     rebuildMidiCache();
+}
+
+void BoomBapGeneratorAudioProcessor::setIntensity(int level)
+{
+    // Only the mode: the pattern that plays stays; the next Generate / Mutate / RG writes in it.
+    std::scoped_lock lock(projectMutex);
+    project.intensity = juce::jlimit(1, 5, level);
+}
+
+int BoomBapGeneratorAudioProcessor::getIntensity() const
+{
+    std::scoped_lock lock(projectMutex);
+    return project.intensity;
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackStrength(const RuntimeLaneId& laneId, float strength)

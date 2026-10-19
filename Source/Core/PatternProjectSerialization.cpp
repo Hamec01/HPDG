@@ -1070,6 +1070,7 @@ juce::ValueTree PatternProjectSerialization::serialize(const PatternProject& pro
     root.setProperty("generation_counter", project.generationCounter, nullptr);
     root.setProperty("mutation_counter", project.mutationCounter, nullptr);
     root.setProperty("phrase_length_bars", project.phraseLengthBars, nullptr);
+    root.setProperty("intensity", project.intensity, nullptr);
     root.setProperty("phrase_role_summary", project.phraseRoleSummary, nullptr);
     root.setProperty("preview_start_step", project.previewStartStep, nullptr);
     root.setProperty("preview_playback_mode", static_cast<int>(project.previewPlaybackMode), nullptr);
@@ -1108,6 +1109,7 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
     restored.generationCounter = safeInt(patternNode, "generation_counter", 0);
     restored.mutationCounter = safeInt(patternNode, "mutation_counter", 0);
     restored.phraseLengthBars = safeInt(patternNode, "phrase_length_bars", restored.params.bars);
+    restored.intensity = juce::jlimit(1, 5, safeInt(patternNode, "intensity", 3));
     restored.phraseRoleSummary = patternNode.getProperty("phrase_role_summary", {}).toString();
     restored.previewStartStep = safeInt(patternNode, "preview_start_step", 0);
     restored.previewPlaybackMode = static_cast<PreviewPlaybackMode>(safeInt(patternNode, "preview_playback_mode", 0));

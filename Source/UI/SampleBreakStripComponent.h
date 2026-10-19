@@ -28,7 +28,7 @@ public:
     struct State
     {
         juce::File file;
-        Mode mode = Mode::CopyBreak;
+        Mode mode = Mode::Guide;
         float quantize = 0.0f;
         bool analysisReady = false;
         juce::String error;

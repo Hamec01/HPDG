@@ -2,6 +2,17 @@ cmake_minimum_required(VERSION 3.22)
 
 project(HPDG VERSION 0.1.0)
 
+# The only place the release version is written. The label follows the number ("beta.2";
+# empty for a final release). The plugin header, the update check and Installer/Build-Beta.ps1
+# all read the version from these two lines.
+set(HPDG_VERSION_LABEL "beta.2")
+if (HPDG_VERSION_LABEL)
+    set(HPDG_VERSION_TAG "${PROJECT_VERSION}-${HPDG_VERSION_LABEL}")
+else()
+    set(HPDG_VERSION_TAG "${PROJECT_VERSION}")
+endif()
+add_compile_definitions(HPDG_VERSION_TAG="${HPDG_VERSION_TAG}")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(JUCE_TARGET_ARCHITECTURE "x86_64")
@@ -138,6 +149,8 @@ target_sources(HPDG
     Source/Services/StyleLabReferenceBrowserService.cpp
     Source/Services/MidiImportService.cpp
     Source/Services/TemporaryMidiExportService.cpp
+    Source/Services/UpdateCheckService.cpp
+        Source/UI/ExternalDragWindowFade.cpp
         Source/UI/MainHeaderComponent.cpp
         Source/UI/SketchDrawing.cpp
         Source/UI/SketchFonts.cpp
@@ -235,6 +248,7 @@ add_executable(HPDG_CoreTests
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/StyleLabReferenceService.cpp
     Source/Services/StyleLabReferenceBrowserService.cpp
+    Source/Services/UpdateCheckService.cpp
     Source/UI/GridEditActions.cpp
     Source/UI/GridEditorComponent.cpp
 )
@@ -425,6 +439,24 @@ target_link_libraries(HPDG_ScorerAudit
         juce::juce_recommended_warning_flags
 )
 
+# Lane strength bench: what the Strength knob removes, over many seeds (Tests/LaneStrengthLab.cpp).
+add_executable(HPDG_LaneStrengthLab
+    Tests/LaneStrengthLab.cpp
+)
+
+target_link_libraries(HPDG_LaneStrengthLab
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
 # Generation quality lab (docs/ROADMAP_UPDATE.md, Phase 0/1): batch metrics over the real
 # product path for every genre / substyle; baselines live in docs/audit/baseline/.
 add_executable(HPDG_GenerationQualityLab
@@ -470,6 +502,24 @@ target_link_libraries(HPDG_BreakLab
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+# Drag-out window step back against real Win32 windows (Source/UI/ExternalDragWindowFade.cpp).
+if (WIN32)
+    add_executable(HPDG_DragWindowFadeTests
+        Tests/DragWindowFadeTests.cpp
+        Source/UI/ExternalDragWindowFade.cpp
+    )
+    target_include_directories(HPDG_DragWindowFadeTests PRIVATE Source)
+    target_compile_definitions(HPDG_DragWindowFadeTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_link_libraries(HPDG_DragWindowFadeTests
+        PRIVATE
+            juce::juce_gui_basics
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags
+    )
+    add_test(NAME HPDG_DragWindowFadeTests COMMAND HPDG_DragWindowFadeTests)
+endif()
 
 # Sample source (waveform peaks, transients, tempo grid, suggested fragment) and the trim editor.
 add_executable(HPDG_SampleTrimTests

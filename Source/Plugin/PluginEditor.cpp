@@ -813,6 +813,17 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
     loadUiLayoutState();
     header.setHeaderControlsMode(layoutController.getState().headerControlsMode);
+
+    if (audioProcessor.wrapperType != juce::AudioProcessor::wrapperType_Undefined)
+    {
+        updateChecker.emplace();
+        (*updateChecker)->whenNewerReleaseAvailable(
+            [safeThis = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)](const update::LatestRelease& release)
+            {
+                if (safeThis != nullptr)
+                    safeThis->header.setAvailableUpdate(release.version.toDisplayString(), release.notes, release.pageUrl);
+            });
+    }
     trackList.setDisplayMode(laneRackModeForWidth(layoutController.getState().leftPanelWidth));
 
     editorToolBar.addAndMakeVisible(editorToolLabel);
@@ -1798,6 +1809,11 @@ void BoomBGeneratorAudioProcessorEditor::timerCallback()
 
     if (previewPlaying || transport.isPlaying)
     {
+        // A genre / substyle picked while the beat plays: the substyle box follows the new genre
+        // and its style applies now (the undo step is recorded on the next idle tick).
+        refreshSubstyleBindingForGenre();
+        audioProcessor.applySelectedStylePreset(false);
+
         const bool playbackStateChanged = previewPlaying != lastTimerPreviewPlaying
             || transport.isPlaying != lastTimerTransportPlaying;
         const bool playheadMoved = std::abs(playheadStep - lastTimerPlayheadStep) > 0.001f;
@@ -1885,6 +1901,7 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
     hatFxDragDensityUi = audioProcessor.getHatFxDragDensity();
     hatFxDragLockedUi = audioProcessor.isHatFxDragDensityLocked();
     trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
+    trackList.setIntensity(project.intensity);
 
     const auto* syncValue = audioProcessor.getApvts().getRawParameterValue(ParamIds::syncDawTempo);
     const auto* bpmLockValue = audioProcessor.getApvts().getRawParameterValue(ParamIds::bpmLock);
@@ -2330,6 +2347,14 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
         applyProcessorProjectMutation([this, laneId, strength]
         {
             audioProcessor.setTrackStrength(laneId, strength);
+        }, false);
+    };
+
+    trackList.onIntensityChanged = [this](int level)
+    {
+        applyProcessorProjectMutation([this, level]
+        {
+            audioProcessor.setIntensity(level);
         }, false);
     };
 

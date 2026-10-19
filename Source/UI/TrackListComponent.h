@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include <functional>
 #include <memory>
 #include <optional>
@@ -32,12 +34,16 @@ public:
     void setShowAnalysisPanel(bool shouldShow);
     void setHatFxDragUiState(float density, bool locked);
     void setRowHeight(int newHeight);
+    void setHeaderHeight(int newHeight); // the Pattern grid's lane top, so the rows line up
     void setDisplayMode(LaneRackDisplayMode mode);
     int getRowHeight() const { return rowHeight; }
     int getVisibleRowCount() const { return static_cast<int>(rows.size()); }
     int getLaneSectionHeight() const;
     int getContentHeight() const;
     std::function<void()> onAddLaneRequested;
+    // Rack Intensity 1-5 (3 = as generated); the lane Strength knobs work on top of it.
+    std::function<void(int)> onIntensityChanged;
+    void setIntensity(int level);
 
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void fileDragEnter(const juce::StringArray& files, int x, int y) override;
@@ -110,6 +116,8 @@ private:
     std::vector<RuntimeLaneId> laneDisplayOrder;
     juce::TextButton addLaneButton { "+ Lane" };
     juce::Label volumeLabel;
+    juce::Label intensityLabel;
+    std::array<juce::TextButton, 5> intensityButtons;
     bool showAnalysisPanel = true;
     int rowHeight = 30;
     int rulerHeight = 24;

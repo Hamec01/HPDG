@@ -398,3 +398,20 @@ through the real processor (`HPDG_DemoReel` + new `dumpgrid` command): Trap / Da
 
 Lab (200 seeds): Trap 0 failures, kicks/bar 2.36-2.72 (unchanged within 0.02); Boom Bap / DnB / Techno
 pattern rows identical. Core and lane-boundary tests pass.
+
+## 2026-10-17 — hat Strength knob turned left: "the rhythm falls apart"
+
+Maintainer: turning the Trap hats down should remove the rolls and the stuttering hats and keep the
+straight ones. Measured with the new `HPDG_LaneStrengthLab` (1000 seeds x 6 substyles, 4 bars, HiHat lane,
+the Strength knob at 0 / -25 / -50 / -75 / -100 %): `docs/audit/trap/lane_strength_hihat_{before,after}.csv`.
+
+- Cause: Trap hats carry the same role weight on the 8th carrier, the 16ths and the rolls (support /
+  roll = 0.1), so `LaneStrength` removed them mixed by metric weight and velocity; rolls lost single notes.
+- Before: 47-62 % of the rolls became fragments at -25 / -50 %; at -75 % 35 % of the 8ths and 35-40 % of the
+  quarters were gone, at -100 % no hats at all.
+- Fix (Trap HiHat / HatFX only, `LaneStrength::detail::trapHatRemovalUnits`): whole rolls first, then the
+  16ths between the 8ths, then the 8ths between the quarters, each position in every bar at once (rarest
+  first); hats on quarters stay.
+- After: broken rolls 0 % at every setting; rolls gone by -25 %; off-grid share at -50 % 0.4-5 % (was
+  2-6 %); quarters kept 100 % (was 59-70 % at -75 %, 0 at -100 %); -100 % leaves ~3 hats a bar on the
+  quarters. Other genres keep the old ordering (core test). CoreTests pass.

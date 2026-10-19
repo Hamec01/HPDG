@@ -651,6 +651,21 @@ private:
                 }
             return false;
         }
+        if (cmd == "intensity") // intensity <1-5>: clicks the rack Intensity button
+        {
+            auto* rack = findChild<TrackListComponent>(*editor);
+            juce::Button* b = nullptr; // a direct child of the rack (lane rows have their own 1 / 2 / 3)
+            for (int i = 0; rack != nullptr && i < rack->getNumChildComponents(); ++i)
+                if (auto* candidate = dynamic_cast<juce::Button*>(rack->getChildComponent(i)); candidate != nullptr && candidate->getButtonText() == t[1])
+                    b = candidate;
+            if (b == nullptr)
+                return false;
+            clickAt(screenRect(*b), [b] { b->triggerClick(); });
+            renderSeconds(0.3);
+            std::cout << "intensity button " << t[1] << " toggle " << (b->getToggleState() ? 1 : 0)
+                      << " | project intensity " << processor.getProjectSnapshot().intensity << "\n";
+            return true;
+        }
         if (cmd == "dumpgrid") // every lane as a 16th grid (x = hit, g = ghost) + the generation report
         {
             const auto project = processor.getProjectSnapshot();

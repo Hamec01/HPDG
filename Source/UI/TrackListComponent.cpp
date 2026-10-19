@@ -88,7 +88,37 @@ TrackListComponent::TrackListComponent()
     volumeSlider.setDoubleClickReturnValue(true, 1.0);
     volumeSlider.setTooltip("Combined drums and bass volume. Double-click: 1.00x.");
     addAndMakeVisible(volumeSlider);
+
+    intensityLabel.setText("Intensity", juce::dontSendNotification);
+    intensityLabel.setJustificationType(juce::Justification::centredRight);
+    intensityLabel.setFont(juce::Font(juce::FontOptions(12.0f)));
+    addAndMakeVisible(intensityLabel);
+    for (int i = 0; i < static_cast<int>(intensityButtons.size()); ++i)
+    {
+        auto& button = intensityButtons[static_cast<size_t>(i)];
+        const int level = i + 1;
+        button.setButtonText(juce::String(level));
+        button.setClickingTogglesState(true);
+        button.setRadioGroupId(0x1A7E);
+        button.setConnectedEdges((i > 0 ? juce::Button::ConnectedOnLeft : 0)
+                                 | (i < 4 ? juce::Button::ConnectedOnRight : 0));
+        button.setTooltip("Intensity for the whole rack. 1: very simple, 2: fewer hits, 3: as generated, "
+                          "4: more hits, 5: the most. The lane Strength knobs work on top of it.");
+        button.onClick = [this, level, &button]
+        {
+            if (button.getToggleState() && onIntensityChanged)
+                onIntensityChanged(level);
+        };
+        addAndMakeVisible(button);
+    }
+    setIntensity(3);
     setupAnalysisPanel();
+}
+
+void TrackListComponent::setIntensity(int level)
+{
+    level = juce::jlimit(1, 5, level);
+    intensityButtons[static_cast<size_t>(level - 1)].setToggleState(true, juce::dontSendNotification);
 }
 
 void TrackListComponent::setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order)
@@ -115,6 +145,16 @@ void TrackListComponent::setDisplayMode(LaneRackDisplayMode mode)
     for (auto& row : rows)
         row->setDisplayMode(displayMode);
 
+    repaint();
+}
+
+void TrackListComponent::setHeaderHeight(int newHeight)
+{
+    newHeight = juce::jlimit(20, 60, newHeight);
+    if (newHeight == rulerHeight)
+        return;
+    rulerHeight = newHeight;
+    resized();
     repaint();
 }
 
@@ -228,7 +268,7 @@ void TrackListComponent::paint(juce::Graphics& g)
     g.drawText("RG: regenerate | S: solo | M: mute | C: clear | < / >: samples | Drag: render",
                176,
                0,
-               juce::jmax(0, getWidth() - 400),
+               juce::jmax(0, intensityLabel.getX() - 182),
                rulerHeight,
                juce::Justification::centredLeft,
                false);
@@ -534,9 +574,17 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
 void TrackListComponent::resized()
 {
     auto area = getLocalBounds();
-    addLaneButton.setBounds(juce::jmax(10, getWidth() - 82), 2, 72, juce::jmax(18, rulerHeight - 4));
+    const int headerButtonHeight = juce::jmin(20, rulerHeight - 4);
+    const int headerButtonY = (rulerHeight - headerButtonHeight) / 2;
+    addLaneButton.setBounds(juce::jmax(10, getWidth() - 82), headerButtonY, 72, headerButtonHeight);
     volumeSlider.setBounds(juce::jmax(10, getWidth() - 160), 0, 72, rulerHeight);
     volumeLabel.setBounds(juce::jmax(10, getWidth() - 218), 0, 54, rulerHeight);
+    constexpr int intensityButtonWidth = 20;
+    const int intensityRight = juce::jmax(10, getWidth() - 224);
+    for (int i = 4; i >= 0; --i)
+        intensityButtons[static_cast<size_t>(i)].setBounds(intensityRight - (5 - i) * intensityButtonWidth, headerButtonY,
+                                                           intensityButtonWidth, headerButtonHeight);
+    intensityLabel.setBounds(juce::jmax(10, intensityRight - 5 * intensityButtonWidth - 58), 0, 56, rulerHeight);
     area.removeFromTop(rulerHeight);
 
     for (auto& row : rows)

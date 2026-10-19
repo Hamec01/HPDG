@@ -975,7 +975,8 @@ inline void applyPerformanceToTrack(PatternProject& project, TrackState& track, 
         return;
     }
 
-    const auto strengthBase = strengthOn ? LaneStrength::apply(track.type, track.baseNotes, track.strength, track.strengthReserve, loopTicks)
+    const auto strengthBase = strengthOn ? LaneStrength::apply(track.type, track.baseNotes, track.strength, track.strengthReserve, loopTicks,
+                                                                              track.performanceBaseParams.genre)
                                          : std::vector<NoteEvent> {};
     detail::applyTransformSequence(track.notes,
                                    strengthOn ? strengthBase : track.baseNotes,

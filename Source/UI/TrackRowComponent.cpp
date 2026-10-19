@@ -560,26 +560,8 @@ void TrackRowComponent::paint(juce::Graphics& g)
                      { rowBounds.getRight(), rowBounds.getBottom() },
                      sketch::Theme::gridLine(), 0.8f, laneId.hashCode() + 11);
 
-    if (displayMode != LaneRackDisplayMode::Minimal && helperBadgeText.isNotEmpty())
-    {
-        g.setFont(sketch::notebookFont(10.0f, true));
-        const auto badgeWidth = juce::jlimit(50.0f, 112.0f, textWidthForFont(g.getCurrentFont(), helperBadgeText) + 18.0f);
-        const auto badgeBounds = juce::Rectangle<float>(rowBounds.getRight() - badgeWidth - 6.0f, rowBounds.getY() + 5.0f, badgeWidth, 14.0f);
-        g.setColour(sketch::Theme::blueWash().withAlpha(helperLaneUi ? 0.42f : 0.28f));
-        g.fillRoundedRectangle(badgeBounds, 4.0f);
-        g.setColour(sketch::Theme::graphiteSoft());
-        g.drawText(helperBadgeText, badgeBounds.toNearestInt(), juce::Justification::centred, false);
-    }
-
-    if (displayMode == LaneRackDisplayMode::Full && generationPriority > 0)
-    {
-        const auto priorityBounds = juce::Rectangle<float>(rowBounds.getRight() - 48.0f, rowBounds.getBottom() - 17.0f, 42.0f, 12.0f);
-        g.setColour(sketch::Theme::ochreWash());
-        g.fillRoundedRectangle(priorityBounds, 4.0f);
-        g.setColour(sketch::Theme::graphiteSoft());
-        g.setFont(sketch::notebookFont(9.5f, true));
-        g.drawText("P" + juce::String(generationPriority), priorityBounds.toNearestInt(), juce::Justification::centred, false);
-    }
+    // The helper badge and the generation priority ("P8") used to be painted here; the drag / render
+    // buttons cover that corner now, so they only showed through as stray text.
 }
 
 void TrackRowComponent::resized()
