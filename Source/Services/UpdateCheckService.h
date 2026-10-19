@@ -38,12 +38,14 @@ struct LatestRelease
     juce::URL pageUrl;
 };
 
-// latest.json published on hamloprod.org:
-//   { "version": "0.1.0-beta.3", "title": "HPDG 0.1.0 Beta 3", "notes": "...", "url": "https://hamloprod.org/en/vst" }
-// Returns false for anything unexpected. The page link must stay on https://hamloprod.org.
-bool parseManifest(const juce::String& json, LatestRelease& out);
+// The release list from the GitHub API (github.com/Hamec01/HPDG_beta-releases: public, releases only): the newest non-draft release
+// by its tag ("v0.1.0-beta.3"; betas are published as pre-releases and count). Title and notes come
+// from the release; the page is always the HPDG page on hamloprod.org - the installer goes to buyers
+// only, so a release on the public repository never carries it and is never linked from the plugin.
+// Returns false for anything unexpected or an empty list.
+bool parseGitHubReleases(const juce::String& json, LatestRelease& out);
 
-// Downloads latest.json in the background, at most once per plugin process. Hold it in a
+// Asks GitHub for the releases in the background, at most once per plugin process. Hold it in a
 // juce::SharedResourcePointer: the last owner going away stops a request still in flight.
 class UpdateChecker : private juce::Thread
 {

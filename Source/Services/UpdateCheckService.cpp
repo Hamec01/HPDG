@@ -10,10 +10,11 @@ namespace bbg::update
 {
 namespace
 {
-constexpr auto kManifestUrl = "https://hamloprod.org/hpdg/latest.json";
-constexpr auto kAllowedPagePrefix = "https://hamloprod.org/";
+constexpr auto kReleasesUrl = "https://api.github.com/repos/Hamec01/HPDG_beta-releases/releases?per_page=20";
+constexpr auto kReleasePageUrl = "https://hamloprod.org/en/vst";
 constexpr int kTimeoutMs = 5000;
-constexpr int kMaxManifestBytes = 16 * 1024;
+constexpr int kMaxResponseBytes = 512 * 1024;
+constexpr int kMaxNotesChars = 600; // the button tooltip
 
 // Result of the one request per process. Plain data, so it outlives every checker safely.
 // Its mutex also guards each checker's waiting list.
@@ -112,23 +113,38 @@ juce::String currentDisplayVersion()
     return currentVersion().toDisplayString();
 }
 
-bool parseManifest(const juce::String& json, LatestRelease& out)
+bool parseGitHubReleases(const juce::String& json, LatestRelease& out)
 {
     const auto root = juce::JSON::parse(json);
-    if (!root.isObject())
+    const auto* releases = root.getArray();
+    if (releases == nullptr)
         return false;
 
-    const auto version = ReleaseVersion::parse(root.getProperty("version", {}).toString());
-    const auto page = root.getProperty("url", {}).toString().trim();
-    if (!version.valid || !page.startsWith(kAllowedPagePrefix))
+    const juce::var* newest = nullptr;
+    ReleaseVersion newestVersion;
+    for (const auto& release : *releases)
+    {
+        if (!release.isObject() || static_cast<bool>(release.getProperty("draft", false)))
+            continue;
+        const auto version = ReleaseVersion::parse(release.getProperty("tag_name", {}).toString());
+        if (version.valid && (newest == nullptr || compare(version, newestVersion) > 0))
+        {
+            newest = &release;
+            newestVersion = version;
+        }
+    }
+    if (newest == nullptr)
         return false;
 
-    out.version = version;
-    out.title = root.getProperty("title", {}).toString().trim();
+    out.version = newestVersion;
+    out.title = newest->getProperty("name", {}).toString().trim();
     if (out.title.isEmpty())
-        out.title = "HPDG " + version.toDisplayString();
-    out.notes = root.getProperty("notes", {}).toString().trim();
-    out.pageUrl = juce::URL(page);
+        out.title = "HPDG " + newestVersion.toDisplayString();
+    auto notes = newest->getProperty("body", {}).toString().replace("\r\n", "\n").trim();
+    if (notes.length() > kMaxNotesChars)
+        notes = notes.substring(0, kMaxNotesChars).trimEnd() + "...";
+    out.notes = notes;
+    out.pageUrl = juce::URL(kReleasePageUrl);
     return true;
 }
 
@@ -170,14 +186,15 @@ void UpdateChecker::run()
     const auto options = juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                              .withConnectionTimeoutMs(kTimeoutMs)
                              .withStatusCode(&statusCode)
-                             .withExtraHeaders("User-Agent: HPDG/" HPDG_VERSION_TAG);
-    if (auto stream = juce::URL(kManifestUrl).createInputStream(options))
+                             .withExtraHeaders("User-Agent: HPDG/" HPDG_VERSION_TAG "\r\n"
+                                               "Accept: application/vnd.github+json");
+    if (auto stream = juce::URL(kReleasesUrl).createInputStream(options))
     {
         if (statusCode == 200 && !threadShouldExit())
         {
             juce::MemoryBlock data;
-            stream->readIntoMemoryBlock(data, kMaxManifestBytes);
-            hasNewer = parseManifest(data.toString(), release)
+            stream->readIntoMemoryBlock(data, kMaxResponseBytes);
+            hasNewer = parseGitHubReleases(data.toString(), release)
                        && compare(release.version, currentVersion()) > 0;
         }
     }

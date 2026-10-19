@@ -12,7 +12,7 @@ function Get-HpdgVersion([string]$RepoDir) {
         $display = "$number " + $labelName.Substring(0, 1).ToUpper() + $labelName.Substring(1) + $(if ($labelNumber) { " $labelNumber" } else { '' })
     }
     [pscustomobject]@{
-        Tag = $tag                # 0.1.0-beta.2: file names and latest.json
+        Tag = $tag                # 0.1.0-beta.2: file names and the GitHub release tag (v + Tag)
         Display = $display        # 0.1.0 Beta 2: installer and plugin header
         FileVersion = "$number." + $(if ($labelNumber) { $labelNumber } else { '0' })
     }

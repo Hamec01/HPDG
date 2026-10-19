@@ -7679,7 +7679,7 @@ void testTrapHatStrengthRemovesWholeRolls()
     expect(boomBap.size() == boomBapDefault.size(), "Other genres keep their lane strength behaviour.");
 }
 
-void testUpdateCheckVersionsAndManifest()
+void testUpdateCheckVersionsAndGitHubReleases()
 {
     using namespace bbg;
     using update::ReleaseVersion;
@@ -7704,17 +7704,24 @@ void testUpdateCheckVersionsAndManifest()
     expect(update::currentVersion().valid, "HPDG_VERSION_TAG from CMakeLists.txt must parse.");
 
     update::LatestRelease release;
-    expect(update::parseManifest(R"({"version":"0.1.0-beta.3","title":"HPDG 0.1.0 Beta 3","notes":"Atmospheric","url":"https://hamloprod.org/en/vst"})",
-                                 release),
-           "A well-formed manifest must parse.");
-    expect(release.version.labelNumber == 3 && release.notes == "Atmospheric"
-               && release.pageUrl.toString(false) == "https://hamloprod.org/en/vst",
-           "Manifest fields must be read.");
-    expect(!update::parseManifest(R"({"version":"0.1.0-beta.3","url":"https://example.com/x"})", release),
-           "A page outside hamloprod.org must be rejected.");
-    expect(!update::parseManifest(R"({"version":"soon","url":"https://hamloprod.org/en/vst"})", release),
-           "A bad version must be rejected.");
-    expect(!update::parseManifest("<html>404</html>", release), "A non-JSON answer must be rejected.");
+    // GitHub lists releases newest-created first, but the newest version wins whatever the order.
+    expect(update::parseGitHubReleases(R"([
+        {"tag_name":"v0.1.0-beta.2","name":"HPDG 0.1.0 Beta 2","body":"old","draft":false,"prerelease":true,
+         "html_url":"https://github.com/Hamec01/HPDG/releases/tag/v0.1.0-beta.2"},
+        {"tag_name":"v0.1.0-beta.4","name":"HPDG 0.1.0 Beta 4","body":"draft","draft":true,"prerelease":true},
+        {"tag_name":"v0.1.0-beta.3","name":"HPDG 0.1.0 Beta 3","body":"Atmospheric\r\nDrag fix","draft":false,"prerelease":true,
+         "html_url":"https://github.com/Hamec01/HPDG/releases/tag/v0.1.0-beta.3"},
+        {"tag_name":"nightly","name":"not a version","draft":false}
+    ])", release),
+           "A GitHub release list must parse.");
+    expect(release.version.labelNumber == 3 && release.title == "HPDG 0.1.0 Beta 3" && release.notes == "Atmospheric\nDrag fix",
+           "The newest non-draft release must be chosen; a pre-release (beta) counts, a draft and a bad tag do not.");
+    expect(release.pageUrl.toString(false) == "https://hamloprod.org/en/vst",
+           "The Update button must open the HPDG page, never the public GitHub release.");
+    expect(!update::parseGitHubReleases("[]", release), "No releases: nothing to offer.");
+    expect(!update::parseGitHubReleases(R"({"message":"API rate limit exceeded"})", release),
+           "A GitHub error object must be rejected.");
+    expect(!update::parseGitHubReleases("<html>404</html>", release), "A non-JSON answer must be rejected.");
 }
 
 int main()
@@ -7723,7 +7730,7 @@ int main()
 
     int failures = 0;
     failures += runTest("Compact sample names and own Techno kit", testCompactSampleNamesAndTechnoKit);
-    failures += runTest("Update check versions and manifest", testUpdateCheckVersionsAndManifest);
+    failures += runTest("Update check versions and GitHub releases", testUpdateCheckVersionsAndGitHubReleases);
     failures += runTest("Trap hat strength removes whole rolls", testTrapHatStrengthRemovesWholeRolls);
     failures += runTest("Rack intensity formula", testRackIntensityFormula);
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);
