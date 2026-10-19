@@ -53,7 +53,29 @@
   «Закройте DAW — установщик запустится» и `juce::File::startAsProcess()`.
 - Никаких секретов в бинарнике. Ошибки сети — тихо, без зависания UI.
 
-## Что нужно от мейнтейнера до начала
+## Ответы мейнтейнера (2026-10-19)
+
+- Схема полная, с ключами: ключ выдаётся при покупке, при каждой новой версии — письмо покупателям.
+- Установщик заменяется на сайте (приватный бакет Contabo S3 `hamloprod-private/hpdg/`,
+  ключи — в Postgres сайта), публичный GitHub не нужен:
+  `HPDG_beta-releases` не создаём, запрос к GitHub из плагина убран.
+- Код сайта — `hamloprod-web` на сервере HamloProd (запускается на Vercel); серверная часть —
+  задание для агента сайта:
+  `docs/SITE_UPDATES_TASK.md`.
+
+## Сделано в плагине
+
+- `Source/Services/UpdateCheckService.*`: `/latest` и `/download` (разбор ответов, коды
+  401/403/404/429), белый список ссылок (hamloprod.org,
+  usc1.contabostorage.com/hamloprod-private/hpdg/), ключ
+  `HPDG-XXXX-XXXX-XXXX-XXXX` в `%APPDATA%\HamloProd\HPDG\license.json`, фоновая загрузка
+  в `%TEMP%\HPDG_Update`, проверка SHA-256, запуск установщика. `HPDG_UPDATE_API` —
+  только для локального тестового сервера.
+- `Source/UI/UpdateButtonComponent.*`: постоянная кнопка в шапке; правый клик — проверка,
+  ключ, страница HPDG.
+- Тесты: `Tests/CoreStage0Tests.cpp` (три теста «Update ...»).
+
+## Что нужно было от мейнтейнера до начала
 
 - Где хранить установщик (Vercel Blob / S3 / приватный GitHub-релиз).
 - Формат ключа и как его получают текущие покупатели Beta 1–3 (разослать ключи по базе Stripe).

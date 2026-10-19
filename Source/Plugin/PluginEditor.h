@@ -153,7 +153,6 @@ private:
 
     MainHeaderComponent header;
     // Only inside a real host (VST3 / Standalone); the snapshot and demo tools stay offline.
-    std::optional<juce::SharedResourcePointer<update::UpdateChecker>> updateChecker;
     juce::Component laneSurface;
     TrackListComponent trackList;
     SampleAnalysisPanelComponent analysisPanel;

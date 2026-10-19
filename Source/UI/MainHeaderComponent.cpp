@@ -15,6 +15,22 @@ double parseKnobText(const juce::String& text)
 {
     return text.retainCharacters("0123456789.-").getDoubleValue();
 }
+
+constexpr auto kHpdgPageUrl = "https://hamloprod.org/en/vst";
+const juce::Rectangle<float> kLogoBounds(126.0f, 12.0f, 26.0f, 22.0f);
+
+// The guide the installer puts into HPDG.vst3/Documentation (the plugin binary lives in
+// HPDG.vst3/Contents/x86_64-win). An "Instruction" file there wins over the FAQ.
+juce::File findInstruction()
+{
+    const auto bundle = juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+                            .getParentDirectory().getParentDirectory().getParentDirectory();
+    const auto docs = bundle.getChildFile("Documentation");
+    for (const auto* name : { "Instruction.pdf", "Instruction.html", "FAQ.html", "FAQ.md" })
+        if (docs.getChildFile(name).existsAsFile())
+            return docs.getChildFile(name);
+    return {};
+}
 }
 
 MainHeaderComponent::MainHeaderComponent()
@@ -28,12 +44,16 @@ MainHeaderComponent::MainHeaderComponent()
     titleLabel.setJustificationType(juce::Justification::centredLeft);
     titleLabel.setFont(juce::Font(juce::FontOptions(31.0f, juce::Font::bold)));
     titleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
+    titleLabel.setTooltip("HPDG menu: Update, Instruction, Site");
+    titleLabel.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    titleLabel.addMouseListener(this, false);
     addAndMakeVisible(titleLabel);
 
     subtitleLabel.setText("HamloProd " + update::currentDisplayVersion(), juce::dontSendNotification);
     subtitleLabel.setJustificationType(juce::Justification::centredLeft);
     subtitleLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
     subtitleLabel.setFont(juce::Font(juce::FontOptions(10.5f)));
+    subtitleLabel.setBorderSize({ 1, 5, 1, 0 }); // same left edge as "HPDG"; the Update button follows
     addAndMakeVisible(subtitleLabel);
 
     diagnosticsLabel.setText({}, juce::dontSendNotification);
@@ -42,15 +62,9 @@ MainHeaderComponent::MainHeaderComponent()
     diagnosticsLabel.setFont(juce::Font(juce::FontOptions(11.0f)));
     addAndMakeVisible(diagnosticsLabel);
 
-    // Shown only after the update check finds a newer release; opens its page in the browser.
-    updateButton.setColour(juce::TextButton::buttonColourId, sketch::Theme::blue().withAlpha(0.18f));
-    updateButton.setColour(juce::TextButton::textColourOffId, sketch::Theme::blue().darker(0.35f));
-    updateButton.onClick = [this]
-    {
-        if (updatePageUrl.isWellFormed())
-            updatePageUrl.launchInDefaultBrowser();
-    };
-    addChildComponent(updateButton);
+    // Next to the version; goes online only after enableUpdates() (inside a real host).
+    updateButton.onPreferredWidthChanged = [this] { resized(); };
+    addAndMakeVisible(updateButton);
 
     bpmLabel.setText("BPM", juce::dontSendNotification);
     addAndMakeVisible(bpmLabel);
@@ -448,7 +462,7 @@ void MainHeaderComponent::paint(juce::Graphics& g)
     const auto logoImage = juce::ImageCache::getFromMemory(ImageBinaryData::Logo_png, ImageBinaryData::Logo_pngSize);
     if (logoImage.isValid())
     {
-        const juce::Rectangle<float> logoBounds(126.0f, 12.0f, 26.0f, 22.0f);
+        const auto logoBounds = kLogoBounds;
         const auto imageBounds = logoImage.getBounds().toFloat();
         const auto placement = juce::RectanglePlacement(juce::RectanglePlacement::centred).getTransformToFit(imageBounds, logoBounds);
         g.drawImageTransformed(logoImage, placement);
@@ -463,19 +477,46 @@ void MainHeaderComponent::setGridModeIndicatorText(const juce::String& text)
 void MainHeaderComponent::setStyleLabDiagnosticsText(const juce::String& text)
 {
     diagnosticsLabel.setText(text, juce::dontSendNotification);
-    diagnosticsLabel.setVisible(text.isNotEmpty() && controlsMode != HeaderControlsMode::Hidden
-                                && !updateButton.isVisible());
+    diagnosticsLabel.setVisible(text.isNotEmpty() && controlsMode != HeaderControlsMode::Hidden);
+    resized();
 }
 
-void MainHeaderComponent::setAvailableUpdate(const juce::String& versionText,
-                                             const juce::String& notes,
-                                             const juce::URL& pageUrl)
+void MainHeaderComponent::mouseUp(const juce::MouseEvent& event)
 {
-    updatePageUrl = pageUrl;
-    updateButton.setButtonText("Update: " + versionText);
-    updateButton.setTooltip(notes.isNotEmpty() ? notes : "Open the HPDG page");
-    updateButton.setVisible(true);
-    diagnosticsLabel.setVisible(false); // the update takes the diagnostics row
+    const bool onTitle = event.eventComponent == &titleLabel;
+    const bool onLogo = event.eventComponent == this && kLogoBounds.contains(event.position);
+    if ((onTitle || onLogo) && !event.mouseWasDraggedSinceMouseDown())
+        showProductMenu();
+}
+
+void MainHeaderComponent::showProductMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem(1, updateButton.getMenuItemText(), updateButton.isMenuItemEnabled());
+    menu.addItem(2, "Instruction");
+    menu.addItem(3, "Site (hamloprod.org)");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&titleLabel),
+                       [safeThis = juce::Component::SafePointer<MainHeaderComponent>(this)](int result)
+                       {
+                           if (safeThis == nullptr)
+                               return;
+                           if (result == 1)
+                               safeThis->updateButton.activate();
+                           else if (result == 2)
+                           {
+                               const auto guide = findInstruction();
+                               if (!guide.existsAsFile() || !guide.startAsProcess())
+                                   juce::URL(kHpdgPageUrl).launchInDefaultBrowser();
+                           }
+                           else if (result == 3)
+                               juce::URL(kHpdgPageUrl).launchInDefaultBrowser();
+                       });
+}
+
+void MainHeaderComponent::enableUpdates()
+{
+    updateButton.enable();
 }
 
 void MainHeaderComponent::setPreviewPlaybackModeId(int id)
@@ -502,12 +543,27 @@ void MainHeaderComponent::resized()
     // Primary VST actions are deliberately placed directly after the identity
     // block. They remain reachable at the minimum editor width; secondary
     // controls may progressively clip on the right instead.
-    auto titleArea = fixedRow.removeFromLeft(160).reduced(2);
+    auto titleArea = fixedRow.removeFromLeft(160).reduced(2, 1);
     titleLabel.setBounds(titleArea.removeFromTop(28));
-    subtitleLabel.setBounds(titleArea.removeFromTop(10));
-    const auto statusRow = titleArea.removeFromTop(14);
-    diagnosticsLabel.setBounds(statusRow);
-    updateButton.setBounds(statusRow.withWidth(juce::jmin(statusRow.getWidth(), 150)));
+    // "HamloProd <version>" and the Update button share the row under the title (the block has
+    // no height for a third row). A long button text ("Update: 0.1.0 Beta 5") takes the whole row;
+    // the installed version is then in its tooltip.
+    auto versionRow = titleArea.removeFromTop(12);
+    const int subtitleWidth = juce::GlyphArrangement::getStringWidthInt(subtitleLabel.getFont(), subtitleLabel.getText())
+                              + subtitleLabel.getBorderSize().getLeftAndRight() + 1;
+    const int buttonWidth = updateButton.getPreferredWidth();
+    if (subtitleWidth + 4 + buttonWidth <= versionRow.getWidth())
+    {
+        subtitleLabel.setBounds(versionRow.removeFromLeft(subtitleWidth));
+        versionRow.removeFromLeft(4);
+        updateButton.setBounds(versionRow.withWidth(buttonWidth));
+    }
+    else
+    {
+        subtitleLabel.setBounds(versionRow.withWidth(0));
+        updateButton.setBounds(versionRow.withWidth(juce::jmin(versionRow.getWidth(), buttonWidth)));
+    }
+    diagnosticsLabel.setBounds(titleArea);
 
     fixedRow.removeFromLeft(4);
     generateButton.setBounds(fixedRow.removeFromLeft(124).reduced(2));
@@ -707,7 +763,7 @@ void MainHeaderComponent::setHeaderControlsMode(HeaderControlsMode mode)
     laneHeightLabel.setVisible(expanded);
     laneHeightSlider.setVisible(expanded);
     gridModeIndicatorLabel.setVisible(expanded || controlsMode == HeaderControlsMode::Compact || hidden);
-    diagnosticsLabel.setVisible(!hidden && diagnosticsLabel.getText().isNotEmpty() && !updateButton.isVisible());
+    diagnosticsLabel.setVisible(!hidden && diagnosticsLabel.getText().isNotEmpty());
     hatFxDensityLabel.setVisible(expanded);
     hatFxDensitySlider.setVisible(expanded);
     hatFxDensityValueLabel.setVisible(expanded);

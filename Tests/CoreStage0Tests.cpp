@@ -7679,7 +7679,7 @@ void testTrapHatStrengthRemovesWholeRolls()
     expect(boomBap.size() == boomBapDefault.size(), "Other genres keep their lane strength behaviour.");
 }
 
-void testUpdateCheckVersionsAndGitHubReleases()
+void testUpdateCheckVersionsAndLatest()
 {
     using namespace bbg;
     using update::ReleaseVersion;
@@ -7703,25 +7703,136 @@ void testUpdateCheckVersionsAndGitHubReleases()
     expect(ReleaseVersion::parse("1.0.0").toDisplayString() == "1.0.0", "Display form of a final release.");
     expect(update::currentVersion().valid, "HPDG_VERSION_TAG from CMakeLists.txt must parse.");
 
+    expect(ReleaseVersion::parse("v0.1.0-beta4").toTag() == "0.1.0-beta.4" && ReleaseVersion::parse("1.0.0").toTag() == "1.0.0",
+           "Tag form used for the installer file name.");
+
     update::LatestRelease release;
-    // GitHub lists releases newest-created first, but the newest version wins whatever the order.
-    expect(update::parseGitHubReleases(R"([
-        {"tag_name":"v0.1.0-beta.2","name":"HPDG 0.1.0 Beta 2","body":"old","draft":false,"prerelease":true,
-         "html_url":"https://github.com/Hamec01/HPDG/releases/tag/v0.1.0-beta.2"},
-        {"tag_name":"v0.1.0-beta.4","name":"HPDG 0.1.0 Beta 4","body":"draft","draft":true,"prerelease":true},
-        {"tag_name":"v0.1.0-beta.3","name":"HPDG 0.1.0 Beta 3","body":"Atmospheric\r\nDrag fix","draft":false,"prerelease":true,
-         "html_url":"https://github.com/Hamec01/HPDG/releases/tag/v0.1.0-beta.3"},
-        {"tag_name":"nightly","name":"not a version","draft":false}
-    ])", release),
-           "A GitHub release list must parse.");
-    expect(release.version.labelNumber == 3 && release.title == "HPDG 0.1.0 Beta 3" && release.notes == "Atmospheric\nDrag fix",
-           "The newest non-draft release must be chosen; a pre-release (beta) counts, a draft and a bad tag do not.");
-    expect(release.pageUrl.toString(false) == "https://hamloprod.org/en/vst",
-           "The Update button must open the HPDG page, never the public GitHub release.");
-    expect(!update::parseGitHubReleases("[]", release), "No releases: nothing to offer.");
-    expect(!update::parseGitHubReleases(R"({"message":"API rate limit exceeded"})", release),
-           "A GitHub error object must be rejected.");
-    expect(!update::parseGitHubReleases("<html>404</html>", release), "A non-JSON answer must be rejected.");
+    expect(update::parseLatestResponse(R"({"version":"0.1.0-beta.4","title":"HPDG 0.1.0 Beta 4",
+        "notes":"Faster Trap\r\nNew kit","page":"https://hamloprod.org/en/vst/beta-4"})", release),
+           "A /latest answer must parse.");
+    expect(release.version.labelNumber == 4 && release.title == "HPDG 0.1.0 Beta 4" && release.notes == "Faster Trap\nNew kit"
+               && release.pageUrl.toString(false) == "https://hamloprod.org/en/vst/beta-4",
+           "Version, title, notes and the hamloprod.org page come from /latest.");
+    expect(update::parseLatestResponse(R"({"version":"v0.1.0-beta.4","page":"https://evil.example/vst"})", release)
+               && release.pageUrl.toString(false) == "https://hamloprod.org/en/vst" && release.title == "HPDG 0.1.0 Beta 4",
+           "A page outside hamloprod.org must fall back to the HPDG page; a missing title gets a default.");
+    expect(!update::parseLatestResponse(R"({"version":"latest"})", release), "A bad version must be rejected.");
+    expect(!update::parseLatestResponse("[]", release) && !update::parseLatestResponse("<html>502</html>", release),
+           "A non-object answer must be rejected.");
+}
+
+void testUpdateDownloadTicketAndAllowList()
+{
+    using namespace bbg;
+    using update::DownloadRefusal;
+
+    const auto sha = juce::String::repeatedString("ab", 32);
+    update::DownloadTicket ticket;
+    const auto good = R"({"url":"https://usc1.contabostorage.com/hamloprod-private/hpdg/HPDG_VST3_Setup_0.1.0-beta.4.exe?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AK%2F20261019%2Fusc1%2Fs3%2Faws4_request&X-Amz-Expires=600&X-Amz-Signature=ab",
+        "sha256":")" + sha.toUpperCase() + R"(","version":"0.1.0-beta.4","size":113853262})";
+    expect(update::parseDownloadResponse(200, good, ticket) == DownloadRefusal::None,
+           "A /download answer with a storage link must parse.");
+    expect(ticket.sha256 == sha && ticket.version.labelNumber == 4 && ticket.size == 113853262,
+           "Hash (lowercased), version and size come from /download.");
+
+    expect(update::parseDownloadResponse(401, {}, ticket) == DownloadRefusal::InvalidKey
+               && update::parseDownloadResponse(403, R"({"error":"invalid_key"})", ticket) == DownloadRefusal::InvalidKey,
+           "401 / 403: the key has no purchase behind it.");
+    expect(update::parseDownloadResponse(429, {}, ticket) == DownloadRefusal::Limit, "429: the daily limit.");
+    expect(update::parseDownloadResponse(404, {}, ticket) == DownloadRefusal::NoRelease, "404: nothing to download.");
+    expect(update::parseDownloadResponse(500, {}, ticket) == DownloadRefusal::Malformed, "A server error is not a ticket.");
+    expect(update::parseDownloadResponse(200, R"({"url":"https://evil.example/HPDG.exe","sha256":")" + sha
+                                                  + R"(","version":"0.1.0-beta.4"})", ticket) == DownloadRefusal::Untrusted,
+           "A link outside the storage allow-list must be refused.");
+    expect(update::parseDownloadResponse(200, R"({"url":"https://hamloprod.org/f.exe","sha256":"abc","version":"0.1.0-beta.4"})",
+                                         ticket) == DownloadRefusal::Malformed,
+           "A short hash must be refused.");
+    expect(update::parseDownloadResponse(200, R"({"url":"https://hamloprod.org/f.exe","sha256":")" + sha + R"("})", ticket)
+               == DownloadRefusal::Malformed,
+           "A ticket without a version must be refused.");
+    expect(update::parseDownloadResponse(200, "<html>ok</html>", ticket) == DownloadRefusal::Malformed,
+           "A non-JSON 200 must be refused.");
+
+    expect(update::isAllowedDownloadUrl("https://hamloprod.org/api/hpdg/file?t=1")
+               && update::isAllowedDownloadUrl("https://www.hamloprod.org/x.exe")
+               && update::isAllowedDownloadUrl("https://usc1.contabostorage.com/hamloprod-private/hpdg/x.exe?X-Amz-Expires=600")
+               && update::isAllowedDownloadUrl("https://HAMLOPROD.ORG:443/x.exe"),
+           "hamloprod.org and the installer folder of the private bucket are allowed.");
+    expect(!update::isAllowedDownloadUrl("https://usc1.contabostorage.com/hamloprod-private/beats/x.zip")
+               && !update::isAllowedDownloadUrl("https://usc1.contabostorage.com/other-bucket/hpdg/x.exe")
+               && !update::isAllowedDownloadUrl("https://usc1.contabostorage.com/hamloprod-private/hpdg/")
+               && !update::isAllowedDownloadUrl("https://usc1.contabostorage.com/hamloprod-private/hpdg/../beats/x.zip")
+               && !update::isAllowedDownloadUrl("https://usc1.contabostorage.com/hamloprod-private/hpdg/%2e%2e/beats/x.zip")
+               && !update::isAllowedDownloadUrl("https://usc1.contabostorage.com/hamloprod-private/hpdg/sub/x.exe")
+               && !update::isAllowedDownloadUrl("https://eu2.contabostorage.com/hamloprod-private/hpdg/x.exe")
+               && !update::isAllowedDownloadUrl("https://abc.public.blob.vercel-storage.com/x.exe"),
+           "Only files directly in hamloprod-private/hpdg/ on usc1 are allowed; no other bucket, folder or storage.");
+    expect(!update::isAllowedDownloadUrl("http://hamloprod.org/x.exe"), "Plain http must be refused.");
+    expect(!update::isAllowedDownloadUrl("https://hamloprod.org.evil.example/x.exe")
+               && !update::isAllowedDownloadUrl("https://evilhamloprod.org/x.exe")
+               && !update::isAllowedDownloadUrl("https://usc1.contabostorage.com.evil.example/hamloprod-private/hpdg/x.exe")
+               && !update::isAllowedDownloadUrl("https://evil.example/usc1.contabostorage.com/hamloprod-private/hpdg/x.exe"),
+           "Look-alike hosts must be refused.");
+    expect(!update::isAllowedDownloadUrl("https://hamloprod.org@evil.example/x.exe")
+               && !update::isAllowedDownloadUrl("https://hamloprod.org\\@evil.example/x.exe")
+               && !update::isAllowedDownloadUrl(" https://hamloprod.org/x.exe")
+               && !update::isAllowedDownloadUrl("ftp://hamloprod.org/x.exe")
+               && !update::isAllowedDownloadUrl("file:///C:/x.exe")
+               && !update::isAllowedDownloadUrl("https://hamloprod.org:abc/x.exe"),
+           "User info, backslashes, spaces, other schemes and bad ports must be refused.");
+    expect(!update::isAllowedDownloadUrl("http://localhost:3000/x.exe")
+               && update::isAllowedDownloadUrl("http://localhost:3000/x.exe", true)
+               && update::isAllowedDownloadUrl("http://127.0.0.1:3000/x.exe", true)
+               && !update::isAllowedDownloadUrl("http://192.168.1.5/x.exe", true),
+           "Localhost only for the local test server.");
+    expect(update::isLocalApiOverride("http://localhost:3000/api/hpdg") && !update::isLocalApiOverride("https://evil.example/api"),
+           "HPDG_UPDATE_API may only point to a local server.");
+    expect(update::apiBaseUrl().startsWith("https://hamloprod.org/") || update::isLocalApiOverride(update::apiBaseUrl()),
+           "The API is hamloprod.org unless a local test server is set.");
+}
+
+void testUpdateLicenseKeyAndChecksum()
+{
+    using namespace bbg;
+
+    expect(update::normalizeLicenseKey("HPDG-7K3M-2Q9X-ABCD-EF01") == "HPDG-7K3M-2Q9X-ABCD-EF01", "A key stays as it is.");
+    expect(update::normalizeLicenseKey("  hpdg 7k3m 2q9x abcd ef01 ") == "HPDG-7K3M-2Q9X-ABCD-EF01",
+           "Case, spaces and missing dashes are forgiven.");
+    expect(update::normalizeLicenseKey("7K3M2Q9XABCDEFOL") == "HPDG-7K3M-2Q9X-ABCD-EF01",
+           "The prefix is optional; O reads as 0 and L as 1.");
+    expect(update::normalizeLicenseKey("HPDG-7K3M-2Q9X-ABCD").isEmpty()
+               && update::normalizeLicenseKey("HPDG-7K3M-2Q9X-ABCD-EF0U").isEmpty()
+               && update::normalizeLicenseKey("").isEmpty(),
+           "Short keys and letters outside the alphabet (U) are not keys.");
+
+    const auto folder = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                            .getChildFile("HPDG_UpdateTests_" + juce::String(juce::Time::getCurrentTime().toMilliseconds()));
+    expect(folder.createDirectory().wasOk(), "Temporary test folder.");
+
+    const auto file = folder.getChildFile("abc.bin");
+    file.replaceWithText("abc");
+    const juce::String abcHash("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+    expect(update::sha256OfFile(file) == abcHash, "SHA-256 of \"abc\" (FIPS 180-2 test vector).");
+    expect(update::sha256Equals(update::sha256OfFile(file), abcHash.toUpperCase()), "Hash comparison ignores case.");
+    file.appendText("d");
+    expect(!update::sha256Equals(update::sha256OfFile(file), abcHash), "A changed file must not match.");
+    expect(update::sha256OfFile(folder.getChildFile("missing.exe")).isEmpty() && !update::sha256Equals({}, {}),
+           "A missing file never matches.");
+
+    update::LicenseStore store(folder.getChildFile("HamloProd").getChildFile("HPDG"));
+    expect(store.load().isEmpty(), "No key stored yet.");
+    expect(!store.save("not a key") && store.load().isEmpty(), "A bad key is not stored.");
+    expect(store.save("hpdg-7k3m-2q9x-abcd-ef01") && store.load() == "HPDG-7K3M-2Q9X-ABCD-EF01",
+           "The key is stored normalized.");
+    expect(folder.getChildFile("HamloProd").getChildFile("HPDG").getChildFile("license.json").existsAsFile(),
+           "The key lives in license.json.");
+    store.clear();
+    expect(store.load().isEmpty(), "A removed key is gone.");
+    const auto defaultDir = update::LicenseStore::defaultDirectory();
+    expect(defaultDir.getFileName() == "HPDG" && defaultDir.getParentDirectory().getFileName() == "HamloProd",
+           "The default key folder is <app data>\\HamloProd\\HPDG.");
+
+    folder.deleteRecursively();
 }
 
 int main()
@@ -7730,7 +7841,9 @@ int main()
 
     int failures = 0;
     failures += runTest("Compact sample names and own Techno kit", testCompactSampleNamesAndTechnoKit);
-    failures += runTest("Update check versions and GitHub releases", testUpdateCheckVersionsAndGitHubReleases);
+    failures += runTest("Update check versions and /latest", testUpdateCheckVersionsAndLatest);
+    failures += runTest("Update download ticket and URL allow-list", testUpdateDownloadTicketAndAllowList);
+    failures += runTest("Update license key and SHA-256", testUpdateLicenseKeyAndChecksum);
     failures += runTest("Trap hat strength removes whole rolls", testTrapHatStrengthRemovesWholeRolls);
     failures += runTest("Rack intensity formula", testRackIntensityFormula);
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);

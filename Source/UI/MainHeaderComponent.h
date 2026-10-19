@@ -6,6 +6,7 @@
 
 #include "DragGestureButton.h"
 #include "HardwareKnob.h"
+#include "UpdateButtonComponent.h"
 
 namespace bbg
 {
@@ -23,6 +24,7 @@ public:
     MainHeaderComponent();
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseUp(const juce::MouseEvent& event) override;
 
     void setBpmLocked(bool locked);
     void setPreviewPlaying(bool isPlaying);
@@ -33,7 +35,8 @@ public:
     void setGridModeIndicatorText(const juce::String& text);
     void setStyleLabDiagnosticsText(const juce::String& text);
     void setPreviewPlaybackModeId(int id);
-    void setAvailableUpdate(const juce::String& versionText, const juce::String& notes, const juce::URL& pageUrl);
+    // The Update button under the version; call only inside a real host (it goes online).
+    void enableUpdates();
     HeaderControlsMode getHeaderControlsMode() const { return controlsMode; }
     int getPreferredHeight() const;
     void setHatFxDensityState(float density, bool locked);
@@ -106,12 +109,12 @@ private:
                    std::function<double(const juce::String&)> parser = {});
     void sliderValueChanged(juce::Slider* slider) override;
     void updateAdvancedModeButtonText();
+    void showProductMenu(); // click on "HPDG" / the logo: Update, Instruction, Site
 
     juce::Label titleLabel;
     juce::Label subtitleLabel;
     juce::Label diagnosticsLabel;
-    juce::TextButton updateButton;
-    juce::URL updatePageUrl;
+    UpdateButtonComponent updateButton;
 
     juce::Label bpmLabel;
     juce::Label swingLabel;

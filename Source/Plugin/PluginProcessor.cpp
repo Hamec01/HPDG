@@ -1098,13 +1098,7 @@ private:
         // Only inside a real host; the snapshot and demo tools stay offline.
         if (audioProcessor.wrapperType != juce::AudioProcessor::wrapperType_Undefined)
         {
-            updateChecker.emplace();
-            (*updateChecker)->whenNewerReleaseAvailable(
-                [safeThis = juce::Component::SafePointer<Vst3EditorContent>(this)](const update::LatestRelease& release)
-                {
-                    if (safeThis != nullptr)
-                        safeThis->header.setAvailableUpdate(release.version.toDisplayString(), release.notes, release.pageUrl);
-                });
+            header.enableUpdates();
         }
 
         header.onGeneratePressed = [this]
@@ -1804,7 +1798,6 @@ private:
     SketchLookAndFeel sketchLookAndFeel;
     juce::Image paperTexture;
     MainHeaderComponent header;
-    std::optional<juce::SharedResourcePointer<update::UpdateChecker>> updateChecker;
     juce::Viewport trackListViewport;
     juce::Component laneGridWorkspace;
     TrackListComponent trackList;

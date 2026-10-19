@@ -816,13 +816,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 
     if (audioProcessor.wrapperType != juce::AudioProcessor::wrapperType_Undefined)
     {
-        updateChecker.emplace();
-        (*updateChecker)->whenNewerReleaseAvailable(
-            [safeThis = juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor>(this)](const update::LatestRelease& release)
-            {
-                if (safeThis != nullptr)
-                    safeThis->header.setAvailableUpdate(release.version.toDisplayString(), release.notes, release.pageUrl);
-            });
+        header.enableUpdates();
     }
     trackList.setDisplayMode(laneRackModeForWidth(layoutController.getState().leftPanelWidth));
 
