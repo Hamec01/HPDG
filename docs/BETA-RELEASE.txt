@@ -1,44 +1,50 @@
-﻿HPDG 0.1.0 Beta 3 — HamloProd
-Windows 10/11, x64, только VST3.
+﻿HPDG 0.1.0 Beta 5 — HamloProd
+Windows 10/11, x64, VST3 only.
 
-Включены VST3, полная библиотека из 913 аудиосемплов, руководство
-и уведомления о правах. Ключ активации и подключение к интернету для
-работы плагина не требуются. Microsoft Visual C++ Runtime включён
-в установщик и устанавливается при необходимости.
+Includes the VST3 plugin, the full library of 913 audio samples, the guide
+and the rights notices. No activation and no internet connection are needed
+to use the plugin. The Microsoft Visual C++ Runtime is included and installed
+if needed.
 
-Закройте DAW перед установкой. Плагин устанавливается в стандартную
-папку Windows: C:\Program Files\Common Files\VST3\HPDG.vst3.
-Семплы находятся внутри этого пакета рядом с бинарным файлом плагина.
-После установки выполните повторное сканирование VST3 в своей DAW.
+Close your DAW before installing. The plugin goes into the standard Windows
+folder: C:\Program Files\Common Files\VST3\HPDG.vst3.
+The samples live inside that bundle, next to the plugin binary.
+After installing, rescan VST3 plugins in your DAW.
 
-Это бета-версия: сохраняйте рабочие проекты и сообщайте об ошибках
-с указанием DAW, версии Windows, жанра и последовательности действий.
-Standalone в данный выпуск не входит.
+This is a beta: keep backups of your projects and report bugs with your DAW,
+Windows version, genre and the steps that led to the problem.
+Standalone is not part of this release.
 
-Что нового в Beta 3:
-- Новый жанр Atmospheric: ритмы Pulse, Two-Step и Broken, мелодичный бас
-  по минорной гармонии и свой набор ударных и басов (64 новых семпла).
-- Intensity 1–5 в шапке Instrument Rack: 1 — самый простой бит, 3 — как
-  раньше, 5 — максимум ударов. Следующие Generate / Mutate / RG пишут
-  в выбранной интенсивности.
-- Ручка Strength на каждой дорожке (вместо панорамы): влево — убирает
-  самые слабые удары, вправо — добавляет типичные для жанра.
-- Trap: 808 в правильном регистре, басовые линии по всей фразе с глайдами,
-  кик и снейр по референсным трэп-пакам; ручка Strength у хэтов сначала
-  убирает целые роллы, четверти остаются.
-- Sub808 по умолчанию играет синтезированный саб HPDG (4 варианта, строй C2).
-- Перетаскивание MIDI / WAV в DAW: окно плагина прячется, когда файл
-  выходит за его рамку, и возвращается после броска (FL Studio и др.).
-- Sample Analysis: режим Guide generation теперь по умолчанию.
-- Проверка обновлений: при выходе новой версии в шапке появляется кнопка
-  Update со ссылкой на страницу HPDG.
+What's new in Beta 5:
+- Update button next to the version in the header. Click it to check for
+  a new version: Latest, Update: <version> or Offline.
+- In-plugin updates for buyers: enter your license key once (from your
+  purchase email) and HPDG downloads the new installer, checks that it is
+  complete and unchanged, and starts it when you confirm.
+- Click "HPDG" in the header for the menu: Update, Instruction, Site.
+- No internet? HPDG works exactly as before.
 
-Что нового в Beta 2:
-- Trim sample: кнопки Loop / Play / Stop; при перетаскивании границ звук
-  больше не перезапускается; клик по волне ставит курсор воспроизведения.
-- Trim sample: поле «Selection = N bars» — выбираете, сколько тактов
-  в выделении, и темп считается из него (например, ровно 4 такта).
-- Sub808 играет ноты так, как они написаны; кнопки − / + на дорожке баса
-  меняют октаву (Shift — полутон), это сохраняется в MIDI-экспорте.
-- Скины Dark и Steel, переключение прямо из меню SKIN.
-- Techno: второй набор ударных (тек-хаус) и басы, 100 новых семплов.
+What's new in Beta 3:
+- New genre Atmospheric: Pulse, Two-Step and Broken rhythms, a melodic bass
+  over minor harmony and its own drums and basses (64 new samples).
+- Intensity 1-5 in the Instrument Rack header: 1 is the simplest beat, 3 is
+  as before, 5 is the most hits. The next Generate / Mutate / RG use it.
+- Strength knob on every lane (instead of pan): left removes the weakest
+  hits, right adds hits typical for the genre.
+- Trap: 808 in the right register, bass lines across the whole phrase with
+  glides, kick and snare after reference trap packs; the hat Strength knob
+  removes whole rolls first and keeps the quarter notes.
+- Sub808 plays the HPDG synth sub by default (4 variants, tuned to C2).
+- Dragging MIDI / WAV into the DAW: the plugin window hides once the file
+  leaves it and comes back after the drop (FL Studio and others).
+- Sample Analysis: Guide generation is now the default mode.
+
+What's new in Beta 2:
+- Trim sample: Loop / Play / Stop buttons; dragging the edges no longer
+  restarts the sound; a click on the waveform sets the play cursor.
+- Trim sample: "Selection = N bars" field - choose how many bars the
+  selection holds and the tempo follows (for example exactly 4 bars).
+- Sub808 plays notes as written; the - / + buttons on the bass lane change
+  the octave (Shift - a semitone), and MIDI export keeps it.
+- Dark and Steel skins, switched right from the SKIN menu.
+- Techno: a second drum set (tech house) and basses, 100 new samples.

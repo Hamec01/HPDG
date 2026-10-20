@@ -52,7 +52,6 @@ UninstallDisplayIcon={app}\Contents\x86_64-win\HPDG.vst3
 InfoBeforeFile=..\docs\BETA-RELEASE.txt
 InfoAfterFile=..\docs\INSTALL-FINISH.txt
 [Languages]
-Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 [InstallDelete]
 ; Replace the factory tree on updates, so old long names cannot create duplicates.
@@ -73,7 +72,7 @@ Name: "{commonprograms}\HamloProd\HPDG FAQ"; Filename: "{app}\Documentation\FAQ.
 Name: "{commonprograms}\HamloProd\Uninstall HPDG VST3"; Filename: "{uninstallexe}"
 #endif
 [Run]
-Filename: "{app}\Documentation\FAQ.html"; Description: "Open HPDG FAQ / Открыть руководство"; Flags: postinstall shellexec skipifsilent unchecked
+Filename: "{app}\Documentation\FAQ.html"; Description: "Open the HPDG guide (FAQ)"; Flags: postinstall shellexec skipifsilent unchecked
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var

@@ -1,10 +1,11 @@
-﻿HPDG VST3 установлен.
+﻿HPDG VST3 is installed.
 
-1. Откройте 64-битную DAW и пересканируйте плагины VST3.
-2. Добавьте HPDG на инструментальную дорожку.
-3. Выберите жанр, длину и нажмите Generate Pattern, затем Play.
+1. Open your 64-bit DAW and rescan VST3 plugins.
+2. Add HPDG to an instrument track.
+3. Choose a genre and length, press Generate Pattern, then Play.
 
-FAQ: меню Пуск → HamloProd → HPDG FAQ.
-Документация также находится в папке HPDG.vst3\Documentation.
-При запросе перезагрузки завершите её до запуска DAW.
-Активация не требуется.
+Guide: Start menu -> HamloProd -> HPDG FAQ, or click "HPDG" in the plugin
+header -> Instruction.
+The documentation is also in the HPDG.vst3\Documentation folder.
+If Windows asks for a restart, do it before opening your DAW.
+No activation is needed.

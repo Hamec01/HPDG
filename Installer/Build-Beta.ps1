@@ -58,7 +58,7 @@ try {
 
     # Build a standalone, offline HTML FAQ from the authoritative Markdown text.
     $htmlLines = [Collections.Generic.List[string]]::new()
-    $htmlLines.Add('<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>HPDG &#8212; FAQ</title><style>body{font:17px/1.65 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:#282522;background:#f8f3e7}h1,h2{line-height:1.25}h2{margin-top:36px}p{white-space:pre-line}strong{color:#6b420d}</style><body>')
+    $htmlLines.Add('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>HPDG &#8212; FAQ</title><style>body{font:17px/1.65 system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 24px;color:#282522;background:#f8f3e7}h1,h2{line-height:1.25}h2{margin-top:36px}p{white-space:pre-line}strong{color:#6b420d}</style><body>')
     $paragraph = [Collections.Generic.List[string]]::new()
     foreach ($line in (Get-Content -LiteralPath (Join-Path $repoDir 'FAQ.md') -Encoding utf8)) {
         $encoded = [System.Net.WebUtility]::HtmlEncode($line)
