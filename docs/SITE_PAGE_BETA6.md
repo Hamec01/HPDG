@@ -21,8 +21,8 @@ Source of truth for every fact below: the HPDG repository (plugin code, `FAQ.md`
    and `Releases/HPDG_presentation_kit/Beta3_screens/` for Atmospheric, Intensity and Strength.
    Convert to WebP with a PNG fallback, lazy-load below the fold, alt text on every image.
 4. Add the "What's new in Beta 6" block and the changelog (section 11) near the bottom.
-5. Mark anything you cannot confirm as `[TODO owner]` instead of inventing it. Never promise macOS,
-   AU, AAX or a standalone app.
+5. Mark anything you cannot confirm as `[TODO owner]` instead of inventing it. HPDG is a VST3
+   plugin for Windows only: do not mention or promise other formats or platforms.
 
 Anchors the plugin links to: the page itself (`https://hamloprod.org/en/vst`) from the menu
 "HPDG → Site" and from "Buy HPDG" in the license-key dialog — the buy button must be easy to find
@@ -145,7 +145,7 @@ Lost it? Write to hello@hamloprod.org from your purchase email.
 - One installer (~110 MB): the plugin, 913 factory samples and the Visual C++ Runtime. Nothing else
   to download, no account.
 - Installs to `C:\Program Files\Common Files\VST3\HPDG.vst3`; rescan VST3 plugins in your DAW.
-- Not in this beta: macOS, AU / AAX, standalone app.
+- Format: VST3 plugin only, Windows only.
 
 ### 11. What's new
 
