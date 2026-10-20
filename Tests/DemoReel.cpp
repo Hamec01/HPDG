@@ -16,7 +16,10 @@
 //   caption "line" ["line 2"]  caption-clear   chapter "<name>"   title "a" ["b"] ["c"]   title-clear
 //   snap "<file.png>" [scale] (PNG of the editor + control rects as JSON)
 //   badge "<text>"  badge-clear  cursor-hide   note "<text>" (callout at the next click)
-//   targets: header, strip, grid, rack, row:<Track>, button:<text>, combo:<name>, knob:<name>
+//   strength <Lane> <-1..1> [seconds] (animated knob turn when seconds > 0)   intensity <1-5>
+//   updates-on (the Update button goes online; HPDG_UPDATE_API may point it at a local test server)
+//   hpdg-menu <item index> (cursor opens the HPDG menu over the logo and points at an item; nothing runs)
+//   targets: header, strip, grid, rack, row:<Track>, button:<text>, combo:<name>, knob:<name>, logo, update
 #include <cmath>
 #include <iostream>
 
@@ -337,10 +340,23 @@ private:
         if (name == "strip") return strip;
         if (name == "grid") return grid;
         if (name == "rack") return findChild<TrackListComponent>(*editor);
+        if (name == "logo") return logoLabel();
+        if (name == "update") return header != nullptr ? findChild<UpdateButtonComponent>(*header) : nullptr;
         if (name.startsWith("row:")) return findRow(name.fromFirstOccurrenceOf(":", false, false));
         if (name.startsWith("button:")) return findButton(*editor, name.fromFirstOccurrenceOf(":", false, false));
         if (name.startsWith("combo:")) return comboByName(name.fromFirstOccurrenceOf(":", false, false));
         if (name.startsWith("knob:")) return knobByName(name.fromFirstOccurrenceOf(":", false, false));
+        return nullptr;
+    }
+
+    juce::Label* logoLabel()
+    {
+        std::vector<juce::Label*> labels;
+        if (header != nullptr)
+            findAll(*header, labels);
+        for (auto* l : labels)
+            if (l->getText() == "HPDG")
+                return l;
         return nullptr;
     }
 
@@ -658,6 +674,28 @@ private:
                     findKnob(*child);
             };
             findKnob(*editor);
+            if (knob != nullptr && num(3, 0.0) > 0.0)
+            {
+                const double start = knob->getValue(), target = num(2, 0.0) * 100.0;
+                const int frames = juce::roundToInt(num(3, 0.0) * fps);
+                const auto r = screenRect(*knob);
+                const auto from = r.getCentre();
+                const auto to = from.translated(0, target > start ? -40 : 40);
+                moveTo(juce::Rectangle<int>(from.x, from.y, 1, 1));
+                event("drag", "\"from\":[" + juce::String(from.x) + "," + juce::String(from.y) + "],\"to\":[" + juce::String(to.x)
+                                  + "," + juce::String(to.y) + "],\"frames\":" + juce::String(frames));
+                for (int f = 1; f <= frames; ++f)
+                {
+                    const double k = static_cast<double>(f) / frames;
+                    knob->setValue(start + (target - start) * k * k * (3.0 - 2.0 * k), juce::sendNotificationSync);
+                    dirty = true;
+                    renderFrame();
+                }
+                if (knob->onDragEnd)
+                    knob->onDragEnd();
+                settle();
+                return true;
+            }
             if (knob != nullptr)
             {
                 knob->setValue(num(2, 0.0) * 100.0, juce::sendNotificationSync);
@@ -672,6 +710,27 @@ private:
                     return true;
                 }
             return false;
+        }
+        if (cmd == "updates-on") { header->enableUpdates(); settle(); return true; }
+        if (cmd == "hpdg-menu") // the same items as MainHeaderComponent::showProductMenu
+        {
+            auto* logo = logoLabel();
+            auto* update = findChild<UpdateButtonComponent>(*header);
+            if (logo == nullptr || update == nullptr)
+                return false;
+            const juce::StringArray items { update->getMenuItemText(), "Instruction", "Site (hamloprod.org)" };
+            juce::StringArray quoted;
+            for (const auto& item : items)
+                quoted.add(jsonString(item));
+            const auto r = screenRect(*logo);
+            moveTo(r);
+            event("click", "\"rect\":" + rectJson(r));
+            const int frames = juce::roundToInt(num(2, 2.4) * fps);
+            event("menu", "\"rect\":" + rectJson(r) + ",\"items\":[" + quoted.joinIntoString(",") + "],\"chosen\":"
+                              + juce::String(t[1].getIntValue()) + ",\"current\":-1,\"frames\":" + juce::String(frames));
+            renderFrames(frames);
+            renderSeconds(0.4);
+            return true;
         }
         if (cmd == "intensity") // intensity <1-5>: clicks the rack Intensity button
         {

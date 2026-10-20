@@ -228,7 +228,7 @@ def draw_menu(overlay, e, frame):
     k = (frame - e["frame"]) / e["frames"]
     items = e["items"]
     row = r[3] + 4
-    width = max(r[2], 220)
+    width = max(r[2], 220, max(F_MENU.getlength(t) for t in items) + 32)
     x0, y0 = r[0], r[1] + r[3] + 6
     h = row * len(items) + 8
     appear = ease_out(min(1.0, k / 0.15))
