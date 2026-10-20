@@ -1,10 +1,10 @@
 # HPDG — FAQ and getting started
 
-**Version: 0.1.0 Beta 5. Developer: HamloProd. Windows x64, VST3.**
+**Version: 0.1.0 Beta 6. Developer: HamloProd. Windows x64, VST3.**
 
 ## How do I install it?
 
-Close your DAW. Run HPDG_VST3_Setup_0.1.0-beta.5.exe and allow it to install as administrator. The installer contains the plugin, the whole factory library and the Visual C++ Runtime; there is nothing else to download.
+Close your DAW. Run HPDG_VST3_Setup_0.1.0-beta.6.exe and allow it to install as administrator. The installer contains the plugin, the whole factory library and the Visual C++ Runtime; there is nothing else to download.
 
 Default folder: C:\Program Files\Common Files\VST3\HPDG.vst3.
 Samples: Contents\x86_64-win\Samples inside that bundle.
@@ -22,7 +22,7 @@ With internet, the plugin asks hamloprod.org once per DAW session (and whenever 
 
 ## Where is my license key?
 
-The key looks like **HPDG-XXXX-XXXX-XXXX-XXXX** and comes by email to the address you used for the purchase. Beta buyers from before Beta 5 get their key by email too. Can't find it? Check the spam folder, then write to hello@hamloprod.org from your purchase email.
+The key looks like **HPDG-XXXX-XXXX-XXXX-XXXX** and comes by email to the address you used for the purchase. Buyers of earlier betas get their key by email too. Can't find it? Check the spam folder, then write to hello@hamloprod.org from your purchase email.
 
 You enter the key once: press **Update** when a new version is shown, or right-click the button → **Enter license key...**. HPDG keeps it on this computer in %APPDATA%\HamloProd\HPDG (not in your DAW projects). Spaces, lowercase letters and missing dashes are fine. Right-click → **Change license key...** or **Remove license key** to change it. The key is for you: do not share it; downloads per key are limited per day.
 

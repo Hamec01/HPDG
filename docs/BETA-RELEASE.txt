@@ -1,4 +1,4 @@
-﻿HPDG 0.1.0 Beta 5 — HamloProd
+﻿HPDG 0.1.0 Beta 6 — HamloProd
 Windows 10/11, x64, VST3 only.
 
 Includes the VST3 plugin, the full library of 913 audio samples, the guide
@@ -15,6 +15,10 @@ After installing, rescan VST3 plugins in your DAW.
 This is a beta: keep backups of your projects and report bugs with your DAW,
 Windows version, genre and the steps that led to the problem.
 Standalone is not part of this release.
+
+What's new in Beta 6:
+- The installer, the guide (FAQ) and the release notes are in English.
+- FAQ: where to find your license key and how HPDG uses it.
 
 What's new in Beta 5:
 - Update button next to the version in the header. Click it to check for
