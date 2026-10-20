@@ -3,7 +3,8 @@ Windows 10/11, x64, VST3 only.
 
 Includes the VST3 plugin, the full library of 913 audio samples, the guide
 and the rights notices. No activation and no internet connection are needed
-to use the plugin. The Microsoft Visual C++ Runtime is included and installed
+to use the plugin; your license key (sent by email after the purchase) is only for
+in-plugin updates. The Microsoft Visual C++ Runtime is included and installed
 if needed.
 
 Close your DAW before installing. The plugin goes into the standard Windows

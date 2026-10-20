@@ -8,4 +8,5 @@ Guide: Start menu -> HamloProd -> HPDG FAQ, or click "HPDG" in the plugin
 header -> Instruction.
 The documentation is also in the HPDG.vst3\Documentation folder.
 If Windows asks for a restart, do it before opening your DAW.
-No activation is needed.
+No activation is needed. Keep your license key (from your purchase email):
+HPDG asks for it once, when you install an update from the plugin.

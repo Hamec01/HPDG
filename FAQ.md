@@ -14,7 +14,17 @@ After installing, open your 64-bit DAW and rescan VST3 plugins. Add **HPDG** to 
 
 ## Do I need an account, internet or a key?
 
-Not to make music: HPDG works offline, with no account and no activation. With internet, the plugin asks hamloprod.org once per DAW session (and whenever you press **Update**) whether a new version is out. Your license key is sent only when you download an update; nothing about you or your projects is sent. Without internet everything works as usual and the button shows **Offline**.
+To make music you need none of them: HPDG works offline, with no account and no activation. Every feature works without a key.
+
+The **license key** is only for updates. With it, HPDG downloads and installs new versions by itself (see "How do I update or uninstall the beta?").
+
+With internet, the plugin asks hamloprod.org once per DAW session (and whenever you press **Update**) whether a new version is out. Your license key is sent only when you download an update; nothing about you or your projects is sent. Without internet everything works as usual and the button shows **Offline**.
+
+## Where is my license key?
+
+The key looks like **HPDG-XXXX-XXXX-XXXX-XXXX** and comes by email to the address you used for the purchase. Beta buyers from before Beta 5 get their key by email too. Can't find it? Check the spam folder, then write to hello@hamloprod.org from your purchase email.
+
+You enter the key once: press **Update** when a new version is shown, or right-click the button → **Enter license key...**. HPDG keeps it on this computer in %APPDATA%\HamloProd\HPDG (not in your DAW projects). Spaces, lowercase letters and missing dashes are fine. Right-click → **Change license key...** or **Remove license key** to change it. The key is for you: do not share it; downloads per key are limited per day.
 
 ## How do I get my first pattern?
 
@@ -74,7 +84,7 @@ Keep the installed structure. The sample-names.json files hold the original name
 
 ## How do I update or uninstall the beta?
 
-Press **Update** next to the version in the plugin header (or **HPDG → Update**). When a new version is out, the button shows **Update: <version>**. Click it, enter your license key once (it is in your purchase email) and HPDG downloads the installer, checks it and starts it after you confirm. Save your project first: the installer asks you to close the DAW. Projects and settings are kept. Without a key you can still see that a new version is out; **Buy HPDG** opens the HPDG page. Right-click the button to change or remove the key.
+Press **Update** next to the version in the plugin header (or **HPDG → Update**). When a new version is out, the button shows **Update: <version>**. Click it, enter your license key once (see "Where is my license key?") and HPDG downloads the installer, checks that it is complete and unchanged, and starts it after you confirm. Save your project first: the installer asks you to close the DAW. Projects and settings are kept. Without a key you still see that a new version is out, and **Buy HPDG** opens the HPDG page. If HPDG says the key was not accepted, check it in your purchase email; if the download limit for today is reached, try again the next day.
 
 To uninstall, use **Windows Settings → Apps → HPDG VST3** or the uninstall shortcut in Start → HamloProd. Keep projects and exported files outside the plugin folder.
 
