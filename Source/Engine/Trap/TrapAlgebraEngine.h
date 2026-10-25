@@ -290,6 +290,9 @@ public:
     static const char* substyleToString(TrapAlgebraSubstyle substyle);
     static int ticksPerBar();
     static int ticksForBars(int bars);
+    // A main kick may sit on `localTick64` (0-63 in a style bar): the positions the engine writes
+    // and keeps in repair. Sample Guide uses it for the kicks it adds after the engine.
+    static bool isMainKickTickAllowed(int localTick64, bool doubleTime);
 
 private:
     TrapAlgebraPattern generateCandidate(const TrapAlgebraParams& params, int candidateIndex) const;

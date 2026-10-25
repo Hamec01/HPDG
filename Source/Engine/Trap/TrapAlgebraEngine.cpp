@@ -1479,6 +1479,11 @@ int TrapAlgebraEngine::ticksForBars(int bars)
     return std::clamp(bars, 1, 16) * kTicksPerBar;
 }
 
+bool TrapAlgebraEngine::isMainKickTickAllowed(int localTick64, bool doubleTime)
+{
+    return isLegalMainKickLocalTick(localTick64, false, doubleTime) && !isStumblingMainKickLocalTick(localTick64);
+}
+
 juce::String TrapAlgebraEngine::buildDebugSummary(const TrapAlgebraPattern& pattern,
                                                   const TrapAlgebraParams& params,
                                                   const TrapSubstyleWeights& weights) const

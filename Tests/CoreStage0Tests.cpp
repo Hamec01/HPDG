@@ -37,6 +37,7 @@
 #include "../Source/Engine/PatternPerformanceTransformEngine.h"
 #include "../Source/Engine/PatternBlendEngine.h"
 #include "../Source/Engine/RapEngine.h"
+#include "../Source/Engine/SampleGuideAccents.h"
 #include "../Source/Engine/SampleLibraryManager.h"
 #include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Engine/StyleDefinitionLoader.h"
@@ -7633,6 +7634,87 @@ void testRackIntensityFormula()
            "Intensity is saved with the project.");
 }
 
+void testTrapSampleGuideKicksFollowTrapGrammar()
+{
+    using namespace bbg;
+    // A tonal sample (drum-loop confidence 0.13) at 168 BPM: low attacks on legal and illegal
+    // Trap kick positions. Guide adds kicks only where the Trap engine itself would.
+    const double bpm = 168.0;
+    const auto secondsAtStep = [&](int step) { return step * TimingGrid::Sixteenth / (bpm / 60.0 * TimingGrid::PPQ); };
+    const auto makeAnalysis = [&](const std::vector<std::pair<int, float>>& peaks)
+    {
+        DrumBreakAnalysis analysis;
+        analysis.valid = true;
+        analysis.bpm = 84.0;
+        analysis.drumLoopConfidence = 0.13f;
+        for (const auto& [step, kickLevel] : peaks)
+        {
+            analysis.onsetTimes.push_back(secondsAtStep(step));
+            analysis.onsetLaneLevels.push_back({ kickLevel, 0.0f, 0.0f });
+        }
+        return analysis;
+    };
+    const auto makeProject = [&](GenreType genre, int intensity)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = genre;
+        project.params.bpm = static_cast<float>(bpm);
+        project.params.bars = 1;
+        project.intensity = intensity;
+        auto* kick = findTrackByType(project, TrackType::Kick);
+        auto* snare = findTrackByType(project, TrackType::Snare);
+        expect(kick != nullptr && snare != nullptr, "Guide kick test requires Kick and Snare tracks.");
+        kick->notes.clear();
+        snare->notes.clear();
+        NoteEvent k;
+        k.pitch = 36;
+        k.gridTick = 0;
+        k.lengthTicks = TimingGrid::Sixteenth;
+        k.velocity = 112;
+        kick->notes.push_back(k);
+        NoteEvent s = k;
+        s.pitch = 38;
+        s.gridTick = 8 * TimingGrid::Sixteenth;
+        snare->notes.push_back(s);
+        return project;
+    };
+    const auto addedSteps = [](const PatternProject& project, int& maxVelocity)
+    {
+        std::set<int> steps;
+        maxVelocity = 0;
+        for (const auto& n : findTrackByType(const_cast<PatternProject&>(project), TrackType::Kick)->notes)
+            if (n.semanticRole == "sample_accent")
+            {
+                steps.insert(n.gridTick / TimingGrid::Sixteenth);
+                maxVelocity = std::max(maxVelocity, n.velocity);
+            }
+        return steps;
+    };
+
+    // Steps 3 / 7 / 13 are positions Trap's repair removes; 10 is legal; 14 is legal but weak.
+    const auto analysis = makeAnalysis({ { 3, 0.9f }, { 7, 0.9f }, { 10, 0.8f }, { 13, 0.9f }, { 14, 0.4f } });
+    int maxVelocity = 0;
+    {
+        auto project = makeProject(GenreType::Trap, 3);
+        SampleGuideAccents::apply(project, analysis, bpm, 0.0, 0.8f);
+        const auto steps = addedSteps(project, maxVelocity);
+        expect(steps == std::set<int> { 10 }, "Trap Guide adds kicks only on Trap's legal kick positions, from strong peaks.");
+        expect(maxVelocity <= 112 - 8, "Trap Guide kicks from a tonal sample play under the engine's kicks.");
+    }
+    {
+        // Intensity 1: the kick is simplified to quarter notes, so a Guide kick stays on them.
+        auto project = makeProject(GenreType::Trap, 1);
+        SampleGuideAccents::apply(project, makeAnalysis({ { 4, 0.9f }, { 10, 0.9f } }), bpm, 0.0, 0.8f);
+        expect(addedSteps(project, maxVelocity) == std::set<int> { 4 }, "Trap Intensity 1: Guide kicks only on quarter notes.");
+    }
+    {
+        // Other genres keep their Guide behaviour: step 3 and a weak 0.4 peak still qualify there.
+        auto project = makeProject(GenreType::BoomBap, 3);
+        SampleGuideAccents::apply(project, makeAnalysis({ { 3, 0.9f }, { 14, 0.4f } }), bpm, 0.0, 0.8f);
+        expect(addedSteps(project, maxVelocity) == std::set<int> { 3, 14 }, "Boom Bap Guide kicks are unchanged by the Trap rules.");
+    }
+}
+
 void testTrapHatStrengthRemovesWholeRolls()
 {
     using namespace bbg;
@@ -7845,6 +7927,7 @@ int main()
     failures += runTest("Update download ticket and URL allow-list", testUpdateDownloadTicketAndAllowList);
     failures += runTest("Update license key and SHA-256", testUpdateLicenseKeyAndChecksum);
     failures += runTest("Trap hat strength removes whole rolls", testTrapHatStrengthRemovesWholeRolls);
+    failures += runTest("Trap Guide kicks follow Trap grammar", testTrapSampleGuideKicksFollowTrapGrammar);
     failures += runTest("Rack intensity formula", testRackIntensityFormula);
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);
     failures += runTest("EQ state serialization and legacy migration smoke", testEqStateSerializationAndLegacyMigrationSmoke);

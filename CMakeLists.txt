@@ -246,6 +246,7 @@ add_executable(HPDG_CoreTests
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Engine/Trap/TrapTempoContext.cpp
     Source/Engine/Trap/TrapAlgebraEngine.cpp
+    Source/Engine/SampleGuideAccents.cpp
     Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/StyleLabReferenceService.cpp
