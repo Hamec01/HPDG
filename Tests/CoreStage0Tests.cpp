@@ -38,6 +38,7 @@
 #include "../Source/Engine/PatternBlendEngine.h"
 #include "../Source/Engine/RapEngine.h"
 #include "../Source/Engine/SampleGuideAccents.h"
+#include "../Source/Engine/Trap/TrapSampleBlend.h"
 #include "../Source/Engine/SampleLibraryManager.h"
 #include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Engine/StyleDefinitionLoader.h"
@@ -7715,6 +7716,152 @@ void testTrapSampleGuideKicksFollowTrapGrammar()
     }
 }
 
+void testTrapSampleBlendOneSourcePerBar()
+{
+    using namespace bbg;
+    // Trap at 150 over a drum loop: the loop's kicks replace the engine's in the bar (only on Trap's
+    // positions), its hats replace the engine's (on the 1/32 / triplet grid, no doubled hats), and
+    // the 808 moves with the kicks.
+    const auto step = [](int s) { return s * TimingGrid::Sixteenth; };
+    const auto note = [](int tick, int pitch, int velocity, int length)
+    {
+        NoteEvent n;
+        n.gridTick = tick;
+        n.pitch = pitch;
+        n.velocity = velocity;
+        n.lengthTicks = length;
+        return n;
+    };
+    auto project = createDefaultProject();
+    project.params.genre = GenreType::Trap;
+    project.params.bpm = 150.0f;
+    project.params.bars = 1;
+    findTrackByType(project, TrackType::Kick)->notes = { note(step(0), 36, 112, step(1)), note(step(10), 36, 108, step(1)) };
+    std::vector<NoteEvent> hats;
+    for (int s = 0; s < 16; s += 2)
+        hats.push_back(note(step(s), 42, 90, step(1) / 2));
+    findTrackByType(project, TrackType::HiHat)->notes = hats;
+    findTrackByType(project, TrackType::Sub808)->enabled = true;
+    ProjectStateController::setTrackNotes(project, TrackType::Sub808, { note(step(0), 34, 110, step(10)), note(step(10), 34, 105, step(6)) });
+    expect(findTrackByType(project, TrackType::Sub808)->notes.size() == 2, "Trap blend test requires the 808 line.");
+
+    ExtractedPatternData loop;
+    loop.bars = 1;
+    auto& kicks = loop.laneNotes[static_cast<size_t>(trackTypeIndex(TrackType::Kick))];
+    // 3 and 7 are stumbling positions Trap never plays; 0 and 6 are Trap kicks.
+    kicks = { note(step(0), 36, 120, step(1)), note(step(3), 36, 120, step(1)), note(step(6), 36, 115, step(1)), note(step(7), 36, 118, step(1)) };
+    auto& loopHats = loop.laneNotes[static_cast<size_t>(trackTypeIndex(TrackType::HiHat))];
+    for (int s = 0; s < 16; ++s)
+        loopHats.push_back(note(step(s), 42, 80 + s, step(1) / 2));
+    loopHats.push_back(note(step(2) + 30, 42, 70, step(1) / 2));   // a second reading of the hat on 3
+    loopHats.push_back(note(step(4) + 70, 42, 70, step(1) / 2));   // smeared: on no Trap hat grid
+
+    const auto report = TrapSampleBlend::apply(project, loop, 150.0, 150.0);
+    std::set<int> kickSteps;
+    for (const auto& n : findTrackByType(project, TrackType::Kick)->notes)
+        kickSteps.insert(n.gridTick / TimingGrid::Sixteenth);
+    expect(kickSteps == std::set<int> { 0, 6 }, "Trap blend: the loop's kicks replace the engine's, only on Trap's kick positions.");
+    expect(report.sampleKicksDropped == 2, "Trap blend: stumbling loop kicks are dropped.");
+
+    const auto& blendedHats = findTrackByType(project, TrackType::HiHat)->notes;
+    bool tight = false;
+    for (size_t i = 1; i < blendedHats.size(); ++i)
+        tight = tight || blendedHats[i].gridTick - blendedHats[i - 1].gridTick < 110;
+    expect(blendedHats.size() == 16 && !tight, "Trap blend: one hat line from the loop, no doubled or smeared hats.");
+
+    std::set<int> bassSteps;
+    for (const auto& n : findTrackByType(project, TrackType::Sub808)->notes)
+        bassSteps.insert(n.gridTick / TimingGrid::Sixteenth);
+    expect(bassSteps == std::set<int> { 0, 6 }, "Trap blend: the 808 follows the kicks that remain.");
+
+    // A loop read at half the beat's tempo (75 under 150): its 16th 3 sounds on the beat's 16th 6.
+    auto doubled = createDefaultProject();
+    doubled.params.genre = GenreType::Trap;
+    doubled.params.bpm = 150.0f;
+    doubled.params.bars = 1;
+    findTrackByType(doubled, TrackType::Kick)->notes = { note(step(0), 36, 112, step(1)) };
+    ExtractedPatternData slow;
+    slow.bars = 1;
+    slow.laneNotes[static_cast<size_t>(trackTypeIndex(TrackType::Kick))] = { note(step(0), 36, 112, step(1)), note(step(3), 36, 112, step(1)) };
+    TrapSampleBlend::apply(doubled, slow, 75.0, 150.0);
+    std::set<int> slowSteps;
+    for (const auto& n : findTrackByType(doubled, TrackType::Kick)->notes)
+        slowSteps.insert(n.gridTick / TimingGrid::Sixteenth);
+    expect(slowSteps == std::set<int> { 0, 6 }, "Trap blend: a half-tempo loop is mapped onto the beat's grid.");
+}
+
+void testTrapAtlClassicFollowsAtlPassport()
+{
+    using namespace bbg;
+    // ATL passport (docs/audit/ATL_PASSPORT.md): the 808 repeats its root and does not jump octaves,
+    // the 808 plays at least as many notes as the kick, hats run in 8ths more than in 16ths.
+    const auto measure = [](int substyle, double& octaveShare, double& bassPerKick, double& sixteenthGaps, double& eighthGaps)
+    {
+        double moves = 0, octaves = 0, bass = 0, kicks = 0, gaps = 0, sixteenths = 0, eighths = 0;
+        for (int seed = 1; seed <= 40; ++seed)
+        {
+            TrapEngine engine;
+            auto project = createDefaultProject();
+            project.params.genre = GenreType::Trap;
+            project.params.trapSubstyle = substyle;
+            project.params.bars = 8;
+            project.params.seed = seed;
+            project.params.bpm = 150.0f;
+            for (auto& track : project.tracks)
+                track.enabled = true;
+            engine.generate(project);
+            auto line = findTrackByType(project, TrackType::Sub808)->notes;
+            std::sort(line.begin(), line.end(), [](const NoteEvent& a, const NoteEvent& b) { return a.gridTick < b.gridTick; });
+            for (size_t i = 1; i < line.size(); ++i)
+            {
+                ++moves;
+                octaves += std::abs(line[i].pitch - line[i - 1].pitch) == 12;
+            }
+            bass += static_cast<double>(line.size());
+            for (const auto& n : findTrackByType(project, TrackType::Kick)->notes)
+                kicks += n.isGhost ? 0 : 1;
+            std::vector<int> hats;
+            for (const auto& n : findTrackByType(project, TrackType::HiHat)->notes)
+                hats.push_back(n.gridTick);
+            std::sort(hats.begin(), hats.end());
+            for (size_t i = 1; i < hats.size(); ++i)
+            {
+                ++gaps;
+                sixteenths += hats[i] - hats[i - 1] == TimingGrid::Sixteenth;
+                eighths += hats[i] - hats[i - 1] == 2 * TimingGrid::Sixteenth;
+            }
+        }
+        octaveShare = octaves / std::max(1.0, moves);
+        bassPerKick = bass / std::max(1.0, kicks);
+        sixteenthGaps = sixteenths / std::max(1.0, gaps);
+        eighthGaps = eighths / std::max(1.0, gaps);
+    };
+    double atlOctave = 0, atlBass = 0, atl16 = 0, atl8 = 0;
+    measure(0, atlOctave, atlBass, atl16, atl8);
+    expect(atlOctave < 0.05, "ATLClassic: the 808 does not jump octaves (ATL passport 0.00-0.07).");
+    expect(atlBass >= 1.0, "ATLClassic: the 808 plays at least as many notes as the kick.");
+    expect(atl8 > 2.0 * atl16, "ATLClassic: hats run in 8ths, 16ths are rare.");
+
+    // Dark trap passport (docs/audit/DARK_TRAP_PASSPORT.md, 21 Savage / Metro Boomin type beats): an
+    // unbroken 8th hat line (1/8 gaps 0.86, 16ths 0.02), no octave jumps in the 808.
+    double darkOctave = 0, darkBass = 0, dark16 = 0, dark8 = 0;
+    measure(1, darkOctave, darkBass, dark16, dark8);
+    expect(darkOctave < 0.05, "DarkTrap: the 808 does not jump octaves.");
+    expect(dark8 > 0.7 && dark16 < 0.1, "DarkTrap: hats are an unbroken 8th line.");
+
+    // The ATL / Dark 808 register: one place per pitch class, never under C1, never above a tritone
+    // over the root, so the sample-led 808 cannot jump octaves or climb high either.
+    bool windowOk = true;
+    for (int key = 0; key < 12; ++key)
+        for (int pitch = 12; pitch <= 72; ++pitch)
+        {
+            const int folded = TrapAlgebraEngine::styleWindow808Pitch(pitch, key);
+            windowOk = windowOk && folded >= 24 && folded <= 24 + key + 6 + 12 && (folded - pitch) % 12 == 0
+                && folded == TrapAlgebraEngine::styleWindow808Pitch(pitch + 12, key);
+        }
+    expect(windowOk, "ATL / Dark 808 window: one place per pitch class, low register.");
+}
+
 void testTrapHatStrengthRemovesWholeRolls()
 {
     using namespace bbg;
@@ -7928,6 +8075,8 @@ int main()
     failures += runTest("Update license key and SHA-256", testUpdateLicenseKeyAndChecksum);
     failures += runTest("Trap hat strength removes whole rolls", testTrapHatStrengthRemovesWholeRolls);
     failures += runTest("Trap Guide kicks follow Trap grammar", testTrapSampleGuideKicksFollowTrapGrammar);
+    failures += runTest("Trap sample blend: one source per bar", testTrapSampleBlendOneSourcePerBar);
+    failures += runTest("Trap ATLClassic follows the ATL passport", testTrapAtlClassicFollowsAtlPassport);
     failures += runTest("Rack intensity formula", testRackIntensityFormula);
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);
     failures += runTest("EQ state serialization and legacy migration smoke", testEqStateSerializationAndLegacyMigrationSmoke);

@@ -16,6 +16,7 @@
 #include "../Engine/TempoInterpretation.h"
 #include "../Engine/ExtractPatternBuilder.h"
 #include "../Engine/SampleGuideAccents.h"
+#include "../Engine/Trap/TrapSampleBlend.h"
 #include "../Engine/SampleBassFollower.h"
 #include "../Engine/SampleBassLineComposer.h"
 #include "../Engine/MidiExportEngine.h"
@@ -4118,10 +4119,25 @@ void BoomBapGeneratorAudioProcessor::reloadLaneSamplesForGenre(GenreType genre)
 }
 
 // The Sub808 lane's default sound: HPDG's clean synthesized sub, exactly in tune (maintainer,
-// 2026-10-15: "a good quality sub by default, for every style").
+// 2026-10-15: "a good quality sub by default, for every style"). Trap ATLClassic / DarkTrap start on
+// their own style 808 (maintainer, 2026-10-28: "choosing ATL loads the ATL 808 right away"; the
+// voices are fitted to the reference beats, tools/tune_synth_808.py). Genre and substyle come from
+// the parameters: on a genre change project.params is rebuilt only after the samples reload.
 void BoomBapGeneratorAudioProcessor::selectDefaultSynthSubLocked()
 {
-    const int index = sampleLibraryManager.firstSynthSubIndex();
+    int index = sampleLibraryManager.firstSynthSubIndex();
+    const auto* genreValue = apvts.getRawParameterValue(ParamIds::genre);
+    const auto* trapSubstyleValue = apvts.getRawParameterValue(ParamIds::trapSubstyle);
+    if (genreValue != nullptr && trapSubstyleValue != nullptr
+        && genreFromChoice(static_cast<int>(genreValue->load())) == GenreType::Trap)
+    {
+        const int substyle = static_cast<int>(trapSubstyleValue->load());
+        const juce::String styleSub = substyle == 0 ? "HPDG Sub808 ATL 1 - C" : (substyle == 1 ? "HPDG Sub808 Dark 1 - C" : juce::String());
+        const auto& subs = sampleLibraryManager.getSamples(TrackType::Sub808);
+        for (size_t i = 0; styleSub.isNotEmpty() && i < subs.size(); ++i)
+            if (subs[i].sourceName == styleSub)
+                index = static_cast<int>(i);
+    }
     if (index < 0 || !laneSampleBank.selectIndex(TrackType::Sub808, index))
         return;
     if (auto* track = ProjectLaneAccess::findTrackState(project, TrackType::Sub808))
@@ -5451,6 +5467,9 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
             if (bassReport.notesFollowed > 0)
                 changed.insert(TrackType::Sub808);
         }
+        // ATL / Dark: the sample-led 808 stays in the style's low register too.
+        if (applyTrapStyle808Window(project))
+            changed.insert(TrackType::Sub808);
 
         if (!changed.empty())
             PatternPerformanceTransformEngine::captureBasePatterns(project, changed);
@@ -5471,7 +5490,22 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
         return false;
     }
 
-    auto blendReport = PatternBlendEngine::apply(project, extracted, currentSampleContext.applyWeights);
+    // Trap: kicks and hats are not layered over the engine's - one source per bar, Trap's rules
+    // decide (TrapSampleBlend); the other lanes blend as before.
+    const bool trapBlend = project.params.genre == GenreType::Trap && !currentSampleContext.applyWeights.exactCopy;
+    auto genericExtracted = extracted;
+    if (trapBlend)
+        for (const auto lane : { TrackType::Kick, TrackType::HiHat })
+            genericExtracted.laneNotes[static_cast<size_t>(trackTypeIndex(lane))].clear();
+    auto blendReport = PatternBlendEngine::apply(project, genericExtracted, currentSampleContext.applyWeights);
+    TrapSampleBlendReport trapReport;
+    if (trapBlend)
+    {
+        trapReport = TrapSampleBlend::apply(project, extracted, breakAnalysis.bpm, project.params.bpm);
+        blendReport.changedTracks.insert(trapReport.changedTracks.begin(), trapReport.changedTracks.end());
+        if (applyTrapStyle808Window(project))
+            blendReport.changedTracks.insert(TrackType::Sub808);
+    }
     if (blendReport.changedTracks.empty())
     {
         lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext) + "\nSample apply result: current lanes already matched the extracted pattern.";
@@ -5489,6 +5523,8 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
 
     lastSampleApplyDebug = sampleApplySummaryLine(currentSampleContext)
         + "\n" + describePatternBlendReport(blendReport);
+    if (trapReport.applied)
+        lastSampleApplyDebug += "\n" + describeTrapSampleBlendReport(trapReport);
     if (ruleReport.applied)
         lastSampleApplyDebug += "\n" + describeSubstyleRuleReport(ruleReport);
 
@@ -5617,6 +5653,9 @@ void BoomBapGeneratorAudioProcessor::applySelectedStylePreset(bool force)
             track.enabled = lane.enabledByDefault;
             track.laneVolume = juce::jlimit(0.0f, 1.5f, lane.volumeDefault);
         }
+        // A new Trap substyle brings its 808 (a genre change does it after the samples reload).
+        if (genreType == GenreType::Trap && !genreChanged && trapChoice != lastAppliedTrapSubstyleChoice)
+            selectDefaultSynthSubLocked();
         rebuildMidiCache();
     }
 

@@ -144,6 +144,7 @@ target_sources(HPDG
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Engine/Trap/TrapTempoContext.cpp
     Source/Engine/Trap/TrapAlgebraEngine.cpp
+    Source/Engine/Trap/TrapSampleBlend.cpp
     Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/StyleLabReferenceService.cpp
     Source/Services/StyleLabReferenceBrowserService.cpp
@@ -246,6 +247,7 @@ add_executable(HPDG_CoreTests
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Engine/Trap/TrapTempoContext.cpp
     Source/Engine/Trap/TrapAlgebraEngine.cpp
+    Source/Engine/Trap/TrapSampleBlend.cpp
     Source/Engine/SampleGuideAccents.cpp
     Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/TemporaryMidiExportService.cpp
@@ -334,6 +336,7 @@ add_executable(HPDG_TimingBaselineDump
     Source/Engine/Trap/TrapStyleProfile.cpp
     Source/Engine/Trap/TrapTempoContext.cpp
     Source/Engine/Trap/TrapAlgebraEngine.cpp
+    Source/Engine/Trap/TrapSampleBlend.cpp
     Source/Engine/Trap/TrapQualityScorer.cpp
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/StyleLabReferenceService.cpp

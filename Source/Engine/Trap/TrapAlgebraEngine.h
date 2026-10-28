@@ -293,6 +293,12 @@ public:
     // A main kick may sit on `localTick64` (0-63 in a style bar): the positions the engine writes
     // and keeps in repair. Sample Guide uses it for the kicks it adds after the engine.
     static bool isMainKickTickAllowed(int localTick64, bool doubleTime);
+    // ATLClassic / DarkTrap 808 register: a fourth under to a fifth over the root (C1-B1 + key), so the
+    // line never jumps an octave and never climbs high (ATL / dark trap passports; maintainer
+    // 2026-10-28: "it plays the root, then goes right up high - too many jumps"). Used by the line
+    // composer and after the sample-led 808 (bass composer / follower / drum-loop blend).
+    static int styleWindow808Pitch(int pitch, int keyRoot);
+    static bool usesStyleWindow808(int trapSubstyle) { return trapSubstyle == 0 || trapSubstyle == 1; }
 
 private:
     TrapAlgebraPattern generateCandidate(const TrapAlgebraParams& params, int candidateIndex) const;

@@ -252,6 +252,14 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
     const bool major = params.scaleMode == 1;
     const int root = ((params.keyRoot % 12) + 12) % 12;
     const int base = 24 + root; // C1-B1
+    // ATL (0) and Dark (1): no octave jumps inside the bar (ATL / dark trap passports: 0.00-0.07).
+    const bool atl = params.trapSubstyle == 0 || params.trapSubstyle == 1;
+    // Dark (21 Savage / Metro Boomin): the 808 stays on its root - "I don't even want to change the
+    // note of the bass much" (dark trap tutorials, docs/audit/DARK_TRAP_PASSPORT.md); the first
+    // version jumped from the root up high too often (maintainer, 2026-10-28).
+    const bool dark = params.trapSubstyle == 1;
+    // ATL / Dark keep the line low and close: a fourth under to a fifth over the root.
+    auto window = [&](int pitch) { return atl ? TrapAlgebraEngine::styleWindow808Pitch(pitch, params.keyRoot) : pitch; };
     auto fold = [](int pitch)
     {
         while (pitch > 47)
@@ -271,6 +279,8 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
         const int inPhrase = bar % 4;
         if (inPhrase == 0)
             barDegree[static_cast<size_t>(bar)] = 0;
+        else if (dark && inPhrase != 3)
+            barDegree[static_cast<size_t>(bar)] = 0; // Dark: the degree moves only at the phrase's end
         else if (inPhrase == 2)
             barDegree[static_cast<size_t>(bar)] = unit() < 0.85f ? 0 : barDegreeMove();
         else if (inPhrase == 3 && bar >= 2 && unit() < 0.5f)
@@ -302,10 +312,13 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
         else
         {
             const float r = unit();
-            if (r < 0.50f)
+            if (r < (dark ? 0.75f : 0.50f))
                 pitch = previous;
             else if (r < 0.62f)
-                pitch = previous + 12 <= 47 && (previous - 12 < 24 || unit() < 0.6f) ? previous + 12 : previous - 12;
+                // ATL: no octave jumps inside the bar (ATL passport, docs/audit/ATL_PASSPORT.md: octave
+                // moves 0.00-0.07 in 9 Atlanta / Young Thug type beats, HPDG 0.10): the root repeats.
+                pitch = atl ? previous
+                            : (previous + 12 <= 47 && (previous - 12 < 24 || unit() < 0.6f) ? previous + 12 : previous - 12);
             else if (r < 0.90f)
             {
                 int interval = pick({ { 3, 0.36f }, { 4, 0.12f }, { 5, 0.12f }, { 2, 0.16f }, { -2, 0.12f }, { 7, 0.12f } });
@@ -313,18 +326,18 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
                     interval += interval > 0 ? 1 : -1;
                 pitch = fold(degreePitch + interval);
                 // Now and then the move lands an octave up (a leap over the octave, 8 % in the packs).
-                if (pitch + 12 <= 47 && std::abs(pitch + 12 - previous) > 12 && std::abs(pitch + 12 - previous) <= 19 && unit() < 0.40f)
+                if (!atl && pitch + 12 <= 47 && std::abs(pitch + 12 - previous) > 12 && std::abs(pitch + 12 - previous) <= 19 && unit() < 0.40f)
                     pitch += 12;
             }
             else
-                pitch = degreePitch != previous ? degreePitch : fold(degreePitch + 12);
+                pitch = degreePitch != previous ? degreePitch : fold(degreePitch + (atl ? 7 : 12));
         }
         // A pickup in the bar's last beat leads into the next bar's degree.
         const bool lastInBar = i + 1 >= notes.size() || (notes[i + 1].gridTick / HiResTiming::kTicks1_16) / 16 != bar;
         if (lastInBar && local >= 12 && bar + 1 < bars && barDegree[static_cast<size_t>(bar + 1)] != barDegree[static_cast<size_t>(bar)]
             && unit() < 0.45f)
             pitch = fold(base + barDegree[static_cast<size_t>(bar + 1)] + (previous >= 36 ? 12 : 0));
-        note.pitch = std::clamp(pitch, 24, 47);
+        note.pitch = std::clamp(window(pitch), 24, 47);
         note.glideToNext = false;
         note.isSlide = false;
         previous = note.pitch;

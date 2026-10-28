@@ -667,7 +667,13 @@ void TrapAlgebraEngine::generateSkeleton(TrapPatternMatrix& matrix,
         // least under the snare, most on 4 / 12; docs/audit/TRAP_STAGE.md step 3). Skip chance per 8th =
         // 1 - the calibration presence, scaled by density (x1 at 0.5, more gaps when sparse).
         static constexpr std::array<float, 8> eighthSkip { 0.20f, 0.38f, 0.12f, 0.32f, 0.44f, 0.31f, 0.18f, 0.41f };
-        const float gapScale = std::clamp(1.4f - 0.8f * params.density, 0.4f, 1.4f);
+        // Dark trap (21 Savage / Metro Boomin passport): an unbroken 8th line (1/8 gaps 0.86) at an
+        // even level (velocity sd 4-7 in the stems): the "clock" of the beat.
+        const bool dark = params.substyle == TrapAlgebraSubstyle::DarkTrap;
+        // Two kinds by seed ("can generate differently"): an even line, or a two-step with the beats
+        // accented and the 8ths between softer ("duplicate them and lower the velocity: more bounce").
+        const bool twoStep = dark && params.seed % 2 == 1;
+        const float gapScale = std::clamp(1.4f - 0.8f * params.density, 0.4f, 1.4f) * (dark ? (twoStep ? 0.15f : 0.25f) : 1.0f);
         const int hatPulse = params.tempoContext.doubleTime ? 4 : 8;
         for (int tick = 0; tick < 64; tick += hatPulse)
         {
@@ -675,7 +681,8 @@ void TrapAlgebraEngine::generateSkeleton(TrapPatternMatrix& matrix,
                 continue;
             matrix.setNote(TrapAlgebraLanes::HiHat,
                            start + tick,
-                           hatVelocity(rng, tick, false),
+                           twoStep ? (tick % 16 == 0 ? randomInt(rng, 84, 96) : randomInt(rng, 60, 72))
+                                   : dark ? randomInt(rng, 72, 84) : hatVelocity(rng, tick, false),
                            1,
                            (tick == 8 || tick == 24 || tick == 40 || tick == 56) ? swingTicks : 0,
                            TrapAlgebraRole::Support);
@@ -699,6 +706,15 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
     const int start = barStart(bar);
     const auto style = weightsForSubstyle(params.substyle);
     const float density = std::clamp(params.density * (0.72f + style.hatRate * 0.56f), 0.0f, 1.0f);
+    // ATL passport (docs/audit/ATL_PASSPORT.md: 12 Atlanta / Young Thug type beats, Demucs stems):
+    // the 808 carries the low end, the kick is sparse (stem 0.8 a bar, HPDG 2.5), the 808 plays more
+    // notes than the kick (2.4-4.9 a bar, HPDG 2.3), hats run in straight 8ths (1/8 gaps 0.6-0.95,
+    // 16ths 0.05; HPDG 0.39 / 0.36), rolls are rare and triplet.
+    const bool atl = params.substyle == TrapAlgebraSubstyle::ATLClassic;
+    // Dark trap passport (docs/audit/DARK_TRAP_PASSPORT.md: 21 Savage / Metro Boomin type beats): hats
+    // in straight 8ths (1/8 gaps 0.86, 16ths 0.02, no roll in 7 tracks; HPDG 0.40 / 0.30 / 0.13 per 4
+    // bars), the 808 plays more notes than the kick (3.1 a bar, HPDG 2.1), a sparser kick (HPDG 2.3).
+    const bool dark = params.substyle == TrapAlgebraSubstyle::DarkTrap;
     const float energy = barEnergy(bar);
     const float variation = barVariationAmount(bar) * (0.65f + params.variation * 0.70f);
     const bool bar4 = (bar % 4) == 3;
@@ -833,10 +849,11 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
     // the second half of the bar, most on the 16ths 10 / 12 / 14 (0.37 / 0.40 / 0.31 of the bars; HPDG
     // 0.27 / 0.17 / 0.27), fewer on 2 / 6 (step 7): up to two articulation kicks, weighted by that
     // profile. A repeated bar stays a copy.
-    for (int extra = 0; extra < 2 && !repeatedBar; ++extra)
+    for (int extra = 0; extra < (atl || dark ? 1 : 2) && !repeatedBar; ++extra)
     {
-        const float extraChance = extra == 0 ? 0.30f + density * 0.45f + style.kickIrregularity * 0.20f
-                                             : 0.12f + density * 0.35f + style.kickIrregularity * 0.15f;
+        const float extraChance = (extra == 0 ? 0.30f + density * 0.45f + style.kickIrregularity * 0.20f
+                                              : 0.12f + density * 0.35f + style.kickIrregularity * 0.15f)
+            * (atl ? 0.45f : (dark ? 0.35f : 1.0f));
         if (!chance(rng, extraChance))
             break;
         static constexpr std::array<std::pair<int, float>, 6> articulation {{
@@ -914,12 +931,19 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         const int duration = randomInt(rng, minDuration, maxDuration);
         auto* subCell = matrix.cellAt(TrapAlgebraLanes::Sub808, start + kickTick);
         const bool phraseAnchor = kickTick == 0 || (bar4 && kickTick >= 56);
+        // Dark: "the kick is not on every point the 808 hits, only in certain spots - the 808 works one
+        // way, the kick another" (Metro Boomin, dark trap tutorials): articulation kicks play alone,
+        // other kicks off the phrase anchor carry an 808 half the time.
+        const auto* kickCell = matrix.cellAt(TrapAlgebraLanes::Kick, start + kickTick);
+        const bool articulationKick = kickCell != nullptr && kickCell->role == TrapAlgebraRole::Accent;
         const bool shouldCouple = subCell != nullptr && subCell->active
             ? true
-            : chance(rng, std::clamp(couplingTarget + (phraseAnchor ? 0.20f : 0.0f)
-                                                   - ((kickTick == 24 || kickTick == 40) ? 0.06f : 0.0f),
-                                     0.30f,
-                                     0.96f));
+            : (dark && !phraseAnchor)
+                ? (!articulationKick && chance(rng, 0.50f))
+                : chance(rng, std::clamp(couplingTarget + (phraseAnchor ? 0.20f : 0.0f)
+                                                       - ((kickTick == 24 || kickTick == 40) ? 0.06f : 0.0f),
+                                         0.30f,
+                                         0.96f));
         if (subCell != nullptr && subCell->active)
         {
             subCell->velocity = std::clamp(subCell->velocity + static_cast<int>(style.bassDistortion * 5.0f), 88, 120);
@@ -956,10 +980,10 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
     // Cr2 Trippy Trap MIDI) put about half their notes between the kicks (1.2 a bar), mostly an 8th,
     // a dotted quarter or a quarter after a kick (docs/audit/TRAP_STAGE.md step 4): up to two answers a
     // bar, their chance rising with density; never on the snare.
-    for (int answer = 0; answer < 2; ++answer)
+    for (int answer = 0; answer < (atl || dark ? 3 : 2); ++answer)
     {
         if (selectedKicks.empty()
-            || !chance(rng, 0.22f + density * 0.30f + params.variation * 0.08f + style.kickIrregularity * 0.10f))
+            || !chance(rng, 0.22f + density * 0.30f + params.variation * 0.08f + style.kickIrregularity * 0.10f + (atl ? 0.25f : (dark ? 0.30f : 0.0f))))
             continue;
         const int sourceKick = selectedKicks[static_cast<size_t>(randomInt(rng, 0, static_cast<int>(selectedKicks.size()) - 1))];
         const float offsetPick = random01(rng);
@@ -974,9 +998,28 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
             matrix.setNote(TrapAlgebraLanes::Sub808,
                            start + answerTick,
                            randomInt(rng, 82, 108),
-                           randomInt(rng, 8, 16),
+                           dark ? randomInt(rng, 12, 24) : randomInt(rng, 8, 16),
                            0,
                            answerTick >= 56 ? TrapAlgebraRole::BassPickup : TrapAlgebraRole::BassAnswer);
+        }
+    }
+
+    // Dark: "these quick notes are essential for Metro Boomin type beats" - now and then a short 808
+    // hit a 16th before a ringing one (same pitch: the line composer repeats the root), never on the
+    // snare.
+    if (dark && chance(rng, 0.25f))
+    {
+        std::vector<int> bassTicks;
+        for (int tick = 8; tick < 64; ++tick)
+            if (matrix.hasNote(TrapAlgebraLanes::Sub808, start + tick))
+                bassTicks.push_back(tick);
+        if (!bassTicks.empty())
+        {
+            const int target = bassTicks[static_cast<size_t>(randomInt(rng, 0, static_cast<int>(bassTicks.size()) - 1))];
+            const int quick = target - 4;
+            const bool onSnare = params.tempoContext.doubleTime ? (quick == 16 || quick == 48) : quick == 32;
+            if (!onSnare && !matrix.hasNote(TrapAlgebraLanes::Sub808, start + quick) && !matrix.hasNote(TrapAlgebraLanes::Sub808, start + quick - 2))
+                matrix.setNote(TrapAlgebraLanes::Sub808, start + quick, randomInt(rng, 84, 104), 2, 0, TrapAlgebraRole::BassPickup);
         }
     }
 
@@ -987,6 +1030,10 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         float probability = 0.05f + style.hatRate * 0.28f + density * 0.18f + variation * 0.16f + (preSnare ? 0.08f : 0.0f) + (ending ? 0.10f : 0.0f);
         if (params.substyle == TrapAlgebraSubstyle::CloudTrap || params.substyle == TrapAlgebraSubstyle::LuxuryTrap)
             probability *= 0.80f;
+        if (atl)
+            probability *= 0.25f;
+        if (dark)
+            probability *= (params.seed % 2 == 1 && (tick == 28 || tick == 60)) ? 0.60f : 0.08f; // two-step: a slice before the snare / the bar's end
         if (chance(rng, probability))
         {
             const bool accent = chance(rng, 0.18f + energy * 0.18f + (preSnare || ending ? 0.18f : 0.0f));
@@ -999,13 +1046,25 @@ void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
         }
     }
 
-    const int desiredRolls = bar4
+    // Dark trap: the extra snares of the passport, on 16th 3 (0.21 of the bars) and 15 (0.14), softer
+    // than the backbeat; never on a kick.
+    if (dark && !params.tempoContext.doubleTime)
+        for (const auto& [tick, share] : { std::pair<int, float> { 8, 0.21f }, std::pair<int, float> { 56, 0.14f } })
+            if (!matrix.hasNote(TrapAlgebraLanes::Kick, start + tick) && chance(rng, share))
+                matrix.setNote(TrapAlgebraLanes::Snare, start + tick, randomInt(rng, 82, 100), 2, 0, TrapAlgebraRole::Accent);
+
+    const int desiredRolls = dark
+                                 ? (bar4 && chance(rng, 0.08f) ? 1 : 0) // a rare turnaround roll only
+                                 : bar4
                                  ? (chance(rng, 0.10f + style.rollRate * 0.80f + params.variation * 0.10f) ? 1 : 0)
                                  : (chance(rng, style.rollRate * 0.40f + density * 0.05f) ? 1 : 0);
     for (int i = 0; i < desiredRolls; ++i)
         addRoll(matrix, params, bar, bar4, rng);
 
-    if (chance(rng, 0.06f + density * 0.10f + (bar4 ? 0.10f : 0.0f)))
+    // Dark: an open hat an 8th before the snare ("the perfect spot for the open hat").
+    if (dark && chance(rng, 0.30f) && !matrix.hasNote(TrapAlgebraLanes::OpenHat, start + 24))
+        matrix.setNote(TrapAlgebraLanes::OpenHat, start + 24, randomInt(rng, 70, 96), 3, 0, TrapAlgebraRole::Accent);
+    else if (chance(rng, 0.06f + density * 0.10f + (bar4 ? 0.10f : 0.0f)))
         matrix.setNote(TrapAlgebraLanes::OpenHat, start + (bar4 ? randomInt(rng, 52, 60) : (chance(rng, 0.5f) ? 24 : 56)), randomInt(rng, 72, 110), 3, microTimingForLane(TrapAlgebraLanes::OpenHat, start, params, rng), TrapAlgebraRole::Accent);
 
     if ((bar == 0 && candidateIndex % 7 == 0 && chance(rng, 0.28f)) || (bar4 && chance(rng, 0.36f)))
@@ -1429,7 +1488,7 @@ TrapSubstyleWeights TrapAlgebraEngine::weightsForSubstyle(TrapAlgebraSubstyle su
         case TrapAlgebraSubstyle::ATLClassic:
         default:
             weights = { "ATLClassic", 1.40f, 1.50f, 1.20f, 0.90f, 1.10f, 0.80f, 0.70f, 1.60f, 1.40f, 0.25f, 55.0f, 4,
-                        0.48f, 0.25f, 0.15f, 0.48f, 0.35f, 0.35f, 0.90f, 0.25f, 0.45f, 0.90f, 0.05f, 0.05f, 0.05f, 0.35f };
+                        0.48f, 0.18f, 0.45f, 0.48f, 0.35f, 0.35f, 0.90f, 0.25f, 0.45f, 0.90f, 0.05f, 0.05f, 0.05f, 0.35f };
             break;
     }
     return weights;
@@ -1477,6 +1536,18 @@ int TrapAlgebraEngine::ticksPerBar()
 int TrapAlgebraEngine::ticksForBars(int bars)
 {
     return std::clamp(bars, 1, 16) * kTicksPerBar;
+}
+
+int TrapAlgebraEngine::styleWindow808Pitch(int pitch, int keyRoot)
+{
+    // One place per pitch class (a fourth under to a tritone over the root), so two notes of the same
+    // class never sit an octave apart; below C1 the class moves up an octave.
+    const int base = 24 + ((keyRoot % 12) + 12) % 12;
+    const int low = base - 5;
+    int folded = low + (((pitch - low) % 12) + 12) % 12;
+    if (folded < 24)
+        folded += 12;
+    return folded;
 }
 
 bool TrapAlgebraEngine::isMainKickTickAllowed(int localTick64, bool doubleTime)
