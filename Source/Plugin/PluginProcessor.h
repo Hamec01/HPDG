@@ -42,6 +42,8 @@ namespace ParamIds
 {
 static constexpr auto bpm = "bpm";
 static constexpr auto bpmLock = "bpm_lock";
+static constexpr auto tempoDouble = "tempo_double";
+static constexpr auto trapRollMode = "trap_roll_mode";
 static constexpr auto syncDawTempo = "sync_daw_tempo";
 static constexpr auto swingPercent = "swing_percent";
 static constexpr auto velocityAmount = "velocity_amount";
@@ -150,6 +152,12 @@ public:
     void setSub808TrackNotes(const RuntimeLaneId& laneId, const std::vector<Sub808NoteEvent>& notes);
     void setSub808LaneSettings(TrackType track, const Sub808LaneSettings& settings);
     void setSub808LaneSettings(const RuntimeLaneId& laneId, const Sub808LaneSettings& settings);
+    // The Sub808 lane's HPDG 808 sound (its strip and, once chosen, an HPDG 808 sound in place of the
+    // bank sample). Message thread.
+    Sub808SoundState getSub808Sound() const;
+    void setSub808Sound(const Sub808SoundState& sound);
+    // The lane's bank sample as the lane plays it (for the HPDG 808 editor's sample layer).
+    std::shared_ptr<const BassSample> getSub808BankSample() const;
 
     void setTrackSolo(TrackType track, bool value);
     void setTrackSolo(const RuntimeLaneId& laneId, bool value);
@@ -441,6 +449,13 @@ private:
     void applyMasterFx(juce::AudioBuffer<float>& buffer, MasterFxRuntimeState& runtime, float masterVol, float compAmount, float lofiAmount) const;
     std::vector<PreviewEvent> buildPreviewEventsForProject(const PatternProject& sourceProject, double sampleRate) const;
     PreviewEngine::TriggerOptions triggerOptionsFor(const PreviewEvent& event) const;
+    // The engine sound for a Sub808 lane state (the bank's selected sample when it is not custom).
+    // Call with projectMutex held; copies the bank buffer.
+    std::shared_ptr<const Sub808Sound> buildSub808SoundLocked(const Sub808SoundState& state) const;
+    // Rebuilds sub808Sound on the message thread. The audio thread asks for it whenever the lane's
+    // sound state or the bank's selected sample is not what sub808Sound was built from (a strip knob,
+    // undo, a loaded project, a genre change, the < > sample keys), so nothing else has to call it.
+    void refreshSub808Sound();
     bool renderPatternAudio(const PatternProject& snapshot, std::optional<TrackType> onlyLane,
                             juce::AudioBuffer<float>& out, double sampleRate);
     bool writeWav(const juce::AudioBuffer<float>& audio, double sampleRate, const juce::File& file) const;
@@ -486,6 +501,15 @@ private:
     SoundFxRuntimeState globalFxRuntimeState;
     MasterFxRuntimeState masterFxRuntimeState;
     std::vector<PreviewEvent> previewEvents;
+    std::shared_ptr<const Sub808Sound> sub808Sound; // under projectMutex
+    Sub808SoundState sub808SoundBuiltFrom;           // under projectMutex
+    const void* sub808SoundBuiltBank = nullptr;      // the bank buffer it was built from
+    bool sub808SoundBuilt = false;
+    struct Sub808SoundRebuilder final : juce::AsyncUpdater
+    {
+        std::function<void()> rebuild;
+        void handleAsyncUpdate() override { if (rebuild) rebuild(); }
+    } sub808SoundRebuilder;
     std::vector<PendingPreviewNote> pendingPreviewNotes;
     bool previewPlaying = false;
     int previewSamplePosition = 0;

@@ -197,8 +197,31 @@ const juce::String Bass808Processor::getProgramName(int index)
     return juce::String(preset.genre) + " - " + preset.name;
 }
 
+void Bass808Processor::applyUserPreset(const BassPresetFile& preset)
+{
+    if (preset.sample != nullptr)
+        setSampleDirect(preset.sample);
+    writeSettings(preset.settings);
+    userPresetName = preset.name;
+}
+
+juce::String Bass808Processor::presetName() const
+{
+    if (userPresetName.isNotEmpty())
+        return userPresetName;
+    const auto& list = bassPresets();
+    return list[static_cast<size_t>(juce::jlimit(0, static_cast<int>(list.size()) - 1, currentPreset))].name;
+}
+
+void Bass808Processor::setSampleDirect(std::shared_ptr<const BassSample> sample)
+{
+    retire(engine.getSample());
+    engine.setSample(std::move(sample));
+}
+
 void Bass808Processor::applyPreset(int index)
 {
+    userPresetName = {};
     const auto& list = bassPresets();
     currentPreset = juce::jlimit(0, static_cast<int>(list.size()) - 1, index);
     auto settings = list[static_cast<size_t>(currentPreset)].settings;
@@ -366,7 +389,9 @@ void Bass808Processor::setStateInformation(const void* data, int sizeInBytes)
 }
 } // namespace bbg
 
+#if !HPDG_BASS808_EMBEDDED // inside HPDG (the Sub808 lane's editor) HPDG is the plugin
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new bbg::Bass808Processor();
 }
+#endif

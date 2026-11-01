@@ -42,9 +42,9 @@ int main()
     const HWND editor = make(frame, 10, 40, 600, 400);
     expect(findPluginFrame(editor) == frame, "Docked: the frame is the host's plugin window, not the workspace or the DAW.");
     const HWND aboveBefore = GetWindow(frame, GW_HWNDPREV);
-    bool hidden = false;
-    expect(hideAndShowForTest(frame, hidden), "Docked: the window is shown again with its style after the drag.");
-    expect(hidden, "Docked: the plugin window is hidden while the file is over the DAW (the playlist takes the drop).");
+    bool moved = false;
+    expect(moveAwayAndRestoreForTest(frame, moved), "Docked: parent, position, visibility and styles survive a drag round.");
+    expect(moved, "Docked: the plugin window stays visible but moves outside its parent while the playlist takes the drop.");
     expect(GetWindow(frame, GW_HWNDPREV) == aboveBefore, "Docked: the plugin window keeps its place among the DAW's windows.");
     (void) playlist;
 
@@ -59,8 +59,8 @@ int main()
     const HWND floating = make(nullptr, 200, 200, 640, 470);
     const HWND floatingEditor = make(floating, 10, 40, 600, 400);
     expect(findPluginFrame(floatingEditor) == floating, "Floating: the frame is the top-level plugin window.");
-    expect(hideAndShowForTest(floating, hidden), "Floating: the window is shown again with its style after the drag.");
-    expect(hidden, "Floating: the plugin window is hidden while the file is over the DAW.");
+    expect(moveAwayAndRestoreForTest(floating, moved), "Floating: position, visibility and styles survive a drag round.");
+    expect(moved, "Floating: the plugin window stays visible but moves offscreen while the file is over the DAW.");
 
     // An editor that fills its own top-level window.
     const HWND bare = make(nullptr, 300, 300, 600, 400);

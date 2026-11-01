@@ -123,6 +123,16 @@ target_sources(HPDG
     Source/Engine/GenerationModel/StyleTargetModel.cpp
     Source/Engine/MidiExportEngine.cpp
     Source/Engine/PreviewEngine.cpp
+    Source/Bass808/BassEngine.cpp
+    Source/Bass808/BassSample.cpp
+    Source/Bass808/BassSettingsIO.cpp
+    Source/Bass808/Sub808Sound.cpp
+    Source/Bass808/Bass808Processor.cpp
+    Source/Bass808/Bass808Editor.cpp
+    Source/Bass808/Bass808Screen.cpp
+    Source/Bass808/Mag/DSP/HamloMag.cpp
+    Source/Bass808/Mag/DSP/Saturator.cpp
+    Source/Audio/Synth808Voice.cpp
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
     Source/Engine/ExtractPatternBuilder.cpp
@@ -163,6 +173,8 @@ target_sources(HPDG
         Source/UI/StyleLabReferenceBrowserComponent.cpp
         Source/UI/TrackRowComponent.cpp
         Source/UI/TrackListComponent.cpp
+        Source/UI/Sub808StripComponent.cpp
+        Source/UI/Sub808EditorOverlay.cpp
         Source/UI/SoundModuleComponent.cpp
         Source/UI/Sub808PianoRollComponent.cpp
         Source/UI/GridEditActions.cpp
@@ -175,7 +187,11 @@ target_sources(HPDG
 target_include_directories(HPDG
     PRIVATE
         Source
+        Source/Bass808/Mag
 )
+
+# HPDG 808's processor / editor are built in for the Sub808 lane's editor (not as a second plugin entry).
+target_compile_definitions(HPDG PRIVATE HPDG_BASS808_EMBEDDED=1)
 
 target_link_libraries(HPDG
     PRIVATE
@@ -391,6 +407,28 @@ target_link_libraries(HPDG_LaneBoundaryTests
 
 add_test(NAME HPDG_LaneBoundaryTests COMMAND HPDG_LaneBoundaryTests)
 
+# HPDG's Sub808 lane through the HPDG 808 engine: every bank sample against the old sample player.
+add_executable(HPDG_Sub808EngineCheck
+    Tests/Sub808EngineCheck.cpp
+)
+
+target_include_directories(HPDG_Sub808EngineCheck PRIVATE Source)
+
+target_link_libraries(HPDG_Sub808EngineCheck
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_test(NAME HPDG_Sub808EngineCheck COMMAND HPDG_Sub808EngineCheck ${CMAKE_SOURCE_DIR}/Samples)
+
 # Renders the VST3 editor to PNG files (one per UI skin) for checking the look without a host.
 add_executable(HPDG_UiSnapshot
     Tests/UiSnapshot.cpp
@@ -510,7 +548,7 @@ target_link_libraries(HPDG_BreakLab
         juce::juce_recommended_warning_flags
 )
 
-# Drag-out window hide / show against real Win32 windows (Source/UI/ExternalDragWindowFade.cpp).
+# Drag-out window move-away / restore against real Win32 windows (Source/UI/ExternalDragWindowFade.cpp).
 if (WIN32)
     add_executable(HPDG_DragWindowFadeTests
         Tests/DragWindowFadeTests.cpp
@@ -555,6 +593,7 @@ target_sources(HPDG808
         Source/Bass808/Bass808Screen.cpp
         Source/Bass808/BassEngine.cpp
         Source/Bass808/BassSample.cpp
+        Source/Bass808/BassSettingsIO.cpp
         Source/Bass808/Mag/DSP/HamloMag.cpp
         Source/Bass808/Mag/DSP/Saturator.cpp
         Source/Audio/Synth808Voice.cpp

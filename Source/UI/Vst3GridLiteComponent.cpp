@@ -1,4 +1,5 @@
 #include "Vst3GridLiteComponent.h"
+#include "GenreRhythmGrid.h"
 
 #include <algorithm>
 #include <cmath>
@@ -22,6 +23,8 @@ constexpr int kLaneLabelWidth = 96;
 juce::Colour roleColour(const juce::String& role, bool selectedLane)
 {
     const auto normalized = role.trim().toLowerCase();
+    if (normalized.contains("roll"))
+        return sketch::Theme::ochre();
     if (normalized == "support")
         return selectedLane ? sketch::Theme::ochre() : sketch::Theme::blue();
     if (normalized == "accent")
@@ -268,11 +271,15 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
                          sketch::Theme::gridLine(), 0.75f, 100 + laneIndex);
     }
 
-    for (int step = 0; step <= totalSteps; ++step)
+    // Subdivision lines follow Snap; note positions remain exact PPQ, including triplets.
+    // Suppress subpixel minor lines at far zoom rather than drawing thousands of overlaps.
+    const int snapTicks = ticksForSnapId(snapResolutionId);
+    const int visibleTicks = stepWidth * snapTicks / ticksPerStep() >= 1.0f ? snapTicks : ticksPerStep();
+    for (int tick = 0; tick <= totalSteps * ticksPerStep(); tick += visibleTicks)
     {
-        const float x = static_cast<float>(gridArea.getX()) + static_cast<float>(step) * stepWidth;
-        const bool barLine = step % 16 == 0;
-        const bool beatLine = step % 4 == 0;
+        const float x = static_cast<float>(gridArea.getX()) + static_cast<float>(tick) / ticksPerStep() * stepWidth;
+        const bool barLine = tick % (kInternalPpq * 4) == 0;
+        const bool beatLine = tick % kInternalPpq == 0;
         g.setColour(barLine ? sketch::Theme::graphiteSoft().withAlpha(0.54f)
                             : (beatLine ? sketch::Theme::gridLine().withAlpha(0.62f)
                                         : sketch::Theme::gridLine().withAlpha(0.34f)));
@@ -335,7 +342,8 @@ void Vst3GridLiteComponent::paint(juce::Graphics& g)
                 continue;
 
             const float lengthSteps = static_cast<float>(juce::jmax(1, note.lengthTicks)) / static_cast<float>(ticksPerStep());
-            const float width = juce::jmin(maxWidth, juce::jmax(4.0f, lengthSteps * stepWidth - 2.0f));
+            const float minimumWidth = note.semanticRole.contains("roll") ? 1.0f : 4.0f;
+            const float width = juce::jmin(maxWidth, juce::jmax(minimumWidth, lengthSteps * stepWidth - 2.0f));
             const auto rect = juce::Rectangle<float>(x + 1.0f,
                                                      y + 4.0f,
                                                      width,

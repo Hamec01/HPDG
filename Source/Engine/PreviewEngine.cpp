@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#include "Bass808/BassEngine.h"
+#include "Bass808/Sub808Sound.h"
+
 namespace bbg
 {
 namespace
@@ -13,10 +16,131 @@ bool isCoreLane(TrackType t)
 }
 }
 
+PreviewEngine::PreviewEngine() : bass(std::make_unique<BassEngine>())
+{
+    bassEvents.reserve(512);
+}
+
+PreviewEngine::~PreviewEngine() = default;
+
 void PreviewEngine::prepare(double sampleRate)
 {
     currentSampleRate = sampleRate > 1000.0 ? sampleRate : 44100.0;
+    bass->prepare(currentSampleRate, 512);
+    if (bassSound != nullptr)
+    {
+        bass->setSettings(bassSound->settings);
+        bass->setSample(bassSound->sample);
+    }
+    bassBuffer.assign(8192, 0.0f);
     reset();
+}
+
+void PreviewEngine::setSub808Sound(std::shared_ptr<const Sub808Sound> sound, double bpm)
+{
+    bass->setTempo(bpm);
+    if (sound == bassSound)
+        return;
+    bassSound = std::move(sound);
+    if (bassSound != nullptr)
+    {
+        bass->setSettings(bassSound->settings); // a note already sounding takes the new settings at once
+        bass->setSample(bassSound->sample);
+    }
+}
+
+bool PreviewEngine::bassPlaysLane(const LaneSampleBank& sampleBank) const
+{
+    if (bassSound == nullptr)
+        return false;
+    return bassSound->bankSource == nullptr || bassSound->bankSource == sampleBank.getSelectedBufferShared(TrackType::Sub808);
+}
+
+int PreviewEngine::sub808LeadSamples(const LaneSampleBank& sampleBank) const
+{
+    return bassPlaysLane(sampleBank) ? bass->latencySamples() : 0;
+}
+
+void PreviewEngine::queueBassNote(float gain, int sampleOffset, const TriggerOptions& options)
+{
+    const int at = std::max(0, sampleOffset);
+    const int note = juce::jlimit(0, 127, options.midiNote);
+    BassEvent on;
+    on.at = at;
+    on.note = note;
+    on.velocity = juce::jlimit(0.0f, 1.0f, gain);
+    on.mode = 0; // BassSettings::Retrigger
+    if (options.mono && options.glide && options.glideDurationSamples > 0)
+    {
+        on.mode = 2; // Glide
+        on.glideMs = static_cast<float>(1000.0 * options.glideDurationSamples / currentSampleRate);
+    }
+    else if (options.mono && (options.legato || options.glide))
+    {
+        on.mode = 1; // Legato
+    }
+
+    // a release of this key still to come belongs to the note this one replaces
+    bassEvents.erase(std::remove_if(bassEvents.begin(), bassEvents.end(), [&](const BassEvent& e)
+    {
+        return !e.on && e.note == note && e.at >= at;
+    }), bassEvents.end());
+
+    if (bassEvents.size() + 2 > bassEvents.capacity())
+        return; // never allocate here
+    bassEvents.push_back(on);
+    if (options.maxDurationSamples > 0)
+    {
+        BassEvent off = on;
+        off.on = false;
+        off.at = at + options.maxDurationSamples;
+        bassEvents.push_back(off);
+    }
+}
+
+void PreviewEngine::renderBass(int numSamples)
+{
+    if (static_cast<int>(bassBuffer.size()) < numSamples)
+        bassBuffer.resize(static_cast<size_t>(numSamples)); // only a host block above 8192
+    std::fill(bassBuffer.begin(), bassBuffer.begin() + numSamples, 0.0f);
+    if (!bass->isActive() && bassEvents.empty())
+        return;
+
+    // in time order, a note's start before a release at the same sample (so a slide joins the note it
+    // follows instead of starting after its release)
+    for (size_t i = 1; i < bassEvents.size(); ++i)
+    {
+        const auto e = bassEvents[i];
+        size_t j = i;
+        while (j > 0 && (bassEvents[j - 1].at > e.at || (bassEvents[j - 1].at == e.at && !bassEvents[j - 1].on && e.on)))
+        {
+            bassEvents[j] = bassEvents[j - 1];
+            --j;
+        }
+        bassEvents[j] = e;
+    }
+
+    int position = 0;
+    size_t applied = 0;
+    for (; applied < bassEvents.size() && bassEvents[applied].at < numSamples; ++applied)
+    {
+        const auto& e = bassEvents[applied];
+        if (e.at > position)
+        {
+            bass->render(bassBuffer.data() + position, e.at - position);
+            position = e.at;
+        }
+        if (e.on)
+            bass->noteOn(e.note, e.velocity, e.mode, e.glideMs);
+        else
+            bass->noteOff(e.note);
+    }
+    if (position < numSamples)
+        bass->render(bassBuffer.data() + position, numSamples - position);
+
+    bassEvents.erase(bassEvents.begin(), bassEvents.begin() + static_cast<std::ptrdiff_t>(applied));
+    for (auto& e : bassEvents)
+        e.at -= numSamples;
 }
 
 void PreviewEngine::startFade(Voice& voice, int fadeSamples) const
@@ -80,6 +204,9 @@ bool PreviewEngine::stepVoice(Voice& voice, float& gain)
 
 void PreviewEngine::reset()
 {
+    bass->allNotesOff();
+    bassEvents.clear();
+    bassPrimed = false;
     for (auto& voice : voices)
     {
         voice.sample = nullptr;
@@ -123,6 +250,13 @@ void PreviewEngine::noteOn(TrackType trackType, float gain, const LaneSampleBank
 
 void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOffset, const LaneSampleBank& sampleBank, const TriggerOptions& options)
 {
+    if (trackType == TrackType::Sub808 && options.midiNote >= 0 && bassPlaysLane(sampleBank))
+    {
+        scheduleCut(TrackType::Sub808, sampleOffset); // a plain-sample note from before the switch
+        queueBassNote(gain, sampleOffset, options);
+        return;
+    }
+
     auto sourceTrack = trackType;
     auto selected = sampleBank.getSelectedBufferShared(trackType);
     const auto fallBackTo = [&](TrackType from, TrackType to)
@@ -247,9 +381,11 @@ void PreviewEngine::render(juce::AudioBuffer<float>& buffer, int startSample, in
         return base + (next - base) * fraction;
     };
 
+    renderBass(end - start);
+
     for (int sample = start; sample < end; ++sample)
     {
-        float mixed = 0.0f;
+        float mixed = bassBuffer[static_cast<size_t>(sample - start)];
 
         for (auto& voice : voices)
         {
@@ -339,9 +475,12 @@ void PreviewEngine::renderSeparated(std::array<juce::AudioBuffer<float>, kTrackT
         return base + (next - base) * fraction;
     };
 
+    renderBass(end - start);
+
     for (int sample = start; sample < end; ++sample)
     {
         std::array<float, kTrackTypeCount> mixedByTrack {};
+        mixedByTrack[static_cast<size_t>(trackTypeIndex(TrackType::Sub808))] = bassBuffer[static_cast<size_t>(sample - start)];
 
         for (auto& voice : voices)
         {
@@ -419,6 +558,8 @@ PreviewEngine::Voice* PreviewEngine::findActiveVoice(TrackType trackType)
 
 bool PreviewEngine::hasActiveVoices() const
 {
+    if (bass->isActive() || !bassEvents.empty())
+        return true;
     return std::any_of(voices.begin(), voices.end(), [](const Voice& voice)
     {
         return voice.active;

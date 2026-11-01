@@ -25,6 +25,9 @@ public:
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
+    // 0 SYNTH, 1 SAMPLE, 2 MIX, 3 FILTER / FX
+    void showTab(int index);
+
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void fileDragEnter(const juce::StringArray&, int, int) override;
     void fileDragExit(const juce::StringArray&) override;
@@ -38,11 +41,15 @@ private:
     void stepPreset(int delta);
     void chooseSample();
     void loadSample(const juce::File& file);
+    void fillPresetBox();
+    void savePreset();
 
     Bass808Processor& bass;
     b808::Look look;
     juce::ComboBox presetBox;
-    juce::TextButton previousPreset { "<" }, nextPreset { ">" };
+    juce::TextButton previousPreset { "<" }, nextPreset { ">" }, saveButton { "SAVE" };
+    juce::Array<juce::File> userPresets;
+    static constexpr int kUserPresetId = 1001;
     std::unique_ptr<b808::ParamCombo> mode;
     std::unique_ptr<PlayButton> play;
     std::vector<std::unique_ptr<b808::ParamKnob>> headerKnobs;

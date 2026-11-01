@@ -379,7 +379,7 @@ void BassVoice::noteOn(double frequencyHz, float newVelocity, const BassSettings
     active = true;
 }
 
-void BassVoice::glideTo(double frequencyHz, int glideSamples)
+void BassVoice::glideTo(double frequencyHz, int glideSamples, bool linearRate)
 {
     if (!active)
         return;
@@ -394,6 +394,9 @@ void BassVoice::glideTo(double frequencyHz, int glideSamples)
     }
     glideRemaining = glideSamples;
     glideStep = (targetSemitones - semitones) / static_cast<double>(glideSamples);
+    glideLinearRate = linearRate;
+    glideRatio = std::exp2(semitones / 12.0);
+    glideRatioStep = (std::exp2(targetSemitones / 12.0) - glideRatio) / static_cast<double>(glideSamples);
 }
 
 void BassVoice::noteOff(int fadeSamples)
@@ -593,7 +596,12 @@ void BassVoice::render(float* out, const float* lfo, int numSamples)
     {
         if (glideRemaining > 0)
         {
-            semitones = --glideRemaining > 0 ? semitones + glideStep : targetSemitones;
+            if (--glideRemaining <= 0)
+                semitones = targetSemitones;
+            else if (glideLinearRate)
+                semitones = 12.0 * std::log2(glideRatio += glideRatioStep);
+            else
+                semitones += glideStep;
             updateNoteFilters();
         }
         const double level = sustain + (1.0 - sustain) * amp;
@@ -607,6 +615,16 @@ void BassVoice::render(float* out, const float* lfo, int numSamples)
             const double x = juce::jlimit(0.0, 1.0, t / handoffFade);
             toSample = std::cos(0.5 * kPi * x); // equal power
             toSynth = std::sin(0.5 * kPi * x);
+        }
+        if (synthLevel <= 0.0 && sample != nullptr && !settings.sampleLoop)
+        {
+            // only the sample sounds and it has played out: the note is over (a slide after it starts anew)
+            const bool granular = settings.sampleLockTime || std::abs(settings.sampleStretch - 1.0f) >= 0.001f;
+            if (contentPosition >= regionEnd + (granular ? static_cast<double>(grainLength) : 0.0))
+            {
+                active = false;
+                break;
+            }
         }
         const double synth = synthLevel > 0.0 ? synthSample(level) * synthLevel : 0.0;
         const double played = sampleLevel > 0.0 ? sampleSample() * level * sampleLevel : 0.0;
@@ -746,10 +764,15 @@ void BassEngine::startNote(int note, float velocity, bool fromHeldStack)
 {
     auto& voice = voices[static_cast<size_t>(currentVoice)];
     const auto hz = noteHz(note, settings.tuneSemitones);
-    if (sounding >= 0 && voice.isActive() && settings.mode != BassSettings::Retrigger)
+    const int mode = playMode();
+    // HPDG's slides also catch a note in its release (its end can fall a sample before the next start),
+    // as its old sample player did
+    const bool joins = mode != BassSettings::Retrigger && voice.isActive() && (sounding >= 0 || modeOverride >= 0);
+    if (joins)
     {
         // Legato / Glide: the note goes on, its pitch moves (an 808 slide)
-        voice.glideTo(hz, settings.mode == BassSettings::Glide ? static_cast<int>(settings.glideMs * 0.001 * sampleRate) : 0);
+        const float glide = modeOverride >= 0 ? glideOverrideMs : settings.glideMs;
+        voice.glideTo(hz, mode == BassSettings::Glide ? static_cast<int>(glide * 0.001 * sampleRate) : 0, modeOverride >= 0);
     }
     else if (!fromHeldStack)
     {
@@ -776,7 +799,7 @@ void BassEngine::releaseNote(int note)
     heldCount = write;
     if (note != sounding)
         return;
-    if (heldCount > 0 && settings.mode != BassSettings::Retrigger)
+    if (heldCount > 0 && playMode() != BassSettings::Retrigger)
     {
         startNote(held[static_cast<size_t>(heldCount - 1)], lastVelocity, true); // back to the key still held
         return;
@@ -787,6 +810,13 @@ void BassEngine::releaseNote(int note)
 
 void BassEngine::noteOn(int note, float velocity)
 {
+    noteOn(note, velocity, -1, 0.0f);
+}
+
+void BassEngine::noteOn(int note, float velocity, int mode, float glideMs)
+{
+    modeOverride = mode;
+    glideOverrideMs = glideMs;
     releaseNote(note); // a repeated key moves to the top of the stack
     if (heldCount == static_cast<int>(held.size()))
     {
@@ -815,6 +845,48 @@ void BassEngine::render(float* mono, int numSamples)
 {
     for (int start = 0; start < numSamples; start += chunkSize)
         renderChunk(mono + start, std::min(chunkSize, numSamples - start));
+}
+
+void BassEngine::processBusFilter(float* out, int n) noexcept
+{
+    // 24 dB / octave Butterworth (two biquads), the cutoff smoothed and set every 32 samples
+    static constexpr std::array<double, 2> qs { 0.54119610, 1.30656296 };
+    const double target = juce::jlimit(-1.0, 1.0, static_cast<double>(settings.busFilter));
+    const double smoothing = std::exp(-32.0 / (0.02 * sampleRate));
+    for (int start = 0; start < n; start += 32)
+    {
+        busPosition = target + (busPosition - target) * smoothing;
+        if (std::abs(busPosition) < 1.0e-3 && std::abs(target) < 1.0e-3)
+        {
+            busPosition = 0.0;
+            busKind = 0;
+            return;
+        }
+        const int kind = busPosition < 0.0 ? -1 : 1;
+        if (kind != busKind)
+        {
+            for (auto& stage : busStages)
+                stage.clear();
+            busKind = kind;
+        }
+        const double amount = std::abs(busPosition);
+        const double hz = kind < 0 ? 20000.0 * std::pow(200.0 / 20000.0, amount) : 20.0 * std::pow(400.0 / 20.0, amount);
+        for (size_t i = 0; i < busStages.size(); ++i)
+        {
+            if (kind < 0)
+                busStages[i].lowPass(sampleRate, hz, qs[i]);
+            else
+                busStages[i].highPass(sampleRate, hz, qs[i]);
+        }
+        const int end = std::min(n, start + 32);
+        for (int i = start; i < end; ++i)
+        {
+            double y = out[i];
+            for (auto& stage : busStages)
+                y = stage.process(y);
+            out[i] = static_cast<float>(y);
+        }
+    }
 }
 
 void BassEngine::renderChunk(float* out, int n)
@@ -854,6 +926,7 @@ void BassEngine::renderChunk(float* out, int n)
         outputDelay.process(channel, channel, 1, n, maxLatency);
     }
     saturatorWasOn = saturatorOn;
+    processBusFilter(out, n);
     const auto gain = static_cast<float>(dbToGain(settings.gainDb));
     for (int i = 0; i < n; ++i)
         out[i] *= gain;

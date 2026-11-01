@@ -3,6 +3,7 @@
 #include <vector>
 
 #include <juce_core/juce_core.h>
+#include <juce_data_structures/juce_data_structures.h>
 
 #include "NoteEvent.h"
 
@@ -47,6 +48,24 @@ struct Sub808LaneSettings
     Sub808ScaleSnapPolicy scaleSnapPolicy = Sub808ScaleSnapPolicy::ForceToScale;
     int bassAmount = 0; // Boom Bap bass: 0 Low (a few long notes), 1 More, 2 Full (plays all the way)
     int transposeSemitones = 0; // the lane's quick +/- (octave or semitone): playback and MIDI export
+};
+
+// The Sub808 lane's sound: always played by the HPDG 808 engine (Source/Bass808).
+struct Sub808SoundState
+{
+    // false: the lane's bank sample (Sub808Dark1 ...) through the engine as a plain sample, as it always
+    // sounded; true: an HPDG 808 sound (a preset or the editor's own), `settings` + `sampleWav`
+    bool custom = false;
+    juce::String name;              // the preset it came from, shown on the lane
+    juce::ValueTree settings;       // "BassSettings" (Bass808/BassSettingsIO.h)
+    juce::MemoryBlock sampleWav;    // the sample layer's file (24-bit WAV), empty: none
+
+    // the strip under the rack, on top of either
+    float filter = 0.0f;            // -1 .. 1: left closes the highs, right cuts the lows, 0 off
+    float drive = 0.0f;             // 0 .. 1 more HamloMag
+    int driveModel = 2;             // the model when the sound has none: 1 Classic .. 6 Vinyl (2 Tape)
+    float length = 1.0f;            // 0 .. 1, 1: as the sound
+    float gainDb = 0.0f;            // -24 .. +12
 };
 
 inline Sub808NoteEvent toSub808NoteEvent(const NoteEvent& note)

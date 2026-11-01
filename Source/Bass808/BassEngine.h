@@ -8,6 +8,7 @@
 #include <juce_core/juce_core.h>
 
 #include "Bass808/BassSample.h"
+#include "Bass808/BassSettings.h"
 #include "DSP/AlignmentDelay.h"
 #include "DSP/Saturator.h"
 
@@ -29,81 +30,6 @@ namespace bbg
 //   -> bus: the HamloMag saturator (copied from HPEQ: Classic, Tape, Tube, Iron, Germanium, Vinyl), dry / wet
 //
 // The measurements behind the presets: docs/audit/BASS808_CORPUS.md.
-struct BassSettings
-{
-    enum Wave { Sine = 0, Triangle, Saw, Square, Reese, NumWaves };
-    enum FilterType { LP12 = 0, LP24, HP12, BP, Vowel, NumFilters };
-    enum PlayMode { Retrigger = 0, Legato, Glide };
-
-    // synth layer
-    int wave = Sine;
-    float shape = 0.0f;           // Sine: FM depth; Triangle: skew; Saw: second saw detune; Square: pulse width; Reese: detune
-    float sub = 0.0f;             // a sine under the oscillator
-    int subOctave = 0;            // 0: one octave down, 1: at the note (under a Reese / saw, where -1 octave is below hearing)
-    float synthLevelDb = 0.0f;    // -60: off
-    float punchSemitones = 18.0f;
-    float punchMs = 40.0f;
-    float drive = 4.5f;           // 808 saturation (odd), bias (even), wet blend
-    float bias = 0.08f;
-    float saturation = 0.8f;
-    float toneHz = 800.0f;        // key-tracked 4th-order low-pass at C2; >= 15 kHz: open
-    float clickDb = -30.0f;       // <= -60: off
-    float boostDb = 0.0f;
-
-    // envelope
-    float attackMs = 2.0f;
-    float holdSeconds = 0.05f;
-    float decaySeconds = 0.32f;   // -6 dB per this long
-    float sustain = 0.0f;         // level the decay settles at while the key is held
-    float releaseMs = 30.0f;
-
-    // sample layer
-    float sampleLevelDb = -60.0f; // -60: off
-    float sampleTune = 0.0f;      // semitones
-    float sampleFine = 0.0f;      // cents
-    float sampleStart = 0.0f;     // fractions of the file
-    float sampleEnd = 1.0f;
-    bool sampleLoop = false;
-    float sampleLoopStart = 0.5f;
-    float sampleStretch = 1.0f;   // length x (0.25 .. 4)
-    bool sampleLockTime = false;  // true: the same length on every note (pitch moves, time does not)
-    bool sampleFollow = true;     // false: every key plays the sample at its own pitch
-    bool sampleReverse = false;
-    bool sampleInvert = false;
-    float handoffMs = 0.0f;       // 0: layered; else the sample plays this long, then crossfades into the synth
-
-    // filter
-    int filterType = LP12;
-    float cutoffHz = 20000.0f;
-    float resonance = 0.0f;
-    float filterEnvOct = 0.0f;
-    float filterDecayMs = 200.0f; // to 10 %
-    float filterKey = 0.0f;
-    float vowel = 0.0f;           // 0 A, 1 E, 2 I, 3 O, 4 U
-
-    // LFO -> cutoff (octaves) / vowel (steps)
-    float lfoRateHz = 1.0f;
-    int lfoSync = 0;              // 0 free, then 1/1 1/2 1/4 1/8 1/16 1/4T 1/8T 1/16T
-    float lfoDepth = 0.0f;
-    bool lfoRetrigger = true;
-
-    // HamloMag
-    int satModel = 0;             // 0 off, 1 Classic, 2 Tape, 3 Tube, 4 Iron, 5 Germanium, 6 Vinyl
-    float satDriveDb = 0.0f;
-    float satHarmonics = 0.5f;
-    float satEvenOdd = 0.0f;
-    float satMix = 1.0f;
-
-    float phantom = 0.0f;
-
-    // play
-    int mode = Glide;
-    float glideMs = 120.0f;
-    float tuneSemitones = 0.0f;
-    float gainDb = 0.0f;
-    float velocity = 0.5f;
-};
-
 struct BassPreset
 {
     const char* genre;
@@ -119,15 +45,15 @@ class BassVoice
 public:
     void prepare(double sampleRate);
     void noteOn(double frequencyHz, float velocity, const BassSettings&, std::shared_ptr<const BassSample>);
-    void glideTo(double frequencyHz, int glideSamples);
+    // linearRate: the playback rate moves in a straight line (HPDG's old sample player), not the pitch
+    void glideTo(double frequencyHz, int glideSamples, bool linearRate = false);
     void noteOff(int fadeSamples);
     bool isActive() const noexcept { return active; }
     void setSettings(const BassSettings&, float synthGain);
     // Adds this voice to `out`; lfo: the LFO per sample (-1 .. 1).
     void render(float* out, const float* lfo, int numSamples);
 
-private:
-    struct Biquad
+    struct Biquad // RBJ, also the engine's bus filter
     {
         double b0 = 1.0, b1 = 0.0, b2 = 0.0, a1 = 0.0, a2 = 0.0, z1 = 0.0, z2 = 0.0;
         void lowPass(double rate, double hz, double q);
@@ -141,6 +67,8 @@ private:
         }
         void clear() noexcept { z1 = z2 = 0.0; }
     };
+
+private:
     struct Svf // Zavalishin / Cytomic trapezoidal state-variable filter
     {
         double ic1 = 0.0, ic2 = 0.0;
@@ -171,6 +99,8 @@ private:
 
     double baseHz = 65.4, semitones = 0.0, targetSemitones = 0.0, glideStep = 0.0;
     int glideRemaining = 0;
+    bool glideLinearRate = false;
+    double glideRatio = 1.0, glideRatioStep = 0.0;
 
     // synth
     double phase = 0.0, phase2 = 0.0, phaseSub = 0.0, punch = 0.0, punchDecay = 1.0, boost = 0.0, boostDecay = 1.0;
@@ -218,9 +148,13 @@ public:
     void setTempo(double bpm) noexcept { tempo = bpm > 20.0 ? bpm : 120.0; }
 
     void noteOn(int note, float velocity);
+    // HPDG's Sub808 lane: each note says how it joins the one sounding (the lane's overlap mode, a slide),
+    // instead of the settings' mode / glide.
+    void noteOn(int note, float velocity, int playMode, float glideMs);
     void noteOff(int note);
     void allNotesOff();
     void render(float* mono, int numSamples);
+    bool isActive() const noexcept { return voices[0].isActive() || voices[1].isActive(); }
 
     // Constant (the largest the saturator can need), so the host's delay compensation never changes.
     int latencySamples() const noexcept { return maxLatency; }
@@ -236,6 +170,8 @@ private:
     void releaseNote(int note);
     void renderChunk(float* mono, int numSamples);
     double lfoHz() const noexcept;
+    int playMode() const noexcept { return modeOverride >= 0 ? modeOverride : settings.mode; }
+    void processBusFilter(float* mono, int numSamples) noexcept;
 
     BassSettings settings;
     std::shared_ptr<const BassSample> sample;
@@ -245,6 +181,12 @@ private:
     std::array<int, 16> held {};
     int heldCount = 0, sounding = -1;
     float lastVelocity = 1.0f;
+    int modeOverride = -1;
+    float glideOverrideMs = 0.0f;
+
+    std::array<BassVoice::Biquad, 2> busStages {};
+    double busPosition = 0.0;       // the smoothed busFilter
+    int busKind = 0;                // -1 low-pass, 1 high-pass, 0 off
 
     hamlo::dsp::SaturatorProcessor saturator;
     hamlo::dsp::AlignmentDelay dryDelay, outputDelay;

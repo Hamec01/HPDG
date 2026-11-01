@@ -91,7 +91,7 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
     const int sampleTicks = static_cast<int>(std::lround(extracted.bars * TimingGrid::TicksPerBar4_4 * ratio));
     const int intensity = std::clamp(project.intensity, 1, 5);
     StyleGrid grid;
-    grid.tempo = resolveTrapTempo(project.params.bpm, project.params.bars);
+    grid.tempo = resolveTrapTempo(project.params.bpm, project.params.bars, 155.0, !project.params.tempoClockResolved);
     grid.styleTicksPerHostBar = static_cast<int>(64.0 * grid.tempo.clockMultiplier);
 
     const auto laneOf = [&](TrackType lane) { return extracted.laneNotes[static_cast<size_t>(trackTypeIndex(lane))]; };
@@ -214,7 +214,9 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
                 }
                 clean.push_back(n);
             }
-            if (static_cast<int>(clean.size()) < kMinSampleHatsPerBar)
+            const bool keepRequestedFill = project.params.trapRollMode == 2
+                && (bar % 4 == 3 || bar == project.params.bars - 1);
+            if (keepRequestedFill || static_cast<int>(clean.size()) < kMinSampleHatsPerBar)
             {
                 for (const auto& n : hat->notes)
                     if (n.gridTick / TimingGrid::TicksPerBar4_4 == bar)

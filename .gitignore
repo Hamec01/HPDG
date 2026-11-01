@@ -50,3 +50,7 @@ docs/audit/reference/corpus_roots.local.tsv
 
 # Python bytecode
 __pycache__/
+
+# Listening renders (local only)
+TempAudio/
+quality-lab/**/listening/

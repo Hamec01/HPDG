@@ -1,5 +1,7 @@
 #include "Bass808Editor.h"
 
+#include "Bass808/BassSettingsIO.h"
+
 #include "UI/SketchTheme.h"
 
 namespace bbg
@@ -43,32 +45,34 @@ private:
 Bass808Editor::Bass808Editor(Bass808Processor& processor)
     : juce::AudioProcessorEditor(processor), bass(processor), screen(processor)
 {
+#if !HPDG_BASS808_EMBEDDED // inside HPDG the skin stays HPDG's own
     sketch::setActiveSkin(sketch::Skin::Dark); // HPDG's knobs take the Dark skin's colours
+#endif
     setLookAndFeel(&look);
 
-    // presets, grouped by genre
-    const auto& presets = bassPresets();
-    juce::String genre;
-    for (size_t i = 0; i < presets.size(); ++i)
-    {
-        if (genre != presets[i].genre)
-        {
-            genre = presets[i].genre;
-            presetBox.addSectionHeading(genre);
-        }
-        presetBox.addItem(juce::String(presets[i].genre) + "  " + presets[i].name, static_cast<int>(i) + 1);
-    }
+    fillPresetBox();
     presetBox.onChange = [this]
     {
-        if (presetBox.getSelectedId() > 0)
-            bass.applyPreset(presetBox.getSelectedId() - 1);
+        const int id = presetBox.getSelectedId();
+        if (id >= kUserPresetId && id - kUserPresetId < userPresets.size())
+        {
+            if (const auto preset = readBassPreset(userPresets[id - kUserPresetId]))
+                bass.applyUserPreset(*preset);
+        }
+        else if (id > 0)
+        {
+            bass.applyPreset(id - 1);
+        }
         shownPreset = bass.getCurrentProgram();
     };
     previousPreset.onClick = [this] { stepPreset(-1); };
     nextPreset.onClick = [this] { stepPreset(1); };
+    saveButton.setTooltip("Save this sound as a preset (Documents/HamloProd/Bass808 Presets, shared with HPDG)");
+    saveButton.onClick = [this] { savePreset(); };
     addAndMakeVisible(presetBox);
     addAndMakeVisible(previousPreset);
     addAndMakeVisible(nextPreset);
+    addAndMakeVisible(saveButton);
 
     mode = std::make_unique<ParamCombo>(bass.apvts, "mode", "Mode");
     addAndMakeVisible(*mode);
@@ -139,11 +143,78 @@ Bass808Editor::~Bass808Editor()
     setLookAndFeel(nullptr);
 }
 
+void Bass808Editor::showTab(int index)
+{
+    index = juce::jlimit(0, static_cast<int>(tabs.size()) - 1, index);
+    tabs[static_cast<size_t>(index)].setToggleState(true, juce::dontSendNotification);
+    selectTab(index);
+}
+
 void Bass808Editor::selectTab(int index)
 {
     for (size_t i = 0; i < pages.size(); ++i)
         pages[i]->setVisible(static_cast<int>(i) == index);
     screen.setMode(static_cast<Bass808Screen::Mode>(index));
+}
+
+void Bass808Editor::fillPresetBox()
+{
+    // factory presets grouped by genre, then the user's own (the shared preset folder)
+    presetBox.clear(juce::dontSendNotification);
+    const auto& presets = bassPresets();
+    juce::String genre;
+    for (size_t i = 0; i < presets.size(); ++i)
+    {
+        if (genre != presets[i].genre)
+        {
+            genre = presets[i].genre;
+            presetBox.addSectionHeading(genre);
+        }
+        presetBox.addItem(juce::String(presets[i].genre) + "  " + presets[i].name, static_cast<int>(i) + 1);
+    }
+    userPresets = bassUserPresetFiles();
+    if (!userPresets.isEmpty())
+        presetBox.addSectionHeading("User");
+    for (int i = 0; i < userPresets.size(); ++i)
+        presetBox.addItem("User  " + userPresets[i].getFileNameWithoutExtension(), kUserPresetId + i);
+}
+
+void Bass808Editor::savePreset()
+{
+    auto* window = new juce::AlertWindow("Save HPDG 808 preset", "Name:", juce::MessageBoxIconType::NoIcon, this);
+    window->addTextEditor("name", bass.presetName());
+    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<Bass808Editor> self(this);
+    window->enterModalState(true, juce::ModalCallbackFunction::create([self, window](int result)
+    {
+        if (self == nullptr || result != 1)
+            return;
+        const auto name = juce::File::createLegalFileName(window->getTextEditorContents("name").trim());
+        if (name.isEmpty())
+            return;
+        BassPresetFile preset;
+        preset.name = name;
+        preset.settings = self->bass.currentSettings();
+        if (preset.settings.sampleLevelDb > -59.5f)
+            preset.sample = self->bass.getSample();
+        const auto file = bassUserPresetFolder().getChildFile(name + ".hpbass");
+        if (writeBassPreset(file, preset))
+        {
+            self->bass.setUserPresetName(name);
+            self->fillPresetBox();
+            const int index = self->userPresets.indexOf(file);
+            if (index >= 0)
+                self->presetBox.setSelectedId(kUserPresetId + index, juce::dontSendNotification);
+            self->message = "Saved " + file.getFullPathName();
+        }
+        else
+        {
+            self->message = "Could not write " + file.getFullPathName();
+        }
+        self->messageTicks = 40;
+        self->repaint();
+    }), true);
 }
 
 void Bass808Editor::stepPreset(int delta)
@@ -154,7 +225,13 @@ void Bass808Editor::stepPreset(int delta)
 
 void Bass808Editor::timerCallback()
 {
-    if (bass.getCurrentProgram() != shownPreset)
+    if (bass.isUserPreset())
+    {
+        // a user preset, a lane's own sound: its name (the list entry when it is one of the user files)
+        if (presetBox.getSelectedId() < kUserPresetId && presetBox.getText() != bass.presetName())
+            presetBox.setText(bass.presetName(), juce::dontSendNotification);
+    }
+    else if (bass.getCurrentProgram() != shownPreset || presetBox.getSelectedId() != shownPreset + 1)
     {
         shownPreset = bass.getCurrentProgram();
         presetBox.setSelectedId(shownPreset + 1, juce::dontSendNotification);
@@ -257,9 +334,10 @@ void Bass808Editor::paintOverChildren(juce::Graphics& g)
 
 void Bass808Editor::resized()
 {
-    presetBox.setBounds(196, 24, 250, 28);
-    previousPreset.setBounds(450, 24, 28, 28);
-    nextPreset.setBounds(480, 24, 28, 28);
+    presetBox.setBounds(196, 24, 206, 28);
+    previousPreset.setBounds(406, 24, 26, 28);
+    nextPreset.setBounds(434, 24, 26, 28);
+    saveButton.setBounds(464, 24, 50, 28);
     mode->setBounds(522, 6, 108, 50);
     play->setBounds(642, 24, 64, 28);
     int x = kWidth - 12 - static_cast<int>(headerKnobs.size()) * 66;

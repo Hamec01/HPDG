@@ -155,6 +155,7 @@ private:
     juce::Label strengthLabel;
     juce::Label strengthValueLabel;
     RotaryKnobSlider strengthSlider;
+    juce::Rectangle<int> strengthControlBounds;
     juce::Label widthLabel;
     juce::Label widthValueLabel;
     juce::Slider widthSlider;

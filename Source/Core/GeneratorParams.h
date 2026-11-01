@@ -21,6 +21,10 @@ constexpr bool kShowRapAndDrillGenres = false;
 struct GeneratorParams
 {
     float bpm = 90.0f;
+    float tempoSourceBpm = 90.0f;
+    bool tempoClockResolved = false; // processor has already applied mode and multiplier
+    bool tempoDouble = false;
+    int trapRollMode = 1; // 0=Off, 1=Style, 2=phrase Fills
     float swingPercent = 56.0f;    // 50..75
     float velocityAmount = 0.5f;   // 0-1
     float timingAmount = 0.4f;     // 0-1
@@ -38,7 +42,7 @@ struct GeneratorParams
     int atmosphericSubstyle = 0;
     int keyRoot = 0; // 0=C, 1=C#, ... 11=B
     int scaleMode = 0; // 0=Minor, 1=Major, 2=Harmonic Minor
-    int tempoInterpretationMode = 0; // 0=Auto, 1=Original, 2=Half-time Aware
+    int tempoInterpretationMode = 0; // 0=Auto, 1=Original, 2=Half-time (source / 2)
     bool syncDawTempo = false;
     bool seedLock = false;
 

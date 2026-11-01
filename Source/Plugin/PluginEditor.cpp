@@ -13,6 +13,7 @@
 #include "../Core/TrackRegistry.h"
 #include "../Engine/StyleDefaults.h"
 #include "../Services/MidiImportService.h"
+#include "../UI/GenreRhythmGrid.h"
 #include "../UI/StyleLabComponent.h"
 #include "../UI/StyleLabReferenceBrowserComponent.h"
 #include "../Utils/TimingHelpers.h"
@@ -1138,6 +1139,7 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
 BoomBGeneratorAudioProcessorEditor::~BoomBGeneratorAudioProcessorEditor()
 {
     isClosingEditor = true;
+    ExternalDragWindowFade::editorClosing(this);
     stopTimer();
     if (auto* modalManager = juce::ModalComponentManager::getInstance())
         modalManager->cancelAllModalComponents();
@@ -1925,6 +1927,7 @@ void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackR
     soundModule.setEqDisplayAnalyzerState(audioProcessor.getEqDisplayAnalyzerState());
 
     header.setPreviewPlaying(audioProcessor.isPreviewPlaying());
+    header.setEffectiveTempo(project.params.tempoSourceBpm, project.params.bpm);
     header.setStartPlayWithDawEnabled(audioProcessor.isStartPlayWithDawEnabled());
     header.setPreviewPlaybackModeId(previewPlaybackModeId(project.previewPlaybackMode));
     header.setStandaloneWindowMaximized(isStandaloneWindowMaximized());
@@ -2131,6 +2134,8 @@ void BoomBGeneratorAudioProcessorEditor::setupAttachments()
     bpmAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::bpm, header.bpmSlider);
     bpmLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::bpmLock, header.bpmLockToggle);
     syncAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::syncDawTempo, header.syncTempoToggle);
+    tempoDoubleAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::tempoDouble, header.tempoDoubleButton);
+    trapRollAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::trapRollMode, header.trapRollCombo);
     swingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::swingPercent, header.swingSlider);
     velocityAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::velocityAmount, header.velocitySlider);
     timingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::timingAmount, header.timingSlider);
@@ -2156,6 +2161,9 @@ void BoomBGeneratorAudioProcessorEditor::refreshSubstyleBindingForGenre()
         return;
 
     lastGenreChoice = genreChoice;
+    header.trapRollCombo.setEnabled(genreChoice == static_cast<int>(GenreType::Trap));
+    header.gridResolutionCombo.setSelectedId(defaultSnapForGenre(static_cast<GenreType>(genreChoice)), juce::sendNotificationSync);
+    grid.setGridResolution(gridResolutionFromId(header.gridResolutionCombo.getSelectedId()));
 
     juce::StringArray choices;
     const char* substyleParamId = ParamIds::boombapSubstyle;

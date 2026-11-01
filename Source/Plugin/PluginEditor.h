@@ -216,6 +216,8 @@ private:
     std::unique_ptr<SliderAttachment> bpmAttachment;
     std::unique_ptr<ButtonAttachment> bpmLockAttachment;
     std::unique_ptr<ButtonAttachment> syncAttachment;
+    std::unique_ptr<ButtonAttachment> tempoDoubleAttachment;
+    std::unique_ptr<ComboAttachment> trapRollAttachment;
     std::unique_ptr<SliderAttachment> swingAttachment;
     std::unique_ptr<SliderAttachment> velocityAttachment;
     std::unique_ptr<SliderAttachment> timingAttachment;

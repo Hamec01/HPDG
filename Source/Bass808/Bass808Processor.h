@@ -9,6 +9,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "Bass808/BassEngine.h"
+#include "Bass808/BassSettingsIO.h"
 
 namespace bbg
 {
@@ -46,6 +47,16 @@ public:
     // Sets every parameter from the preset (the loaded sample stays).
     void applyPreset(int index);
     BassSettings currentSettings() const;
+    // Every parameter from these settings (a user preset, HPDG's Sub808 lane).
+    void writeSettings(const BassSettings&);
+    // A user preset file (BassSettingsIO.h): its settings, and its sample when it has one.
+    void applyUserPreset(const BassPresetFile& preset);
+    // What the sound is called: the factory preset, or the user preset last loaded / saved.
+    juce::String presetName() const;
+    void setUserPresetName(const juce::String& name) { userPresetName = name; }
+    bool isUserPreset() const noexcept { return userPresetName.isNotEmpty(); }
+    // Message thread: the sample layer's file as it is (HPDG's lane hands its sample over).
+    void setSampleDirect(std::shared_ptr<const BassSample> sample);
 
     // Message thread. A new sample: markers back to the whole file, the layer turned up if it was off.
     bool loadSample(const juce::File& file, juce::String& error);
@@ -63,12 +74,12 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-    void writeSettings(const BassSettings&);
     void setParameter(const char* id, float value);
     void retire(std::shared_ptr<const BassSample> old);
 
     BassEngine engine;
     int currentPreset = 0;
+    juce::String userPresetName;
     std::vector<float> mono;
     std::array<float, kScopeSize> scope {};
     std::atomic<int> scopeWrite { 0 };

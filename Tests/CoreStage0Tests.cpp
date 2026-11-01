@@ -3798,7 +3798,8 @@ void testTrapAlgebraEngineSmoke()
             coupledSeeds += engine.generate(coreParams).score.kick808CouplingScore >= 0.60f ? 1 : 0;
         }
         expect(coupledSeeds >= 35,
-               "Every Trap Algebra substyle should retain trap low-end core (>= 70 % of seeds).");
+               "Every Trap Algebra substyle should retain trap low-end core (>= 70 % of seeds): "
+                   + std::to_string(static_cast<int>(substyle)) + " retained " + std::to_string(coupledSeeds) + "/50.");
         expect(pattern.score.hiHatMovementScore >= 0.55f,
                "Every Trap Algebra substyle should retain a readable hat driver.");
         expect(pattern.score.negativeSpaceScore >= 0.35f,

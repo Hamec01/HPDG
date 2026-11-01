@@ -7,8 +7,9 @@
 //   HPDG_GenerationQualityLab [--seeds N] [--genre boombap|trap|dnb|techno|atmospheric|all]
 //                             [--density default|matrix] [--bars 2|4|8|matrix]
 //                             [--out <folder>] [--tag <name>] [--notes] [--key 0-11] [--perf s h] [--render N]
+//                             [--substyle DarkTrap] [--bpm 150] [--rolls 0|1|2]
 //
-// --notes also writes <out>/<tag>_notes.csv: every Kick / GhostKick / Snare / ClapGhostSnare / Sub808 note of every pattern (grid tick,
+// --notes also writes <out>/<tag>_notes.csv: low-end, snare and hat lanes of every pattern (grid tick,
 // timing offset, pitch, length, glide) for kick / bass alignment and register checks.
 // --perf <swing delta> <humanize delta>: the notes are dumped after the live performance layer
 // (PatternPerformanceTransformEngine, as when the Swing / Humanize knobs move after Generate).
@@ -88,6 +89,7 @@ int main(int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI juce;
     int seeds = 1000;
     juce::String genreFilter = "all";
+    juce::String substyleFilter;
     juce::String densityMode = "default";
     juce::String barsMode = "4";
     juce::File out = juce::File::getCurrentWorkingDirectory().getChildFile("quality-lab");
@@ -96,12 +98,15 @@ int main(int argc, char** argv)
     float perfSwingDelta = 0.0f, perfHumanizeDelta = 0.0f;
     int renderSeeds = 0;
     int keyRoot = -1;
+    int rollMode = 1;
+    float fixedBpm = 0.0f;
     for (int i = 1; i < argc; ++i)
     {
         const juce::String a(argv[i]);
         auto next = [&] { return i + 1 < argc ? juce::String(argv[++i]) : juce::String(); };
         if (a == "--seeds") seeds = std::max(1, next().getIntValue());
         else if (a == "--genre") genreFilter = next().toLowerCase();
+        else if (a == "--substyle") substyleFilter = next();
         else if (a == "--density") densityMode = next();
         else if (a == "--bars") barsMode = next();
         else if (a == "--out") out = juce::File(next());
@@ -109,6 +114,8 @@ int main(int argc, char** argv)
         else if (a == "--notes") dumpNotes = true;
         else if (a == "--render") renderSeeds = next().getIntValue();
         else if (a == "--key") keyRoot = next().getIntValue(); // 0 = C ... 11 = B (after the style preset)
+        else if (a == "--rolls") rollMode = std::clamp(next().getIntValue(), 0, 2);
+        else if (a == "--bpm") fixedBpm = std::clamp(next().getFloatValue(), 20.0f, 400.0f);
         else if (a == "--perf")
         {
             perfSwingDelta = next().getFloatValue();
@@ -131,7 +138,7 @@ int main(int argc, char** argv)
     if (dumpNotes)
     {
         notesCsv.open(out.getChildFile(tag + "_notes.csv").getFullPathName().toStdString());
-        notesCsv << "genre,substyle,bars,seed,bpm,key,lane,gridTick,offset,pitch,length,velocity,glide\n";
+        notesCsv << "genre,substyle,bars,seed,bpm,key,lane,gridTick,offset,pitch,length,velocity,glide,density,role\n";
     }
 
     std::ofstream rendersCsv;
@@ -149,6 +156,9 @@ int main(int argc, char** argv)
         if (genreFilter != "all" && genreFilter != g.key)
             continue;
         for (int sub = 0; sub < g.substyles.size(); ++sub)
+        {
+            if (substyleFilter.isNotEmpty() && !g.substyles[sub].equalsIgnoreCase(substyleFilter))
+                continue;
             for (const float density : densities)
                 for (const int bars : barCounts)
                 {
@@ -156,9 +166,15 @@ int main(int argc, char** argv)
                     BoomBapGeneratorAudioProcessor processor;
                     processor.prepareToPlay(44100.0, 512);
                     auto& apvts = processor.getApvts();
+                    setChoice(apvts, ParamIds::trapRollMode, static_cast<float>(rollMode));
                     setChoice(apvts, ParamIds::genre, static_cast<float>(g.choice));
                     setChoice(apvts, g.substyleParam, static_cast<float>(sub));
                     processor.applySelectedStylePreset(false);
+                    if (fixedBpm > 0.0f)
+                    {
+                        setChoice(apvts, ParamIds::bpmLock, 1.0f);
+                        setChoice(apvts, ParamIds::bpm, fixedBpm);
+                    }
                     setChoice(apvts, ParamIds::bars, static_cast<float>(barsChoice(bars)));
                     processor.syncBarsFromState();
                     if (density >= 0.0f)
@@ -182,6 +198,11 @@ int main(int argc, char** argv)
                         processor.generatePattern();
                         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
                         const auto project = processor.getProjectSnapshot();
+                        int trueRollNotes = 0;
+                        for (const auto& track : project.tracks)
+                            if (track.type == TrackType::HiHat || track.type == TrackType::HatFX)
+                                for (const auto& note : track.notes)
+                                    trueRollNotes += note.semanticRole.contains("roll") ? 1 : 0;
                         auto m = measure(project, g.genre);
                         if (seed <= renderSeeds)
                             for (const auto lane : { std::optional<TrackType>(TrackType::Kick), std::optional<TrackType>(TrackType::Sub808), std::optional<TrackType>() })
@@ -203,14 +224,17 @@ int main(int argc, char** argv)
                             PatternPerformanceTransformEngine::applyPerformanceFromBase(dumped, live);
                         }
                         if (dumpNotes)
-                            for (const auto lane : { TrackType::Kick, TrackType::GhostKick, TrackType::Snare, TrackType::ClapGhostSnare, TrackType::Sub808 })
+                            for (const auto lane : { TrackType::Kick, TrackType::GhostKick, TrackType::Snare, TrackType::ClapGhostSnare, TrackType::Sub808,
+                                                     TrackType::HiHat, TrackType::HatFX, TrackType::OpenHat })
                                 for (const auto& n : notesOf(dumped, lane))
                                     notesCsv << g.key << "," << sub << "," << bars << "," << seed << "," << project.params.bpm << ","
                                              << project.params.keyRoot << (project.params.scaleMode == 1 ? "M" : "m") << ","
                                              << (lane == TrackType::Kick ? "kick" : lane == TrackType::GhostKick ? "ghostkick" : lane == TrackType::Snare ? "snare"
-                                                 : lane == TrackType::ClapGhostSnare ? "clapghost" : "bass")
+                                                 : lane == TrackType::ClapGhostSnare ? "clapghost" : lane == TrackType::HiHat ? "hat"
+                                                 : lane == TrackType::HatFX ? "hatfx" : lane == TrackType::OpenHat ? "openhat" : "bass")
                                              << "," << n.gridTick << "," << n.timingOffsetTicks
-                                             << "," << n.pitch << "," << n.lengthTicks << "," << n.velocity << "," << (n.glideToNext ? 1 : 0) << "\n";
+                                             << "," << n.pitch << "," << n.lengthTicks << "," << n.velocity << "," << (n.glideToNext ? 1 : 0)
+                                             << "," << effectiveDensity << "," << n.semanticRole.replace(",", " ") << "\n";
                         m.ms = ms;
                         timings.add(ms);
 
@@ -249,6 +273,8 @@ int main(int argc, char** argv)
 
                         const std::pair<const char*, float> values[] {
                             { "bpm", m.bpm }, { "kicksPerBar", m.kicksPerBar }, { "kickDownbeatRate", m.kickDownbeatRate },
+                            { "trueRollNotesPerBar", static_cast<float>(trueRollNotes) / bars },
+                            { "patternsWithRoll", trueRollNotes >= 3 ? 1.0f : 0.0f },
                             { "kickStrongBeatRatio", m.kickStrongBeatRatio }, { "kickSyncopation", m.kickSyncopation },
                             { "kickConsecutiveRate", m.kickConsecutiveRate }, { "kickSnareCollisionsPerBar", m.kickSnareCollisionsPerBar },
                             { "kickUniqueBarRatio", m.kickUniqueBarRatio }, { "backbeatCoverage", m.backbeatCoverage },
@@ -289,9 +315,15 @@ int main(int argc, char** argv)
                         {
                             p->prepareToPlay(44100.0, 512);
                             auto& s = p->getApvts();
+                            setChoice(s, ParamIds::trapRollMode, static_cast<float>(rollMode));
                             setChoice(s, ParamIds::genre, static_cast<float>(g.choice));
                             setChoice(s, g.substyleParam, static_cast<float>(sub));
                             p->applySelectedStylePreset(false);
+                            if (fixedBpm > 0.0f)
+                            {
+                                setChoice(s, ParamIds::bpmLock, 1.0f);
+                                setChoice(s, ParamIds::bpm, fixedBpm);
+                            }
                             setChoice(s, ParamIds::bars, static_cast<float>(barsChoice(bars)));
                             p->syncBarsFromState();
                             if (density >= 0.0f)
@@ -351,6 +383,7 @@ int main(int argc, char** argv)
                     json << "\n      }\n    }";
                     firstConfig = false;
                 }
+        }
     }
     json << "\n  ]\n}\n";
     out.getChildFile(tag + "_summary.json").replaceWithText(json);

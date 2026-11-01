@@ -1,0 +1,675 @@
+{
+  "tag": "after",
+  "seeds": 1000,
+  "configurations": [
+    {
+      "genre": "trap",
+      "substyle": "DarkTrap",
+      "density": 0.2,
+      "bars": 4,
+      "hardFailureRate": 0.0,
+      "exactDuplicateRate": 0.0,
+      "nearDuplicateRate": 0.002,
+      "kickSkeletonDuplicateRate": 0.483,
+      "determinismFailures": 0,
+      "timeMs": {
+        "p50": 54.0462,
+        "p95": 83.4466,
+        "max": 121.0702
+      },
+      "failureKinds": {},
+      "metrics": {
+        "anchorTimingMeanAbs": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "backbeatCoverage": {
+          "mean": 1.0,
+          "p05": 1.0,
+          "p50": 1.0,
+          "p95": 1.0
+        },
+        "barSimilarity": {
+          "mean": 0.5279,
+          "p05": 0.4152,
+          "p50": 0.5291,
+          "p95": 0.6472
+        },
+        "bassGapFill": {
+          "mean": 0.9095,
+          "p05": 0.8147,
+          "p50": 0.9069,
+          "p95": 0.9922
+        },
+        "bassMeanLength": {
+          "mean": 11.4212,
+          "p05": 4.7083,
+          "p50": 6.8889,
+          "p95": 31.75
+        },
+        "bassNotesPerBar": {
+          "mean": 1.9243,
+          "p05": 0.5,
+          "p50": 2.25,
+          "p95": 3.0
+        },
+        "bassOnKickRate": {
+          "mean": 0.604,
+          "p05": 0.3,
+          "p50": 0.5455,
+          "p95": 1.0
+        },
+        "bassShortRate": {
+          "mean": 0.2704,
+          "p05": 0.0,
+          "p50": 0.3,
+          "p95": 0.5455
+        },
+        "bpm": {
+          "mean": 150.0,
+          "p05": 150.0,
+          "p50": 150.0,
+          "p95": 150.0
+        },
+        "eventsPerBar": {
+          "mean": 12.8023,
+          "p05": 11.5,
+          "p50": 12.75,
+          "p95": 14.0
+        },
+        "extraSnaresPerBar": {
+          "mean": 0.2945,
+          "p05": 0.0,
+          "p50": 0.25,
+          "p95": 0.75
+        },
+        "hatEighthCoverage": {
+          "mean": 0.9384,
+          "p05": 0.8438,
+          "p50": 0.9375,
+          "p95": 1.0
+        },
+        "hatMaxGapSteps": {
+          "mean": 3.956,
+          "p05": 2.0,
+          "p50": 4.0,
+          "p95": 6.0
+        },
+        "hatRollNotesPerBar": {
+          "mean": 1.0188,
+          "p05": 0.5,
+          "p50": 1.0,
+          "p95": 1.75
+        },
+        "hatsPerBar": {
+          "mean": 7.9058,
+          "p05": 7.0,
+          "p50": 8.0,
+          "p95": 8.75
+        },
+        "identicalBarRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "identicalVelocityRate": {
+          "mean": 0.0221,
+          "p05": 0.0,
+          "p50": 0.0208,
+          "p95": 0.0667
+        },
+        "kickConsecutiveRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "kickDownbeatRate": {
+          "mean": 0.5192,
+          "p05": 0.5,
+          "p50": 0.5,
+          "p95": 0.75
+        },
+        "kickSnareCollisionsPerBar": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "kickStrongBeatRatio": {
+          "mean": 0.4987,
+          "p05": 0.25,
+          "p50": 0.5,
+          "p95": 0.8571
+        },
+        "kickSyncopation": {
+          "mean": 0.2646,
+          "p05": 0.1,
+          "p50": 0.2625,
+          "p95": 0.45
+        },
+        "kickUniqueBarRatio": {
+          "mean": 0.7883,
+          "p05": 0.5,
+          "p50": 0.75,
+          "p95": 1.0
+        },
+        "kicksPerBar": {
+          "mean": 1.8822,
+          "p05": 1.5,
+          "p50": 2.0,
+          "p95": 2.5
+        },
+        "lastBarDifference": {
+          "mean": 0.4866,
+          "p05": 0.3333,
+          "p50": 0.5,
+          "p95": 0.6316
+        },
+        "openClosedCollisions": {
+          "mean": 2.161,
+          "p05": 1.0,
+          "p50": 2.0,
+          "p95": 4.0
+        },
+        "openHatsPerBar": {
+          "mean": 0.6062,
+          "p05": 0.25,
+          "p50": 0.5,
+          "p95": 1.0
+        },
+        "patternsWithRoll": {
+          "mean": 0.082,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 1.0
+        },
+        "secondaryTimingMeanAbs": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "snareGhostRate": {
+          "mean": 0.1495,
+          "p05": 0.0,
+          "p50": 0.1429,
+          "p95": 0.4286
+        },
+        "syncopation": {
+          "mean": 0.3503,
+          "p05": 0.1437,
+          "p50": 0.35,
+          "p95": 0.5813
+        },
+        "timingOutlierRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "trueRollNotesPerBar": {
+          "mean": 0.0745,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.75
+        },
+        "velocityStd": {
+          "mean": 17.3913,
+          "p05": 15.1907,
+          "p50": 17.4273,
+          "p95": 19.4549
+        }
+      }
+    },
+    {
+      "genre": "trap",
+      "substyle": "DarkTrap",
+      "density": 0.4,
+      "bars": 4,
+      "hardFailureRate": 0.0,
+      "exactDuplicateRate": 0.0,
+      "nearDuplicateRate": 0.001,
+      "kickSkeletonDuplicateRate": 0.418,
+      "determinismFailures": 0,
+      "timeMs": {
+        "p50": 24.6382,
+        "p95": 31.1786,
+        "max": 38.3838
+      },
+      "failureKinds": {},
+      "metrics": {
+        "anchorTimingMeanAbs": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "backbeatCoverage": {
+          "mean": 1.0,
+          "p05": 1.0,
+          "p50": 1.0,
+          "p95": 1.0
+        },
+        "barSimilarity": {
+          "mean": 0.5322,
+          "p05": 0.4247,
+          "p50": 0.5273,
+          "p95": 0.6528
+        },
+        "bassGapFill": {
+          "mean": 0.8925,
+          "p05": 0.8046,
+          "p50": 0.8964,
+          "p95": 0.9559
+        },
+        "bassMeanLength": {
+          "mean": 6.6578,
+          "p05": 4.5385,
+          "p50": 6.15,
+          "p95": 10.375
+        },
+        "bassNotesPerBar": {
+          "mean": 2.3992,
+          "p05": 1.5,
+          "p50": 2.5,
+          "p95": 3.25
+        },
+        "bassOnKickRate": {
+          "mean": 0.4699,
+          "p05": 0.2857,
+          "p50": 0.4545,
+          "p95": 0.6667
+        },
+        "bassShortRate": {
+          "mean": 0.3437,
+          "p05": 0.1111,
+          "p50": 0.3333,
+          "p95": 0.5833
+        },
+        "bpm": {
+          "mean": 150.0,
+          "p05": 150.0,
+          "p50": 150.0,
+          "p95": 150.0
+        },
+        "eventsPerBar": {
+          "mean": 12.985,
+          "p05": 11.75,
+          "p50": 13.0,
+          "p95": 14.25
+        },
+        "extraSnaresPerBar": {
+          "mean": 0.2995,
+          "p05": 0.0,
+          "p50": 0.25,
+          "p95": 0.75
+        },
+        "hatEighthCoverage": {
+          "mean": 0.9463,
+          "p05": 0.875,
+          "p50": 0.9688,
+          "p95": 1.0
+        },
+        "hatMaxGapSteps": {
+          "mean": 3.839,
+          "p05": 2.0,
+          "p50": 4.0,
+          "p95": 6.0
+        },
+        "hatRollNotesPerBar": {
+          "mean": 1.0947,
+          "p05": 0.5,
+          "p50": 1.0,
+          "p95": 1.75
+        },
+        "hatsPerBar": {
+          "mean": 8.0275,
+          "p05": 7.25,
+          "p50": 8.0,
+          "p95": 8.75
+        },
+        "identicalBarRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "identicalVelocityRate": {
+          "mean": 0.023,
+          "p05": 0.0,
+          "p50": 0.0208,
+          "p95": 0.0682
+        },
+        "kickConsecutiveRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "kickDownbeatRate": {
+          "mean": 0.5245,
+          "p05": 0.5,
+          "p50": 0.5,
+          "p95": 0.75
+        },
+        "kickSnareCollisionsPerBar": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "kickStrongBeatRatio": {
+          "mean": 0.5049,
+          "p05": 0.25,
+          "p50": 0.5,
+          "p95": 0.8571
+        },
+        "kickSyncopation": {
+          "mean": 0.2653,
+          "p05": 0.1,
+          "p50": 0.2625,
+          "p95": 0.4625
+        },
+        "kickUniqueBarRatio": {
+          "mean": 0.784,
+          "p05": 0.5,
+          "p50": 0.75,
+          "p95": 1.0
+        },
+        "kicksPerBar": {
+          "mean": 1.9212,
+          "p05": 1.5,
+          "p50": 2.0,
+          "p95": 2.5
+        },
+        "lastBarDifference": {
+          "mean": 0.4845,
+          "p05": 0.3333,
+          "p50": 0.4737,
+          "p95": 0.6316
+        },
+        "openClosedCollisions": {
+          "mean": 2.124,
+          "p05": 1.0,
+          "p50": 2.0,
+          "p95": 4.0
+        },
+        "openHatsPerBar": {
+          "mean": 0.6062,
+          "p05": 0.25,
+          "p50": 0.5,
+          "p95": 1.0
+        },
+        "patternsWithRoll": {
+          "mean": 0.102,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 1.0
+        },
+        "secondaryTimingMeanAbs": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "snareGhostRate": {
+          "mean": 0.1382,
+          "p05": 0.0,
+          "p50": 0.125,
+          "p95": 0.4286
+        },
+        "syncopation": {
+          "mean": 0.3486,
+          "p05": 0.1375,
+          "p50": 0.3375,
+          "p95": 0.5625
+        },
+        "timingOutlierRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "trueRollNotesPerBar": {
+          "mean": 0.0922,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 1.0
+        },
+        "velocityStd": {
+          "mean": 17.3209,
+          "p05": 15.1349,
+          "p50": 17.2956,
+          "p95": 19.5529
+        }
+      }
+    },
+    {
+      "genre": "trap",
+      "substyle": "DarkTrap",
+      "density": 0.8,
+      "bars": 4,
+      "hardFailureRate": 0.0,
+      "exactDuplicateRate": 0.0,
+      "nearDuplicateRate": 0.008,
+      "kickSkeletonDuplicateRate": 0.352,
+      "determinismFailures": 0,
+      "timeMs": {
+        "p50": 25.052,
+        "p95": 36.0999,
+        "max": 72.5776
+      },
+      "failureKinds": {},
+      "metrics": {
+        "anchorTimingMeanAbs": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "backbeatCoverage": {
+          "mean": 1.0,
+          "p05": 1.0,
+          "p50": 1.0,
+          "p95": 1.0
+        },
+        "barSimilarity": {
+          "mean": 0.5414,
+          "p05": 0.4407,
+          "p50": 0.5385,
+          "p95": 0.6585
+        },
+        "bassGapFill": {
+          "mean": 0.8905,
+          "p05": 0.8086,
+          "p50": 0.8949,
+          "p95": 0.9538
+        },
+        "bassMeanLength": {
+          "mean": 6.2568,
+          "p05": 4.4423,
+          "p50": 6.1,
+          "p95": 8.8929
+        },
+        "bassNotesPerBar": {
+          "mean": 2.5213,
+          "p05": 1.75,
+          "p50": 2.5,
+          "p95": 3.25
+        },
+        "bassOnKickRate": {
+          "mean": 0.4523,
+          "p05": 0.2857,
+          "p50": 0.4545,
+          "p95": 0.6667
+        },
+        "bassShortRate": {
+          "mean": 0.3584,
+          "p05": 0.125,
+          "p50": 0.3636,
+          "p95": 0.6
+        },
+        "bpm": {
+          "mean": 150.0,
+          "p05": 150.0,
+          "p50": 150.0,
+          "p95": 150.0
+        },
+        "eventsPerBar": {
+          "mean": 13.299,
+          "p05": 12.0,
+          "p50": 13.25,
+          "p95": 14.75
+        },
+        "extraSnaresPerBar": {
+          "mean": 0.2995,
+          "p05": 0.0,
+          "p50": 0.25,
+          "p95": 0.75
+        },
+        "hatEighthCoverage": {
+          "mean": 0.9624,
+          "p05": 0.9062,
+          "p50": 0.9688,
+          "p95": 1.0
+        },
+        "hatMaxGapSteps": {
+          "mean": 3.484,
+          "p05": 2.0,
+          "p50": 4.0,
+          "p95": 4.0
+        },
+        "hatRollNotesPerBar": {
+          "mean": 1.2072,
+          "p05": 0.5,
+          "p50": 1.25,
+          "p95": 2.0
+        },
+        "hatsPerBar": {
+          "mean": 8.1988,
+          "p05": 7.5,
+          "p50": 8.25,
+          "p95": 9.0
+        },
+        "identicalBarRate": {
+          "mean": 0.0007,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "identicalVelocityRate": {
+          "mean": 0.0226,
+          "p05": 0.0,
+          "p50": 0.02,
+          "p95": 0.0698
+        },
+        "kickConsecutiveRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "kickDownbeatRate": {
+          "mean": 0.5278,
+          "p05": 0.5,
+          "p50": 0.5,
+          "p95": 0.75
+        },
+        "kickSnareCollisionsPerBar": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "kickStrongBeatRatio": {
+          "mean": 0.5008,
+          "p05": 0.25,
+          "p50": 0.5,
+          "p95": 0.8571
+        },
+        "kickSyncopation": {
+          "mean": 0.2673,
+          "p05": 0.1,
+          "p50": 0.2625,
+          "p95": 0.4625
+        },
+        "kickUniqueBarRatio": {
+          "mean": 0.7845,
+          "p05": 0.5,
+          "p50": 0.75,
+          "p95": 1.0
+        },
+        "kicksPerBar": {
+          "mean": 1.9625,
+          "p05": 1.5,
+          "p50": 2.0,
+          "p95": 2.5
+        },
+        "lastBarDifference": {
+          "mean": 0.4737,
+          "p05": 0.3125,
+          "p50": 0.4737,
+          "p95": 0.6111
+        },
+        "openClosedCollisions": {
+          "mean": 2.186,
+          "p05": 1.0,
+          "p50": 2.0,
+          "p95": 4.0
+        },
+        "openHatsPerBar": {
+          "mean": 0.621,
+          "p05": 0.25,
+          "p50": 0.5,
+          "p95": 1.0
+        },
+        "patternsWithRoll": {
+          "mean": 0.07,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 1.0
+        },
+        "secondaryTimingMeanAbs": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "snareGhostRate": {
+          "mean": 0.1314,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.4286
+        },
+        "syncopation": {
+          "mean": 0.339,
+          "p05": 0.1375,
+          "p50": 0.3313,
+          "p95": 0.5625
+        },
+        "timingOutlierRate": {
+          "mean": 0.0,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.0
+        },
+        "trueRollNotesPerBar": {
+          "mean": 0.065,
+          "p05": 0.0,
+          "p50": 0.0,
+          "p95": 0.75
+        },
+        "velocityStd": {
+          "mean": 17.3053,
+          "p05": 15.1393,
+          "p50": 17.3272,
+          "p95": 19.5076
+        }
+      }
+    }
+  ]
+}

@@ -141,7 +141,17 @@ MainHeaderComponent::MainHeaderComponent()
     tempoInterpretationCombo.addItem("Original", 2);
     tempoInterpretationCombo.addItem("Half-time", 3);
     tempoInterpretationCombo.setSelectedId(1, juce::dontSendNotification);
+    tempoInterpretationCombo.setTooltip("Auto: genre tempo (Trap 70 = 140, 90 = 180). Original: source BPM. Half-time: source BPM / 2. Works with Sync.");
+    tempoDoubleButton.setClickingTogglesState(true);
+    tempoDoubleButton.setTooltip("Double the resulting musical tempo, including Auto and Sync: Trap 90 -> 180 -> 360.");
+    addAndMakeVisible(tempoDoubleButton);
     addAndMakeVisible(tempoInterpretationCombo);
+    trapRollLabel.setText("Trap Rolls", juce::dontSendNotification);
+    addAndMakeVisible(trapRollLabel);
+    trapRollCombo.addItemList({ "Off", "Style", "Fills" }, 1);
+    trapRollCombo.setSelectedId(2, juce::dontSendNotification);
+    trapRollCombo.setTooltip("Style: original substyle rolls (Dark is sparse). Fills: short 1/32, 1/64 or triplet bursts at phrase endings. Generate or RG hats to apply. Intensity 1/2 and reduced hat Strength may remove rolls.");
+    addAndMakeVisible(trapRollCombo);
 
     barsLabel.setText("Bars", juce::dontSendNotification);
     addAndMakeVisible(barsLabel);
@@ -657,12 +667,14 @@ void MainHeaderComponent::resized()
         placeField(advancedRow, 112, substyleLabel, substyleCombo);
         placeField(advancedRow, 74, barsLabel, barsCombo);
         placeField(advancedRow, 114, tempoInterpretationLabel, tempoInterpretationCombo);
+        tempoDoubleButton.setBounds(advancedRow.removeFromLeft(36).withTrimmedTop(14).withHeight(18).reduced(1, 0));
         placeKnob(advancedRow, 76, swingLabel, swingSlider, swingValueLabel, 24, 12, 12);
         placeKnob(advancedRow, 76, densityLabel, densitySlider, densityValueLabel, 24, 12, 12);
         placeField(advancedRow, 92, gridResolutionLabel, gridResolutionCombo);
         placeField(advancedRow, 118, previewPlaybackModeLabel, previewPlaybackModeCombo);
         placeField(advancedRow, 118, seedLabel, seedSlider);
         gridModeIndicatorLabel.setBounds(advancedRow.removeFromLeft(96).reduced(2, 14));
+        placeField(advancedRow, 90, trapRollLabel, trapRollCombo);
         return;
     }
 
@@ -672,6 +684,8 @@ void MainHeaderComponent::resized()
     placeKnob(advancedRow, 80, humanizeLabel, humanizeSlider, humanizeValueLabel, 32, 12, 12);
     placeKnob(advancedRow, 80, densityLabel, densitySlider, densityValueLabel, 32, 12, 12);
     placeField(advancedRow, 118, tempoInterpretationLabel, tempoInterpretationCombo);
+    tempoDoubleButton.setBounds(advancedRow.removeFromLeft(36).withTrimmedTop(14).withHeight(18).reduced(1, 0));
+    placeField(advancedRow, 90, trapRollLabel, trapRollCombo);
     placeField(advancedRow, 74, barsLabel, barsCombo);
     placeField(advancedRow, 98, genreLabel, genreCombo);
     placeField(advancedRow, 114, substyleLabel, substyleCombo);
@@ -684,6 +698,12 @@ void MainHeaderComponent::resized()
     placeField(advancedRow, 118, previewPlaybackModeLabel, previewPlaybackModeCombo);
     placeKnob(advancedRow, 82, hatFxDensityLabel, hatFxDensitySlider, hatFxDensityValueLabel, 32, 12, 12);
     placeToggle(advancedRow, 42, hatFxDensityLockToggle, 24);
+}
+
+void MainHeaderComponent::setEffectiveTempo(float source, float musical)
+{
+    bpmLabel.setText(juce::String(source, 1) + " -> " + juce::String(musical, 1) + " BPM", juce::dontSendNotification);
+    bpmLabel.setTooltip("Source tempo -> musical tempo. Sync follows the host; Tempo Mode and x2 stay active.");
 }
 
 void MainHeaderComponent::setBpmLocked(bool locked)
@@ -745,6 +765,9 @@ void MainHeaderComponent::setHeaderControlsMode(HeaderControlsMode mode)
     densityValueLabel.setVisible(advancedVisible);
     tempoInterpretationLabel.setVisible(advancedVisible);
     tempoInterpretationCombo.setVisible(advancedVisible);
+    tempoDoubleButton.setVisible(advancedVisible);
+    trapRollLabel.setVisible(advancedVisible);
+    trapRollCombo.setVisible(advancedVisible);
     barsLabel.setVisible(advancedVisible);
     barsCombo.setVisible(advancedVisible);
     genreLabel.setVisible(advancedVisible);

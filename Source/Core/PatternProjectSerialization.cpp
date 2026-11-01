@@ -43,6 +43,8 @@ bool safeBool(const juce::ValueTree& node, const juce::Identifier& key, bool fal
     return v.isVoid() ? fallback : static_cast<bool>(v);
 }
 
+const juce::Identifier kSub808SoundNode { "Bass808Sound" };
+
 float safeFloat(const juce::ValueTree& node, const juce::Identifier& key, float fallback)
 {
     const auto v = node.getProperty(key);
@@ -53,6 +55,46 @@ juce::String safeString(const juce::ValueTree& node, const juce::Identifier& key
 {
     const auto v = node.getProperty(key);
     return v.isVoid() ? fallback : v.toString();
+}
+
+// The Sub808 lane's HPDG 808 sound. The settings tree is copied in and out: a ValueTree is shared by
+// reference, and the project is copied for undo.
+juce::ValueTree serializeSub808Sound(const Sub808SoundState& sound)
+{
+    juce::ValueTree node(kSub808SoundNode);
+    node.setProperty("custom", sound.custom, nullptr);
+    node.setProperty("name", sound.name, nullptr);
+    node.setProperty("filter", sound.filter, nullptr);
+    node.setProperty("drive", sound.drive, nullptr);
+    node.setProperty("drive_model", sound.driveModel, nullptr);
+    node.setProperty("length", sound.length, nullptr);
+    node.setProperty("gain_db", sound.gainDb, nullptr);
+    if (sound.settings.isValid())
+        node.appendChild(sound.settings.createCopy(), nullptr);
+    if (sound.sampleWav.getSize() > 0)
+        node.setProperty("sample_wav", sound.sampleWav.toBase64Encoding(), nullptr);
+    return node;
+}
+
+Sub808SoundState deserializeSub808Sound(const juce::ValueTree& node)
+{
+    Sub808SoundState sound;
+    if (!node.isValid())
+        return sound;
+    sound.custom = safeBool(node, "custom", false);
+    sound.name = safeString(node, "name");
+    sound.filter = juce::jlimit(-1.0f, 1.0f, safeFloat(node, "filter", 0.0f));
+    sound.drive = juce::jlimit(0.0f, 1.0f, safeFloat(node, "drive", 0.0f));
+    sound.driveModel = juce::jlimit(1, 6, safeInt(node, "drive_model", 2));
+    sound.length = juce::jlimit(0.0f, 1.0f, safeFloat(node, "length", 1.0f));
+    sound.gainDb = juce::jlimit(-24.0f, 12.0f, safeFloat(node, "gain_db", 0.0f));
+    if (const auto settings = node.getChildWithName("BassSettings"); settings.isValid())
+        sound.settings = settings.createCopy();
+    if (const auto wav = safeString(node, "sample_wav"); wav.isNotEmpty())
+        sound.sampleWav.fromBase64Encoding(wav);
+    if (!sound.settings.isValid())
+        sound.custom = false;
+    return sound;
 }
 
 // Tick-native (schema v11+) note properties. Legacy step/length/micro_offset are still read
@@ -107,7 +149,7 @@ NoteEvent deserializeNoteNode(const juce::ValueTree& noteNode, int defaultPitch)
 
 void sanitizeGeneratorParams(GeneratorParams& params)
 {
-    params.bpm = std::clamp(params.bpm, 40.0f, 240.0f);
+    params.bpm = std::clamp(params.bpm, 10.0f, 800.0f);
     params.swingPercent = std::clamp(params.swingPercent, 50.0f, 75.0f);
     params.velocityAmount = std::clamp(params.velocityAmount, 0.0f, 1.0f);
     params.timingAmount = std::clamp(params.timingAmount, 0.0f, 1.0f);
@@ -1192,6 +1234,7 @@ bool PatternProjectSerialization::deserialize(const juce::ValueTree& rootState, 
         track.sub808Settings.scaleSnapPolicy = static_cast<Sub808ScaleSnapPolicy>(juce::jlimit(0,
                                                     2,
                                                     safeInt(trackNode, "sub808_scale_snap_policy", 2)));
+        track.sub808Sound = deserializeSub808Sound(trackNode.getChildWithName(kSub808SoundNode));
 
         for (int n = 0; n < trackNode.getNumChildren(); ++n)
         {
@@ -1286,6 +1329,7 @@ juce::ValueTree PatternProjectSerialization::serializeTrack(const TrackState& tr
 
     if (track.type == TrackType::Sub808)
     {
+        node.addChild(serializeSub808Sound(track.sub808Sound), -1, nullptr);
         const auto serializedSub808Notes = track.sub808Notes.empty() ? toSub808NoteEvents(track.notes) : track.sub808Notes;
         const auto serializedBaseSub808Notes = track.baseSub808Notes.empty()
             ? (track.baseNotes.empty() ? serializedSub808Notes : toSub808NoteEvents(track.baseNotes))

@@ -20,5 +20,6 @@ struct TrapTempoContext
 
 TrapTempoContext resolveTrapTempo(double hostBpm,
                                   int hostBars,
-                                  double referenceBpm = 155.0);
+                                  double referenceBpm = 155.0,
+                                  bool allowAutoFold = true);
 } // namespace bbg

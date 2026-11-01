@@ -344,6 +344,13 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
         previousBar = bar;
     }
 
+    // A quick Dark pickup rearticulates the following tone; it is not a random pitch jump.
+    if (dark)
+        for (size_t i = 0; i + 1 < notes.size(); ++i)
+            if (notes[i].semanticRole.contains("bass_pickup")
+                && notes[i + 1].gridTick - notes[i].gridTick <= HiResTiming::kTicks1_16)
+                notes[i].pitch = notes[i + 1].pitch;
+
     // Glides: a pitch change the 808 reaches by sliding (the note rings into the next one).
     for (size_t i = 0; i + 1 < notes.size(); ++i)
     {
@@ -574,6 +581,8 @@ void TrapEngine::generate(PatternProject& project)
     algebraParams.seed = project.params.seed + 601; // seed + settings decide a Generate (RULE 13)
     algebraParams.bars = std::max(1, project.params.bars);
     algebraParams.bpm = project.params.bpm;
+    algebraParams.tempoClockResolved = project.params.tempoClockResolved;
+    algebraParams.rollMode = project.params.trapRollMode;
     algebraParams.density = project.params.densityAmount;
     algebraParams.swing = std::clamp(project.params.swingPercent / 100.0f, 0.50f, 0.60f);
     algebraParams.humanize = project.params.humanizeAmount;
@@ -624,6 +633,8 @@ void TrapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
     algebraParams.seed = project.params.seed + static_cast<int>(trackType) * 37 + project.generationCounter * 19 + 509;
     algebraParams.bars = std::max(1, project.params.bars);
     algebraParams.bpm = project.params.bpm;
+    algebraParams.tempoClockResolved = project.params.tempoClockResolved;
+    algebraParams.rollMode = project.params.trapRollMode;
     algebraParams.density = project.params.densityAmount;
     algebraParams.swing = std::clamp(project.params.swingPercent / 100.0f, 0.50f, 0.60f);
     algebraParams.humanize = project.params.humanizeAmount;
@@ -697,7 +708,9 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
         for (auto& note : track.notes)
         {
             note.gridTick = std::clamp(note.gridTick, 0, bars * 16 * HiResTiming::kTicks1_16 - 1);
-            note.lengthTicks = std::max(HiResTiming::kTicks1_16, note.lengthTicks);
+            const bool darkFineGate = project.params.trapSubstyle == 1
+                && (track.type == TrackType::Sub808 || note.semanticRole.contains("roll"));
+            note.lengthTicks = std::max(darkFineGate ? HiResTiming::kTicks1_64 : HiResTiming::kTicks1_16, note.lengthTicks);
             note.velocity = std::clamp(note.velocity, 1, 127);
             note.timingOffsetTicks = std::clamp(note.timingOffsetTicks, -120, 120);
         }
@@ -750,9 +763,28 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
         if (algebraSub)
             assignTrap808Line(*sub, project.params, bars);
         clampLowEndPitchChanges(*sub, bars, 3);
+        // The pitch-change cap can rewrite a pickup at a bar boundary. Restore its
+        // relationship to the following tone after that cap as well (seed 365).
+        if (project.params.trapSubstyle == 1)
+            for (size_t i = 0; i + 1 < sub->notes.size(); ++i)
+                if (sub->notes[i].semanticRole.contains("bass_pickup")
+                    && sub->notes[i + 1].gridTick - sub->notes[i].gridTick <= HiResTiming::kTicks1_16
+                    && sub->notes[i].pitch != sub->notes[i + 1].pitch)
+                {
+                    sub->notes[i].pitch = sub->notes[i + 1].pitch;
+                    sub->notes[i].glideToNext = false;
+                    sub->notes[i + 1].isSlide = false;
+                }
         if (!algebraSub)
             ensureLowEndPhraseEnding(*sub, bars);
         dedupeAndSort(sub->notes);
+        if (project.params.trapSubstyle == 1)
+            for (size_t i = 0; i < sub->notes.size(); ++i)
+            {
+                auto& n = sub->notes[i];
+                const int next = i + 1 < sub->notes.size() ? sub->notes[i + 1].gridTick : bars * 16 * HiResTiming::kTicks1_16;
+                n.lengthTicks = std::clamp(n.lengthTicks, 1, std::max(1, next - n.gridTick));
+            }
         sub->sub808Notes = toSub808NoteEvents(sub->notes);
     }
 
@@ -803,7 +835,13 @@ void TrapEngine::applyTrapAlgebraPattern(PatternProject& project,
                                    lengthSteps);
 
         if (!track->notes.empty())
+        {
             track->notes.back().semanticRole = semanticRoleForTrapAlgebraNote(note);
+            if (project.params.trapSubstyle == 1
+                && (note.laneIndex == TrapAlgebraLanes::Sub808 || note.role == TrapAlgebraRole::Roll))
+                track->notes.back().lengthTicks = std::min(std::max(1, note.durationTicks * HiResTiming::kTicks1_64),
+                    bars * 16 * HiResTiming::kTicks1_16 - track->notes.back().gridTick);
+        }
     }
 
     for (auto& track : project.tracks)

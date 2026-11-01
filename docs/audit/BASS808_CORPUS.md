@@ -129,4 +129,36 @@ the presets are on the dark side) and Upright's h2 (-17 against p50 -9, p25 -21)
   (every preset at C1 / C2, a 140 BPM phrase each, `check_kick_loop.wav`, `check_kick_plus_808.wav`).
 - HamloMag's auto gain keeps small signals at unity, so a high Drive is quieter (-16 .. -21 dBFS at
   24 dB): the Gain knob makes it up for now.
-- Wiring the engine into HPDG's Sub808 lane (after listening).
+- ~~Wiring the engine into HPDG's Sub808 lane~~: done, see below.
+
+## HPDG's Sub808 lane on the engine (2026-11-01)
+
+HPDG's Sub808 lane is now always played by `BassEngine` (`Source/Engine/PreviewEngine.cpp`, live playback,
+audition and the WAV exports alike). A lane on a bank sample plays it as a plain sample through the
+engine (`sub808SampleOnlySettings`); a lane can instead carry an HPDG 808 sound (`Sub808SoundState`,
+saved in the project). Strip under the rack: Filter (left: low-pass 20 kHz -> 200 Hz, right: high-pass
+20 -> 400 Hz, 24 dB/oct), Drive (HamloMag), Length, Gain. EDIT / a click on the lane name opens the
+HPDG 808 editor over the window. Presets saved there go to `Documents/HamloProd/Bass808 Presets/*.hpbass`,
+read by both HPDG and the plugin.
+
+The saturator's latency is 242 samples at 48 kHz (constant, the largest model); Sub808 notes are sent
+that much earlier, so the bass lands on the grid.
+
+### Same sound as before (`HPDG_Sub808EngineCheck`, in ctest)
+
+Every Sub808 bank sample of Boom Bap, Trap, Drill, DnB and Techno (77) plays a two-bar phrase (retriggers,
+a repeated key, two slides, legato, a long note) on the old sample player and through the engine:
+
+| | first run | after the fixes |
+|---|---|---|
+| failed (corr <= 0.998 or level >= 0.1 dB) | 76 / 77 | 0 / 77 |
+| worst residual | -3.5 dB | -26.9 dB |
+| worst level difference | 1.19 dB | 0.04 dB |
+
+Plain notes matched from the start (corr 1.0000, 0.00 dB). Three differences were found and fixed:
+- a slide whose previous note ends one sample before it (tick rounding) restarted the sample from its quiet
+  start (15-30 ms of silence): HPDG's slides now catch a note in its release, as the old player did;
+- a short sample that had played out kept a silent voice alive, so the next slide glided on silence: with
+  the synth off, a voice ends with its sample;
+- the slide curve: the old player moved the playback rate in a straight line, the engine the pitch;
+  HPDG's notes now glide linearly in rate (the plugin keeps its own glide).

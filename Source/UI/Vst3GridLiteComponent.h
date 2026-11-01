@@ -16,6 +16,8 @@ class Vst3GridLiteComponent final : public juce::Component
 {
 public:
     void setProject(const PatternProject& value);
+    void setSnapResolution(int id) { snapResolutionId = id; repaint(); }
+    int getSnapResolution() const { return snapResolutionId; }
     void setLaneDisplayOrder(const std::vector<RuntimeLaneId>& order);
     void setSelectedTrack(const RuntimeLaneId& laneId);
     void setRowHeight(int value);
@@ -51,6 +53,7 @@ private:
     RuntimeLaneId selectedTrack;
     std::optional<juce::Range<int>> loopRegionTicks;
     int rowHeight = 32;
+    int snapResolutionId = 14;
     float playheadStep = -1.0f;
     int previewStartStep = 0;
 };

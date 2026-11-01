@@ -9,6 +9,8 @@
 #include "../Source/Plugin/PluginProcessor.h"
 #include "../Source/UI/SampleTrimEditorComponent.h"
 #include "../Source/UI/SketchTheme.h"
+#include "../Source/UI/Sub808StripComponent.h"
+#include "../Source/Bass808/BassSample.h"
 
 using namespace bbg;
 
@@ -61,6 +63,50 @@ int main(int argc, char* argv[])
         const auto image = trim.createComponentSnapshot(trim.getLocalBounds(), true, 1.5f);
         juce::FileOutputStream stream(out.getChildFile("trim.png"));
         juce::PNGImageFormat().writeImageToStream(image, stream);
+        return 0;
+    }
+
+    if (argc > 2 && juce::String(argv[2]) == "bass")
+    {
+        // the bass strip open under the rack, then the HPDG 808 editor over the window
+        sketch::setActiveSkin(sketch::Skin::Dark);
+        BoomBapGeneratorAudioProcessor processor;
+        processor.generatePattern();
+        std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createVst3EditorForTests());
+        editor->setSize(1500, 940);
+        std::function<juce::Component*(juce::Component&)> find = [&find](juce::Component& c) -> juce::Component*
+        {
+            if (c.getComponentID() == "sub808Strip")
+                return &c;
+            for (auto* child : c.getChildren())
+                if (auto* hit = find(*child))
+                    return hit;
+            return nullptr;
+        };
+        auto* strip = dynamic_cast<Sub808StripComponent*>(find(*editor));
+        if (strip == nullptr)
+        {
+            std::cout << "no bass strip" << std::endl;
+            return 1;
+        }
+        const auto shot = [&](const juce::String& name)
+        {
+            const auto file = out.getChildFile(name + ".png");
+            file.deleteFile();
+            juce::FileOutputStream stream(file);
+            juce::PNGImageFormat().writeImageToStream(editor->createComponentSnapshot(editor->getLocalBounds(), true, 1.0f), stream);
+            std::cout << file.getFullPathName() << std::endl;
+        };
+        if (const auto bank = processor.getSub808BankSample())
+            std::cout << "lane sample " << bank->name << " " << bank->data.size() << " samples, root " << bank->rootHz << " Hz" << std::endl;
+        else
+            std::cout << "no lane sample" << std::endl;
+        shot("bass_closed");
+        strip->setOpen(true);
+        shot("bass_strip");
+        strip->onEdit();
+        shot("bass_editor");
+        editor.reset();
         return 0;
     }
 
