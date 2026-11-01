@@ -552,10 +552,16 @@ target_sources(HPDG808
     PRIVATE
         Source/Bass808/Bass808Processor.cpp
         Source/Bass808/Bass808Editor.cpp
+        Source/Bass808/Bass808Screen.cpp
+        Source/Bass808/BassEngine.cpp
+        Source/Bass808/BassSample.cpp
+        Source/Bass808/Mag/DSP/HamloMag.cpp
+        Source/Bass808/Mag/DSP/Saturator.cpp
         Source/Audio/Synth808Voice.cpp
+        Source/UI/SketchDrawing.cpp
 )
 
-target_include_directories(HPDG808 PRIVATE Source)
+target_include_directories(HPDG808 PRIVATE Source Source/Bass808/Mag)
 
 target_compile_definitions(HPDG808
     PUBLIC
@@ -568,6 +574,7 @@ target_compile_definitions(HPDG808
 target_link_libraries(HPDG808
     PRIVATE
         juce::juce_audio_utils
+        juce::juce_dsp
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -596,6 +603,34 @@ target_link_libraries(HPDG_Synth808Lab
 )
 
 add_test(NAME HPDG_Synth808Lab COMMAND HPDG_Synth808Lab ${CMAKE_BINARY_DIR}/synth808 ${CMAKE_SOURCE_DIR}/Samples)
+
+# HPDG 808's engine (layers, filter, HamloMag, phantom): every preset rendered, the sample layer checked.
+add_executable(HPDG_Bass808Lab
+    Tests/Bass808Lab.cpp
+    Source/Bass808/BassEngine.cpp
+    Source/Bass808/BassSample.cpp
+    Source/Bass808/Mag/DSP/HamloMag.cpp
+    Source/Bass808/Mag/DSP/Saturator.cpp
+    Source/Audio/Synth808Voice.cpp
+)
+
+target_include_directories(HPDG_Bass808Lab PRIVATE Source Source/Bass808/Mag)
+
+target_compile_definitions(HPDG_Bass808Lab PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+
+target_link_libraries(HPDG_Bass808Lab
+    PRIVATE
+        juce::juce_audio_formats
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_test(NAME HPDG_Bass808Lab COMMAND HPDG_Bass808Lab ${CMAKE_BINARY_DIR}/bass808)
 
 # Sample source (waveform peaks, transients, tempo grid, suggested fragment) and the trim editor.
 add_executable(HPDG_SampleTrimTests

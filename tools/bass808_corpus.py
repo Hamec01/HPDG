@@ -1,6 +1,8 @@
 """What pro 808 one-shots are made of (2026-11-01): the measurements behind HPDG 808's presets.
 
 usage: python tools/bass808_corpus.py <out.csv> <folder> [<folder> ...]
+       (bright_early / bright_late: spectral centroid in multiples of f0 at 10-60 / 200-400 ms, the filter
+       envelope; h_count: harmonics within 30 dB of the strongest - added for the Boom Bap / Techno / DnB basses)
        python tools/bass808_corpus.py --summary <out.csv>
 
 Per one-shot (duplicates by content skipped, at most 60 per folder):
@@ -24,7 +26,7 @@ import soundfile as sf
 from scipy.signal import butter, sosfiltfilt
 
 FIELDS = ['file', 'f0', 'punch_st', 'punch_ms', 'h2', 'h3', 'h4', 'h5', 'h6', 'click_db', 'crest',
-          't6', 't12', 't24', 'length', 'sustain']
+          't6', 't12', 't24', 'length', 'sustain', 'bright_early', 'bright_late', 'h_count']
 
 
 def settled_f0(y, sr):
@@ -70,6 +72,28 @@ def harmonics(y, sr, f0):
         c = np.sum(seg * w * np.exp(-2j * np.pi * h * f0 * tt))
         amp.append(abs(c) + 1e-12)
     return [20 * np.log10(a / amp[0]) for a in amp[1:]]
+
+
+def brightness(y, sr, f0, a, b):
+    # spectral centroid of [a, b) s in multiples of f0: 1 = a sine, ~3-6 = a filtered saw
+    seg = y[int(a * sr): int(b * sr)]
+    if len(seg) < int(0.02 * sr):
+        return np.nan
+    spec = np.abs(np.fft.rfft(seg * np.hanning(len(seg)), 1 << 16)) ** 2
+    f = np.fft.rfftfreq(1 << 16, 1 / sr)
+    band = (f > 20) & (f < 12000)
+    return float(np.sum(f[band] * spec[band]) / (np.sum(spec[band]) + 1e-20) / f0)
+
+
+def harmonic_count(y, sr, f0):
+    # harmonics 1..40 within 30 dB of the strongest one, in the body: how rich the wave is
+    seg = y[int(0.15 * sr): int(0.6 * sr)]
+    if len(seg) < int(0.1 * sr):
+        return np.nan
+    w = np.hanning(len(seg))
+    tt = np.arange(len(seg)) / sr
+    amp = np.array([abs(np.sum(seg * w * np.exp(-2j * np.pi * h * f0 * tt))) if h * f0 < sr / 2 else 0.0 for h in range(1, 41)])
+    return int(np.sum(amp > amp.max() * 10 ** (-30 / 20)))
 
 
 def envelope_db(y, sr, win=0.02):
@@ -119,6 +143,9 @@ def analyse(path):
     row['length'] = round((below[0] if len(below) else len(db) - peak) / sr, 3)
     at = peak + int(0.5 * sr)
     row['sustain'] = round(float(db[at] - db[peak]) if at < len(db) else -60.0, 1)
+    row['bright_early'] = round(brightness(y, sr, f0, 0.01, 0.06), 2)
+    row['bright_late'] = round(brightness(y, sr, f0, 0.2, 0.4), 2)
+    row['h_count'] = harmonic_count(y, sr, f0)
     del att
     return row
 

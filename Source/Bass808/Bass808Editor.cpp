@@ -1,73 +1,137 @@
 #include "Bass808Editor.h"
 
+#include "UI/SketchTheme.h"
+
 namespace bbg
 {
 namespace
 {
-const juce::Colour kBackground { 0xff15161a };
-const juce::Colour kPanel { 0xff1f2127 };
-const juce::Colour kAccent { 0xffe0a040 };
-const juce::Colour kText { 0xffd8d8dc };
+using namespace b808;
+using Item = Page::Item;
 
-// Groups of knobs: title + how many of the knobs (in addKnob order) it holds.
-struct Group
+constexpr int kWidth = 1000, kHeight = 650;
+constexpr int kHeaderHeight = 64, kTabTop = 70, kTabHeight = 28, kScreenTop = 104, kScreenHeight = 262, kPageTop = 378;
+
+bool isAudioFile(const juce::String& path)
 {
-    const char* title;
-    int count;
-};
-constexpr Group kGroups[] { { "PITCH", 3 }, { "TONE", 4 }, { "SHAPE", 6 }, { "PLAY", 3 } };
+    return juce::File(path).hasFileExtension("wav;aif;aiff;flac;mp3;ogg");
+}
 } // namespace
 
-Bass808Editor::Bass808Editor(Bass808Processor& processor)
-    : juce::AudioProcessorEditor(processor),
-      bass(processor),
-      keyboard(processor.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard)
+// Holds a note while pressed: hear the sound without a MIDI keyboard (the last played note, C2 at first).
+class Bass808Editor::PlayButton final : public juce::TextButton
 {
-    look.setColour(juce::Slider::rotarySliderFillColourId, kAccent);
-    look.setColour(juce::Slider::rotarySliderOutlineColourId, kPanel.brighter(0.25f));
-    look.setColour(juce::Slider::thumbColourId, kAccent.brighter(0.3f));
-    look.setColour(juce::Slider::textBoxTextColourId, kText);
-    look.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    look.setColour(juce::Label::textColourId, kText);
-    look.setColour(juce::ComboBox::backgroundColourId, kPanel.brighter(0.1f));
-    look.setColour(juce::ComboBox::textColourId, kText);
-    look.setColour(juce::ComboBox::outlineColourId, kAccent.withAlpha(0.5f));
-    look.setColour(juce::PopupMenu::backgroundColourId, kPanel);
-    look.setColour(juce::PopupMenu::highlightedBackgroundColourId, kAccent.withAlpha(0.4f));
+public:
+    explicit PlayButton(Bass808Processor& processor) : juce::TextButton("PLAY"), bass(processor) {}
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        juce::TextButton::mouseDown(event);
+        note = bass.lastNote();
+        bass.keyboardState.noteOn(1, note, 0.9f);
+    }
+    void mouseUp(const juce::MouseEvent& event) override
+    {
+        juce::TextButton::mouseUp(event);
+        bass.keyboardState.noteOff(1, note, 0.0f);
+    }
+
+private:
+    Bass808Processor& bass;
+    int note = 36;
+};
+
+Bass808Editor::Bass808Editor(Bass808Processor& processor)
+    : juce::AudioProcessorEditor(processor), bass(processor), screen(processor)
+{
+    sketch::setActiveSkin(sketch::Skin::Dark); // HPDG's knobs take the Dark skin's colours
     setLookAndFeel(&look);
 
-    for (int i = 0; i < Synth808Voice::kPresetCount; ++i)
-        presetBox.addItem(Synth808Voice::presets()[static_cast<size_t>(i)].name, i + 1);
-    presetBox.setSelectedId(bass.getCurrentProgram() + 1, juce::dontSendNotification);
-    presetBox.onChange = [this] { bass.applyPreset(presetBox.getSelectedId() - 1); };
+    // presets, grouped by genre
+    const auto& presets = bassPresets();
+    juce::String genre;
+    for (size_t i = 0; i < presets.size(); ++i)
+    {
+        if (genre != presets[i].genre)
+        {
+            genre = presets[i].genre;
+            presetBox.addSectionHeading(genre);
+        }
+        presetBox.addItem(juce::String(presets[i].genre) + "  " + presets[i].name, static_cast<int>(i) + 1);
+    }
+    presetBox.onChange = [this]
+    {
+        if (presetBox.getSelectedId() > 0)
+            bass.applyPreset(presetBox.getSelectedId() - 1);
+        shownPreset = bass.getCurrentProgram();
+    };
+    previousPreset.onClick = [this] { stepPreset(-1); };
+    nextPreset.onClick = [this] { stepPreset(1); };
     addAndMakeVisible(presetBox);
+    addAndMakeVisible(previousPreset);
+    addAndMakeVisible(nextPreset);
 
-    modeBox.addItemList({ "Retrigger", "Legato", "Glide" }, 1);
-    modeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(bass.apvts, "mode", modeBox);
-    addAndMakeVisible(modeBox);
+    mode = std::make_unique<ParamCombo>(bass.apvts, "mode", "Mode");
+    addAndMakeVisible(*mode);
+    play = std::make_unique<PlayButton>(bass);
+    addAndMakeVisible(*play);
+    for (const auto& [id, text] : { std::pair { "glide", "Glide" }, { "velocity", "Velocity" }, { "tune", "Tune" }, { "gain", "Gain" } })
+    {
+        headerKnobs.push_back(std::make_unique<ParamKnob>(bass.apvts, id, text, 34));
+        addAndMakeVisible(*headerKnobs.back());
+    }
 
-    addKnob("punch", "Punch");
-    addKnob("punchTime", "Punch Time");
-    addKnob("tune", "Tune");
-    addKnob("drive", "Drive");
-    addKnob("even", "Even");
-    addKnob("saturation", "Saturation");
-    addKnob("tone", "Tone");
-    addKnob("attack", "Attack");
-    addKnob("boost", "Boost");
-    addKnob("hold", "Hold");
-    addKnob("decay", "Decay");
-    addKnob("release", "Release");
-    addKnob("click", "Click");
-    addKnob("glide", "Glide");
-    addKnob("velocity", "Velocity");
-    addKnob("gain", "Gain");
+    static const char* tabNames[] { "SYNTH", "SAMPLE", "MIX", "FILTER  /  FX" };
+    for (size_t i = 0; i < tabs.size(); ++i)
+    {
+        tabs[i].setButtonText(tabNames[i]);
+        tabs[i].setRadioGroupId(808);
+        tabs[i].setClickingTogglesState(true);
+        tabs[i].onClick = [this, i] { selectTab(static_cast<int>(i)); };
+        addAndMakeVisible(tabs[i]);
+    }
+    addAndMakeVisible(screen);
 
-    keyboard.setAvailableRange(24, 60); // C1-C4: where an 808 lives
-    keyboard.setLowestVisibleKey(24);
-    addAndMakeVisible(keyboard);
+    auto& state = bass.apvts;
+    pages[0] = std::make_unique<Page>(state, std::vector<Page::Group> {
+        { "OSCILLATOR", 2, { { Item::Combo, "wave", "Wave" }, { Item::Knob, "shape", "Shape" }, { Item::Knob, "synthLevel", "Level" },
+                             { Item::Combo, "subOct", "Sub Octave" }, { Item::Knob, "sub", "Sub" } } },
+        { "PITCH", 2, { { Item::Knob, "punch", "Punch" }, { Item::Knob, "punchTime", "Punch Time" } } },
+        { "808 TONE", 2, { { Item::Knob, "drive", "Drive" }, { Item::Knob, "even", "Even" }, { Item::Knob, "saturation", "Saturation" },
+                           { Item::Knob, "tone", "Tone" }, { Item::Knob, "click", "Click" }, { Item::Knob, "boost", "Boost" } } },
+        { "ENVELOPE", 2, { { Item::Knob, "attack", "Attack" }, { Item::Knob, "hold", "Hold" }, { Item::Knob, "decay", "Decay" },
+                           { Item::Knob, "sustain", "Sustain" }, { Item::Knob, "release", "Release" } } },
+    });
+    pages[1] = std::make_unique<Page>(state, std::vector<Page::Group> {
+        { "SAMPLE", 2, { { Item::Knob, "smpLevel", "Level" }, { Item::Knob, "smpTune", "Tune" }, { Item::Knob, "smpFine", "Fine" },
+                         { Item::Knob, "smpStretch", "Stretch" }, { Item::Knob, "smpStart", "Start" }, { Item::Knob, "smpEnd", "End" },
+                         { Item::Knob, "smpLoopStart", "Loop Start" } } },
+        { "FILE", 2, { { Item::Action, nullptr, "LOAD", [this] { chooseSample(); } }, { Item::Action, nullptr, "CLEAR", [this] { bass.clearSample(); } } } },
+        { "PLAYBACK", 2, { { Item::Toggle, "smpLoop", "LOOP" }, { Item::Toggle, "smpFollow", "FOLLOW KEY" }, { Item::Toggle, "smpLock", "LOCK TIME" },
+                           { Item::Toggle, "smpReverse", "REVERSE" }, { Item::Toggle, "smpInvert", "INVERT" } } },
+    });
+    pages[2] = std::make_unique<Page>(state, std::vector<Page::Group> {
+        { "LAYERS", 1, { { Item::Knob, "synthLevel", "Synth" }, { Item::Knob, "smpLevel", "Sample" }, { Item::Knob, "handoff", "Handoff" },
+                         { Item::Toggle, "smpInvert", "INVERT" } } },
+        { "WEIGHT", 1, { { Item::Knob, "sub", "Sub" }, { Item::Knob, "phantom", "Phantom" } } },
+        { "ENVELOPE", 1, { { Item::Knob, "attack", "Attack" }, { Item::Knob, "hold", "Hold" }, { Item::Knob, "decay", "Decay" },
+                           { Item::Knob, "sustain", "Sustain" }, { Item::Knob, "release", "Release" } } },
+    });
+    pages[3] = std::make_unique<Page>(state, std::vector<Page::Group> {
+        { "FILTER", 2, { { Item::Combo, "fltType", "Type" }, { Item::Knob, "cutoff", "Cutoff" }, { Item::Knob, "reso", "Resonance" },
+                         { Item::Knob, "fltKey", "Key" }, { Item::Knob, "fltEnv", "Env" }, { Item::Knob, "fltDecay", "Env Decay" },
+                         { Item::Knob, "vowel", "Vowel" } } },
+        { "LFO", 2, { { Item::Knob, "lfoRate", "Rate" }, { Item::Combo, "lfoSync", "Sync" }, { Item::Knob, "lfoDepth", "Depth" },
+                      { Item::Toggle, "lfoRetrig", "RETRIG" } } },
+        { "HAMLOMAG SATURATOR", 2, { { Item::Combo, "satModel", "Model" }, { Item::Knob, "satDrive", "Drive" }, { Item::Knob, "satHarm", "Harmonics" },
+                                     { Item::Knob, "satEvenOdd", "Even/Odd" }, { Item::Knob, "satMix", "Mix" }, { Item::Knob, "phantom", "Phantom" } } },
+    });
+    for (auto& page : pages)
+        addChildComponent(*page);
 
-    setSize(840, 400);
+    tabs[0].setToggleState(true, juce::dontSendNotification);
+    selectTab(0);
+    setSize(kWidth, kHeight);
+    startTimerHz(10);
 }
 
 Bass808Editor::~Bass808Editor()
@@ -75,74 +139,139 @@ Bass808Editor::~Bass808Editor()
     setLookAndFeel(nullptr);
 }
 
-void Bass808Editor::addKnob(const char* id, const char* text)
+void Bass808Editor::selectTab(int index)
 {
-    auto knob = std::make_unique<Knob>();
-    knob->slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    knob->slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 70, 16);
-    knob->label.setText(text, juce::dontSendNotification);
-    knob->label.setJustificationType(juce::Justification::centred);
-    knob->label.setFont(juce::FontOptions(13.0f));
-    knob->attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(bass.apvts, id, knob->slider);
-    addAndMakeVisible(knob->slider);
-    addAndMakeVisible(knob->label);
-    knobs.push_back(std::move(knob));
+    for (size_t i = 0; i < pages.size(); ++i)
+        pages[i]->setVisible(static_cast<int>(i) == index);
+    screen.setMode(static_cast<Bass808Screen::Mode>(index));
+}
+
+void Bass808Editor::stepPreset(int delta)
+{
+    const int count = bass.getNumPrograms();
+    bass.applyPreset((bass.getCurrentProgram() + delta + count) % count);
+}
+
+void Bass808Editor::timerCallback()
+{
+    if (bass.getCurrentProgram() != shownPreset)
+    {
+        shownPreset = bass.getCurrentProgram();
+        presetBox.setSelectedId(shownPreset + 1, juce::dontSendNotification);
+    }
+    if (messageTicks > 0 && --messageTicks == 0)
+        repaint();
+}
+
+void Bass808Editor::chooseSample()
+{
+    chooser = std::make_unique<juce::FileChooser>("Load a sample into HPDG 808", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg");
+    chooser->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                         [this](const juce::FileChooser& fc)
+                         {
+                             if (fc.getResult().existsAsFile())
+                                 loadSample(fc.getResult());
+                         });
+}
+
+void Bass808Editor::loadSample(const juce::File& file)
+{
+    juce::String error;
+    if (bass.loadSample(file, error))
+    {
+        message = "Loaded " + file.getFileName();
+        tabs[1].setToggleState(true, juce::dontSendNotification);
+        selectTab(1);
+    }
+    else
+    {
+        message = error;
+    }
+    messageTicks = 40;
+    repaint();
+}
+
+bool Bass808Editor::isInterestedInFileDrag(const juce::StringArray& files)
+{
+    return files.size() == 1 && isAudioFile(files[0]);
+}
+
+void Bass808Editor::fileDragEnter(const juce::StringArray&, int, int)
+{
+    dragOver = true;
+    repaint();
+}
+
+void Bass808Editor::fileDragExit(const juce::StringArray&)
+{
+    dragOver = false;
+    repaint();
+}
+
+void Bass808Editor::filesDropped(const juce::StringArray& files, int, int)
+{
+    dragOver = false;
+    if (!files.isEmpty())
+        loadSample(juce::File(files[0]));
 }
 
 void Bass808Editor::paint(juce::Graphics& g)
 {
-    g.fillAll(kBackground);
-    g.setColour(kAccent);
-    g.setFont(juce::FontOptions(24.0f, juce::Font::bold));
-    g.drawText("HPDG 808", 16, 10, 200, 30, juce::Justification::centredLeft);
-    g.setColour(kText.withAlpha(0.6f));
-    g.setFont(juce::FontOptions(13.0f));
-    g.drawText("Preset", 250, 10, 60, 30, juce::Justification::centredRight);
-    g.drawText("Mode", 540, 10, 60, 30, juce::Justification::centredRight);
+    g.fillAll(colour::background);
+    // header strip
+    auto header = getLocalBounds().removeFromTop(kHeaderHeight).toFloat();
+    juce::ColourGradient band(colour::panel, 0.0f, 0.0f, colour::background, 0.0f, header.getBottom(), false);
+    g.setGradientFill(band);
+    g.fillRect(header);
+    g.setColour(colour::panelEdge);
+    g.drawHorizontalLine(kHeaderHeight - 1, 0.0f, static_cast<float>(getWidth()));
 
-    // group panels and titles
-    const int top = 52;
-    const int knobWidth = 84;
-    int x = 12;
-    for (const auto& group : kGroups)
+    g.setColour(colour::accentGlow);
+    g.setFont(juce::FontOptions(26.0f, juce::Font::bold));
+    g.drawText("HPDG 808", 18, 10, 150, 30, juce::Justification::centredLeft);
+    g.setColour(colour::textMuted);
+    g.setFont(juce::FontOptions(11.0f));
+    g.drawText("BASS INSTRUMENT  /  HAMLOPROD", 19, 38, 200, 14, juce::Justification::centredLeft);
+    g.setFont(juce::FontOptions(11.5f));
+    g.drawText("PRESET", 196, 8, 60, 14, juce::Justification::centredLeft);
+
+    if (messageTicks > 0)
     {
-        const int width = (group.count + 1) / 2 * knobWidth + 8;
-        g.setColour(kPanel);
-        g.fillRoundedRectangle(static_cast<float>(x), static_cast<float>(top), static_cast<float>(width), 214.0f, 8.0f);
-        g.setColour(kAccent.withAlpha(0.8f));
-        g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
-        g.drawText(group.title, x + 10, top + 4, 120, 16, juce::Justification::centredLeft);
-        x += width + 8;
+        g.setColour(colour::tealBright);
+        g.setFont(juce::FontOptions(12.0f));
+        g.drawText(message, 560, kTabTop, kWidth - 572, kTabHeight, juce::Justification::centredRight);
     }
+}
+
+void Bass808Editor::paintOverChildren(juce::Graphics& g)
+{
+    if (!dragOver)
+        return;
+    g.setColour(colour::accent.withAlpha(0.18f));
+    g.fillRect(getLocalBounds());
+    g.setColour(colour::accentGlow);
+    g.drawRect(getLocalBounds(), 3);
+    g.setFont(juce::FontOptions(22.0f, juce::Font::bold));
+    g.drawText("DROP TO LOAD INTO THE SAMPLE LAYER", getLocalBounds(), juce::Justification::centred);
 }
 
 void Bass808Editor::resized()
 {
-    presetBox.setBounds(316, 13, 200, 26);
-    modeBox.setBounds(606, 13, 140, 26);
-
-    // Knobs: PITCH, TONE, SHAPE, PLAY side by side, two rows of knobs inside every panel.
-    const int top = 52;
-    const int knobWidth = 84;
-    int x = 12;
-    size_t index = 0;
-    for (const auto& group : kGroups)
+    presetBox.setBounds(196, 24, 250, 28);
+    previousPreset.setBounds(450, 24, 28, 28);
+    nextPreset.setBounds(480, 24, 28, 28);
+    mode->setBounds(522, 6, 108, 50);
+    play->setBounds(642, 24, 64, 28);
+    int x = kWidth - 12 - static_cast<int>(headerKnobs.size()) * 66;
+    for (auto& knob : headerKnobs)
     {
-        const int perRow = (group.count + 1) / 2;
-        const int width = perRow * knobWidth + 8;
-        const int cell = knobWidth;
-        for (int i = 0; i < group.count && index < knobs.size(); ++i, ++index)
-        {
-            const int row = i / perRow;
-            const int column = i % perRow;
-            auto& knob = *knobs[index];
-            const int kx = x + 4 + column * cell;
-            const int ky = top + 22 + row * 96;
-            knob.label.setBounds(kx, ky, cell, 16);
-            knob.slider.setBounds(kx + (cell - 76) / 2, ky + 16, 76, 76);
-        }
-        x += width + 8;
+        knob->setBounds(x, 2, 66, 60);
+        x += 66;
     }
-    keyboard.setBounds(12, 278, getWidth() - 24, getHeight() - 290);
+    for (size_t i = 0; i < tabs.size(); ++i)
+        tabs[i].setBounds(12 + static_cast<int>(i) * 136, kTabTop, 130, kTabHeight);
+    screen.setBounds(12, kScreenTop, kWidth - 24, kScreenHeight);
+    for (auto& page : pages)
+        page->setBounds(12, kPageTop, kWidth - 24, kHeight - kPageTop - 8);
 }
 } // namespace bbg

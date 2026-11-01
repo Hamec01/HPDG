@@ -65,7 +65,68 @@ The same on every note (`HPDG_Synth808Lab`, C1 / F1 / C2): low-mid within 0.1 dB
 17 %; the pre-rendered WAVs played faster / slower drift 40-100 % in length (ATL 1: 2.62 s at C1,
 1.46 s at C2). Highs (above 1 kHz) under -74 dB on every preset.
 
+## Second pass: a bass instrument for every genre (2026-11-01)
+
+Maintainer, after listening to the first pass: a screen that shows the wave, a second screen to mix
+waves, samples loaded in the plugin with stretch / pitch / trim (a kick made into an 808), cutoff
+filters, the HamloMag saturators from HPEQ (only them, not the plugin), no drawn piano, the HPDG dark
+look, and presets for Boom Bap, Techno and DnB too.
+
+Engine (`Source/Bass808/BassEngine`): synth layer (Sine with 1:1 FM growl, Triangle, Saw, Square / PWM,
+Reese = two saws 4-50 cents apart; Sub one octave down or at the note; the 808 punch, saturation, tone
+and click of the first pass) + sample layer (trim, loop of whole periods of the sample's detected pitch,
+tune, follow key or not, LOCK TIME / Stretch by two 45 ms grains started a whole number of periods from
+each other, reverse, invert) + handoff (the sample's attack crossfades into the synth) -> envelope with
+Sustain -> filter LP12 / LP24 / HP12 / BP / Vowel (three fixed formants: a vowel's resonances do not move
+with the note - Helmholtz, from the lecture notes the maintainer sent) with key, envelope, LFO (free or
+synced) -> Phantom (harmonics 2-5 of the fundamental from envelope-normalised Chebyshev polynomials, held
+one period, so a sub is heard on a phone) -> HamloMag (copied unchanged from HPEQ, `Source/Bass808/Mag`).
+
+### The other genres' one-shots (same script, two new measures)
+
+`bright_early` / `bright_late`: spectral centroid at 10-60 / 200-400 ms in multiples of f0 (the filter
+envelope); `h_count`: harmonics within 30 dB of the strongest.
+
+| genre | n | h2 / h3 / h5 | h_count | bright early -> late | click | -6 / -24 dB s | at 0.5 s |
+|---|---|---|---|---|---|---|---|
+| Boom Bap (9 packs) | 278 | -9 / -17 / -34 | 4 | 1.74 -> 1.33 | -29 | 0.30 / 0.71 | -9.3 |
+| Techno (3 packs) | 100 | -20 / -22 / -38 | 3 | 1.58 -> 1.17 | -23 | 0.16 / 0.33 | ended |
+| DnB (2 packs) | 71 | -20 / -19 / -26 | 6 | 3.81 -> 2.26 | -17 | 0.39 / 0.68 | -4.2 |
+
+### The genre presets, measured the same way (E1)
+
+| preset | h2 / h3 / h5 | h_count | bright | click | -6 / -24 dB s | at 0.5 s |
+|---|---|---|---|---|---|---|
+| Boom Bap Upright | -17 / -27 / -37 | 3 | 1.22 -> 1.06 | -31 | 0.22 / 0.74 | -14.4 |
+| Boom Bap Dusty | -12 / -22 / -33 | 4 | 1.17 -> 1.08 | -35 | 0.31 / 0.92 | -9.0 |
+| Boom Bap Stab | -7 / -14 / -28 | 5 | 1.51 -> 1.26 | -31 | 0.02 / 0.46 | -23.0 |
+| Techno Rumble | -14 / -25 / -39 | 3 | 1.50 -> 1.05 | -21 | 0.11 / 0.43 | -30.2 |
+| Techno Pulse | -8 / -18 / -27 | 7 | 1.54 -> 1.28 | -21 | 0.14 / 0.44 | -25.6 |
+| Techno Acid | -6 / -6 / -24 | 8 | 1.77 -> 1.83 | -19 | (a held line, not a one-shot) | |
+| DnB Sub | -15 / -16 / -29 | 5 | 1.57 -> 1.12 | -36 | (held) | -0.3 |
+| DnB Reese | -3 / -14 / -17 | 14 | 2.30 -> 2.25 | -21 | (held) | -1.1 |
+| DnB Talk | -12 / -10 / -31 | 20 | 4.90 -> 4.86 | -14 | (held) | -1.5 |
+
+All inside the genre's p25-p75 except Boom Bap's brightness (1.17-1.22 against p25 1.20 / p50 1.74:
+the presets are on the dark side) and Upright's h2 (-17 against p50 -9, p25 -21).
+
+### Checks (`HPDG_Bass808Lab`, in ctest)
+
+- Every preset at C1 / F1 / C2: finite, peak -0.4 .. -5.3 dBFS. The first pass's auto gain looked at the
+  positive half-wave only; with Even the negative one is up to 1.6x larger, so the 808 presets peaked at
+  +1 .. +9 dBFS. Now both half-waves (and Sub, Boost) count.
+- Sample layer: pitch of a 55 Hz sine 55.00 Hz, of a kick (55 Hz body after a +150 Hz drop) 55.53 Hz;
+  55 Hz sample on A2 110.00 Hz; FOLLOW KEY off 55.00 Hz; an octave up 1.22 -> 0.62 s, with LOCK TIME
+  1.21 -> 1.20 s at 109.5 Hz; Stretch 2x 1.22 -> 2.42 s at 54.7 Hz (grains started at arbitrary
+  positions gave 99 Hz and 72 Hz: they cancelled each other); a loop holds +0.3 dB at 2 s with no step
+  (largest sample step 0.6x a sine's slope); a 70 ms handoff keeps the synth 57 dB down before 60 ms.
+- Phantom 0.5 on a pure sine: h2..h5 from below -95 dB to -12 / -14 / -18 / -23 dB.
+- All six HamloMag models finite at 24 dB drive.
+
 ## Open
 
-- Listening by the maintainer (renders in `TempAudio/synth808`, the plugin `HPDG 808.vst3`).
-- Wiring the voice into HPDG's Sub808 lane (after listening).
+- Listening by the maintainer: the plugin (`HPDG 808.vst3`, Standalone), renders in `TempAudio/bass808`
+  (every preset at C1 / C2, a 140 BPM phrase each, `check_kick_loop.wav`, `check_kick_plus_808.wav`).
+- HamloMag's auto gain keeps small signals at unity, so a high Drive is quieter (-16 .. -21 dBFS at
+  24 dB): the Gain knob makes it up for now.
+- Wiring the engine into HPDG's Sub808 lane (after listening).

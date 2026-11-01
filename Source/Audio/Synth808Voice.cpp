@@ -65,9 +65,12 @@ float Synth808Voice::presetGain(int presetIndex)
 
 float Synth808Voice::autoGain(const Synth808Params& settings)
 {
+    // both half-waves: the bias (even) makes the negative one the larger
     const double drive = juce::jmax(0.1f, settings.drive);
-    const double peak = (1.0 - settings.saturation)
-        + settings.saturation * (std::tanh(drive * (1.0 + settings.bias)) - std::tanh(drive * settings.bias)) / std::tanh(drive);
+    const double offset = std::tanh(drive * settings.bias);
+    const double up = std::tanh(drive * (1.0 + settings.bias)) - offset;
+    const double down = offset - std::tanh(drive * (settings.bias - 1.0));
+    const double peak = (1.0 - settings.saturation) + settings.saturation * std::max(up, down) / std::tanh(drive);
     return static_cast<float>(0.80 / juce::jmax(0.05, peak));
 }
 
