@@ -528,6 +528,75 @@ if (WIN32)
     add_test(NAME HPDG_DragWindowFadeTests COMMAND HPDG_DragWindowFadeTests)
 endif()
 
+# HPDG 808: the 808 synth on its own, an instrument plugin for any DAW (Source/Bass808).
+juce_add_plugin(HPDG808
+    COMPANY_NAME "HamloProd"
+    BUNDLE_ID com.boombaplabs.hpdg808
+    IS_SYNTH TRUE
+    NEEDS_MIDI_INPUT TRUE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    COPY_PLUGIN_AFTER_BUILD FALSE
+    PLUGIN_MANUFACTURER_CODE BBLB
+    PLUGIN_CODE H808
+    FORMATS Standalone VST3
+    VST3_CATEGORIES Instrument Synth
+    PRODUCT_NAME "HPDG 808"
+)
+
+if (TARGET HPDG808_VST3)
+    target_compile_definitions(HPDG808_VST3 PRIVATE JUCE_VST3_CAN_REPLACE_VST2=0)
+endif()
+
+target_sources(HPDG808
+    PRIVATE
+        Source/Bass808/Bass808Processor.cpp
+        Source/Bass808/Bass808Editor.cpp
+        Source/Audio/Synth808Voice.cpp
+)
+
+target_include_directories(HPDG808 PRIVATE Source)
+
+target_compile_definitions(HPDG808
+    PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0
+)
+
+target_link_libraries(HPDG808
+    PRIVATE
+        juce::juce_audio_utils
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_executable(HPDG_Synth808Lab
+    Tests/Synth808Lab.cpp
+    Source/Audio/Synth808Voice.cpp
+)
+
+target_include_directories(HPDG_Synth808Lab PRIVATE Source)
+
+target_compile_definitions(HPDG_Synth808Lab PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+)
+
+target_link_libraries(HPDG_Synth808Lab
+    PRIVATE
+        juce::juce_audio_formats
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_test(NAME HPDG_Synth808Lab COMMAND HPDG_Synth808Lab ${CMAKE_BINARY_DIR}/synth808 ${CMAKE_SOURCE_DIR}/Samples)
+
 # Sample source (waveform peaks, transients, tempo grid, suggested fragment) and the trim editor.
 add_executable(HPDG_SampleTrimTests
     Tests/SampleTrimTests.cpp
