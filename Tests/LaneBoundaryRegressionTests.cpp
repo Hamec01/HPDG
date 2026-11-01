@@ -849,8 +849,14 @@ void testDrumBreakExactCopyPath()
     for (int slot = 0; slot < 32; slot += 2)
         hatSlots.push_back(slot);
     expectSlots(TrackType::HiHat, hatSlots);
-    expect(gridTicks(TrackType::GhostKick).empty() && gridTicks(TrackType::Sub808).empty(),
-           "copy must only fill Kick / Snare / HiHat");
+    // The break has no bass: nothing of it lands on the bass lane (Boom Bap's bass lane is on by default and
+    // keeps its generated line under the copy - PatternBlendEngine).
+    int copiedBass = 0;
+    if (const auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808))
+        for (const auto& note : bass->notes)
+            copiedBass += note.semanticRole == "sample_copy" ? 1 : 0;
+    expect(gridTicks(TrackType::GhostKick).empty() && copiedBass == 0,
+           "copy must only fill Kick / Snare / HiHat (bass notes copied from the break: " + juce::String(copiedBass) + ")");
 
     checkBassAmountKeepsOtherLanes(processor, "copy break");
 
@@ -1419,7 +1425,7 @@ void runGuideBassFollowsSample(GenreType genre, int trapSubstyle = 0)
         processor.getApvts().getParameter(ParamIds::trapSubstyle)->setValueNotifyingHost(
             processor.getApvts().getParameter(ParamIds::trapSubstyle)->convertTo0to1(static_cast<float>(trapSubstyle)));
     if (genre == GenreType::BoomBap)
-        processor.setTrackEnabled(TrackType::Sub808, true); // Boom Bap bass is opt-in
+        processor.setTrackEnabled(TrackType::Sub808, true); // the bass lane on (also its default now)
     const double bpm = static_cast<double>(processor.getProjectSnapshot().params.bpm);
     const double beat = 60.0 / bpm;
     const std::array<int, 4> barRoots { 9, 5, 0, 7 };                 // A F C G

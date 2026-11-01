@@ -11,6 +11,7 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include "Bass808/BassEngine.h"
 #include "Bass808/Sub808Sound.h"
 #include "Core/TrackRegistry.h"
 #include "Engine/LaneSampleBank.h"
@@ -67,7 +68,8 @@ double rootHz(const LaneSampleBank& bank)
     return 440.0 * std::pow(2.0, (basePitch(bank) + cents / 100.0 - 69.0) / 12.0);
 }
 
-std::vector<float> render(const LaneSampleBank& bank, std::shared_ptr<const Sub808Sound> sound, int& lead)
+// irregular: host blocks of 32 .. 1500 samples, changing every block (FL Studio does this)
+std::vector<float> render(const LaneSampleBank& bank, std::shared_ptr<const Sub808Sound> sound, int& lead, bool irregular = false)
 {
     PreviewEngine engine;
     engine.prepare(kRate);
@@ -75,11 +77,17 @@ std::vector<float> render(const LaneSampleBank& bank, std::shared_ptr<const Sub8
     lead = engine.sub808LeadSamples(bank);
     const double perBeat = 60.0 / kBpm * kRate;
     const int length = static_cast<int>(9.0 * perBeat);
-    constexpr int block = 512;
-    juce::AudioBuffer<float> out(1, length + block);
+    constexpr int maxBlock = 1500;
+    juce::AudioBuffer<float> out(1, length + maxBlock);
     out.clear();
-    for (int position = 0; position < length; position += block)
+    std::uint32_t random = 12345u;
+    for (int position = 0, block = 512; position < length; position += block)
     {
+        if (irregular)
+        {
+            random = random * 1664525u + 1013904223u;
+            block = 32 + static_cast<int>((random >> 8) % static_cast<std::uint32_t>(maxBlock - 32));
+        }
         for (size_t i = 0; i < kPhrase.size(); ++i)
         {
             const auto& n = kPhrase[i];
@@ -125,7 +133,7 @@ int main(int argc, char* argv[])
 
     const std::array<GenreType, 5> genres { GenreType::BoomBap, GenreType::Trap, GenreType::Drill, GenreType::DnB, GenreType::Techno };
     int samples = 0, failed = 0;
-    double worstResidual = -200.0, worstLevel = 0.0;
+    double worstResidual = -200.0, worstLevel = 0.0, worstBlockDiff = 0.0;
     std::printf("%-10s %-28s %8s %9s %9s %8s\n", "genre", "sample", "lead", "residual", "level", "corr");
     for (const auto genre : genres)
     {
@@ -148,6 +156,27 @@ int main(int argc, char* argv[])
             const auto sound = buildSub808Sound({}, bank.getSelectedBufferShared(TrackType::Sub808),
                                                 bank.getSelectedSampleRate(TrackType::Sub808), rootHz(bank), name);
             const auto after = render(bank, sound, newLead);
+            int irregularLead = 0;
+            const auto irregularBlocks = render(bank, sound, irregularLead, true);
+            double blockDiff = 0.0;
+            for (size_t i = 0; i < after.size(); ++i)
+                blockDiff = std::max(blockDiff, static_cast<double>(std::abs(after[i] - irregularBlocks[i])));
+            worstBlockDiff = std::max(worstBlockDiff, blockDiff);
+            if (std::getenv("SUB808_BLOCKS") != nullptr && index == 0)
+            {
+                int l0 = 0, l1 = 0;
+                const auto oldIrregular = render(bank, nullptr, l1, true);
+                double oldDiff = 0.0;
+                for (size_t i = 0; i < before.size(); ++i)
+                    oldDiff = std::max(oldDiff, static_cast<double>(std::abs(before[i] - oldIrregular[i])));
+                size_t first = 0;
+                while (first < after.size() && std::abs(after[first] - irregularBlocks[first]) < 1.0e-4f)
+                    ++first;
+                std::printf("    old player irregular diff %.2e; engine first difference at sample %zu (%.3f s)\n", oldDiff, first, first / kRate);
+                for (size_t k = first; k < first + 6 && k < after.size(); ++k)
+                    std::printf("      %zu: 512 %+.5f  irregular %+.5f  old %+.5f\n", k, after[k], irregularBlocks[k], k >= 242 ? before[k - 242] : 0.0f);
+                (void) l0;
+            }
 
             double energy = 0.0, residual = 0.0, cross = 0.0, energyNew = 0.0;
             for (size_t i = 0; i + static_cast<size_t>(newLead) < after.size(); ++i)
@@ -194,6 +223,112 @@ int main(int argc, char* argv[])
         }
     }
     std::printf("\n%d samples, %d failed; worst residual %.1f dB, worst level %.2f dB\n", samples, failed, worstResidual, worstLevel);
-    std::printf("%s\n", failed == 0 && samples > 0 ? "OK" : "FAILED");
-    return failed == 0 && samples > 0 ? 0 : 1;
+    // the strip's DRIVE: level of a held C2 (RMS 50-500 ms) against DRIVE 0, per HamloMag model, for the
+    // lane's bank sample and two HPDG 808 presets (one without, one with a saturator of its own)
+    double worstDriveDb = 0.0;
+    {
+        SampleLibraryManager library;
+        library.setRootDirectory(root);
+        library.setGenre(GenreType::Trap);
+        library.scan();
+        LaneSampleBank bank;
+        bank.applyLibrary(library);
+        const auto bankSound = buildSub808Sound({}, bank.getSelectedBufferShared(TrackType::Sub808),
+                                                bank.getSelectedSampleRate(TrackType::Sub808), rootHz(bank), "bank");
+        struct Source { const char* name; BassSettings settings; std::shared_ptr<const BassSample> sample; };
+        std::vector<Source> sources { { "bank sample", sub808SampleOnlySettings(), bankSound->sample } };
+        for (const auto& preset : bassPresets())
+            if (juce::String(preset.name) == bassPresets().front().name || juce::String(preset.name) == "Dusty")
+                sources.push_back({ preset.name, preset.settings, nullptr });
+        const auto level = [](const BassSettings& s, std::shared_ptr<const BassSample> sample)
+        {
+            const auto audio = BassEngine::renderNote(s, sample, 36, 0.6, kRate);
+            double e = 0.0;
+            const size_t from = static_cast<size_t>(0.05 * kRate), to = static_cast<size_t>(0.5 * kRate);
+            for (size_t i = from; i < to; ++i)
+                e += audio[i] * audio[i];
+            return std::sqrt(e / static_cast<double>(to - from));
+        };
+        std::printf("\nstrip DRIVE: level against DRIVE 0 (dB), held C2\n");
+        for (const auto& source : sources)
+        {
+            Sub808SoundState strip;
+            const double dry = level(applySub808Strip(source.settings, strip), source.sample);
+            for (int model = 1; model <= 6; ++model)
+            {
+                std::printf("  %-12s model %d:", source.name, model);
+                for (const float drive : { 0.25f, 0.5f, 0.75f, 1.0f })
+                {
+                    strip.drive = drive;
+                    strip.driveModel = model;
+                    const double changeDb = db(level(applySub808Strip(source.settings, strip), source.sample) / dry);
+                    worstDriveDb = std::max(worstDriveDb, std::abs(changeDb));
+                    std::printf(" %+6.1f", changeDb);
+                }
+                std::printf("\n");
+                if (source.settings.satModel != 0)
+                    break; // a sound with its own saturator: DRIVE adds to it, the model is its own
+            }
+        }
+        std::printf("strip DRIVE: largest level change %.1f dB\n", worstDriveDb);
+    }
+
+    // the kick's sidechain: one held bass note, kicks every beat; level just after a kick vs between kicks
+    double sidechainDipDb = 0.0, sidechainOffDipDb = 0.0;
+    {
+        SampleLibraryManager library;
+        library.setRootDirectory(root);
+        library.setGenre(GenreType::Trap);
+        library.scan();
+        LaneSampleBank bank;
+        bank.applyLibrary(library);
+        for (const float amount : { 0.0f, 1.0f })
+        {
+            Sub808SoundState state;
+            state.sidechain = amount;
+            PreviewEngine engine;
+            engine.prepare(kRate);
+            engine.setSub808Sound(buildSub808Sound(state, bank.getSelectedBufferShared(TrackType::Sub808),
+                                                   bank.getSelectedSampleRate(TrackType::Sub808), rootHz(bank), "sc"), kBpm);
+            const int perBeat = static_cast<int>(60.0 / kBpm * kRate);
+            juce::AudioBuffer<float> out(1, 4 * perBeat); // the bass lane alone (the kicks sound on their own lane)
+            out.clear();
+            std::array<juce::AudioBuffer<float>, kTrackTypeCount> lanes;
+            for (int position = 0; position < out.getNumSamples(); position += 512)
+            {
+                const int block = std::min(512, out.getNumSamples() - position);
+                if (position == 0)
+                {
+                    PreviewEngine::TriggerOptions options;
+                    options.midiNote = 36;
+                    options.maxDurationSamples = 4 * perBeat;
+                    engine.noteOnAtSample(TrackType::Sub808, 0.9f, 0, bank, options);
+                }
+                for (int beat = 1; beat < 4; ++beat)
+                    if (beat * perBeat >= position && beat * perBeat < position + block)
+                        engine.noteOnAtSample(TrackType::Kick, 0.9f, beat * perBeat - position, bank, {});
+                for (auto& laneBuffer : lanes)
+                {
+                    laneBuffer.setSize(1, block, false, false, true);
+                    laneBuffer.clear();
+                }
+                engine.renderSeparated(lanes, 0, block);
+                out.copyFrom(0, position, lanes[static_cast<size_t>(trackTypeIndex(TrackType::Sub808))], 0, 0, block);
+            }
+            const auto rms = [&](int from, int count)
+            {
+                double e = 0.0;
+                for (int i = from; i < from + count; ++i)
+                    e += out.getSample(0, i) * out.getSample(0, i);
+                return std::sqrt(e / count);
+            };
+            const int window = static_cast<int>(0.02 * kRate);
+            const double dip = db(rms(2 * perBeat + window / 2, window) / rms(2 * perBeat - 2 * window, window));
+            (amount > 0.5f ? sidechainDipDb : sidechainOffDipDb) = dip;
+        }
+        std::printf("sidechain: level 10-30 ms after a kick vs before it: off %.1f dB, full %.1f dB\n", sidechainOffDipDb, sidechainDipDb);
+    }
+    std::printf("irregular host blocks vs 512: largest sample difference %.2e\n", worstBlockDiff);
+    std::printf("%s\n", failed == 0 && samples > 0 && worstBlockDiff < 1.0e-6 && sidechainDipDb < -10.0 && std::abs(sidechainOffDipDb) < 3.0 && worstDriveDb < 3.0 ? "OK" : "FAILED");
+    return failed == 0 && samples > 0 && worstBlockDiff < 1.0e-6 && sidechainDipDb < -10.0 && std::abs(sidechainOffDipDb) < 3.0 && worstDriveDb < 3.0 ? 0 : 1;
 }

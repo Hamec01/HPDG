@@ -11,7 +11,7 @@ namespace bbg
 {
 // The bass strip under the rack: a thin line with an arrow; open, it shows four big knobs on top of the
 // Sub808 lane's HPDG 808 sound - Filter (left closes the highs, right cuts the lows), Drive (HamloMag,
-// with its model), Length and Gain - and EDIT, which opens the full HPDG 808 editor.
+// with its model), Length, Gain and Sidechain (the kick ducks the bass) - and EDIT, which opens the full HPDG 808 editor.
 class Sub808StripComponent final : public juce::Component
 {
 public:
@@ -46,7 +46,7 @@ private:
     void updateValueTexts();
     juce::Rectangle<int> arrowBar() const { return getLocalBounds().removeFromTop(kClosedHeight); }
 
-    Knob filter, drive, length, gain;
+    Knob filter, drive, length, gain, sidechain;
     juce::ComboBox driveModel;
     juce::TextButton editButton { "EDIT 808" };
     juce::Label soundLabel;

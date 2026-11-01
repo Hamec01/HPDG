@@ -73,6 +73,10 @@ Bass808Editor::Bass808Editor(Bass808Processor& processor)
     addAndMakeVisible(previousPreset);
     addAndMakeVisible(nextPreset);
     addAndMakeVisible(saveButton);
+    nameEditor.setTextToShowWhenEmpty("preset name", juce::Colours::grey);
+    nameEditor.onReturnKey = [this] { writePreset(nameEditor.getText()); };
+    nameEditor.onEscapeKey = [this] { endNaming(); };
+    addChildComponent(nameEditor);
 
     mode = std::make_unique<ParamCombo>(bass.apvts, "mode", "Mode");
     addAndMakeVisible(*mode);
@@ -181,40 +185,58 @@ void Bass808Editor::fillPresetBox()
 
 void Bass808Editor::savePreset()
 {
-    auto* window = new juce::AlertWindow("Save HPDG 808 preset", "Name:", juce::MessageBoxIconType::NoIcon, this);
-    window->addTextEditor("name", bass.presetName());
-    window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
-    juce::Component::SafePointer<Bass808Editor> self(this);
-    window->enterModalState(true, juce::ModalCallbackFunction::create([self, window](int result)
+    // the name is typed in place of the preset list (no popup window: inside a host one can open
+    // behind the plugin and the save never happens)
+    if (!naming)
     {
-        if (self == nullptr || result != 1)
-            return;
-        const auto name = juce::File::createLegalFileName(window->getTextEditorContents("name").trim());
-        if (name.isEmpty())
-            return;
-        BassPresetFile preset;
-        preset.name = name;
-        preset.settings = self->bass.currentSettings();
-        if (preset.settings.sampleLevelDb > -59.5f)
-            preset.sample = self->bass.getSample();
-        const auto file = bassUserPresetFolder().getChildFile(name + ".hpbass");
-        if (writeBassPreset(file, preset))
-        {
-            self->bass.setUserPresetName(name);
-            self->fillPresetBox();
-            const int index = self->userPresets.indexOf(file);
-            if (index >= 0)
-                self->presetBox.setSelectedId(kUserPresetId + index, juce::dontSendNotification);
-            self->message = "Saved " + file.getFullPathName();
-        }
-        else
-        {
-            self->message = "Could not write " + file.getFullPathName();
-        }
-        self->messageTicks = 40;
-        self->repaint();
-    }), true);
+        naming = true;
+        nameEditor.setText(bass.presetName(), juce::dontSendNotification);
+        nameEditor.setBounds(presetBox.getBounds());
+        presetBox.setVisible(false);
+        nameEditor.setVisible(true);
+        saveButton.setButtonText("OK");
+        nameEditor.grabKeyboardFocus();
+        nameEditor.selectAll();
+        return;
+    }
+    writePreset(nameEditor.getText());
+}
+
+void Bass808Editor::endNaming()
+{
+    naming = false;
+    nameEditor.setVisible(false);
+    presetBox.setVisible(true);
+    saveButton.setButtonText("SAVE");
+}
+
+void Bass808Editor::writePreset(const juce::String& typed)
+{
+    const auto name = juce::File::createLegalFileName(typed.trim());
+    endNaming();
+    if (name.isEmpty())
+        return;
+    BassPresetFile preset;
+    preset.name = name;
+    preset.settings = bass.currentSettings();
+    if (preset.settings.sampleLevelDb > -59.5f)
+        preset.sample = bass.getSample();
+    const auto file = bassUserPresetFolder().getChildFile(name + ".hpbass");
+    if (writeBassPreset(file, preset))
+    {
+        bass.setUserPresetName(name);
+        fillPresetBox();
+        const int index = userPresets.indexOf(file);
+        if (index >= 0)
+            presetBox.setSelectedId(kUserPresetId + index, juce::dontSendNotification);
+        message = "Saved: " + name;
+    }
+    else
+    {
+        message = "Could not write " + file.getFullPathName();
+    }
+    messageTicks = 40;
+    repaint();
 }
 
 void Bass808Editor::stepPreset(int delta)

@@ -43,12 +43,16 @@ private:
     void loadSample(const juce::File& file);
     void fillPresetBox();
     void savePreset();
+    void writePreset(const juce::String& name);
+    void endNaming();
 
     Bass808Processor& bass;
     b808::Look look;
     juce::ComboBox presetBox;
     juce::TextButton previousPreset { "<" }, nextPreset { ">" }, saveButton { "SAVE" };
     juce::Array<juce::File> userPresets;
+    juce::TextEditor nameEditor;
+    bool naming = false;
     static constexpr int kUserPresetId = 1001;
     std::unique_ptr<b808::ParamCombo> mode;
     std::unique_ptr<PlayButton> play;

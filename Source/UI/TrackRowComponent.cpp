@@ -343,7 +343,12 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     sampleNameLabel.onMouseDownEvent = [this](const juce::MouseEvent& event)
     {
         if (!event.mods.isRightButtonDown())
+        {
+            // left click: every sample of the lane (and, on the bass lane, the HPDG 808 presets)
+            if (onSampleListRequested)
+                onSampleListRequested(laneId);
             return;
+        }
 
         if (onSampleMenuRequested)
             onSampleMenuRequested(laneId);

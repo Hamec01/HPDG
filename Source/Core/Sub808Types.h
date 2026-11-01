@@ -66,6 +66,7 @@ struct Sub808SoundState
     int driveModel = 2;             // the model when the sound has none: 1 Classic .. 6 Vinyl (2 Tape)
     float length = 1.0f;            // 0 .. 1, 1: as the sound
     float gainDb = 0.0f;            // -24 .. +12
+    float sidechain = 0.0f;         // 0 .. 1: each kick ducks the bass this deep (and recovers slower)
 };
 
 inline Sub808NoteEvent toSub808NoteEvent(const NoteEvent& note)

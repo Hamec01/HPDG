@@ -112,6 +112,9 @@ private:
     void queueBassNote(float gain, int sampleOffset, const TriggerOptions& options);
     // Renders the bass engine for the next numSamples into bassBuffer, applying the queued notes on time.
     void renderBass(int numSamples);
+    // The kick's sidechain on bassBuffer: each kick hit pulls the bass down (2 ms in), it comes back
+    // exponentially. Runs while the bass is silent too, so a hit still ducks the note that follows.
+    void duckBass(int numSamples);
 
     std::array<Voice, kMaxVoices> voices {};
     std::unique_ptr<BassEngine> bass;
@@ -119,6 +122,10 @@ private:
     std::vector<BassEvent> bassEvents;
     std::vector<float> bassBuffer;
     bool bassPrimed = false;
+    int bassTail = 0; // samples the engine still renders after its last voice ended (its output delay)
+    std::vector<int> kickHits; // kick starts, samples from the start of the next render
+    double duck = 0.0;         // 0 .. 1 how far down the bass is now
+    int duckAttack = 0;
     double currentSampleRate = 44100.0;
 };
 } // namespace bbg

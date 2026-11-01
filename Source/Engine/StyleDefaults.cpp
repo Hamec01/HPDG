@@ -73,7 +73,8 @@ std::array<LaneStyleDefaults, 11> makeBaseBoomBapLanes()
         lane(true, 0.78f, 0.7f, 1.0f, 1.0f, { "layer", "ghost", "support" }, 0.62f, 0.42f, 0.9f, 0.95f, 0.0f, 0.0f),
         lane(true, 0.92f, 1.0f, 1.0f, 0.9f, { "anchor", "support", "pickup" }, 1.0f, 0.56f, 0.86f, 0.88f, 0.0f, 0.0f),
         lane(true, 0.70f, 0.62f, 1.0f, 1.0f, { "pickup", "inner", "ghost" }, 0.58f, 0.36f, 0.9f, 0.92f, 0.0f, 0.0f),
-        lane(false, 0.74f, 0.0f, 0.95f, 0.9f, { "off", "off", "off" }, 0.0f, 0.12f, 0.7f, 0.7f, 0.0f, 0.0f),
+        // the bass lane is on (maintainer, 2026-11-01: Boom Bap starts with its bass, like Trap)
+        lane(true, 0.74f, 0.0f, 0.95f, 0.9f, { "off", "off", "off" }, 0.0f, 0.12f, 0.7f, 0.7f, 0.0f, 0.0f),
         lane(false, 0.66f, 0.5f, 1.0f, 0.95f, { "carrier_alt", "jazz", "texture" }, 0.36f, 0.46f, 0.75f, 0.8f, 0.0f, 0.0f),
         lane(false, 0.60f, 0.35f, 1.0f, 0.9f, { "marker", "ending", "section" }, 0.25f, 0.78f, 0.6f, 0.7f, 0.0f, 0.0f),
         lane(true, 0.66f, 0.6f, 1.0f, 1.0f, { "punctuation", "decor", "texture" }, 0.5f, 0.44f, 0.85f, 0.88f, 0.0f, 0.0f)

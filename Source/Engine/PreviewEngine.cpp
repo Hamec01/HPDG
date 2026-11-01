@@ -19,6 +19,7 @@ bool isCoreLane(TrackType t)
 PreviewEngine::PreviewEngine() : bass(std::make_unique<BassEngine>())
 {
     bassEvents.reserve(512);
+    kickHits.reserve(64);
 }
 
 PreviewEngine::~PreviewEngine() = default;
@@ -98,12 +99,57 @@ void PreviewEngine::queueBassNote(float gain, int sampleOffset, const TriggerOpt
     }
 }
 
+void PreviewEngine::duckBass(int numSamples)
+{
+    const float depth = bassSound != nullptr ? juce::jlimit(0.0f, 1.0f, bassSound->sidechain) : 0.0f;
+    if (kickHits.empty() && duck < 1.0e-4)
+    {
+        duck = 0.0;
+        return;
+    }
+    // down by up to -30 dB at full depth; recovery 60 ms (light) .. 220 ms (deep)
+    const double floor = std::pow(10.0, -30.0 * depth / 20.0);
+    const double release = std::exp(-1.0 / ((0.06 + 0.16 * depth) * currentSampleRate));
+    const int attackSamples = std::max(1, static_cast<int>(0.002 * currentSampleRate));
+    std::sort(kickHits.begin(), kickHits.end());
+    size_t next = 0;
+    for (int i = 0; i < numSamples; ++i)
+    {
+        while (next < kickHits.size() && kickHits[next] <= i)
+        {
+            duckAttack = attackSamples;
+            ++next;
+        }
+        if (duckAttack > 0)
+        {
+            duck += (1.0 - duck) / static_cast<double>(duckAttack);
+            --duckAttack;
+        }
+        else
+        {
+            duck *= release;
+        }
+        bassBuffer[static_cast<size_t>(i)] *= static_cast<float>(1.0 - (1.0 - floor) * duck);
+    }
+    kickHits.erase(kickHits.begin(), kickHits.begin() + static_cast<std::ptrdiff_t>(next));
+    for (auto& hit : kickHits)
+        hit -= numSamples;
+}
+
 void PreviewEngine::renderBass(int numSamples)
 {
     if (static_cast<int>(bassBuffer.size()) < numSamples)
         bassBuffer.resize(static_cast<size_t>(numSamples)); // only a host block above 8192
     std::fill(bassBuffer.begin(), bassBuffer.begin() + numSamples, 0.0f);
-    if (!bass->isActive() && bassEvents.empty())
+    struct DuckAtEnd
+    {
+        PreviewEngine& engine;
+        int n;
+        ~DuckAtEnd() { engine.duckBass(n); }
+    } duckAtEnd { *this, numSamples };
+    // the engine delays its output (the saturator's latency): after the last voice ends it keeps
+    // running that long, or the end of every note's release would be cut off (a click per note)
+    if (!bass->isActive() && bassEvents.empty() && bassTail <= 0)
         return;
 
     // in time order, a note's start before a release at the same sample (so a slide joins the note it
@@ -137,6 +183,7 @@ void PreviewEngine::renderBass(int numSamples)
     }
     if (position < numSamples)
         bass->render(bassBuffer.data() + position, numSamples - position);
+    bassTail = bass->isActive() || !bassEvents.empty() ? bass->latencySamples() + 64 : bassTail - numSamples;
 
     bassEvents.erase(bassEvents.begin(), bassEvents.begin() + static_cast<std::ptrdiff_t>(applied));
     for (auto& e : bassEvents)
@@ -206,7 +253,11 @@ void PreviewEngine::reset()
 {
     bass->allNotesOff();
     bassEvents.clear();
+    kickHits.clear();
+    duck = 0.0;
+    duckAttack = 0;
     bassPrimed = false;
+    bassTail = bass->latencySamples() + 64; // the 3 ms choke of allNotesOff plays out
     for (auto& voice : voices)
     {
         voice.sample = nullptr;
@@ -250,6 +301,10 @@ void PreviewEngine::noteOn(TrackType trackType, float gain, const LaneSampleBank
 
 void PreviewEngine::noteOnAtSample(TrackType trackType, float gain, int sampleOffset, const LaneSampleBank& sampleBank, const TriggerOptions& options)
 {
+    if (trackType == TrackType::Kick && bassSound != nullptr && bassSound->sidechain > 0.001f
+        && kickHits.size() < kickHits.capacity())
+        kickHits.push_back(std::max(0, sampleOffset));
+
     if (trackType == TrackType::Sub808 && options.midiNote >= 0 && bassPlaysLane(sampleBank))
     {
         scheduleCut(TrackType::Sub808, sampleOffset); // a plain-sample note from before the switch
@@ -558,7 +613,7 @@ PreviewEngine::Voice* PreviewEngine::findActiveVoice(TrackType trackType)
 
 bool PreviewEngine::hasActiveVoices() const
 {
-    if (bass->isActive() || !bassEvents.empty())
+    if (bass->isActive() || !bassEvents.empty() || bassTail > 0)
         return true;
     return std::any_of(voices.begin(), voices.end(), [](const Voice& voice)
     {

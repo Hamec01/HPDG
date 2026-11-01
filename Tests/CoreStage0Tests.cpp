@@ -4606,7 +4606,7 @@ void testBoomBapJazzyPocketGenerationSmoke()
     }
 }
 
-// Boom Bap bass is opt-in: off by default (and then never generated); when enabled it is a
+// Boom Bap bass is on by default; a lane switched off is never generated; when enabled it is a
 // line - root on every downbeat, no overlapping notes, in key (bar passing / leading tones).
 void testBoomBapBassOptInAndLine()
 {
@@ -4616,9 +4616,9 @@ void testBoomBapBassOptInAndLine()
         project.params.genre = GenreType::BoomBap;
         project.params.bars = 4;
         const auto& lane = getLaneStyleDefaults(getGenreStyleDefaults(GenreType::BoomBap, 0), TrackType::Sub808);
-        expect(!lane.enabledByDefault, "Boom Bap bass lane must be off by default.");
+        expect(lane.enabledByDefault, "Boom Bap bass lane must be on by default.");
         if (auto* bass = findTrackByType(project, TrackType::Sub808); bass != nullptr)
-            bass->enabled = lane.enabledByDefault;
+            bass->enabled = false;
         engine.generate(project);
         const auto* bass = findTrackByType(project, TrackType::Sub808);
         expect(bass == nullptr || bass->notes.empty(), "A disabled Boom Bap bass lane must stay empty.");

@@ -175,6 +175,7 @@ target_sources(HPDG
         Source/UI/TrackListComponent.cpp
         Source/UI/Sub808StripComponent.cpp
         Source/UI/Sub808EditorOverlay.cpp
+        Source/UI/Sub808LaneUi.cpp
         Source/UI/SoundModuleComponent.cpp
         Source/UI/Sub808PianoRollComponent.cpp
         Source/UI/GridEditActions.cpp
@@ -412,7 +413,7 @@ add_executable(HPDG_Sub808EngineCheck
     Tests/Sub808EngineCheck.cpp
 )
 
-target_include_directories(HPDG_Sub808EngineCheck PRIVATE Source)
+target_include_directories(HPDG_Sub808EngineCheck PRIVATE Source Source/Bass808/Mag)
 
 target_link_libraries(HPDG_Sub808EngineCheck
     PRIVATE

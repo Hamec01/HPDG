@@ -16,6 +16,8 @@
 #include "../UI/HotkeyController.h"
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
+#include "../UI/Sub808EditorOverlay.h"
+#include "../UI/Sub808StripComponent.h"
 #include "../UI/ComboBoxIdParameterAttachment.h"
 #include "../UI/SoundModuleComponent.h"
 #include "../UI/SoundModuleController.h"
@@ -156,6 +158,10 @@ private:
     juce::Component laneSurface;
     TrackListComponent trackList;
     SampleAnalysisPanelComponent analysisPanel;
+    Sub808StripComponent sub808Strip;                 // the bass strip, over the analysis panel
+    std::unique_ptr<Sub808EditorOverlay> sub808Editor; // HPDG 808 over the whole window
+    void openSub808Editor();
+    void refreshSub808Strip(const PatternProject& project);
     SoundModuleComponent soundModule;
     SoundModuleController soundModuleController;
     juce::Component editorToolBar;

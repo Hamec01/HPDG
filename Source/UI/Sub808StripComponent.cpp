@@ -33,6 +33,8 @@ Sub808StripComponent::Sub808StripComponent()
     setupKnob(length, "LENGTH", 0.0, 1.0, 1.0);
     setupKnob(gain, "GAIN", -24.0, 12.0, 0.0);
     gain.slider.setSkewFactorFromMidPoint(0.0);
+    setupKnob(sidechain, "SIDECHAIN", 0.0, 1.0, 0.0);
+    sidechain.slider.setTooltip("Each kick ducks the bass (deeper = longer recovery)");
 
     driveModel.addItemList(kModels, 1);
     driveModel.setSelectedId(2, juce::dontSendNotification);
@@ -79,7 +81,7 @@ void Sub808StripComponent::setOpen(bool shouldBeOpen)
     if (open == shouldBeOpen)
         return;
     open = shouldBeOpen;
-    for (auto* knob : { &filter, &drive, &length, &gain })
+    for (auto* knob : { &filter, &drive, &length, &gain, &sidechain })
     {
         knob->slider.setVisible(open);
         knob->caption.setVisible(open);
@@ -102,6 +104,7 @@ void Sub808StripComponent::setState(const Sub808SoundState& newState, const juce
     drive.slider.setValue(state.drive, juce::dontSendNotification);
     length.slider.setValue(state.length, juce::dontSendNotification);
     gain.slider.setValue(state.gainDb, juce::dontSendNotification);
+    sidechain.slider.setValue(state.sidechain, juce::dontSendNotification);
     driveModel.setSelectedId(juce::jlimit(1, 6, state.driveModel), juce::dontSendNotification);
     soundLabel.setText("808  " + soundName, juce::dontSendNotification);
     updateValueTexts();
@@ -116,6 +119,7 @@ void Sub808StripComponent::knobMoved()
     state.drive = static_cast<float>(drive.slider.getValue());
     state.length = static_cast<float>(length.slider.getValue());
     state.gainDb = static_cast<float>(gain.slider.getValue());
+    state.sidechain = static_cast<float>(sidechain.slider.getValue());
     state.driveModel = juce::jlimit(1, 6, driveModel.getSelectedId());
     if (onChange)
         onChange(state);
@@ -130,6 +134,8 @@ void Sub808StripComponent::updateValueTexts()
     length.value.setText(l >= 0.999 ? "full" : juce::String(0.04 * std::pow(100.0, l), 2) + " s", juce::dontSendNotification);
     const double g = gain.slider.getValue();
     gain.value.setText((g > 0.04 ? "+" : "") + juce::String(g, 1) + " dB", juce::dontSendNotification);
+    const double s = sidechain.slider.getValue();
+    sidechain.value.setText(s < 0.005 ? "off" : "-" + juce::String(30.0 * s, 0) + " dB", juce::dontSendNotification);
     const bool tinted = std::abs(filter.slider.getValue()) > 0.01;
     filter.value.setColour(juce::Label::textColourId, tinted ? sketch::Theme::ochreDeep() : sketch::Theme::graphite());
 }
@@ -178,8 +184,8 @@ void Sub808StripComponent::resized()
     right.removeFromTop(8);
     editButton.setBounds(right.removeFromTop(30));
 
-    const int cell = juce::jmin(110, body.getWidth() / 4);
-    for (auto* knob : { &filter, &drive, &length, &gain })
+    const int cell = juce::jmin(110, body.getWidth() / 5);
+    for (auto* knob : { &filter, &drive, &length, &gain, &sidechain })
     {
         auto column = body.removeFromLeft(cell);
         knob->caption.setBounds(column.removeFromTop(14));

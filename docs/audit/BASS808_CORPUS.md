@@ -162,3 +162,25 @@ Plain notes matched from the start (corr 1.0000, 0.00 dB). Three differences wer
   the synth off, a voice ends with its sample;
 - the slide curve: the old player moved the playback rate in a straight line, the engine the pitch;
   HPDG's notes now glide linearly in rate (the plugin keeps its own glide).
+
+### Crackle in FL, kick sidechain (2026-11-01, after the first listen)
+
+- "The bass crackles a little": the engine delays its output by the saturator latency (242 samples).
+  When a note ended with no next note queued, HPDG stopped calling the engine, so the last <= 5 ms of
+  every release stayed in the delay line and was cut off (a click per note before a rest). It showed
+  only with host blocks that do not line up (FL changes the block size): the same phrase in blocks of
+  32-1500 samples differed from blocks of 512 by up to 0.41. The engine now runs on for its latency
+  after the last voice: difference 0 (checked on all 77 samples, part of `HPDG_Sub808EngineCheck`).
+- Old sounds are freed on the message thread, not the audio thread.
+- SIDECHAIN on the strip: each kick ducks the bass (down to -30 dB at full, 2 ms in, recovery
+  60-220 ms). A held note, kicks every beat, 10-30 ms after a kick vs before it: off +1.1 dB,
+  full -16.8 dB.
+- A click on a lane's sample name lists all its samples; on the bass lane also the HPDG 808 presets
+  by genre, "My basses" (the saved .hpbass files) and "Delete my bass" (to the Recycle Bin).
+- DRIVE on the strip no longer turns the bass down. HamloMag's auto gain keeps small signals at unity,
+  so a held C2 at full DRIVE came out 15-23 dB quieter (bank sample, ATL 1, Dusty; all six models).
+  The measured loss per model is put back: largest level change across DRIVE 0.25 .. 1, all models,
+  22.7 dB -> 2.1 dB (`HPDG_Sub808EngineCheck`, now a pass condition at 3 dB).
+- SAVE types the name in place of the preset list (no popup window: inside a host it could open
+  behind the plugin, and the preset was never written).
+- The Standalone HPDG has the strip (over the analysis panel) and the editor too.

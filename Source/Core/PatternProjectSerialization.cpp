@@ -69,6 +69,7 @@ juce::ValueTree serializeSub808Sound(const Sub808SoundState& sound)
     node.setProperty("drive_model", sound.driveModel, nullptr);
     node.setProperty("length", sound.length, nullptr);
     node.setProperty("gain_db", sound.gainDb, nullptr);
+    node.setProperty("sidechain", sound.sidechain, nullptr);
     if (sound.settings.isValid())
         node.appendChild(sound.settings.createCopy(), nullptr);
     if (sound.sampleWav.getSize() > 0)
@@ -88,6 +89,7 @@ Sub808SoundState deserializeSub808Sound(const juce::ValueTree& node)
     sound.driveModel = juce::jlimit(1, 6, safeInt(node, "drive_model", 2));
     sound.length = juce::jlimit(0.0f, 1.0f, safeFloat(node, "length", 1.0f));
     sound.gainDb = juce::jlimit(-24.0f, 12.0f, safeFloat(node, "gain_db", 0.0f));
+    sound.sidechain = juce::jlimit(0.0f, 1.0f, safeFloat(node, "sidechain", 0.0f));
     if (const auto settings = node.getChildWithName("BassSettings"); settings.isValid())
         sound.settings = settings.createCopy();
     if (const auto wav = safeString(node, "sample_wav"); wav.isNotEmpty())

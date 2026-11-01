@@ -142,6 +142,10 @@ public:
     bool selectNextLaneSample(const RuntimeLaneId& laneId);
     bool selectPreviousLaneSample(TrackType track);
     bool selectPreviousLaneSample(const RuntimeLaneId& laneId);
+    // Every sample of a lane (the list behind < >), and picking one of them by its place in it.
+    juce::StringArray getLaneSampleNames(TrackType track) const;
+    int getSelectedLaneSampleIndex(TrackType track) const;
+    bool selectLaneSampleIndex(TrackType track, int index);
     juce::String getSelectedLaneSampleName(TrackType track) const;
     int getBassKeyRootChoice() const;
     int getBassScaleModeChoice() const;
@@ -502,6 +506,8 @@ private:
     MasterFxRuntimeState masterFxRuntimeState;
     std::vector<PreviewEvent> previewEvents;
     std::shared_ptr<const Sub808Sound> sub808Sound; // under projectMutex
+    // sounds the preview engine may still hold: freed here once it has let go, never on the audio thread
+    std::vector<std::shared_ptr<const Sub808Sound>> retiredSub808Sounds; // message thread
     Sub808SoundState sub808SoundBuiltFrom;           // under projectMutex
     const void* sub808SoundBuiltBank = nullptr;      // the bank buffer it was built from
     bool sub808SoundBuilt = false;

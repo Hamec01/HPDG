@@ -19,6 +19,7 @@ struct Sub808Sound
     // A lane on its bank sample: the buffer this sound was made from. When the bank's selection no longer
     // matches it, the audio falls back to the plain sample player until the sound is rebuilt.
     std::shared_ptr<const juce::AudioBuffer<float>> bankSource;
+    float sidechain = 0.0f; // the strip's SIDECHAIN: how deep a kick ducks the bass
 };
 
 // The bank sample as HPDG always played it: a raw sample (no envelope shaping, no filter, velocity

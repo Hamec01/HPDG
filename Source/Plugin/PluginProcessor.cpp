@@ -5,6 +5,8 @@
 #include <memory>
 #include <numeric>
 
+#include "../Bass808/BassEngine.h"
+#include "../Bass808/BassSettingsIO.h"
 #include "../Bass808/Sub808Sound.h"
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/Sub808TrackAccess.h"
@@ -39,6 +41,7 @@
 #include "../UI/Vst3GridLiteComponent.h"
 #include "../UI/Sub808StripComponent.h"
 #include "../UI/Sub808EditorOverlay.h"
+#include "../UI/Sub808LaneUi.h"
 #include "../UI/SampleBreakStripComponent.h"
 #include "../UI/SampleTrimEditorComponent.h"
 #include "../UI/ComboBoxIdParameterAttachment.h"
@@ -170,7 +173,7 @@ double sub808BankRootHz(int rootPitchClass, double rootCents, int rootMidi)
 bool sameSub808Sound(const Sub808SoundState& a, const Sub808SoundState& b)
 {
     return a.custom == b.custom && a.name == b.name && a.filter == b.filter && a.drive == b.drive
-        && a.driveModel == b.driveModel && a.length == b.length && a.gainDb == b.gainDb
+        && a.driveModel == b.driveModel && a.length == b.length && a.gainDb == b.gainDb && a.sidechain == b.sidechain
         && a.sampleWav.getSize() == b.sampleWav.getSize()
         && (a.settings == b.settings || a.settings.isEquivalentTo(b.settings));
 }
@@ -1318,6 +1321,7 @@ private:
         };
 
         trackList.onSampleMenuTrack = [this](const RuntimeLaneId& laneId) { showSampleMenu(laneId); };
+        trackList.onSampleListTrack = [this](const RuntimeLaneId& laneId) { showSampleList(laneId); };
         trackList.onImportMidiLaneTrack = [this](const RuntimeLaneId& laneId) { showImportMidiToLaneDialog(laneId); };
 
         trackList.onTrackNameClicked = [this](const RuntimeLaneId& laneId)
@@ -1585,33 +1589,30 @@ private:
         syncRackViewportContentSize();
     }
 
+    void showSampleList(const RuntimeLaneId& laneId)
+    {
+        showLaneSampleList(audioProcessor, *this, laneId, [this] { refreshFromProcessor(true); }, [this] { openSub808Editor(); });
+    }
+
     // HPDG 808 over the whole window for the Sub808 lane (EDIT on the strip, or a click on the lane's name).
     void openSub808Editor()
     {
         if (sub808Editor != nullptr)
             return;
-        Sub808EditorOverlay::Host host;
-        host.getSound = [this] { return audioProcessor.getSub808Sound(); };
-        host.setSound = [this](const Sub808SoundState& sound)
-        {
-            audioProcessor.setSub808Sound(sound);
-            refreshSub808Strip(audioProcessor.getProjectSnapshot());
-        };
-        host.getBankSample = [this] { return audioProcessor.getSub808BankSample(); };
-        host.getBankSampleName = [this] { return audioProcessor.getSelectedLaneSampleName(TrackType::Sub808); };
-        host.audition = [this](int note, int velocity) { audioProcessor.auditionSub808Note(note, velocity, TimingGrid::Sixteenth * 4); };
-        host.close = [this]
-        {
-            juce::Component::SafePointer<Vst3EditorContent> self(this);
-            juce::MessageManager::callAsync([self]
-            {
-                if (self != nullptr)
-                {
-                    self->sub808Editor = nullptr;
-                    self->grabKeyboardFocus();
-                }
-            });
-        };
+        juce::Component::SafePointer<Vst3EditorContent> self(this);
+        auto host = makeSub808EditorHost(audioProcessor,
+                                         [self] { if (self != nullptr) self->refreshSub808Strip(self->audioProcessor.getProjectSnapshot()); },
+                                         [self]
+                                         {
+                                             juce::MessageManager::callAsync([self]
+                                             {
+                                                 if (self != nullptr)
+                                                 {
+                                                     self->sub808Editor = nullptr;
+                                                     self->grabKeyboardFocus();
+                                                 }
+                                             });
+                                         });
         sub808Editor = std::make_unique<Sub808EditorOverlay>(std::move(host));
         addAndMakeVisible(*sub808Editor);
         sub808Editor->setBounds(getLocalBounds());
@@ -1632,7 +1633,7 @@ private:
         if (show)
         {
             const auto& sound = subLane->sub808Sound;
-            sub808Strip.setState(sound, sound.custom ? sound.name : audioProcessor.getSelectedLaneSampleName(TrackType::Sub808));
+            sub808Strip.setState(sound, sub808SoundName(audioProcessor, sound));
         }
     }
 
@@ -4387,6 +4388,32 @@ bool BoomBapGeneratorAudioProcessor::selectNextLaneSample(TrackType track)
     return ok;
 }
 
+juce::StringArray BoomBapGeneratorAudioProcessor::getLaneSampleNames(TrackType track) const
+{
+    std::scoped_lock lock(projectMutex);
+    return laneSampleBank.getSampleNames(track);
+}
+
+int BoomBapGeneratorAudioProcessor::getSelectedLaneSampleIndex(TrackType track) const
+{
+    std::scoped_lock lock(projectMutex);
+    return laneSampleBank.getSelectedIndex(track);
+}
+
+bool BoomBapGeneratorAudioProcessor::selectLaneSampleIndex(TrackType track, int index)
+{
+    std::scoped_lock lock(projectMutex);
+    const bool ok = laneSampleBank.selectIndex(track, index);
+    if (auto* state = findTrackState(track))
+    {
+        state->selectedSampleIndex = laneSampleBank.getSelectedIndex(track);
+        state->selectedSampleName = laneSampleBank.getSelectedName(track);
+        if (track == TrackType::Sub808)
+            state->sub808Sound.custom = false; // a bank sample again
+    }
+    return ok;
+}
+
 bool BoomBapGeneratorAudioProcessor::selectPreviousLaneSample(TrackType track)
 {
     std::scoped_lock lock(projectMutex);
@@ -4570,8 +4597,12 @@ void BoomBapGeneratorAudioProcessor::refreshSub808Sound()
         sub808SoundBuiltBank = bankId;
         sub808SoundBuilt = true;
     }
-    // `previous` is released here on the message thread; the preview engine keeps its own reference
-    // until its next block
+    // the preview engine keeps its own reference until its next block: hold the old sound until then
+    retiredSub808Sounds.erase(std::remove_if(retiredSub808Sounds.begin(), retiredSub808Sounds.end(),
+                                             [](const auto& s) { return s.use_count() == 1; }),
+                              retiredSub808Sounds.end());
+    if (previous != nullptr)
+        retiredSub808Sounds.push_back(std::move(previous));
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackSolo(TrackType track, bool value)

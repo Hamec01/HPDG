@@ -8,7 +8,7 @@
 
 namespace bbg
 {
-// Boom Bap bass line (written into the Sub808 lane, which Boom Bap keeps off by default).
+// Boom Bap bass line (written into the Sub808 lane, on by default; the user can switch it off).
 //
 // Every Generate picks one of several bass styles, each a set of randomized rules rather than a
 // fixed riff, so consecutive generations sound different:

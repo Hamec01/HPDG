@@ -13,7 +13,9 @@
 #include "../Core/TrackRegistry.h"
 #include "../Engine/StyleDefaults.h"
 #include "../Services/MidiImportService.h"
+#include "../Core/ProjectLaneAccess.h"
 #include "../UI/GenreRhythmGrid.h"
+#include "../UI/Sub808LaneUi.h"
 #include "../UI/StyleLabComponent.h"
 #include "../UI/StyleLabReferenceBrowserComponent.h"
 #include "../Utils/TimingHelpers.h"
@@ -650,6 +652,10 @@ BoomBGeneratorAudioProcessorEditor::BoomBGeneratorAudioProcessorEditor(BoomBapGe
     laneSurface.addAndMakeVisible(gridViewport);
     addAndMakeVisible(sub808Viewport);
     addAndMakeVisible(analysisPanel);
+    addChildComponent(sub808Strip);
+    sub808Strip.onChange = [this](const Sub808SoundState& sound) { audioProcessor.setSub808Sound(sound); };
+    sub808Strip.onOpenChanged = [this](bool) { resized(); };
+    sub808Strip.onEdit = [this] { openSub808Editor(); };
     addAndMakeVisible(soundModule);
     addAndMakeVisible(editorToolBar);
     addAndMakeVisible(optionsToolButton);
@@ -1688,6 +1694,11 @@ void BoomBGeneratorAudioProcessorEditor::resized()
         auto bottomArea = area;
         auto leftColumn = bottomArea.removeFromLeft(layoutState.leftPanelWidth);
         bottomArea.removeFromLeft(kPaneGap + kSplitterHitWidth + kPaneGap);
+        if (sub808Strip.isVisible())
+        {
+            sub808Strip.setBounds(leftColumn.removeFromTop(juce::jmin(leftColumn.getHeight() / 2, sub808Strip.getPreferredHeight())));
+            leftColumn.removeFromTop(4);
+        }
         analysisPanel.setBounds(leftColumn);
 
         const bool inlineSub808Visible = canShowSub808Editor()
@@ -1771,6 +1782,9 @@ void BoomBGeneratorAudioProcessorEditor::resized()
     header.setTransform(transform);
     laneSurface.setTransform(transform);
     analysisPanel.setTransform(transform);
+    sub808Strip.setTransform(transform);
+    if (sub808Editor != nullptr)
+        sub808Editor->setBounds(getLocalBounds());
     soundModule.setTransform(transform);
     if (sub808DetachedVisible)
         sub808Viewport.setTransform(juce::AffineTransform());
@@ -1880,9 +1894,45 @@ void BoomBGeneratorAudioProcessorEditor::endSoundModuleGesture()
     soundModuleGestureActive = false;
 }
 
+void BoomBGeneratorAudioProcessorEditor::openSub808Editor()
+{
+    if (sub808Editor != nullptr)
+        return;
+    juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor> self(this);
+    auto host = makeSub808EditorHost(audioProcessor,
+                                     [self] { if (self != nullptr) self->refreshSub808Strip(self->audioProcessor.getProjectSnapshot()); },
+                                     [self]
+                                     {
+                                         juce::MessageManager::callAsync([self]
+                                         {
+                                             if (self != nullptr)
+                                                 self->sub808Editor = nullptr;
+                                         });
+                                     });
+    sub808Editor = std::make_unique<Sub808EditorOverlay>(std::move(host));
+    addAndMakeVisible(*sub808Editor);
+    sub808Editor->setBounds(getLocalBounds());
+    sub808Editor->toFront(true);
+    sub808Editor->grabKeyboardFocus();
+}
+
+void BoomBGeneratorAudioProcessorEditor::refreshSub808Strip(const PatternProject& project)
+{
+    const auto* subLane = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+    const bool show = subLane != nullptr;
+    if (show != sub808Strip.isVisible())
+    {
+        sub808Strip.setVisible(show);
+        resized();
+    }
+    if (show)
+        sub808Strip.setState(subLane->sub808Sound, sub808SoundName(audioProcessor, subLane->sub808Sound));
+}
+
 void BoomBGeneratorAudioProcessorEditor::refreshFromProcessor(bool refreshTrackRows)
 {
     auto project = audioProcessor.getProjectSnapshot();
+    refreshSub808Strip(project);
     if (!historyController.getLastObservedProjectState().has_value())
         historyController.observeProjectState(project);
 
@@ -2321,6 +2371,10 @@ void BoomBGeneratorAudioProcessorEditor::bindTrackCallbacks()
     trackList.onSampleMenuTrack = [this](const RuntimeLaneId& laneId)
     {
         showSampleMenu(laneId);
+    };
+    trackList.onSampleListTrack = [this](const RuntimeLaneId& laneId)
+    {
+        showLaneSampleList(audioProcessor, *this, laneId, [this] { refreshFromProcessor(true); }, [this] { openSub808Editor(); });
     };
 
     trackList.onImportMidiLaneTrack = [this](const RuntimeLaneId& laneId)

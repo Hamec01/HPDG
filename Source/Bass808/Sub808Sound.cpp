@@ -35,6 +35,23 @@ BassSettings applySub808Strip(BassSettings s, const Sub808SoundState& strip)
     const float drive = juce::jlimit(0.0f, 1.0f, strip.drive);
     if (drive > 0.001f)
     {
+        // HamloMag's auto gain keeps small signals at unity, so more drive came out quieter: 15-23 dB down at
+        // full DRIVE (held C2, bank sample and the 808 presets, Tests/Sub808EngineCheck.cpp). Its measured
+        // loss per model at DRIVE 0 / 0.25 / 0.5 / 0.75 / 1 is put back, so DRIVE changes the tone, not the level.
+        static constexpr float kLossDb[6][5] {
+            { 0.0f, -2.95f, -6.75f, -11.95f, -17.6f },  // Classic
+            { 0.0f, -1.05f, -4.80f, -10.00f, -15.75f }, // Tape
+            { 0.0f, -2.25f, -5.20f, -9.75f, -15.3f },   // Tube
+            { 0.0f, -5.90f, -8.90f, -12.95f, -17.9f },  // Iron
+            { 0.0f, -2.55f, -6.85f, -12.25f, -17.95f }, // Germanium
+            { 0.0f, -3.05f, -7.05f, -12.45f, -20.65f }, // Vinyl
+        };
+        const int model = juce::jlimit(1, 6, s.satModel == 0 ? strip.driveModel : s.satModel) - 1;
+        const float position = drive * 4.0f;
+        const int step = juce::jmin(3, static_cast<int>(position));
+        const float loss = kLossDb[model][step] + (kLossDb[model][step + 1] - kLossDb[model][step]) * (position - static_cast<float>(step));
+        s.gainDb -= loss;
+
         if (s.satModel == 0)
         {
             s.satModel = juce::jlimit(1, 6, strip.driveModel);
@@ -70,6 +87,7 @@ std::shared_ptr<const Sub808Sound> buildSub808Sound(const Sub808SoundState& stat
                                                     const juce::String& bankName)
 {
     auto sound = std::make_shared<Sub808Sound>();
+    sound->sidechain = juce::jlimit(0.0f, 1.0f, state.sidechain);
     if (state.custom)
     {
         sound->settings = applySub808Strip(bassSettingsFromTree(state.settings), state);

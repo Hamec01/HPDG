@@ -49,6 +49,8 @@ RuntimeLaneRowState buildLaneRowState(const RuntimeLaneDefinition& lane, const s
         row.strength = trackIt->strength;
         row.sound = trackIt->sound;
         row.selectedSampleName = trackIt->selectedSampleName;
+        if (trackIt->type == TrackType::Sub808 && trackIt->sub808Sound.custom)
+            row.selectedSampleName = trackIt->sub808Sound.name; // an HPDG 808 sound plays, not the bank sample
         row.sub808Settings = trackIt->sub808Settings;
         if (trackIt->runtimeTrackType.has_value())
             row.runtimeTrackType = trackIt->runtimeTrackType;
@@ -497,6 +499,11 @@ void TrackListComponent::setTracks(const RuntimeLaneProfile& profile,
         {
             if (onNextSampleTrack)
                 onNextSampleTrack(laneId);
+        };
+        row->onSampleListRequested = [this](const RuntimeLaneId& laneId)
+        {
+            if (onSampleListTrack)
+                onSampleListTrack(laneId);
         };
         row->onSampleMenuRequested = [this](const RuntimeLaneId& laneId)
         {
