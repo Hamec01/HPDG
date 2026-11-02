@@ -1,0 +1,34 @@
+{
+  "src": "C:/Users/Ham_h/Videos/2026-10-28 15-38-49.mp4",
+  "out": "../../../Releases/HPDG_presentation_kit/video/HPDG_sample_to_patterns_40s.mp4",
+  "crop": [200, 0, 1080, 690],
+  "intro": 2.5,
+  "outro": 2.5,
+  "bed": null,
+  "segments": [
+    [3.0, 8.0, 1, "My sample → dropped into HPDG"],
+    [28.0, 34.0, 1, "HPDG: drums + 808 from the sample"],
+    [62.0, 68.0, 1, "New pattern · Trap / Dark Trap"],
+    [90.0, 96.0, 1, "Another click — another groove"],
+    [120.0, 126.0, 1, "Same sample, new drums + bass"],
+    [152.0, 158.0, 1, "Straight into the arrangement"]
+  ],
+  "vertical": {
+    "out": "../../../Releases/HPDG_presentation_kit/video/HPDG_sample_to_patterns_Shorts.mp4",
+    "intro": ["SAMPLE IN", "BEAT OUT"],
+    "outro": ["HPDG", "HAMLOPROD.ORG"],
+    "segments": [
+      [3.0, 8.0, ["MY SAMPLE", "→ INTO HPDG"], [[262, 230, 1235, 595], [780, 405, 1235, 590]]],
+      [28.0, 34.0, ["DRUMS + 808", "FROM THE SAMPLE"], [[262, 230, 1235, 595], [780, 405, 1235, 590]]],
+      [62.0, 68.0, ["NEW PATTERN", "ONE CLICK"], [[262, 230, 1235, 595], [780, 405, 1235, 590]]],
+      [90.0, 96.0, ["ANOTHER CLICK", "ANOTHER GROOVE"], [[262, 232, 1262, 660], [787, 405, 1258, 652]]],
+      [120.0, 126.0, ["SAME SAMPLE", "NEW DRUMS + BASS"], [[262, 232, 1262, 660], [787, 405, 1258, 652]]],
+      [152.0, 158.0, ["STRAIGHT INTO", "THE ARRANGEMENT"], [[544, 97, 1203, 673]]]
+    ]
+  },
+  "thumbs": [
+    {"style": "bold", "at": 92, "box": [787, 405, 1258, 652],
+     "top": "SAMPLE IN", "bottom": "BEAT OUT", "sticker": "DRUMS + 808", "wave_at": 3,
+     "out": "../../../Releases/HPDG_presentation_kit/video/thumbnails/thumb_sample_to_patterns.png"}
+  ]
+}

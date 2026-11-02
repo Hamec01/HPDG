@@ -106,6 +106,15 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
             if (!n.isGhost)
                 engineKickTicks.push_back(n.gridTick);
 
+        // The engine's snares and claps stay: a loop kick on one of their 16ths would stack on it
+        // (the extra Dark snares on 16ths 2 / 14 are legal kick positions).
+        std::unordered_set<int> snareSteps;
+        for (const auto lane : { TrackType::Snare, TrackType::ClapGhostSnare })
+            if (const auto* state = ProjectLaneAccess::findTrackState(project, lane); state != nullptr && state->enabled)
+                for (const auto& n : state->notes)
+                    if (!n.isGhost)
+                        snareSteps.insert(static_cast<int>(std::lround((n.gridTick + n.timingOffsetTicks) / static_cast<double>(TimingGrid::Sixteenth))));
+
         std::map<int, std::vector<NoteEvent>> sampleByBar;
         for (auto n : mapLoop(laneOf(TrackType::Kick), ratio, sampleTicks, loopTicks))
         {
@@ -115,6 +124,7 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
             const auto [bar, local] = grid.barAndLocal(slot);
             if (std::abs(n.gridTick - slot) > kMaxKickSnapTicks || slot >= loopTicks
                 || !TrapAlgebraEngine::isMainKickTickAllowed(local, grid.tempo.doubleTime)
+                || snareSteps.count(slot / TimingGrid::Sixteenth) > 0
                 || (intensity == 1 && slot % TimingGrid::TicksPerBeat != 0))
             {
                 ++report.sampleKicksDropped;

@@ -8064,6 +8064,54 @@ void testUpdateLicenseKeyAndChecksum()
     folder.deleteRecursively();
 }
 
+void testTrapKickNeverOnOrRightAfterSnare()
+{
+    using namespace bbg;
+    // Maintainer 2026-10-28: a kick under a snare, or a 16th after the backbeat ("kick on the snare").
+    // Played trap: 16th 9 in 0 of 212 bars (docs/audit/reference/trap_kick_bars.tsv). Before the fix,
+    // 3-9 kicks a 16th after the snare per 480 bars, and after three snare RGs 24 Dark kicks under a
+    // loud snare and 29-43 under a ghost one.
+    for (const float bpm : { 75.0f, 150.0f })
+        for (int substyle = 0; substyle < 6; ++substyle)
+        {
+            int onSnare = 0, afterSnare = 0;
+            for (int seed = 1; seed <= 20; ++seed)
+            {
+                TrapEngine engine;
+                auto project = createDefaultProject();
+                project.params.genre = GenreType::Trap;
+                project.params.trapSubstyle = substyle;
+                project.params.bars = 8;
+                project.params.seed = seed;
+                project.params.bpm = bpm;
+                for (auto& track : project.tracks)
+                    track.enabled = true;
+                engine.generate(project);
+                for (int rg = 0; rg < 2; ++rg)
+                {
+                    ++project.generationCounter;
+                    engine.mutateTrack(project, TrackType::Snare);
+                }
+                const auto stepOf = [](const NoteEvent& n) { return static_cast<int>(std::lround((n.gridTick + n.timingOffsetTicks) / 240.0)); };
+                std::set<int> all, loud;
+                for (const auto& n : findTrackByType(project, TrackType::Snare)->notes)
+                {
+                    all.insert(stepOf(n));
+                    if (!n.isGhost && n.velocity >= 70)
+                        loud.insert(stepOf(n));
+                }
+                for (const auto& n : findTrackByType(project, TrackType::Kick)->notes)
+                    if (!n.isGhost)
+                    {
+                        onSnare += all.count(stepOf(n)) > 0;
+                        afterSnare += loud.count(stepOf(n) - 1) > 0;
+                    }
+            }
+            expect(onSnare == 0, "Trap: no kick under a snare, also after the snare's RG.");
+            expect(afterSnare == 0, "Trap: no kick a 16th after a loud snare.");
+        }
+}
+
 int main()
 {
     using namespace bbg;
@@ -8077,6 +8125,7 @@ int main()
     failures += runTest("Trap Guide kicks follow Trap grammar", testTrapSampleGuideKicksFollowTrapGrammar);
     failures += runTest("Trap sample blend: one source per bar", testTrapSampleBlendOneSourcePerBar);
     failures += runTest("Trap ATLClassic follows the ATL passport", testTrapAtlClassicFollowsAtlPassport);
+    failures += runTest("Trap kick never on or right after the snare", testTrapKickNeverOnOrRightAfterSnare);
     failures += runTest("Rack intensity formula", testRackIntensityFormula);
     failures += runTest("Serialization roundtrip smoke", testSerializationRoundTripSmoke);
     failures += runTest("EQ state serialization and legacy migration smoke", testEqStateSerializationAndLegacyMigrationSmoke);

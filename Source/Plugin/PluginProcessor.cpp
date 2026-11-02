@@ -4510,7 +4510,25 @@ std::vector<NoteEvent> BoomBapGeneratorAudioProcessor::buildStrengthReserve(Patt
         if (const auto* t = ProjectLaneAccess::findTrackState(p, trackType); t != nullptr)
             variants.push_back(t->type == TrackType::Sub808 && !t->sub808Notes.empty() ? toLegacyNoteEvents(t->sub808Notes) : t->notes);
     }
-    return LaneStrength::buildReserve(current, variants, loopTicks);
+    auto reserve = LaneStrength::buildReserve(current, variants, loopTicks);
+    // Trap: no reserve kick on this pattern's snare / clap, no reserve snare on its kick (Intensity 4-5
+    // and the Strength knob add from here).
+    if (variantBase.params.genre == GenreType::Trap
+        && (trackType == TrackType::Kick || trackType == TrackType::Snare || trackType == TrackType::ClapGhostSnare))
+    {
+        std::set<int> taken;
+        for (const auto& other : variantBase.tracks)
+            if (other.enabled && (trackType == TrackType::Kick ? (other.type == TrackType::Snare || other.type == TrackType::ClapGhostSnare)
+                                                               : other.type == TrackType::Kick))
+                for (const auto& n : laneBaseNotes(other))
+                    if (!n.isGhost)
+                        taken.insert(static_cast<int>(std::lround(n.gridTick / static_cast<double>(TimingGrid::Sixteenth))));
+        reserve.erase(std::remove_if(reserve.begin(), reserve.end(), [&](const NoteEvent& n)
+        {
+            return taken.count(n.gridTick / TimingGrid::Sixteenth) > 0;
+        }), reserve.end());
+    }
+    return reserve;
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackStrength(TrackType trackType, float strength)

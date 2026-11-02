@@ -170,10 +170,13 @@ bool isLegalMainKickLocalTick(int tick, bool /*bar4*/, bool doubleTime)
     if (tick == 8 || tick == 48)
         return !(doubleTime && tick == 48);
 
+    // 36 (16th 9) is the 16th right after the half-time snare: 0 of 212 played trap bars
+    // (docs/audit/reference/trap_kick_bars.tsv); a kick there flams the backbeat ("the kick sits on
+    // the snare", maintainer 2026-10-28). In double time the snare is on 16 / 48, so 36 stays.
     return tick == 0
         || tick == 16
         || tick == 24
-        || tick == 36
+        || (tick == 36 && doubleTime)
         || tick == 40
         || tick == 56;
 }

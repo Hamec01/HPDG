@@ -1,5 +1,7 @@
 #pragma once
 
+#include <set>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -975,9 +977,27 @@ inline void applyPerformanceToTrack(PatternProject& project, TrackState& track, 
         return;
     }
 
-    const auto strengthBase = strengthOn ? LaneStrength::apply(track.type, track.baseNotes, track.strength, track.strengthReserve, loopTicks,
-                                                                              track.performanceBaseParams.genre)
-                                         : std::vector<NoteEvent> {};
+    auto strengthBase = strengthOn ? LaneStrength::apply(track.type, track.baseNotes, track.strength, track.strengthReserve, loopTicks,
+                                                                        track.performanceBaseParams.genre)
+                                   : std::vector<NoteEvent> {};
+    // Trap: the reserve comes from other generations of the lane, so a kick it adds can land on this
+    // pattern's snare (or a snare on its kick): such an added hit is left out.
+    if (strengthOn && track.performanceBaseParams.genre == GenreType::Trap
+        && (track.type == TrackType::Kick || track.type == TrackType::Snare || track.type == TrackType::ClapGhostSnare))
+    {
+        std::set<int> taken;
+        const auto stepOf = [](const NoteEvent& n) { return static_cast<int>(std::lround(n.gridTick / static_cast<double>(TimingGrid::Sixteenth))); };
+        for (const auto& other : project.tracks)
+            if (other.enabled && (track.type == TrackType::Kick ? (other.type == TrackType::Snare || other.type == TrackType::ClapGhostSnare)
+                                                                : other.type == TrackType::Kick))
+                for (const auto& n : other.baseNotes.empty() ? other.notes : other.baseNotes)
+                    if (!n.isGhost)
+                        taken.insert(stepOf(n));
+        strengthBase.erase(std::remove_if(strengthBase.begin(), strengthBase.end(), [&](const NoteEvent& n)
+        {
+            return n.semanticRole == "strength_add" && taken.count(stepOf(n)) > 0;
+        }), strengthBase.end());
+    }
     detail::applyTransformSequence(track.notes,
                                    strengthOn ? strengthBase : track.baseNotes,
                                    project.authoring,

@@ -736,6 +736,22 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
             return onSnare || onClap;
         }), kick->notes.end());
     }
+    else if (kick != nullptr)
+    {
+        // The kick stays (RG of the snare / clap): a new extra or ghost snare never lands on one of its
+        // kicks (Dark's extra snares on 16ths 2 / 14 are kick positions: 24 kicks under a loud snare in
+        // 480 Dark bars after three snare RGs, maintainer 2026-10-28).
+        for (auto* lane : { findTrack(project, TrackType::Snare), findTrack(project, TrackType::ClapGhostSnare) })
+            if (isEditable(lane))
+                lane->notes.erase(std::remove_if(lane->notes.begin(), lane->notes.end(), [kick](const NoteEvent& s)
+                {
+                    return s.semanticRole != "trap_algebra_anchor"
+                        && std::any_of(kick->notes.begin(), kick->notes.end(), [&s](const NoteEvent& k)
+                        {
+                            return !k.isGhost && nearestStepOf(k) == nearestStepOf(s);
+                        });
+                }), lane->notes.end());
+    }
 
     auto* sub = findTrack(project, TrackType::Sub808);
     if (isEditable(sub))
