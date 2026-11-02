@@ -2880,11 +2880,48 @@ BoomBapGeneratorAudioProcessor::BoomBapGeneratorAudioProcessor()
     resetEqDisplayAnalyzer();
 
     generatePattern();
+
+    // HPDG Link: publish for the Hamlo plug-ins (HamloRevolution CONNECT TO HPDG). Additive, message thread only.
+    HamloLinkPublisher::Hooks link;
+    link.fill = [this](hamlo::link::Snapshot& s)
+    {
+        std::scoped_lock lock(projectMutex);
+        fillLinkSnapshot(project, s);
+    };
+    link.revision = [this] { return hamloLinkRevision.load(std::memory_order_relaxed) + hamloLinkParameterSignature(); };
+    link.getInstanceId = [this]
+    {
+        return static_cast<std::uint64_t>(apvts.state.getProperty("hamlo_link_id").toString().getHexValue64());
+    };
+    link.setInstanceId = [this](std::uint64_t id)
+    {
+        apvts.state.setProperty("hamlo_link_id", juce::String::toHexString(static_cast<juce::int64>(id)), nullptr);
+    };
+    hamloLink = std::make_unique<HamloLinkPublisher>(std::move(link));
 }
 
 BoomBapGeneratorAudioProcessor::~BoomBapGeneratorAudioProcessor()
 {
     shutdownTrace("processor destructor begin");
+    hamloLink.reset();
+}
+
+std::uint32_t BoomBapGeneratorAudioProcessor::hamloLinkParameterSignature() const noexcept
+{
+    // The parameters the link carries, from the APVTS (lock-free): a move makes the publisher look at the project.
+    std::uint32_t h = 2166136261u;
+    for (const auto* id : { ParamIds::bpm, ParamIds::swingPercent, ParamIds::velocityAmount, ParamIds::timingAmount,
+                            ParamIds::humanizeAmount, ParamIds::densityAmount, ParamIds::bars, ParamIds::genre, ParamIds::keyRoot,
+                            ParamIds::scaleMode, ParamIds::boombapSubstyle, ParamIds::rapSubstyle, ParamIds::trapSubstyle,
+                            ParamIds::drillSubstyle, ParamIds::dnbSubstyle, ParamIds::technoSubstyle, ParamIds::atmosphericSubstyle })
+        if (const auto* value = apvts.getRawParameterValue(id))
+        {
+            const float v = value->load(std::memory_order_relaxed);
+            std::uint32_t bits = 0;
+            std::memcpy(&bits, &v, sizeof(bits));
+            h = (h ^ bits) * 16777619u;
+        }
+    return h;
 }
 
 void BoomBapGeneratorAudioProcessor::prepareToPlay(double sampleRate, int)
@@ -5823,6 +5860,7 @@ void BoomBapGeneratorAudioProcessor::rebuildMidiCache()
     midiCache = normalized;
 
     previewEvents = buildPreviewEventsForProject(project, currentSampleRate);
+    hamloLinkRevision.fetch_add(1, std::memory_order_relaxed); // HPDG Link: the pattern changed
 }
 
 // Note -> voice trigger list for a project at a sample rate: used by live playback (the cached

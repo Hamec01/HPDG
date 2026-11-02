@@ -35,6 +35,7 @@
 #include "../Analysis/SampleAnalyzer.h"
 #include "../Analysis/SampleSourceAudio.h"
 #include "../Analysis/SampleAwareGenerationContext.h"
+#include "../Services/HamloLinkPublisher.h"
 
 namespace bbg
 {
@@ -569,6 +570,12 @@ private:
     juce::AudioBuffer<float> liveCaptureBuffer;
     bool isCapturingInput = false;
     int capturedSamples = 0;
+
+    // HPDG Link (HamloRevolution CONNECT TO HPDG): the snapshot for the Hamlo plug-ins. The revision moves on every
+    // pattern rebuild; the publisher (last member: destroyed first) reads the project only when it moved.
+    std::atomic<std::uint32_t> hamloLinkRevision { 0 };
+    std::uint32_t hamloLinkParameterSignature() const noexcept;
+    std::unique_ptr<HamloLinkPublisher> hamloLink;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(BoomBapGeneratorAudioProcessor)
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BoomBapGeneratorAudioProcessor)

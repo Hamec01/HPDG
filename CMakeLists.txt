@@ -151,6 +151,8 @@ target_sources(HPDG
     Source/Services/MidiImportService.cpp
     Source/Services/TemporaryMidiExportService.cpp
     Source/Services/UpdateCheckService.cpp
+    Source/Services/HamloLinkProtocol.cpp
+    Source/Services/HamloLinkPublisher.cpp
         Source/UI/ExternalDragWindowFade.cpp
         Source/UI/MainHeaderComponent.cpp
         Source/UI/UpdateButtonComponent.cpp
@@ -488,6 +490,25 @@ add_executable(HPDG_TrackSemanticsTests
 )
 
 add_test(NAME HPDG_TrackSemanticsTests COMMAND HPDG_TrackSemanticsTests)
+
+# HPDG Link (HamloRevolution CONNECT TO HPDG): the publisher, the shared slot, the seqlock.
+add_executable(HPDG_HamloLinkTests
+    Tests/HamloLinkTests.cpp
+    Source/Services/HamloLinkProtocol.cpp
+    Source/Services/HamloLinkPublisher.cpp
+    Source/Core/TrackRegistry.cpp
+)
+target_include_directories(HPDG_HamloLinkTests PRIVATE Source)
+target_link_libraries(HPDG_HamloLinkTests
+    PRIVATE
+        juce::juce_events
+        juce::juce_data_structures
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+target_compile_definitions(HPDG_HamloLinkTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+add_test(NAME HPDG_HamloLinkTests COMMAND HPDG_HamloLinkTests)
 
 # Drum-break transcription bench: analyze real breaks (report + MIDI) or score synthetic ones.
 add_executable(HPDG_BreakLab
