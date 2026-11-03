@@ -458,6 +458,26 @@ target_link_libraries(HPDG_Sub808EngineCheck
 
 add_test(NAME HPDG_Sub808EngineCheck COMMAND HPDG_Sub808EngineCheck ${CMAKE_SOURCE_DIR}/Samples)
 
+# The Sub808 lane's clicks through the whole processor (Tests/Sub808CrackleLab.cpp).
+add_executable(HPDG_Sub808CrackleLab
+    Tests/Sub808CrackleLab.cpp
+)
+
+target_include_directories(HPDG_Sub808CrackleLab PRIVATE Source)
+
+target_link_libraries(HPDG_Sub808CrackleLab
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
 # Renders the VST3 editor to PNG files (one per UI skin) for checking the look without a host.
 add_executable(HPDG_UiSnapshot
     Tests/UiSnapshot.cpp

@@ -3201,6 +3201,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     if (!projectLock.owns_lock())
     {
         samplesSkippedWhileProjectBusy += buffer.getNumSamples();
+        blocksSkippedWhileProjectBusy.fetch_add(1, std::memory_order_relaxed);
         transportSamplePosition += buffer.getNumSamples();
         return;
     }

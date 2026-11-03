@@ -66,14 +66,16 @@ public:
         }
         void clear() noexcept { z1 = z2 = 0.0; }
     };
-
-private:
-    struct Svf // Zavalishin / Cytomic trapezoidal state-variable filter
+    // Zavalishin / Cytomic trapezoidal state-variable filter: its cutoff can move while it plays
+    // (a biquad's coefficients changed under a signal ring), also the engine's bus filter
+    struct Svf
     {
         double ic1 = 0.0, ic2 = 0.0;
         void tick(double v0, double g, double k, double& low, double& band, double& high) noexcept;
         void clear() noexcept { ic1 = ic2 = 0.0; }
     };
+
+private:
     struct Grain
     {
         double position = 0.0;
@@ -112,6 +114,7 @@ private:
 
     // envelope
     double amp = 1.0, ampDecay = 1.0;
+    double sustainNow = 0.0, knobGlide = 1.0; // the sustain heard, gliding to the settings' (10 ms)
     std::int64_t elapsed = 0, holdSamples = 0, maxSamples = 0;
     int attackSamples = 1, fadeRemaining = 0, fadeTotal = 0;
 
@@ -183,9 +186,14 @@ private:
     int modeOverride = -1;
     float glideOverrideMs = 0.0f;
 
-    std::array<BassVoice::Biquad, 2> busStages {};
+    std::array<BassVoice::Svf, 2> busStages {};
     double busPosition = 0.0;       // the smoothed busFilter
     int busKind = 0;                // -1 low-pass, 1 high-pass, 0 off
+    std::array<BassVoice::Svf, 2> busFadeStages {}; // the filter faded out after a switch
+    double busG = 0.0, busFadeG = 0.0;
+    int busFadeKind = 0, busFade = 0;
+    double busLastOut = 0.0;        // the bus's last output (silent: a switch needs no fade, the gain is set)
+    double busGain = 1.0;           // the output level heard, gliding to settings.gainDb
 
     BassSaturator saturator;
     std::vector<float> lfoBuffer;

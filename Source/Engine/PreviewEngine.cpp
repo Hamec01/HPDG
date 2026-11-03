@@ -184,6 +184,17 @@ void PreviewEngine::renderBass(int numSamples)
     if (position < numSamples)
         bass->render(bassBuffer.data() + position, numSamples - position);
     bassTail = bass->isActive() || !bassEvents.empty() ? bass->latencySamples() + 64 : bassTail - numSamples;
+    // after the last voice the bus still rings: DRIVE's DC blocker and FILTER's high-pass let go of a held level
+    // over tens of ms. Stopping the engine there cut that tail to zero (a click per note end, and its frozen rest
+    // came back with the next note: a second one), so it runs on until its output is below -100 dB.
+    if (bassTail <= 0 && numSamples > 0)
+    {
+        float tail = 0.0f;
+        for (int i = std::max(0, numSamples - 64); i < numSamples; ++i)
+            tail = std::max(tail, std::abs(bassBuffer[static_cast<size_t>(i)]));
+        if (tail > 1.0e-5f)
+            bassTail = 64;
+    }
 
     bassEvents.erase(bassEvents.begin(), bassEvents.begin() + static_cast<std::ptrdiff_t>(applied));
     for (auto& e : bassEvents)

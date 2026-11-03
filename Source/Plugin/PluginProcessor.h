@@ -119,6 +119,8 @@ public:
     void startPreview();
     void stopPreview();
     bool isPreviewPlaying() const;
+    // How many audio blocks came out silent because the project lock was busy (Tests/Sub808CrackleLab.cpp).
+    int getBlocksSkippedWhileProjectBusy() const noexcept { return blocksSkippedWhileProjectBusy.load(std::memory_order_relaxed); }
     float getPreviewPlayheadStep() const;
     void syncBarsFromState();
     void setPreviewStartStep(int step);
@@ -482,6 +484,7 @@ private:
     // never call into the host (setValueNotifyingHost etc.) or touch the disk while holding it.
     mutable std::mutex projectMutex;
     int samplesSkippedWhileProjectBusy = 0; // audio thread only
+    std::atomic<int> blocksSkippedWhileProjectBusy { 0 }; // for the labs: blocks left silent by a busy lock
     PatternProject project;
     BoomBapEngine boomBapEngine;
     DrillEngine drillEngine;

@@ -215,6 +215,7 @@ void BassVoice::prepare(double newSampleRate)
     dcCoefficient = std::exp(-2.0 * kPi * 5.0 / sampleRate);
     phantomRelease = std::exp(-1.0 / (0.03 * sampleRate));
     grainLength = 2 * juce::jmax(16, static_cast<int>(0.0225 * sampleRate)); // 45 ms, even
+    knobGlide = 1.0 - std::exp(-1.0 / (0.01 * sampleRate));
     active = false;
 }
 
@@ -332,6 +333,7 @@ void BassVoice::noteOn(double frequencyHz, float newVelocity, const BassSettings
     phase2 = 0.25;
     phaseSub = 0.0;
     amp = 1.0;
+    sustainNow = juce::jlimit(0.0f, 1.0f, settings.sustain);
     ampDecay = std::exp(-std::log(2.0) / (juce::jmax(0.01f, settings.decaySeconds) * sampleRate));
     holdSamples = static_cast<std::int64_t>(juce::jmax(0.0f, settings.holdSeconds) * sampleRate);
     punch = settings.punchSemitones;
@@ -589,6 +591,7 @@ void BassVoice::render(float* out, const float* lfo, int numSamples)
 {
     const double synthLevel = settings.synthLevelDb > -59.5f ? dbToGain(settings.synthLevelDb) : 0.0;
     const double sampleLevel = sample != nullptr && settings.sampleLevelDb > -59.5f ? dbToGain(settings.sampleLevelDb) : 0.0;
+    // a sustain turned while the note sounds (the lane's LENGTH) glides there in ~10 ms instead of jumping
     const double sustain = juce::jlimit(0.0f, 1.0f, settings.sustain);
     const double handoff = settings.handoffMs * 0.001 * sampleRate;
     const double handoffFade = juce::jmax(0.005 * sampleRate, 0.5 * handoff);
@@ -604,7 +607,8 @@ void BassVoice::render(float* out, const float* lfo, int numSamples)
                 semitones += glideStep;
             updateNoteFilters();
         }
-        const double level = sustain + (1.0 - sustain) * amp;
+        sustainNow += knobGlide * (sustain - sustainNow);
+        const double level = sustainNow + (1.0 - sustainNow) * amp;
         if (elapsed >= holdSamples)
             amp *= ampDecay;
 
@@ -709,6 +713,8 @@ void BassEngine::prepare(double newSampleRate, int maxBlockSize)
     for (auto& voice : voices)
         voice.prepare(sampleRate);
     saturator.prepare(sampleRate);
+    busGain = dbToGain(settings.gainDb);
+    busFade = 0;
     lfoBuffer.assign(static_cast<size_t>(chunkSize), 0.0f);
     heldCount = 0;
     sounding = -1;
@@ -830,48 +836,75 @@ void BassEngine::render(float* mono, int numSamples)
 
 void BassEngine::processBusFilter(float* out, int n) noexcept
 {
-    // 24 dB / octave Butterworth (two biquads), the cutoff smoothed and set every 32 samples
-    static constexpr std::array<double, 2> qs { 0.54119610, 1.30656296 };
+    // 24 dB / octave Butterworth (two state-variable stages: the biquads' response, but a cutoff that moves
+    // under a sounding bass does not ring), the cutoff smoothed and set every 32 samples. Switching between
+    // low-pass, high-pass and off (the knob through its middle) crossfades the filter heard so far into the
+    // new one over 10 ms: a filter started from rest on a sounding bass, or one stopped, clicks.
+    static constexpr std::array<double, 2> ks { 1.0 / 0.54119610, 1.0 / 1.30656296 };
     const double target = juce::jlimit(-1.0, 1.0, static_cast<double>(settings.busFilter));
     const double smoothing = std::exp(-32.0 / (0.02 * sampleRate));
+    const int fadeLength = juce::jmax(32, static_cast<int>(0.01 * sampleRate));
+    const auto run = [](std::array<BassVoice::Svf, 2>& stages, int kind, double g, double x) noexcept
+    {
+        if (kind == 0)
+            return x;
+        for (size_t i = 0; i < stages.size(); ++i)
+        {
+            double low = 0.0, band = 0.0, high = 0.0;
+            stages[i].tick(x, g, ks[i], low, band, high);
+            x = kind < 0 ? low : high;
+        }
+        return x;
+    };
     for (int start = 0; start < n; start += 32)
     {
         busPosition = target + (busPosition - target) * smoothing;
+        int kind = busPosition < 0.0 ? -1 : 1;
         if (std::abs(busPosition) < 1.0e-3 && std::abs(target) < 1.0e-3)
         {
             busPosition = 0.0;
-            busKind = 0;
-            return;
+            kind = 0;
         }
-        const int kind = busPosition < 0.0 ? -1 : 1;
+        const int end = std::min(n, start + 32);
         if (kind != busKind)
         {
+            // from a silent bus there is nothing to fade (a note's start sounds as it always did)
+            const bool silent = busLastOut < 1.0e-6;
+            busFadeStages = busStages;
+            busFadeKind = busKind;
+            busFadeG = busG;
+            busFade = silent ? 0 : fadeLength;
             for (auto& stage : busStages)
                 stage.clear();
             busKind = kind;
         }
-        const double amount = std::abs(busPosition);
-        const double hz = kind < 0 ? 20000.0 * std::pow(200.0 / 20000.0, amount) : 20.0 * std::pow(400.0 / 20.0, amount);
-        for (size_t i = 0; i < busStages.size(); ++i)
+        if (busKind == 0 && busFade == 0)
         {
-            if (kind < 0)
-                busStages[i].lowPass(sampleRate, hz, qs[i]);
-            else
-                busStages[i].highPass(sampleRate, hz, qs[i]);
+            busLastOut = std::abs(out[end - 1]);
+            continue;
         }
-        const int end = std::min(n, start + 32);
+        const double amount = std::abs(busPosition);
+        const double hz = busKind < 0 ? 20000.0 * std::pow(200.0 / 20000.0, amount) : 20.0 * std::pow(400.0 / 20.0, amount);
+        busG = std::tan(kPi * juce::jlimit(10.0, 0.45 * sampleRate, hz) / sampleRate);
         for (int i = start; i < end; ++i)
         {
-            double y = out[i];
-            for (auto& stage : busStages)
-                y = stage.process(y);
+            const double x = out[i];
+            double y = run(busStages, busKind, busG, x);
+            if (busFade > 0)
+            {
+                const double t = static_cast<double>(busFade) / fadeLength; // 1 -> 0
+                y = t * run(busFadeStages, busFadeKind, busFadeG, x) + (1.0 - t) * y;
+                --busFade;
+            }
             out[i] = static_cast<float>(y);
         }
+        busLastOut = std::abs(out[end - 1]);
     }
 }
 
 void BassEngine::renderChunk(float* out, int n)
 {
+    const bool wasActive = isActive() || busLastOut > 1.0e-6;
     std::fill(out, out + n, 0.0f);
     const double step = lfoHz() / sampleRate;
     for (int i = 0; i < n; ++i)
@@ -884,9 +917,25 @@ void BassEngine::renderChunk(float* out, int n)
 
     saturator.process(out, n, saturatorParams(settings)); // off: the voices pass untouched
     processBusFilter(out, n);
-    const auto gain = static_cast<float>(dbToGain(settings.gainDb));
+    // the level (the lane's GAIN, DRIVE's make-up) glides in ~10 ms while the bass sounds; silent, it is set
+    const double gain = dbToGain(settings.gainDb);
+    if (!wasActive)
+        busGain = gain;
+    if (busGain == gain)
+    {
+        const auto g = static_cast<float>(gain);
+        for (int i = 0; i < n; ++i)
+            out[i] *= g;
+        return;
+    }
+    const double glide = 1.0 - std::exp(-1.0 / (0.01 * sampleRate));
     for (int i = 0; i < n; ++i)
-        out[i] *= gain;
+    {
+        busGain += glide * (gain - busGain);
+        out[i] = static_cast<float>(out[i] * busGain);
+    }
+    if (std::abs(busGain - gain) < 1.0e-6 * gain)
+        busGain = gain;
 }
 
 std::vector<float> BassEngine::renderNote(const BassSettings& noteSettings, std::shared_ptr<const BassSample> noteSample, int note,
