@@ -220,7 +220,11 @@ public:
     juce::File createTemporaryTrackMidiFile(TrackType track) const;
     juce::File createTemporaryTrackMidiFile(const RuntimeLaneId& laneId) const;
 
-    PatternProject getProjectSnapshot() const;
+    // The project as of the last change, shared and immutable. Message thread / UI: a read does not take
+    // projectMutex while the project is unchanged (the audio thread only try-locks it, and a busy lock
+    // leaves a whole block silent); after a change, the first read copies it once under the lock.
+    std::shared_ptr<const PatternProject> getProjectView() const;
+    PatternProject getProjectSnapshot() const; // a copy of getProjectView(), made outside the lock
     EqDisplayAnalyzerState getEqDisplayAnalyzerState() const;
     TransportSnapshot getLastTransportSnapshot() const;
     void applySelectedStylePreset(bool force);
@@ -483,6 +487,33 @@ private:
     // (processBlock outputs a silent block instead of waiting), so the UI may hold it, but must
     // never call into the host (setValueNotifyingHost etc.) or touch the disk while holding it.
     mutable std::mutex projectMutex;
+    // Every lock of projectMutex goes through lockProject(). From a non-const member it may change the
+    // project: the lock bumps projectRevision as it is released (still held), so getProjectView() copies
+    // the project again. A const member only reads; lockProjectForRead() is the same for a non-const
+    // member that does not touch `project`.
+    struct ProjectEditLock
+    {
+        ProjectEditLock(std::mutex& mutex, std::atomic<std::uint64_t>& revisionToBump) : lock(mutex), revision(revisionToBump) {}
+        ~ProjectEditLock() { revision.fetch_add(1, std::memory_order_release); }
+        ProjectEditLock(const ProjectEditLock&) = delete;
+        ProjectEditLock& operator=(const ProjectEditLock&) = delete;
+        std::unique_lock<std::mutex> lock; // released after the destructor body: the bump happens under the lock
+        std::atomic<std::uint64_t>& revision;
+    };
+    [[nodiscard]] ProjectEditLock lockProject() { return { projectMutex, projectRevision }; }
+    [[nodiscard]] std::unique_lock<std::mutex> lockProject() const { return std::unique_lock<std::mutex>(projectMutex); }
+    [[nodiscard]] std::unique_lock<std::mutex> lockProjectForRead() const { return std::unique_lock<std::mutex>(projectMutex); }
+    std::atomic<std::uint64_t> projectRevision { 1 };
+    mutable std::mutex projectViewMutex; // the audio thread never takes it
+    mutable std::shared_ptr<const PatternProject> projectView;   // under projectViewMutex
+    mutable std::uint64_t projectViewRevision = 0;               // under projectViewMutex
+    // What the editor's timer reads while the beat plays, published by whoever changes it under projectMutex
+    // (each audio block, start / stop), so the timer does not take the lock 15 times a second.
+    void publishPlaybackStateLocked();
+    std::atomic<bool> previewPlayingForUi { false };
+    std::atomic<float> previewPlayheadStepForUi { -1.0f };
+    mutable juce::SpinLock transportForUiLock; // the audio thread only try-locks it
+    TransportSnapshot transportForUi;
     int samplesSkippedWhileProjectBusy = 0; // audio thread only
     std::atomic<int> blocksSkippedWhileProjectBusy { 0 }; // for the labs: blocks left silent by a busy lock
     PatternProject project;

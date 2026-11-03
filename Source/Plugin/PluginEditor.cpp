@@ -1900,7 +1900,7 @@ void BoomBGeneratorAudioProcessorEditor::openSub808Editor()
         return;
     juce::Component::SafePointer<BoomBGeneratorAudioProcessorEditor> self(this);
     auto host = makeSub808EditorHost(audioProcessor,
-                                     [self] { if (self != nullptr) self->refreshSub808Strip(self->audioProcessor.getProjectSnapshot()); },
+                                     [self] { if (self != nullptr) self->refreshSub808StripSound(); },
                                      [self]
                                      {
                                          juce::MessageManager::callAsync([self]
@@ -1914,6 +1914,14 @@ void BoomBGeneratorAudioProcessorEditor::openSub808Editor()
     sub808Editor->setBounds(getLocalBounds());
     sub808Editor->toFront(true);
     sub808Editor->grabKeyboardFocus();
+}
+
+void BoomBGeneratorAudioProcessorEditor::refreshSub808StripSound()
+{
+    if (!sub808Strip.isVisible())
+        return;
+    const auto sound = audioProcessor.getSub808Sound();
+    sub808Strip.setState(sound, sub808SoundName(audioProcessor, sound));
 }
 
 void BoomBGeneratorAudioProcessorEditor::refreshSub808Strip(const PatternProject& project)

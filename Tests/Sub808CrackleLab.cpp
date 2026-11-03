@@ -198,6 +198,14 @@ HostResult hostRun(int genre, int seed, bool bassOn, bool knobs, double seconds)
     p.restoreEditorProjectSnapshot(project);
     p.startPreview();
 
+    // HPDG_CRACKLE_PRECISE: the audio thread waits for its deadline by yielding, never sleeping, as a driver
+    // callback starts on the audio clock. Without it both threads sleep: the Windows timer tick (up to
+    // 15.6 ms) makes the audio thread late, it plays the missed blocks back to back at the very tick the
+    // message thread wakes, and even a lock of a few microseconds taken right after waking silences one.
+    const bool precise = std::getenv("HPDG_CRACKLE_PRECISE") != nullptr;
+    // HPDG_CRACKLE_STRESS: the audio thread plays blocks back to back for the same wall time. A block finds the
+    // lock busy exactly as often as the message thread holds it, whatever the timer or the machine's load.
+    const bool stress = std::getenv("HPDG_CRACKLE_STRESS") != nullptr;
     std::atomic<bool> done { false };
     HostResult result;
     std::thread audio([&]
@@ -207,7 +215,8 @@ HostResult hostRun(int genre, int seed, bool bassOn, bool knobs, double seconds)
         const auto period = 512.0 / kRate * 1000.0;
         auto next = juce::Time::getMillisecondCounterHiRes();
         const int total = static_cast<int>(seconds * kRate / 512.0);
-        for (int b = 0; b < total; ++b)
+        const auto start = juce::Time::getMillisecondCounterHiRes();
+        for (int b = 0; stress ? juce::Time::getMillisecondCounterHiRes() - start < seconds * 1000.0 : b < total; ++b)
         {
             buffer.clear();
             midi.clear();
@@ -217,27 +226,46 @@ HostResult hostRun(int genre, int seed, bool bassOn, bool knobs, double seconds)
             ++result.blocks;
             next += period;
             const auto wait = next - juce::Time::getMillisecondCounterHiRes();
-            if (wait > 0.0)
-                juce::Thread::sleep(static_cast<int>(wait));
+            if (stress)
+                continue;
+            if (!precise)
+            {
+                if (wait > 0.0)
+                    juce::Thread::sleep(static_cast<int>(wait));
+                continue;
+            }
+            while (juce::Time::getMillisecondCounterHiRes() < next)
+                std::this_thread::yield();
         }
         done = true;
     });
+    // The message thread does what the editor does while the beat plays, 15 times a second: its timer
+    // reads the play state, the host transport and the playhead (HPDG_CRACKLE_NO_TIMER leaves them out);
+    // with knobs, the 808 editor sends the new sound and the strip refreshes from a project snapshot.
     int tick = 0;
+    const bool editorTimer = std::getenv("HPDG_CRACKLE_NO_TIMER") == nullptr;
     while (!done)
     {
         pumpMessages(66);
-        if (std::getenv("HPDG_CRACKLE_NO_SNAPSHOT") == nullptr)
+        if (editorTimer)
         {
-            const auto t0 = juce::Time::getMillisecondCounterHiRes();
-            const auto snapshot = p.getProjectSnapshot();
-            result.snapshotMs = std::max(result.snapshotMs, juce::Time::getMillisecondCounterHiRes() - t0);
-            juce::ignoreUnused(snapshot);
+            const bool playing = p.isPreviewPlaying();
+            const auto transport = p.getLastTransportSnapshot();
+            const float step = p.getPreviewPlayheadStep();
+            juce::ignoreUnused(playing, transport, step);
         }
         if (knobs)
         {
             auto sound = p.getSub808Sound();
             sound.drive = 0.5f + 0.5f * std::sin(0.3f * static_cast<float>(tick));
             p.setSub808Sound(sound);
+        }
+        if (std::getenv("HPDG_CRACKLE_NO_SNAPSHOT") == nullptr)
+        {
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            const auto snapshot = p.getProjectSnapshot();
+            result.snapshotMs = std::max(result.snapshotMs, juce::Time::getMillisecondCounterHiRes() - t0);
+            juce::ignoreUnused(snapshot);
         }
         ++tick;
     }
@@ -345,15 +373,17 @@ int main(int argc, char** argv)
             writeWav(out.getChildFile("mix_difference.wav"), diff);
         }
     }
-    if (std::getenv("HPDG_CRACKLE_HOST") != nullptr)
-        for (const bool bassOn : { false, true })
-            for (const bool knobs : { false, true })
-            {
-                if (knobs && !bassOn)
-                    continue;
-                const auto r = hostRun(genre, 1, bassOn, knobs, 8.0);
-                std::printf("host: bass %s%s: %d blocks, %d dropouts (a busy project lock: silent block); longest snapshot %.2f ms, longest block %.2f ms\n",
-                            bassOn ? "on" : "off", knobs ? " + knobs" : "", r.blocks, r.dropouts, r.snapshotMs, r.blockMs);
-            }
+    // HPDG_CRACKLE_HOST=n: n runs of 8 s per case (1 when not a number)
+    if (const char* host = std::getenv("HPDG_CRACKLE_HOST"); host != nullptr)
+        for (int run = 0; run < std::max(1, std::atoi(host)); ++run)
+            for (const bool bassOn : { false, true })
+                for (const bool knobs : { false, true })
+                {
+                    if (knobs && !bassOn)
+                        continue;
+                    const auto r = hostRun(genre, 1, bassOn, knobs, 8.0);
+                    std::printf("host: bass %s%s: %d blocks, %d dropouts (a busy project lock: silent block); longest snapshot %.2f ms, longest block %.2f ms\n",
+                                bassOn ? "on" : "off", knobs ? " + knobs" : "", r.blocks, r.dropouts, r.snapshotMs, r.blockMs);
+                }
     return total > 0 ? 1 : 0;
 }

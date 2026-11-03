@@ -162,6 +162,7 @@ private:
     std::unique_ptr<Sub808EditorOverlay> sub808Editor; // HPDG 808 over the whole window
     void openSub808Editor();
     void refreshSub808Strip(const PatternProject& project);
+    void refreshSub808StripSound(); // the lane's sound only: no project copy while the 808 editor turns knobs
     SoundModuleComponent soundModule;
     SoundModuleController soundModuleController;
     juce::Component editorToolBar;
