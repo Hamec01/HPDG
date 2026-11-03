@@ -6,7 +6,7 @@
 // Checks: every preset at C1 / F1 / C2 is finite and its peak sits between -14 and 0 dBFS; the sample
 // layer plays a 55 Hz sample at 110 Hz on A2; LOCK TIME keeps the length on every note; Stretch 2x doubles
 // the length and keeps the pitch; a loop keeps the level and has no step; a handoff keeps the synth silent
-// before it; Phantom raises harmonics 2-5; every HamloMag model stays finite.
+// before it; Phantom raises harmonics 2-5; every saturator model stays finite and a model change mid-note does not click.
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -316,8 +316,49 @@ int main(int argc, char** argv)
             s.satModel = model;
             s.satDriveDb = 24.0f;
             const auto x = BassEngine::renderNote(s, nullptr, 29, 1.5, kRate);
-            check(finite(x) && peak(x) < 2.0f, ("HamloMag model " + juce::String(model)).toRawUTF8(),
+            check(finite(x) && peak(x) < 2.0f, ("saturator model " + juce::String(model)).toRawUTF8(),
                   "peak " + juce::String(20.0 * std::log10(peak(x) + 1.0e-9), 1) + " dBFS at 24 dB drive");
+        }
+
+        // a held note while the model changes (Tape -> Vinyl, on -> off -> on): the largest sample-to-sample
+        // step after each change against the largest before it (a click shows as a step far above the wave's own)
+        {
+            BassEngine engine;
+            BassSettings s;
+            s.satModel = 2;
+            s.satDriveDb = 18.0f;
+            s.holdSeconds = 4.0f;
+            s.decaySeconds = 4.0f;
+            engine.setSettings(s);
+            engine.prepare(kRate, 512);
+            engine.noteOn(36, 1.0f);
+            std::vector<float> x(static_cast<size_t>(2.0 * kRate), 0.0f);
+            const auto stepAround = [&x](size_t from, size_t to)
+            {
+                float most = 0.0f;
+                for (size_t i = std::max<size_t>(from, 1); i < std::min(to, x.size()); ++i)
+                    most = std::max(most, std::abs(x[i] - x[i - 1]));
+                return most;
+            };
+            const int quarter = static_cast<int>(0.5 * kRate);
+            float worst = 0.0f;
+            for (int part = 0; part < 4; ++part)
+            {
+                if (part > 0)
+                {
+                    s.satModel = part == 1 ? 6 : part == 2 ? 0 : 3;
+                    engine.setSettings(s);
+                }
+                engine.render(x.data() + part * quarter, quarter);
+                if (part > 0)
+                {
+                    const auto at = static_cast<size_t>(part * quarter);
+                    const float before = stepAround(at - static_cast<size_t>(0.1 * kRate), at);
+                    worst = std::max(worst, stepAround(at, at + static_cast<size_t>(0.03 * kRate)) / std::max(1.0e-6f, before));
+                }
+            }
+            check(finite(x) && worst < 1.5f, "saturator model change mid-note: no click",
+                  "largest step after a change " + juce::String(worst, 2) + " x the one before");
         }
     }
 

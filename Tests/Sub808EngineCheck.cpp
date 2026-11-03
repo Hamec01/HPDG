@@ -223,7 +223,7 @@ int main(int argc, char* argv[])
         }
     }
     std::printf("\n%d samples, %d failed; worst residual %.1f dB, worst level %.2f dB\n", samples, failed, worstResidual, worstLevel);
-    // the strip's DRIVE: level of a held C2 (RMS 50-500 ms) against DRIVE 0, per HamloMag model, for the
+    // the strip's DRIVE: level of a held C2 (RMS 50-500 ms) against DRIVE 0, per saturator model, for the
     // lane's bank sample and two HPDG 808 presets (one without, one with a saturator of its own)
     double worstDriveDb = 0.0;
     {

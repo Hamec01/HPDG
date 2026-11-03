@@ -14,7 +14,7 @@ namespace bbg
 //            output over it while a note plays
 //   SAMPLE   the loaded sample with its start / loop / end markers (drag them)
 //   MIX      the synth layer, the sample layer and the sum over the first 0.6 s; drag the handoff point
-//   FX       the filter's response with the note's harmonics under it; HamloMag's curve and harmonics
+//   FX       the filter's response with the note's harmonics under it; the saturator's curve and harmonics
 class Bass808Screen final : public juce::Component, private juce::Timer
 {
 public:

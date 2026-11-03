@@ -38,7 +38,7 @@ Sub808StripComponent::Sub808StripComponent()
 
     driveModel.addItemList(kModels, 1);
     driveModel.setSelectedId(2, juce::dontSendNotification);
-    driveModel.setTooltip("HamloMag model for DRIVE, when the sound has no saturator of its own");
+    driveModel.setTooltip("Saturator model for DRIVE, when the sound has no saturator of its own");
     driveModel.onChange = [this] { knobMoved(); };
     addChildComponent(driveModel);
 

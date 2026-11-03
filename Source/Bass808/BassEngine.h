@@ -9,8 +9,7 @@
 
 #include "Bass808/BassSample.h"
 #include "Bass808/BassSettings.h"
-#include "DSP/AlignmentDelay.h"
-#include "DSP/Saturator.h"
+#include "Bass808/BassSaturator.h"
 
 namespace bbg
 {
@@ -27,7 +26,7 @@ namespace bbg
 //                note - Helmholtz), cutoff moved by the key, an envelope and the LFO
 //   -> PHANTOM: harmonics 2-5 of the fundamental (envelope-normalised Chebyshev), so the sub is heard on small
 //                speakers (the missing fundamental)
-//   -> bus: the HamloMag saturator (copied from HPEQ: Classic, Tape, Tube, Iron, Germanium, Vinyl), dry / wet
+//   -> bus: the saturator (BassSaturator: HamloMag's Classic, Tape, Tube, Iron, Germanium, Vinyl curves), dry / wet
 //
 // The measurements behind the presets: docs/audit/BASS808_CORPUS.md.
 struct BassPreset
@@ -135,7 +134,7 @@ private:
 };
 
 // The instrument: mono (held-note stack, last note priority), two voices so a new note chokes the old
-// one in 3 ms, the LFO, the HamloMag bus. Used by the plugin, its display and Tests/Bass808Lab.cpp.
+// one in 3 ms, the LFO, the saturator bus. Used by the plugin, its display and Tests/Bass808Lab.cpp.
 class BassEngine
 {
 public:
@@ -156,14 +155,14 @@ public:
     void render(float* mono, int numSamples);
     bool isActive() const noexcept { return voices[0].isActive() || voices[1].isActive(); }
 
-    // Constant (the largest the saturator can need), so the host's delay compensation never changes.
-    int latencySamples() const noexcept { return maxLatency; }
+    // The saturator works sample by sample: no latency.
+    int latencySamples() const noexcept { return 0; }
 
     // For the display and the lab: one note held `seconds` long, the latency removed.
     static std::vector<float> renderNote(const BassSettings&, std::shared_ptr<const BassSample>, int note, double seconds, double sampleRate);
     static double noteHz(int note, float tuneSemitones);
-    // The HamloMag slot for these settings (also drawn by the display).
-    static hamlo::dsp::FxSlotParams saturatorParams(const BassSettings&) noexcept;
+    // The saturator's settings (also drawn by the display).
+    static BassSaturator::Params saturatorParams(const BassSettings&) noexcept;
 
 private:
     void startNote(int note, float velocity, bool fromHeldStack);
@@ -188,11 +187,8 @@ private:
     double busPosition = 0.0;       // the smoothed busFilter
     int busKind = 0;                // -1 low-pass, 1 high-pass, 0 off
 
-    hamlo::dsp::SaturatorProcessor saturator;
-    hamlo::dsp::AlignmentDelay dryDelay, outputDelay;
-    bool saturatorWasOn = false;
-    int maxLatency = 0;
-    std::vector<float> lfoBuffer, dryBuffer;
+    BassSaturator saturator;
+    std::vector<float> lfoBuffer;
     int chunkSize = 512;
 };
 } // namespace bbg

@@ -10,7 +10,7 @@ namespace bbg
 namespace
 {
 // Parameter ids are stable (saved in DAW projects). Version 1: the first HPDG 808; version 2: the
-// layers, filter, LFO, HamloMag and phantom of the second pass.
+// layers, filter, LFO, saturator and phantom of the second pass.
 struct FloatParam
 {
     const char* id;

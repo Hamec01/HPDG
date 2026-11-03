@@ -64,7 +64,7 @@ struct BassSettings
     float lfoDepth = 0.0f;
     bool lfoRetrigger = true;
 
-    // HamloMag
+    // saturator (BassSaturator)
     int satModel = 0;             // 0 off, 1 Classic, 2 Tape, 3 Tube, 4 Iron, 5 Germanium, 6 Vinyl
     float satDriveDb = 0.0f;
     float satHarmonics = 0.5f;

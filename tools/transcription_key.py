@@ -16,6 +16,9 @@ usage:
         B1  B0 + the plugin's bass bonus (0.2 x share of the lowest sounding note's pitch class)
         B2  B1 + the plugin's opening bonus (0.5 on the first bass note's pitch class)
       and the inference speed (x real time, p50 / p95 / worst seconds per 10 s of audio).
+  python tools/transcription_key.py files <corpus.tsv> <out .tsv>
+      the same tonal files as corpus id, file name, full path: the input of HPDG's C++ port
+      (`HPDG_BasicPitchLab corpus`), which writes the same notes / timing layout, so `report` reads both
 """
 import csv
 import json
@@ -196,6 +199,10 @@ if __name__ == '__main__':
     args = sys.argv[1:]
     if len(args) >= 3 and args[0] == 'run':
         run(args[1], args[2])
+    elif len(args) >= 3 and args[0] == 'files':
+        with open(args[2], 'w', encoding='utf-8', newline='\n') as f:
+            for corpus, name in tonal_files(args[1]):
+                f.write(f"{corpus['id']}\t{name}\t{tb.path_of(corpus, name)}\n")
     elif len(args) >= 4 and args[0] == 'report':
         report(args[1], args[2], args[3], args[args.index('--json') + 1] if '--json' in args else None)
     else:

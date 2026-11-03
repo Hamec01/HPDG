@@ -14,6 +14,7 @@
 #include "../Source/Core/PatternProjectSerialization.h"
 #include "../Source/Core/ProjectStateController.h"
 #include "../Source/Analysis/SampleApplyWeights.h"
+#include "../Source/Analysis/SampleHarmonyAnalyzer.h"
 #include "../Source/Engine/BoomBapEngine.h"
 #include "../Source/Engine/BoomBap/BoomBapBassGenerator.h"
 #include "../Source/Engine/BoomBap/BoomBapClassicAlgebraGenerator.h"
@@ -8065,11 +8066,90 @@ void testUpdateLicenseKeyAndChecksum()
     folder.deleteRecursively();
 }
 
+namespace bbg
+{
+namespace
+{
+// Am - F - C - G, one bar each at 90 BPM: a triad around C4 and the root as a bass note per beat.
+std::vector<float> renderMinorProgression(double rate)
+{
+    constexpr double beat = 60.0 / 90.0;
+    const std::array<std::array<int, 3>, 4> chords {{ { 57, 60, 64 }, { 53, 57, 60 }, { 48, 52, 55 }, { 55, 59, 62 } }};
+    const std::array<int, 4> roots { 45, 41, 36, 43 };
+    std::vector<float> audio(static_cast<size_t>(16.0 * beat * rate), 0.0f);
+    const double twoPi = juce::MathConstants<double>::twoPi;
+    for (int bar = 0; bar < 4; ++bar)
+    {
+        const auto barStart = static_cast<size_t>(bar * 4 * beat * rate);
+        const auto barEnd = std::min(audio.size(), static_cast<size_t>((bar + 1) * 4 * beat * rate));
+        for (const int midi : chords[static_cast<size_t>(bar)])
+        {
+            const double hz = 440.0 * std::pow(2.0, (midi - 69) / 12.0);
+            for (size_t i = barStart; i < barEnd; ++i)
+            {
+                const double t = static_cast<double>(i - barStart) / rate;
+                const double env = std::min(1.0, t / 0.02) * std::min(1.0, static_cast<double>(barEnd - i) / (0.02 * rate));
+                audio[i] += static_cast<float>(0.08 * env * (std::sin(twoPi * hz * t) + 0.4 * std::sin(twoPi * 2.0 * hz * t)));
+            }
+        }
+        for (int b = 0; b < 4; ++b)
+        {
+            const double hz = 440.0 * std::pow(2.0, (roots[static_cast<size_t>(bar)] - 69) / 12.0);
+            const auto start = static_cast<size_t>((bar * 4 + b) * beat * rate);
+            const auto end = std::min(audio.size(), static_cast<size_t>((bar * 4 + b + 1) * beat * rate));
+            for (size_t i = start; i < end; ++i)
+            {
+                const double t = static_cast<double>(i - start) / rate;
+                const double env = std::min(1.0, t / 0.01) * std::exp(-t / 0.9);
+                audio[i] += static_cast<float>(env * (0.4 * std::sin(twoPi * hz * t) + 0.2 * std::sin(twoPi * 2.0 * hz * t)
+                                                      + 0.1 * std::sin(twoPi * 3.0 * hz * t)));
+            }
+        }
+    }
+    return audio;
+}
+
+void testSampleKeyFromNotes()
+{
+    constexpr double rate = 44100.0;
+    const auto progression = renderMinorProgression(rate);
+    const SampleHarmonyAnalyzer analyzer;
+    const auto harmony = analyzer.analyze(progression, rate, 60.0 / 90.0, 0.0);
+    expect(harmony.valid && harmony.keyFromNotes, "Am-F-C-G: the key must come from the transcribed notes.");
+    expect(harmony.keyRoot == 9 && harmony.scaleMode == 0, "Am-F-C-G must stay A minor, got " + harmony.keyName() + ".");
+
+    // determinism: the same audio twice gives the same key, confidence and notes
+    const auto again = analyzer.analyze(progression, rate, 60.0 / 90.0, 0.0);
+    expect(again.keyRoot == harmony.keyRoot && again.scaleMode == harmony.scaleMode
+               && again.keyConfidence == harmony.keyConfidence && again.notes.size() == harmony.notes.size(),
+           "The same sample analysed twice must give the same key.");
+
+    // no notes heard (short noise hits, like hats): the chroma key and confidence, exactly as with
+    // the note key off
+    std::vector<float> noise(static_cast<size_t>(6.0 * rate));
+    juce::Random random(20261102);
+    for (size_t i = 0; i < noise.size(); ++i)
+    {
+        const double t = std::fmod(static_cast<double>(i) / rate, 0.25);
+        noise[i] = static_cast<float>(0.5 * std::exp(-t / 0.015)) * (random.nextFloat() * 2.0f - 1.0f);
+    }
+    SampleHarmonyAnalyzer chromaOnly;
+    chromaOnly.useNoteKey = false;
+    const auto heard = analyzer.analyze(noise, rate, 0.5, 0.0);
+    const auto chroma = chromaOnly.analyze(noise, rate, 0.5, 0.0);
+    expect(heard.valid && heard.notes.empty() && !heard.keyFromNotes, "Noise must give no transcribed notes.");
+    expect(heard.keyRoot == chroma.keyRoot && heard.scaleMode == chroma.scaleMode && heard.keyConfidence == chroma.keyConfidence,
+           "With no notes the key and confidence must be the chroma ones.");
+}
+} // namespace
+} // namespace bbg
+
 int main()
 {
     using namespace bbg;
 
     int failures = 0;
+    failures += runTest("Sample key from transcribed notes", testSampleKeyFromNotes);
     failures += runTest("Compact sample names and own Techno kit", testCompactSampleNamesAndTechnoKit);
     failures += runTest("Update check versions and /latest", testUpdateCheckVersionsAndLatest);
     failures += runTest("Update download ticket and URL allow-list", testUpdateDownloadTicketAndAllowList);

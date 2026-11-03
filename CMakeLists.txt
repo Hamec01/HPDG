@@ -82,6 +82,8 @@ target_sources(HPDG
     Source/Analysis/SampleSourceAudio.cpp
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
+    Source/Analysis/BasicPitch/BasicPitchTranscriber.cpp
+    Source/Analysis/BasicPitch/BasicPitchWeights.cpp
     Source/Analysis/SampleLabelReader.cpp
     Source/Analysis/SampleRootDetector.cpp
     Source/Analysis/SampleLineTranscriber.cpp
@@ -130,8 +132,7 @@ target_sources(HPDG
     Source/Bass808/Bass808Processor.cpp
     Source/Bass808/Bass808Editor.cpp
     Source/Bass808/Bass808Screen.cpp
-    Source/Bass808/Mag/DSP/HamloMag.cpp
-    Source/Bass808/Mag/DSP/Saturator.cpp
+    Source/Bass808/BassSaturator.cpp
     Source/Audio/Synth808Voice.cpp
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
@@ -188,7 +189,6 @@ target_sources(HPDG
 target_include_directories(HPDG
     PRIVATE
         Source
-        Source/Bass808/Mag
 )
 
 # HPDG 808's processor / editor are built in for the Sub808 lane's editor (not as a second plugin entry).
@@ -241,6 +241,9 @@ add_executable(HPDG_CoreTests
     Source/Engine/SampleLibraryManager.cpp
     Source/Engine/LaneSampleBank.cpp
     Source/Analysis/SampleRootDetector.cpp
+    Source/Analysis/SampleHarmonyAnalyzer.cpp
+    Source/Analysis/BasicPitch/BasicPitchTranscriber.cpp
+    Source/Analysis/BasicPitch/BasicPitchWeights.cpp
     Source/Engine/MidiExportEngine.cpp
     Source/Engine/ExtractPatternBuilder.cpp
     Source/Engine/PatternBlendEngine.cpp
@@ -284,6 +287,7 @@ target_link_libraries(HPDG_CoreTests
     PRIVATE
         juce::juce_audio_formats
         juce::juce_cryptography
+        juce::juce_dsp
         juce::juce_data_structures
         juce::juce_gui_basics
     PUBLIC
@@ -408,12 +412,34 @@ target_link_libraries(HPDG_LaneBoundaryTests
 
 add_test(NAME HPDG_LaneBoundaryTests COMMAND HPDG_LaneBoundaryTests)
 
+# The C++ Basic Pitch port against the Python original (tools/basic_pitch_export.py, tools/transcription_key.py).
+add_executable(HPDG_BasicPitchLab
+    Tests/BasicPitchLab.cpp
+)
+
+target_include_directories(HPDG_BasicPitchLab PRIVATE Source)
+
+target_link_libraries(HPDG_BasicPitchLab
+    PRIVATE
+        HPDG
+        juce::juce_audio_formats
+        juce::juce_data_structures
+        juce::juce_gui_basics
+        juce::juce_audio_utils
+        juce::juce_dsp
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+
+add_test(NAME HPDG_BasicPitchSelfTest COMMAND HPDG_BasicPitchLab selftest)
+
 # HPDG's Sub808 lane through the HPDG 808 engine: every bank sample against the old sample player.
 add_executable(HPDG_Sub808EngineCheck
     Tests/Sub808EngineCheck.cpp
 )
 
-target_include_directories(HPDG_Sub808EngineCheck PRIVATE Source Source/Bass808/Mag)
+target_include_directories(HPDG_Sub808EngineCheck PRIVATE Source)
 
 target_link_libraries(HPDG_Sub808EngineCheck
     PRIVATE
@@ -533,6 +559,8 @@ add_executable(HPDG_BreakLab
     Tests/BreakTranscriptionLab.cpp
     Source/Analysis/DrumBreakTranscriber.cpp
     Source/Analysis/SampleHarmonyAnalyzer.cpp
+    Source/Analysis/BasicPitch/BasicPitchTranscriber.cpp
+    Source/Analysis/BasicPitch/BasicPitchWeights.cpp
     Source/Analysis/SampleLabelReader.cpp
     Source/Analysis/SampleRootDetector.cpp
     Source/Analysis/SampleLineTranscriber.cpp
@@ -595,13 +623,12 @@ target_sources(HPDG808
         Source/Bass808/BassEngine.cpp
         Source/Bass808/BassSample.cpp
         Source/Bass808/BassSettingsIO.cpp
-        Source/Bass808/Mag/DSP/HamloMag.cpp
-        Source/Bass808/Mag/DSP/Saturator.cpp
+        Source/Bass808/BassSaturator.cpp
         Source/Audio/Synth808Voice.cpp
         Source/UI/SketchDrawing.cpp
 )
 
-target_include_directories(HPDG808 PRIVATE Source Source/Bass808/Mag)
+target_include_directories(HPDG808 PRIVATE Source)
 
 target_compile_definitions(HPDG808
     PUBLIC
@@ -644,17 +671,16 @@ target_link_libraries(HPDG_Synth808Lab
 
 add_test(NAME HPDG_Synth808Lab COMMAND HPDG_Synth808Lab ${CMAKE_BINARY_DIR}/synth808 ${CMAKE_SOURCE_DIR}/Samples)
 
-# HPDG 808's engine (layers, filter, HamloMag, phantom): every preset rendered, the sample layer checked.
+# HPDG 808's engine (layers, filter, saturator, phantom): every preset rendered, the sample layer checked.
 add_executable(HPDG_Bass808Lab
     Tests/Bass808Lab.cpp
     Source/Bass808/BassEngine.cpp
     Source/Bass808/BassSample.cpp
-    Source/Bass808/Mag/DSP/HamloMag.cpp
-    Source/Bass808/Mag/DSP/Saturator.cpp
+    Source/Bass808/BassSaturator.cpp
     Source/Audio/Synth808Voice.cpp
 )
 
-target_include_directories(HPDG_Bass808Lab PRIVATE Source Source/Bass808/Mag)
+target_include_directories(HPDG_Bass808Lab PRIVATE Source)
 
 target_compile_definitions(HPDG_Bass808Lab PRIVATE
     JUCE_WEB_BROWSER=0

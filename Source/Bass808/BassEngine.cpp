@@ -94,21 +94,21 @@ const std::vector<BassPreset>& bassPresets()
             s.drive = 3.0f; s.bias = 0.3f; s.saturation = 0.85f; s.toneHz = 2500.0f; s.clickDb = -26.0f;
             s.attackMs = 3.0f; s.holdSeconds = 0.06f; s.decaySeconds = 0.16f;
             s.filterType = BassSettings::LP12; s.cutoffHz = 450.0f; s.filterKey = 1.0f; s.filterEnvOct = 2.5f; s.filterDecayMs = 160.0f;
-            s.satModel = 3; s.satDriveDb = 14.0f; s.satHarmonics = 0.9f; s.satEvenOdd = 0.8f; s.gainDb = 4.0f;
+            s.satModel = 3; s.satDriveDb = 14.0f; s.satHarmonics = 0.9f; s.satEvenOdd = 0.8f; s.gainDb = 0.1f;
         });
         add("Boom Bap", "Dusty", [](BassSettings& s) {
             s.wave = BassSettings::Sine; s.shape = 0.2f; s.punchSemitones = 2.0f; s.punchMs = 30.0f;
             s.drive = 2.5f; s.bias = 0.2f; s.saturation = 0.7f; s.toneHz = 1500.0f; s.clickDb = -28.0f;
             s.attackMs = 4.0f; s.holdSeconds = 0.08f; s.decaySeconds = 0.18f;
             s.filterType = BassSettings::LP24; s.cutoffHz = 1000.0f; s.filterKey = 1.0f; s.filterEnvOct = 2.0f; s.filterDecayMs = 200.0f;
-            s.satModel = 2; s.satDriveDb = 10.0f; s.satHarmonics = 0.6f; s.satEvenOdd = 0.2f; s.gainDb = 2.5f;
+            s.satModel = 2; s.satDriveDb = 10.0f; s.satHarmonics = 0.6f; s.satEvenOdd = 0.2f; s.gainDb = 3.0f;
         });
         add("Boom Bap", "Stab", [](BassSettings& s) {
             s.wave = BassSettings::Saw; s.punchSemitones = 0.0f; s.drive = 1.5f; s.bias = 0.1f; s.saturation = 0.3f;
             s.toneHz = 16000.0f; s.clickDb = -60.0f; s.attackMs = 2.0f; s.holdSeconds = 0.03f; s.decaySeconds = 0.12f;
             s.filterType = BassSettings::LP24; s.cutoffHz = 200.0f; s.filterKey = 1.0f; s.resonance = 0.2f;
             s.filterEnvOct = 2.5f; s.filterDecayMs = 160.0f;
-            s.satModel = 3; s.satDriveDb = 5.0f; s.satHarmonics = 0.5f; s.satEvenOdd = 0.4f; s.gainDb = -2.0f;
+            s.satModel = 3; s.satDriveDb = 5.0f; s.satHarmonics = 0.5f; s.satEvenOdd = 0.4f; s.gainDb = 0.8f;
         });
         // Techno (100 one-shots): very short (-6 dB at 0.16 s, -24 at 0.33), a kick-like click (-22 dB),
         // h2 -20 / h3 -22, the tone closes fast (centroid 1.58 -> 1.17 x f0).
@@ -116,7 +116,7 @@ const std::vector<BassPreset>& bassPresets()
             s.wave = BassSettings::Sine; s.shape = 0.15f; s.punchSemitones = 8.0f; s.punchMs = 25.0f;
             s.drive = 3.0f; s.bias = 0.05f; s.saturation = 0.6f; s.toneHz = 600.0f; s.clickDb = -34.0f;
             s.attackMs = 1.0f; s.holdSeconds = 0.04f; s.decaySeconds = 0.065f;
-            s.satModel = 4; s.satDriveDb = 10.0f; s.satHarmonics = 0.5f; s.gainDb = 6.0f;
+            s.satModel = 4; s.satDriveDb = 10.0f; s.satHarmonics = 0.5f; s.gainDb = 2.4f;
         });
         add("Techno", "Acid", [](BassSettings& s) {
             s.wave = BassSettings::Saw; s.punchSemitones = 0.0f; s.drive = 1.2f; s.bias = 0.0f; s.saturation = 0.2f;
@@ -124,7 +124,7 @@ const std::vector<BassPreset>& bassPresets()
             s.sustain = 0.35f; s.releaseMs = 40.0f;
             s.filterType = BassSettings::LP24; s.cutoffHz = 200.0f; s.filterKey = 0.5f; s.resonance = 0.8f;
             s.filterEnvOct = 3.0f; s.filterDecayMs = 160.0f;
-            s.satModel = 5; s.satDriveDb = 6.0f; s.mode = BassSettings::Glide; s.glideMs = 70.0f; s.gainDb = -2.5f;
+            s.satModel = 5; s.satDriveDb = 6.0f; s.mode = BassSettings::Glide; s.glideMs = 70.0f; s.gainDb = -1.8f;
         });
         add("Techno", "Pulse", [](BassSettings& s) {
             s.wave = BassSettings::Square; s.shape = 0.3f; s.punchSemitones = 2.0f; s.punchMs = 15.0f;
@@ -132,7 +132,7 @@ const std::vector<BassPreset>& bassPresets()
             s.attackMs = 1.0f; s.holdSeconds = 0.03f; s.decaySeconds = 0.09f;
             s.filterType = BassSettings::LP12; s.cutoffHz = 240.0f; s.filterKey = 1.0f; s.resonance = 0.3f;
             s.filterEnvOct = 2.0f; s.filterDecayMs = 80.0f;
-            s.satModel = 2; s.satDriveDb = 6.0f; s.gainDb = -1.5f;
+            s.satModel = 2; s.satDriveDb = 6.0f; s.gainDb = -0.6f;
         });
         // DnB (71 one-shots): low (median f0 41 Hz), rich (6 harmonics within 30 dB, a quarter 10+), bright
         // then darker (centroid 3.8 -> 2.3 x f0), punch 10 st, long (-4 dB at 0.5 s).
@@ -148,14 +148,14 @@ const std::vector<BassPreset>& bassPresets()
             s.attackMs = 3.0f; s.holdSeconds = 0.2f; s.decaySeconds = 0.6f; s.sustain = 0.85f; s.releaseMs = 80.0f;
             s.filterType = BassSettings::LP24; s.cutoffHz = 900.0f; s.filterKey = 1.0f; s.resonance = 0.25f;
             s.filterEnvOct = 1.5f; s.filterDecayMs = 400.0f; s.lfoRateHz = 0.25f; s.lfoDepth = 0.6f; s.lfoRetrigger = false;
-            s.satModel = 2; s.satDriveDb = 6.0f; s.phantom = 0.2f; s.gainDb = -1.0f;
+            s.satModel = 2; s.satDriveDb = 6.0f; s.phantom = 0.2f; s.gainDb = 1.5f;
         });
         add("DnB", "Talk", [](BassSettings& s) {
             s.wave = BassSettings::Saw; s.shape = 0.3f; s.sub = 0.5f; s.subOctave = 1; s.punchSemitones = 0.0f;
             s.drive = 1.5f; s.bias = 0.0f; s.saturation = 0.3f; s.toneHz = 16000.0f; s.clickDb = -60.0f;
             s.attackMs = 3.0f; s.holdSeconds = 0.2f; s.decaySeconds = 0.6f; s.sustain = 0.9f; s.releaseMs = 60.0f;
             s.filterType = BassSettings::Vowel; s.vowel = 0.0f; s.resonance = 0.5f; s.lfoSync = 4; s.lfoDepth = 2.0f;
-            s.satModel = 5; s.satDriveDb = 8.0f; s.gainDb = 4.0f;
+            s.satModel = 5; s.satDriveDb = 8.0f; s.gainDb = 5.2f;
         });
         // Kick -> 808: drop a kick on the SAMPLE screen
         add("Kick to 808", "Kick + 808", [](BassSettings& s) {
@@ -691,22 +691,14 @@ double BassEngine::noteHz(int note, float tuneSemitones)
     return 440.0 * std::pow(2.0, (note + tuneSemitones - 69.0) / 12.0);
 }
 
-hamlo::dsp::FxSlotParams BassEngine::saturatorParams(const BassSettings& settings) noexcept
+BassSaturator::Params BassEngine::saturatorParams(const BassSettings& settings) noexcept
 {
-    namespace slot = hamlo::dsp::slot;
-    hamlo::dsp::FxSlotParams p;
-    p.active = true;
-    auto& v = p.values;
-    v[slot::kDriveDb] = settings.satDriveDb;
-    v[slot::kOversampling] = 1.0f; // 2x
-    v[slot::kAutoGain] = 1.0f;
-    v[slot::kSatModel] = static_cast<float>(juce::jlimit(0, 5, settings.satModel - 1));
-    v[slot::kSatLowCutHz] = 10.0f; // the saturator's own filters stay out of the bass
-    v[slot::kSatHighCutHz] = 20000.0f;
-    v[slot::kSatHarmonics] = settings.satHarmonics;
-    v[slot::kSatEvenOdd] = settings.satEvenOdd;
-    v[slot::kSatTapeBias] = 0.5f;
-    v[slot::kSatNoiseFollow] = 1.0f;
+    BassSaturator::Params p;
+    p.model = juce::jlimit(0, 6, settings.satModel);
+    p.driveDb = settings.satDriveDb;
+    p.harmonics = settings.satHarmonics;
+    p.evenOdd = settings.satEvenOdd;
+    p.mix = settings.satMix;
     return p;
 }
 
@@ -716,22 +708,11 @@ void BassEngine::prepare(double newSampleRate, int maxBlockSize)
     chunkSize = juce::jlimit(16, 1024, maxBlockSize);
     for (auto& voice : voices)
         voice.prepare(sampleRate);
-    saturator.prepare(sampleRate, chunkSize);
-    maxLatency = 0;
-    for (int model = 1; model <= 6; ++model)
-    {
-        auto probe = settings;
-        probe.satModel = model;
-        maxLatency = std::max(maxLatency, hamlo::dsp::SaturatorProcessor::latencySamples(saturatorParams(probe), sampleRate));
-    }
-    dryDelay.prepare(maxLatency + 8);
-    outputDelay.prepare(maxLatency + 8);
+    saturator.prepare(sampleRate);
     lfoBuffer.assign(static_cast<size_t>(chunkSize), 0.0f);
-    dryBuffer.assign(static_cast<size_t>(chunkSize), 0.0f);
     heldCount = 0;
     sounding = -1;
     lfoPhase = 0.0;
-    saturatorWasOn = false;
     setSettings(settings);
 }
 
@@ -901,31 +882,7 @@ void BassEngine::renderChunk(float* out, int n)
     for (auto& voice : voices)
         voice.render(out, lfoBuffer.data(), n);
 
-    float* channel[] { out };
-    const bool saturatorOn = settings.satModel > 0;
-    if (saturatorOn)
-    {
-        if (!saturatorWasOn)
-        {
-            saturator.reset();
-            dryDelay.reset();
-        }
-        const auto params = saturatorParams(settings);
-        std::copy(out, out + n, dryBuffer.begin());
-        saturator.process(channel, 1, n, params);
-        const int latency = hamlo::dsp::SaturatorProcessor::latencySamples(params, sampleRate);
-        float* dry[] { dryBuffer.data() };
-        dryDelay.process(dry, dry, 1, n, latency);
-        const float wet = juce::jlimit(0.0f, 1.0f, settings.satMix);
-        for (int i = 0; i < n; ++i)
-            out[i] = wet * out[i] + (1.0f - wet) * dryBuffer[static_cast<size_t>(i)];
-        outputDelay.process(channel, channel, 1, n, maxLatency - latency);
-    }
-    else
-    {
-        outputDelay.process(channel, channel, 1, n, maxLatency);
-    }
-    saturatorWasOn = saturatorOn;
+    saturator.process(out, n, saturatorParams(settings)); // off: the voices pass untouched
     processBusFilter(out, n);
     const auto gain = static_cast<float>(dbToGain(settings.gainDb));
     for (int i = 0; i < n; ++i)

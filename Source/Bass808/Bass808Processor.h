@@ -14,7 +14,7 @@
 namespace bbg
 {
 // HPDG 808: the bass instrument on its own (VST3 / Standalone), for any DAW and any genre. The sound is
-// BassEngine (synth layer + sample layer, filter, HamloMag, phantom harmonics); the plugin maps its
+// BassEngine (synth layer + sample layer, filter, saturator, phantom harmonics); the plugin maps its
 // parameters, keeps the loaded sample in the project, and feeds the display.
 class Bass808Processor : public juce::AudioProcessor
 {

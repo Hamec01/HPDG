@@ -62,7 +62,7 @@ struct Sub808SoundState
 
     // the strip under the rack, on top of either
     float filter = 0.0f;            // -1 .. 1: left closes the highs, right cuts the lows, 0 off
-    float drive = 0.0f;             // 0 .. 1 more HamloMag
+    float drive = 0.0f;             // 0 .. 1 more saturation
     int driveModel = 2;             // the model when the sound has none: 1 Classic .. 6 Vinyl (2 Tape)
     float length = 1.0f;            // 0 .. 1, 1: as the sound
     float gainDb = 0.0f;            // -24 .. +12

@@ -3520,12 +3520,22 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
     state.setProperty("vst3_editor_height", vst3EditorHeight.load(), nullptr);
 
     {
-        std::scoped_lock lock(projectMutex);
-        PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, buildParamsFromState(lastTransport));
-        serializePatternProjectToState(state);
+        // Copy under the lock, serialize outside it: the audio thread only try-locks projectMutex and plays a
+        // silent block when it is busy, and hosts ask for the state often (FL: on knob moves, for its undo).
+        PatternProject projectCopy;
+        SampleAnalysisRequest request;
+        auto mode = analysisMode;
+        {
+            std::scoped_lock lock(projectMutex);
+            PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, buildParamsFromState(lastTransport));
+            projectCopy = project;
+            request = currentAnalysisRequest;
+            mode = analysisMode;
+        }
+        state.removeChild(state.getChildWithName("PATTERN_PROJECT"), nullptr);
+        state.addChild(PatternProjectSerialization::serialize(projectCopy), -1, nullptr);
 
         // The sample itself is never embedded: only where it is and how it was used.
-        const auto& request = currentAnalysisRequest;
         if (request.source == SampleAnalysisRequest::SourceType::AudioFile && request.audioFile.getFullPathName().isNotEmpty())
         {
             juce::ValueTree sample(kSampleSourceType);
@@ -3538,7 +3548,7 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
             sample.setProperty("manual_key_root", request.manualKeyRoot, nullptr);
             sample.setProperty("manual_key_mode", request.manualKeyMode, nullptr);
             sample.setProperty("quantize", request.breakQuantizeAmount, nullptr);
-            sample.setProperty("mode", static_cast<int>(analysisMode), nullptr);
+            sample.setProperty("mode", static_cast<int>(mode), nullptr);
             sample.setProperty("play_with_pattern", playSampleWithPattern.load(), nullptr);
             state.appendChild(sample, nullptr);
         }

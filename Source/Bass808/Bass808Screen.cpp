@@ -4,7 +4,7 @@
 
 #include "Audio/Synth808Voice.h"
 #include "Bass808/Bass808Widgets.h"
-#include "DSP/HamloMag.h"
+#include "Bass808/BassSaturator.h"
 
 namespace bbg
 {
@@ -513,18 +513,18 @@ void Bass808Screen::paintEffects(juce::Graphics& g, juce::Rectangle<float> area)
         title += "  " + juce::String(juce::roundToInt(cutoff)) + " Hz at " + noteName(renderedNote);
     label(g, title, top, colour::text, 12.0f);
 
-    // HamloMag: transfer curve and harmonics, from the saturator's own code
+    // the saturator: transfer curve and harmonics, from its own code
     juce::String satTitle = "SATURATOR  off";
     if (settings.satModel > 0)
     {
         static const char* models[] { "Off", "Classic", "Tape", "Tube", "Iron", "Germanium", "Vinyl" };
-        satTitle = juce::String("HamloMag  ") + models[juce::jlimit(0, 6, settings.satModel)] + "  " + juce::String(settings.satDriveDb, 1) + " dB";
+        satTitle = juce::String("SATURATOR  ") + models[juce::jlimit(0, 6, settings.satModel)] + "  " + juce::String(settings.satDriveDb, 1) + " dB";
         const auto params = BassEngine::saturatorParams(settings);
         auto curveArea = satArea.removeFromLeft(satArea.getHeight());
         satArea.removeFromLeft(12.0f);
         grid(g, curveArea, 4, 4);
         std::array<float, 256> in {}, out {};
-        hamlo::dsp::mag::transferCurve(params, in, out);
+        BassSaturator::transferCurve(params, in, out);
         float outPeak = 1.0e-6f;
         for (auto v : out)
             outPeak = std::max(outPeak, std::abs(v));
@@ -541,7 +541,7 @@ void Bass808Screen::paintEffects(juce::Graphics& g, juce::Rectangle<float> area)
         g.setColour(colour::accentGlow);
         g.strokePath(transfer, juce::PathStrokeType(1.6f));
         std::array<double, 9> db {};
-        hamlo::dsp::mag::harmonicProfile(params, -12.0, db);
+        BassSaturator::harmonicProfile(params, -12.0, db);
         const float barWidth = satArea.getWidth() / 9.0f;
         for (size_t n = 0; n < db.size(); ++n)
         {
@@ -556,7 +556,7 @@ void Bass808Screen::paintEffects(juce::Graphics& g, juce::Rectangle<float> area)
     {
         label(g, "pick a model: Classic, Tape, Tube,", satArea.withTrimmedBottom(satArea.getHeight() * 0.5f), colour::textMuted, 12.0f,
               juce::Justification::centredBottom);
-        label(g, "Iron, Germanium, Vinyl (HamloMag)", satArea.withTrimmedTop(satArea.getHeight() * 0.5f + 2.0f), colour::textMuted, 12.0f,
+        label(g, "Iron, Germanium, Vinyl", satArea.withTrimmedTop(satArea.getHeight() * 0.5f + 2.0f), colour::textMuted, 12.0f,
               juce::Justification::centredTop);
     }
     label(g, satTitle, top.withTrimmedLeft(filterArea.getWidth() + 18.0f), colour::text, 12.0f);

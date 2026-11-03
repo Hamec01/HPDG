@@ -35,22 +35,29 @@ BassSettings applySub808Strip(BassSettings s, const Sub808SoundState& strip)
     const float drive = juce::jlimit(0.0f, 1.0f, strip.drive);
     if (drive > 0.001f)
     {
-        // HamloMag's auto gain keeps small signals at unity, so more drive came out quieter: 15-23 dB down at
-        // full DRIVE (held C2, bank sample and the 808 presets, Tests/Sub808EngineCheck.cpp). Its measured
-        // loss per model at DRIVE 0 / 0.25 / 0.5 / 0.75 / 1 is put back, so DRIVE changes the tone, not the level.
+        // The saturator's auto gain keeps small signals at unity, so more drive came out quieter: 13-18 dB down
+        // at full DRIVE (held C2, the bank sample and ATL 1, Tests/Sub808EngineCheck.cpp). Its measured loss per
+        // model at DRIVE 0 / 0.25 / 0.5 / 0.75 / 1 is put back, so DRIVE changes the tone, not the level.
         static constexpr float kLossDb[6][5] {
-            { 0.0f, -2.95f, -6.75f, -11.95f, -17.6f },  // Classic
-            { 0.0f, -1.05f, -4.80f, -10.00f, -15.75f }, // Tape
-            { 0.0f, -2.25f, -5.20f, -9.75f, -15.3f },   // Tube
-            { 0.0f, -5.90f, -8.90f, -12.95f, -17.9f },  // Iron
-            { 0.0f, -2.55f, -6.85f, -12.25f, -17.95f }, // Germanium
-            { 0.0f, -3.05f, -7.05f, -12.45f, -20.65f }, // Vinyl
+            { 0.0f, -2.70f, -6.25f, -10.55f, -13.85f }, // Classic
+            { 0.0f, -2.90f, -6.35f, -10.45f, -13.60f }, // Tape
+            { 0.0f, -2.10f, -4.90f, -8.95f, -12.80f },  // Tube
+            { 0.0f, -6.55f, -10.20f, -14.70f, -18.05f }, // Iron
+            { 0.0f, -2.35f, -6.40f, -10.75f, -13.95f }, // Germanium
+            { 0.0f, -2.85f, -6.55f, -10.90f, -14.65f }, // Vinyl
         };
         const int model = juce::jlimit(1, 6, s.satModel == 0 ? strip.driveModel : s.satModel) - 1;
-        const float position = drive * 4.0f;
-        const int step = juce::jmin(3, static_cast<int>(position));
-        const float loss = kLossDb[model][step] + (kLossDb[model][step + 1] - kLossDb[model][step]) * (position - static_cast<float>(step));
-        s.gainDb -= loss;
+        // the loss at a saturator drive in dB (the table's steps are 6 dB apart; beyond 24 dB its last slope)
+        const auto lossAt = [model](float driveDb)
+        {
+            const float position = juce::jmax(0.0f, driveDb) / 6.0f;
+            const int step = juce::jmin(3, static_cast<int>(position));
+            return kLossDb[model][step] + (kLossDb[model][step + 1] - kLossDb[model][step]) * (position - static_cast<float>(step));
+        };
+        // a sound with its own saturator already has its own drive's loss: only the added drive's is put back
+        const float ownDb = s.satModel == 0 ? 0.0f : s.satDriveDb;
+        const float drivenDb = s.satModel == 0 ? 24.0f * drive : juce::jmin(36.0f, s.satDriveDb + 18.0f * drive);
+        s.gainDb -= lossAt(drivenDb) - lossAt(ownDb);
 
         if (s.satModel == 0)
         {
