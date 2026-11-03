@@ -13,16 +13,16 @@ double octaveDistance(double bpm, double referenceBpm)
 }
 }
 
-TrapTempoContext resolveTrapTempo(double hostBpm, int hostBars, double referenceBpm)
+TrapTempoContext resolveTrapTempo(double hostBpm, int hostBars, double referenceBpm, bool allowAutoFold)
 {
     TrapTempoContext context;
-    context.hostBpm = std::clamp(hostBpm, 20.0, 400.0);
+    context.hostBpm = std::clamp(hostBpm, 10.0, 800.0);
     context.referenceBpm = std::clamp(referenceBpm, 80.0, 240.0);
     context.hostBars = std::clamp(hostBars, 1, 16);
 
     const double normalDistance = octaveDistance(context.hostBpm, context.referenceBpm);
     const double doubleDistance = octaveDistance(context.hostBpm * 2.0, context.referenceBpm);
-    context.doubleTime = doubleDistance < normalDistance;
+    context.doubleTime = allowAutoFold && doubleDistance < normalDistance;
     context.clockMultiplier = context.doubleTime ? 2.0 : 1.0;
     context.styleBpm = context.hostBpm * context.clockMultiplier;
     context.styleBars = context.hostBars * static_cast<int>(context.clockMultiplier);

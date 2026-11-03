@@ -253,6 +253,8 @@ int MidiExportEngine::fileTicksPerQuarter(const PatternProject& project, int ppq
     const double pattern = static_cast<double>(project.params.bpm);
     if (host <= 20.0 || pattern <= 20.0)
         return ppq;
+    if (project.params.tempoClockResolved)
+        return std::clamp(static_cast<int>(std::lround(ppq * pattern / host)), 1, 32767);
     for (const double factor : { 2.0, 0.5, 4.0, 0.25 })
         if (std::abs(pattern / host / factor - 1.0) < 0.02)
             return juce::jmax(1, static_cast<int>(std::lround(ppq * factor)));

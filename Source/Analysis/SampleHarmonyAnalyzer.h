@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 
 #include "SampleLineTranscriber.h"
+#include "BasicPitch/BasicPitchTranscriber.h"
 
 namespace bbg
 {
@@ -37,6 +38,10 @@ struct SampleHarmony
     // segments above take their bass note from this line where it clearly sounds.
     SampleLines lines;
     double tuningCents = 0.0;
+    // Every note Basic Pitch hears in the sample (polyphonic, seconds); the key is read from them
+    // when there are any (keyFromNotes).
+    std::vector<BasicPitchNote> notes;
+    bool keyFromNotes = false;
 
     int confidentBassNotes(float minConfidence = 0.35f) const;
     const SampleBassSegment* segmentAt(double seconds) const;
@@ -65,5 +70,9 @@ public:
                           double tuningCents = 0.0,
                           int labelKeyRoot = -1,
                           int labelKeyMode = -1) const;
+
+    // Key from the notes Basic Pitch transcribes (docs/audit/BASIC_PITCH_PORT.md, phase 4): on 380
+    // tonal loops MIREX 0.652 -> 0.698, better in 9 of 9 packs. Off: the chroma key only (tests).
+    bool useNoteKey = true;
 };
 } // namespace bbg

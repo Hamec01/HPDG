@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <thread>
 
 #include <juce_dsp/juce_dsp.h>
 
@@ -343,6 +344,26 @@ SampleHarmony SampleHarmonyAnalyzer::analyze(const std::vector<float>& mono,
                                          correlation(chroma, profile, (harmony.keyRoot + 5) % 12));
         if (neighbour > chosen)
             harmony.keyConfidence = std::min(harmony.keyConfidence, 0.45f);
+    }
+    // Key from the notes Basic Pitch hears (docs/audit/BASIC_PITCH_PORT.md): where it finds notes,
+    // their key replaces the chroma one, read the same way (profiles, bass and opening bonuses,
+    // minor prior, confidence formula, fifth check). With no notes the chroma key stays.
+    if (useNoteKey)
+    {
+        const auto audio = BasicPitchTranscriber::resampleTo22050(mono.data(), static_cast<int>(mono.size()), sampleRate);
+        // the windows are independent and the frames do not depend on the thread count
+        const int threads = juce::jlimit(1, 4, static_cast<int>(std::thread::hardware_concurrency()) - 1);
+        harmony.notes = BasicPitchTranscriber::notes(BasicPitchTranscriber::infer(audio.data(), static_cast<int>(audio.size()), threads));
+        const auto noteKey = estimateKeyFromNotes(harmony.notes);
+        if (noteKey.valid)
+        {
+            harmony.keyRoot = noteKey.root;
+            harmony.scaleMode = noteKey.mode;
+            harmony.keyConfidence = juce::jlimit(0.0f, 1.0f, (noteKey.score - 0.35f) / 0.45f) * juce::jlimit(0.3f, 1.0f, noteKey.margin / 0.08f);
+            if (noteKey.fifthFitsBetter)
+                harmony.keyConfidence = std::min(harmony.keyConfidence, 0.45f);
+            harmony.keyFromNotes = true;
+        }
     }
     // The key the file name states (step 6). Fifth / relative / parallel keys share most notes
     // and are exactly where the audio is least sure, so the label wins there; a label whose scale

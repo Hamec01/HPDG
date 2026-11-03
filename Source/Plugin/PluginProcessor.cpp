@@ -5,6 +5,9 @@
 #include <memory>
 #include <numeric>
 
+#include "../Bass808/BassEngine.h"
+#include "../Bass808/BassSettingsIO.h"
+#include "../Bass808/Sub808Sound.h"
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/Sub808TrackAccess.h"
 #include "../Core/TimingGrid.h"
@@ -27,6 +30,7 @@
 #include "../Services/TemporaryMidiExportService.h"
 #include "../Services/UpdateCheckService.h"
 #include "../UI/EditorCommandController.h"
+#include "../UI/GenreRhythmGrid.h"
 #include "../UI/MainHeaderComponent.h"
 #include "../UI/SampleAnalysisPanelComponent.h"
 #include "../UI/SketchDrawing.h"
@@ -35,6 +39,9 @@
 #include "../UI/SoundModuleController.h"
 #include "../UI/TrackListComponent.h"
 #include "../UI/Vst3GridLiteComponent.h"
+#include "../UI/Sub808StripComponent.h"
+#include "../UI/Sub808EditorOverlay.h"
+#include "../UI/Sub808LaneUi.h"
 #include "../UI/SampleBreakStripComponent.h"
 #include "../UI/SampleTrimEditorComponent.h"
 #include "../UI/ComboBoxIdParameterAttachment.h"
@@ -149,6 +156,26 @@ float playbackRateForTrackPitch(TrackType track, int pitch, int rootPitchClass, 
     const int clampedPitch = juce::jlimit(0, 127, pitch);
     const double cents = juce::jlimit(-100.0, 100.0, rootCents);
     return static_cast<float>(std::pow(2.0, (static_cast<double>(clampedPitch - basePitch) - cents / 100.0) / 12.0));
+}
+
+// The pitch a Sub808 bank sample sounds, the same note playbackRateForTrackPitch plays it from.
+double sub808BankRootHz(int rootPitchClass, double rootCents, int rootMidi)
+{
+    const auto* info = TrackRegistry::find(TrackType::Sub808);
+    const int defaultPitch = info != nullptr ? info->defaultMidiNote : 36;
+    const int defaultPitchClass = defaultPitch % 12;
+    const int basePitch = rootMidi >= 0 ? rootMidi
+                                        : defaultPitch + ((juce::jlimit(0, 11, rootPitchClass) - defaultPitchClass + 18) % 12 - 6);
+    const double cents = juce::jlimit(-100.0, 100.0, rootCents);
+    return 440.0 * std::pow(2.0, (static_cast<double>(basePitch) + cents / 100.0 - 69.0) / 12.0);
+}
+
+bool sameSub808Sound(const Sub808SoundState& a, const Sub808SoundState& b)
+{
+    return a.custom == b.custom && a.name == b.name && a.filter == b.filter && a.drive == b.drive
+        && a.driveModel == b.driveModel && a.length == b.length && a.gainDb == b.gainDb && a.sidechain == b.sidechain
+        && a.sampleWav.getSize() == b.sampleWav.getSize()
+        && (a.settings == b.settings || a.settings.isEquivalentTo(b.settings));
 }
 
 bool isBpmLocked(const juce::AudioProcessorValueTreeState& apvts)
@@ -302,6 +329,11 @@ public:
 
         laneGridWorkspace.addAndMakeVisible(trackList);
         laneGridWorkspace.addAndMakeVisible(gridLite);
+        laneGridWorkspace.addAndMakeVisible(sub808Strip);
+        sub808Strip.setComponentID("sub808Strip");
+        sub808Strip.onChange = [this](const Sub808SoundState& sound) { audioProcessor.setSub808Sound(sound); };
+        sub808Strip.onOpenChanged = [this](bool) { syncRackViewportContentSize(); };
+        sub808Strip.onEdit = [this] { openSub808Editor(); };
         trackListViewport.setViewedComponent(&laneGridWorkspace, false);
         trackListViewport.setScrollBarsShown(true, false);
         trackListViewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
@@ -410,6 +442,7 @@ public:
     ~Vst3EditorContent() override
     {
         shutdownTrace("editor destructor begin");
+        ExternalDragWindowFade::editorClosing(this);
         removeMouseListener(this);
         stopTimer();
         closeTrimEditor();
@@ -436,6 +469,8 @@ public:
 
         trackListViewport.setBounds(area);
         syncRackViewportContentSize();
+        if (sub808Editor != nullptr)
+            sub808Editor->setBounds(getLocalBounds());
         analysisPanel.setBounds({});
         soundModule.setBounds({});
         verticalSplitterHandle->setBounds({});
@@ -463,13 +498,14 @@ private:
         return mode == PreviewPlaybackMode::LoopRange ? 2 : 1;
     }
 
-    static float playheadStepFromTransport(const TransportSnapshot& transport, int totalSteps)
+    static float playheadStepFromTransport(const TransportSnapshot& transport, int totalSteps, double musicalBpm)
     {
         if (!transport.hasPpq || totalSteps <= 0)
             return -1.0f;
 
         const double stepsPerQuarter = 4.0; // 16th grid: 4 steps per quarter note.
-        const double rawStep = transport.ppqPosition * stepsPerQuarter;
+        const double ratio = transport.hasHostTempo && transport.bpm > 0.0 ? musicalBpm / transport.bpm : 1.0;
+        const double rawStep = transport.ppqPosition * stepsPerQuarter * ratio;
         const double length = static_cast<double>(totalSteps);
         const double wrapped = std::fmod(rawStep, length);
         const double positive = wrapped < 0.0 ? wrapped + length : wrapped;
@@ -485,6 +521,8 @@ private:
         const bool previewPlaying = audioProcessor.isPreviewPlaying();
         const auto transport = audioProcessor.getLastTransportSnapshot();
         header.setPreviewPlaying(previewPlaying);
+        const auto tempo = audioProcessor.getProjectSnapshot().params;
+        header.setEffectiveTempo(tempo.tempoSourceBpm, tempo.bpm);
 
         // A genre / substyle picked while the beat plays: the substyle box follows the new genre
         // and its style applies now, not after Stop.
@@ -501,7 +539,7 @@ private:
         {
             const auto project = audioProcessor.getProjectSnapshot();
             const int totalSteps = juce::jmax(1, project.params.bars * 16);
-            gridLite.setPlayheadStep(playheadStepFromTransport(transport, totalSteps));
+            gridLite.setPlayheadStep(playheadStepFromTransport(transport, totalSteps, project.params.bpm));
             return;
         }
 
@@ -516,6 +554,8 @@ private:
         bpmLockAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::bpmLock, header.bpmLockToggle);
         syncAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::syncDawTempo, header.syncTempoToggle);
         swingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::swingPercent, header.swingSlider);
+        tempoDoubleAttachment = std::make_unique<ButtonAttachment>(apvts, ParamIds::tempoDouble, header.tempoDoubleButton);
+        trapRollAttachment = std::make_unique<ComboAttachment>(apvts, ParamIds::trapRollMode, header.trapRollCombo);
         velocityAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::velocityAmount, header.velocitySlider);
         timingAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::timingAmount, header.timingSlider);
         humanizeAttachment = std::make_unique<SliderAttachment>(apvts, ParamIds::humanizeAmount, header.humanizeSlider);
@@ -541,6 +581,9 @@ private:
             return;
 
         lastGenreChoice = genreChoice;
+        header.trapRollCombo.setEnabled(genreChoice == static_cast<int>(GenreType::Trap));
+        header.gridResolutionCombo.setSelectedId(defaultSnapForGenre(static_cast<GenreType>(genreChoice)), juce::sendNotificationSync);
+        gridLite.setSnapResolution(header.gridResolutionCombo.getSelectedId());
 
         juce::StringArray choices;
         const char* substyleParamId = ParamIds::boombapSubstyle;
@@ -1182,7 +1225,7 @@ private:
         header.onGridResolutionChanged = [this](int selectedId)
         {
             selectedSnapResolutionId = selectedId;
-            gridLite.repaint();
+            gridLite.setSnapResolution(selectedId);
         };
         header.onHeaderControlsModeChanged = [](MainHeaderComponent::HeaderControlsMode) {};
 
@@ -1278,12 +1321,17 @@ private:
         };
 
         trackList.onSampleMenuTrack = [this](const RuntimeLaneId& laneId) { showSampleMenu(laneId); };
+        trackList.onSampleListTrack = [this](const RuntimeLaneId& laneId) { showSampleList(laneId); };
         trackList.onImportMidiLaneTrack = [this](const RuntimeLaneId& laneId) { showImportMidiToLaneDialog(laneId); };
 
         trackList.onTrackNameClicked = [this](const RuntimeLaneId& laneId)
         {
             audioProcessor.setSelectedTrack(laneId);
             refreshFromProcessor(false);
+            // the bass lane's name opens HPDG 808 on its sound
+            const auto project = audioProcessor.getProjectSnapshot();
+            if (const auto* lane = ProjectLaneAccess::findTrackState(project, TrackType::Sub808); lane != nullptr && lane->laneId == laneId)
+                openSub808Editor();
         };
 
         trackList.onLaneVolumeTrack = [this](const RuntimeLaneId& laneId, float volume)
@@ -1483,6 +1531,7 @@ private:
         }
         trackList.setHatFxDragUiState(hatFxDragDensityUi, hatFxDragLockedUi);
         trackList.setIntensity(project.intensity);
+        refreshSub808Strip(project);
 
         juce::String status;
         juce::String details;
@@ -1540,6 +1589,54 @@ private:
         syncRackViewportContentSize();
     }
 
+    void showSampleList(const RuntimeLaneId& laneId)
+    {
+        showLaneSampleList(audioProcessor, *this, laneId, [this] { refreshFromProcessor(true); }, [this] { openSub808Editor(); });
+    }
+
+    // HPDG 808 over the whole window for the Sub808 lane (EDIT on the strip, or a click on the lane's name).
+    void openSub808Editor()
+    {
+        if (sub808Editor != nullptr)
+            return;
+        juce::Component::SafePointer<Vst3EditorContent> self(this);
+        auto host = makeSub808EditorHost(audioProcessor,
+                                         [self] { if (self != nullptr) self->refreshSub808Strip(self->audioProcessor.getProjectSnapshot()); },
+                                         [self]
+                                         {
+                                             juce::MessageManager::callAsync([self]
+                                             {
+                                                 if (self != nullptr)
+                                                 {
+                                                     self->sub808Editor = nullptr;
+                                                     self->grabKeyboardFocus();
+                                                 }
+                                             });
+                                         });
+        sub808Editor = std::make_unique<Sub808EditorOverlay>(std::move(host));
+        addAndMakeVisible(*sub808Editor);
+        sub808Editor->setBounds(getLocalBounds());
+        sub808Editor->toFront(true);
+        sub808Editor->grabKeyboardFocus();
+    }
+
+    // The bass strip under the rack, shown while the Sub808 lane is.
+    void refreshSub808Strip(const PatternProject& project)
+    {
+        const auto* subLane = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+        const bool show = subLane != nullptr;
+        if (show != sub808Strip.isVisible())
+        {
+            sub808Strip.setVisible(show);
+            syncRackViewportContentSize();
+        }
+        if (show)
+        {
+            const auto& sound = subLane->sub808Sound;
+            sub808Strip.setState(sound, sub808SoundName(audioProcessor, sound));
+        }
+    }
+
     void syncRackViewportContentSize()
     {
         if (trackListViewport.getWidth() <= 0 || trackListViewport.getHeight() <= 0)
@@ -1547,13 +1644,14 @@ private:
 
         const int contentWidth = juce::jmax(1, trackListViewport.getMaximumVisibleWidth());
         const int availableHeight = juce::jmax(1, trackListViewport.getMaximumVisibleHeight());
+        const int stripHeight = sub808Strip.isVisible() ? sub808Strip.getPreferredHeight() + 4 : 0;
         const int stretchedRowHeight = juce::jlimit(22,
                                                     80,
-                                                    (availableHeight - 42) / juce::jmax(1, visibleLaneCount));
+                                                    (availableHeight - 42 - stripHeight) / juce::jmax(1, visibleLaneCount));
         trackList.setHeaderHeight(Vst3GridLiteComponent::getLaneTop()); // rack rows level with the grid rows
         trackList.setRowHeight(stretchedRowHeight);
         gridLite.setRowHeight(stretchedRowHeight);
-        const int laneContentHeight = juce::jmax(trackList.getLaneSectionHeight(), gridLite.getPreferredContentHeight());
+        const int laneContentHeight = juce::jmax(trackList.getLaneSectionHeight() + stripHeight, gridLite.getPreferredContentHeight());
         const int contentHeight = juce::jmax(laneContentHeight, availableHeight);
         const int gridGap = 8;
         constexpr int minimumRackWidth = 340;
@@ -1562,10 +1660,10 @@ private:
         const int maximumRackWidth = juce::jmax(minimumRackWidth,
                                                 contentWidth - minimumGridWidth - gridGap);
         leftColumnWidth = juce::jlimit(minimumRackWidth,
-                                       juce::jmin(760, maximumRackWidth),
+                                       juce::jmin(634, maximumRackWidth),
                                        preferredRackWidth);
 
-        const auto rackMode = leftColumnWidth >= 650 ? LaneRackDisplayMode::Full
+        const auto rackMode = leftColumnWidth >= 626 ? LaneRackDisplayMode::Full
                             : leftColumnWidth >= 470 ? LaneRackDisplayMode::Compact
                                                      : LaneRackDisplayMode::Minimal;
         trackList.setDisplayMode(rackMode);
@@ -1573,7 +1671,9 @@ private:
         const int gridWidth = juce::jmax(minimumGridWidth, contentWidth - leftColumnWidth - gridGap);
         const int workspaceWidth = juce::jmax(contentWidth, leftColumnWidth + gridGap + gridWidth);
 
-        trackList.setBounds(0, 0, leftColumnWidth, contentHeight);
+        const int rackRowsHeight = trackList.getLaneSectionHeight();
+        trackList.setBounds(0, 0, leftColumnWidth, stripHeight > 0 ? rackRowsHeight : contentHeight);
+        sub808Strip.setBounds(0, rackRowsHeight + 4, leftColumnWidth, juce::jmax(0, stripHeight - 4));
         gridLite.setBounds(leftColumnWidth + gridGap, 0, gridWidth, contentHeight);
         laneGridWorkspace.setSize(workspaceWidth, contentHeight);
     }
@@ -1802,6 +1902,8 @@ private:
     juce::Viewport trackListViewport;
     juce::Component laneGridWorkspace;
     TrackListComponent trackList;
+    Sub808StripComponent sub808Strip;
+    std::unique_ptr<Sub808EditorOverlay> sub808Editor;
     Vst3GridLiteComponent gridLite;
     SampleAnalysisPanelComponent analysisPanel;
     SampleBreakStripComponent sampleStrip;
@@ -1828,6 +1930,8 @@ private:
     std::unique_ptr<SliderAttachment> bpmAttachment;
     std::unique_ptr<ButtonAttachment> bpmLockAttachment;
     std::unique_ptr<ButtonAttachment> syncAttachment;
+    std::unique_ptr<ButtonAttachment> tempoDoubleAttachment;
+    std::unique_ptr<ComboAttachment> trapRollAttachment;
     std::unique_ptr<SliderAttachment> swingAttachment;
     std::unique_ptr<SliderAttachment> velocityAttachment;
     std::unique_ptr<SliderAttachment> timingAttachment;
@@ -1869,6 +1973,7 @@ public:
 
     ~Vst3SafeHeaderEditor() override
     {
+        ExternalDragWindowFade::editorClosing(this);
         auto& editors = openEditors();
         editors.erase(std::remove(editors.begin(), editors.end(), this), editors.end());
         audioProcessor.setVst3EditorSize(getWidth(), getHeight());
@@ -2800,7 +2905,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::densityAmount, "Density Amount", juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.5f));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::tempoInterpretation,
                                                                    "Tempo Interpretation",
-                                                                   juce::StringArray { "Auto", "Original", "Half-time Aware" },
+                                                                   juce::StringArray { "Auto", "Original", "Half-time" },
                                                                    0));
     params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::bars,
                                                                    "Bars",
@@ -2854,6 +2959,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout BoomBapGeneratorAudioProcess
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::masterLofi, "Master LoFi", juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(ParamIds::sampleVolume, "Sample Volume", juce::NormalisableRange<float>(0.0f, 2.0f, 0.01f), 0.8f));
 
+    // Append new parameters to preserve existing host automation indices.
+    params.push_back(std::make_unique<juce::AudioParameterBool>(ParamIds::tempoDouble, "Tempo x2", false));
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(ParamIds::trapRollMode, "Trap Rolls", juce::StringArray { "Off", "Style", "Fills" }, 1));
     return { params.begin(), params.end() };
 }
 
@@ -2862,6 +2970,7 @@ BoomBapGeneratorAudioProcessor::BoomBapGeneratorAudioProcessor()
     , project(createDefaultProject())
     , apvts(*this, nullptr, "PARAMS", createParameterLayout())
 {
+    sub808SoundRebuilder.rebuild = [this] { refreshSub808Sound(); };
     sampleLibraryManager.setGenre(project.params.genre);
     sampleLibraryManager.scan();
     laneSampleBank.applyLibrary(sampleLibraryManager);
@@ -3125,7 +3234,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
             previewPlaying = true;
             if (snapshot.hasPpq && currentParams.bpm > 0.0f)
             {
-                const double samplesPerQuarter = (60.0 / static_cast<double>(currentParams.bpm)) * currentSampleRate;
+                const double samplesPerQuarter = (60.0 / (snapshot.hasHostTempo ? snapshot.bpm : currentParams.tempoSourceBpm)) * currentSampleRate;
                 previewSamplePosition = static_cast<int>(std::lround(snapshot.ppqPosition * samplesPerQuarter));
             }
             else
@@ -3143,16 +3252,15 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 
     int startSample = transportSamplePosition;
     if (snapshot.hasPpq)
-        startSample = stepToSamples(static_cast<int>(snapshot.ppqPosition * 4.0), currentSampleRate, currentParams.bpm);
+        startSample = static_cast<int>(std::lround(snapshot.ppqPosition * 60.0 * currentSampleRate
+            / (snapshot.hasHostTempo ? snapshot.bpm : currentParams.tempoSourceBpm)));
 
     const double safeBpm = currentParams.bpm > 0.0f ? static_cast<double>(currentParams.bpm) : 120.0;
     const double samplesPerQuarter = (60.0 / safeBpm) * currentSampleRate;
     MonstaFxTimelineContext monstaTimeline;
     monstaTimeline.bpm = safeBpm;
     monstaTimeline.blockStartSample = static_cast<std::int64_t>(startSample);
-    monstaTimeline.blockStartQuarter = snapshot.hasPpq && snapshot.ppqPosition >= 0.0
-        ? snapshot.ppqPosition
-        : (samplesPerQuarter > 0.0 ? static_cast<double>(startSample) / samplesPerQuarter : 0.0);
+    monstaTimeline.blockStartQuarter = samplesPerQuarter > 0.0 ? static_cast<double>(startSample) / samplesPerQuarter : 0.0;
 
     const int numSamples = buffer.getNumSamples();
     const int patternLength = getPatternLengthSamples();
@@ -3175,6 +3283,20 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         }
     }
 
+    // The Sub808 lane plays through the HPDG 808 engine: hand it the current sound, and ask the message
+    // thread for a new one when the lane's sound or its bank sample changed under it.
+    {
+        const auto* subLane = findTrackState(TrackType::Sub808);
+        const bool stale = !sub808SoundBuilt
+            || (subLane != nullptr && !sameSub808Sound(subLane->sub808Sound, sub808SoundBuiltFrom))
+            || ((subLane == nullptr || !subLane->sub808Sound.custom)
+                && laneSampleBank.getSelectedBufferShared(TrackType::Sub808).get() != sub808SoundBuiltBank);
+        if (stale)
+            sub808SoundRebuilder.triggerAsyncUpdate();
+        previewEngine.setSub808Sound(sub808Sound, safeBpm);
+    }
+    const int sub808Lead = previewEngine.sub808LeadSamples(laneSampleBank);
+
     // the Sub808 lane's +/- transpose also applies to a single auditioned note
     auto auditionTranspose = [this](TrackType track)
     {
@@ -3187,6 +3309,7 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
         options.playbackRate = playbackRateForTrackPitch(audition.track, audition.pitch + auditionTranspose(audition.track), laneSampleBank.getSelectedRootPitchClass(audition.track), laneSampleBank.getSelectedRootCents(audition.track), laneSampleBank.getSelectedRootMidi(audition.track));
         if (audition.track == TrackType::Sub808)
         {
+            options.midiNote = juce::jlimit(0, 127, audition.pitch + auditionTranspose(audition.track));
             if (const auto* subTrack = findTrackState(TrackType::Sub808); subTrack != nullptr)
             {
                 options.mono = subTrack->sub808Settings.mono;
@@ -3239,34 +3362,45 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                 sampleSyncBlock.loopRange = juce::Range<int>(loopStart, loopEnd);
         }
 
-        const auto schedulePreviewSegment = [this](int segmentStart,
-                                                   int segmentLength,
-                                                   int bufferOffset,
-                                                   const std::optional<juce::Range<int>>& allowedSampleRange)
+        // Sub808 notes go out sub808Lead samples early (the bass engine's latency), wrapped inside the loop
+        // range / pattern. The first block after a start also plays, at its first sample, the notes that
+        // early window has already passed.
+        const bool catchUpSub808 = previewEngine.takeSub808CatchUp() && sub808Lead > 0;
+        const auto scheduledSample = [sub808Lead](const PreviewEvent& event, int rangeStart, int rangeLength)
         {
+            if (event.track != TrackType::Sub808 || sub808Lead <= 0 || rangeLength <= 0)
+                return event.sample;
+            int shifted = event.sample - sub808Lead;
+            while (shifted < rangeStart)
+                shifted += rangeLength;
+            return shifted;
+        };
+        const auto inCatchUpWindow = [catchUpSub808, sub808Lead](const PreviewEvent& event, int windowStart, int rangeLength)
+        {
+            if (!catchUpSub808 || event.track != TrackType::Sub808 || rangeLength <= 0)
+                return false;
+            const int ahead = ((event.sample - windowStart) % rangeLength + rangeLength) % rangeLength;
+            return ahead < sub808Lead;
+        };
+
+        const auto schedulePreviewSegment = [&, this](int segmentStart,
+                                                      int segmentLength,
+                                                      int bufferOffset,
+                                                      const std::optional<juce::Range<int>>& allowedSampleRange)
+        {
+            const int rangeStart = allowedSampleRange.has_value() ? allowedSampleRange->getStart() : 0;
+            const int rangeLength = allowedSampleRange.has_value() ? allowedSampleRange->getLength() : patternLength;
             for (const auto& event : previewEvents)
             {
                 const int eventSample = event.sample;
                 if (allowedSampleRange.has_value() && !allowedSampleRange->contains(eventSample))
                     continue;
 
-                const int rel = eventSample - segmentStart;
+                const int rel = scheduledSample(event, rangeStart, rangeLength) - segmentStart;
                 if (rel >= 0 && rel < segmentLength)
-                {
-                    PreviewEngine::TriggerOptions options;
-                    if (event.track == TrackType::Sub808)
-                    {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track), laneSampleBank.getSelectedRootMidi(event.track));
-                        options.legato = event.legato;
-                        options.glide = event.glide;
-                        options.mono = event.mono;
-                        options.cutItself = event.cutItself;
-                        options.glideDurationSamples = juce::jmax(0, event.glideDurationSamples);
-                        if (event.endSample > event.sample)
-                            options.maxDurationSamples = juce::jmax(1, event.endSample - event.sample);
-                    }
-                    previewEngine.noteOnAtSample(event.track, event.gain, bufferOffset + rel, laneSampleBank, options);
-                }
+                    previewEngine.noteOnAtSample(event.track, event.gain, bufferOffset + rel, laneSampleBank, triggerOptionsFor(event));
+                else if (bufferOffset == 0 && inCatchUpWindow(event, segmentStart, rangeLength))
+                    previewEngine.noteOnAtSample(event.track, event.gain, 0, laneSampleBank, triggerOptionsFor(event));
             }
         };
 
@@ -3308,27 +3442,15 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
 
             for (const auto& event : previewEvents)
             {
-                const int eventSample = event.sample;
+                const int eventSample = scheduledSample(event, 0, patternLength) % patternLength;
                 int rel = eventSample - previewBlockStartInPattern;
                 if (rel < 0)
                     rel += patternLength;
 
                 if (rel >= 0 && rel < numSamples)
-                {
-                    PreviewEngine::TriggerOptions options;
-                    if (event.track == TrackType::Sub808)
-                    {
-                        options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track), laneSampleBank.getSelectedRootMidi(event.track));
-                        options.legato = event.legato;
-                        options.glide = event.glide;
-                        options.mono = event.mono;
-                        options.cutItself = event.cutItself;
-                        options.glideDurationSamples = juce::jmax(0, event.glideDurationSamples);
-                        if (event.endSample > event.sample)
-                            options.maxDurationSamples = juce::jmax(1, event.endSample - event.sample);
-                    }
-                    previewEngine.noteOnAtSample(event.track, event.gain, rel, laneSampleBank, options);
-                }
+                    previewEngine.noteOnAtSample(event.track, event.gain, rel, laneSampleBank, triggerOptionsFor(event));
+                else if (inCatchUpWindow(event, previewBlockStartInPattern, patternLength))
+                    previewEngine.noteOnAtSample(event.track, event.gain, 0, laneSampleBank, triggerOptionsFor(event));
             }
 
             previewSamplePosition = previewStart + numSamples;
@@ -3435,12 +3557,22 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
     state.setProperty("vst3_editor_height", vst3EditorHeight.load(), nullptr);
 
     {
-        std::scoped_lock lock(projectMutex);
-        PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, buildParamsFromState(lastTransport));
-        serializePatternProjectToState(state);
+        // Copy under the lock, serialize outside it: the audio thread only try-locks projectMutex and plays a
+        // silent block when it is busy, and hosts ask for the state often (FL: on knob moves, for its undo).
+        PatternProject projectCopy;
+        SampleAnalysisRequest request;
+        auto mode = analysisMode;
+        {
+            std::scoped_lock lock(projectMutex);
+            PatternPerformanceTransformEngine::backfillMissingPerformanceBaseParams(project, buildParamsFromState(lastTransport));
+            projectCopy = project;
+            request = currentAnalysisRequest;
+            mode = analysisMode;
+        }
+        state.removeChild(state.getChildWithName("PATTERN_PROJECT"), nullptr);
+        state.addChild(PatternProjectSerialization::serialize(projectCopy), -1, nullptr);
 
         // The sample itself is never embedded: only where it is and how it was used.
-        const auto& request = currentAnalysisRequest;
         if (request.source == SampleAnalysisRequest::SourceType::AudioFile && request.audioFile.getFullPathName().isNotEmpty())
         {
             juce::ValueTree sample(kSampleSourceType);
@@ -3453,7 +3585,7 @@ void BoomBapGeneratorAudioProcessor::getStateInformation(juce::MemoryBlock& dest
             sample.setProperty("manual_key_root", request.manualKeyRoot, nullptr);
             sample.setProperty("manual_key_mode", request.manualKeyMode, nullptr);
             sample.setProperty("quantize", request.breakQuantizeAmount, nullptr);
-            sample.setProperty("mode", static_cast<int>(analysisMode), nullptr);
+            sample.setProperty("mode", static_cast<int>(mode), nullptr);
             sample.setProperty("play_with_pattern", playSampleWithPattern.load(), nullptr);
             state.appendChild(sample, nullptr);
         }
@@ -3661,7 +3793,9 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
             && SampleBassFollower::shouldApplyKey(harmony);
     }
 
-    const auto initialParams = buildParamsFromState(transport);
+    auto initialParams = buildParamsFromState(transport);
+    // Generation selects a source BPM; mode is applied once in buildParamsFromState.
+    initialParams.bpm = initialParams.tempoSourceBpm;
     auto bpmSelection = resolveGenerationBpm(initialParams,
                                              initialParams.bpm,
                                              isBpmLocked(apvts),
@@ -3671,7 +3805,7 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
     // Tempo priority: DAW sync > BPM lock > a loaded, analysed sample's own tempo > style range.
     // With a sample in place every generation stays at the sample's tempo instead of re-rolling.
     if (bpmSelection.source == GenerationBpmSource::DeterministicStyleRange && sampleBpm > 20.0)
-        bpmSelection = { generationBpmForSample(static_cast<float>(sampleBpm), initialParams.genre), GenerationBpmSource::SampleTempo };
+        bpmSelection = { static_cast<float>(sampleBpm), GenerationBpmSource::SampleTempo };
     if (std::abs(bpmSelection.bpm - initialParams.bpm) > 0.05f)
         setFloatParameterValue(ParamIds::bpm, bpmSelection.bpm);
 
@@ -3689,12 +3823,14 @@ void BoomBapGeneratorAudioProcessor::generatePattern()
         setBassScaleModeChoice(harmony.scaleMode);
     }
 
-    const auto resolvedBpm = bpmSelection.bpm;
+    const auto resolvedBpm = resolveMusicalBpm(bpmSelection.bpm, initialParams.genre,
+                                              initialParams.tempoInterpretationMode, initialParams.tempoDouble);
     runGenerationPass("Generate Pattern",
                       std::nullopt,
                       true,
                       [&](GeneratorParams& params)
                       {
+                          params.tempoSourceBpm = bpmSelection.bpm;
                           params.bpm = resolvedBpm;
                           if (applySampleKey)
                           {
@@ -4292,8 +4428,36 @@ bool BoomBapGeneratorAudioProcessor::selectNextLaneSample(TrackType track)
     {
         state->selectedSampleIndex = laneSampleBank.getSelectedIndex(track);
         state->selectedSampleName = laneSampleBank.getSelectedName(track);
+        if (track == TrackType::Sub808)
+            state->sub808Sound.custom = false; // the < > keys browse the lane's samples again
     }
 
+    return ok;
+}
+
+juce::StringArray BoomBapGeneratorAudioProcessor::getLaneSampleNames(TrackType track) const
+{
+    std::scoped_lock lock(projectMutex);
+    return laneSampleBank.getSampleNames(track);
+}
+
+int BoomBapGeneratorAudioProcessor::getSelectedLaneSampleIndex(TrackType track) const
+{
+    std::scoped_lock lock(projectMutex);
+    return laneSampleBank.getSelectedIndex(track);
+}
+
+bool BoomBapGeneratorAudioProcessor::selectLaneSampleIndex(TrackType track, int index)
+{
+    std::scoped_lock lock(projectMutex);
+    const bool ok = laneSampleBank.selectIndex(track, index);
+    if (auto* state = findTrackState(track))
+    {
+        state->selectedSampleIndex = laneSampleBank.getSelectedIndex(track);
+        state->selectedSampleName = laneSampleBank.getSelectedName(track);
+        if (track == TrackType::Sub808)
+            state->sub808Sound.custom = false; // a bank sample again
+    }
     return ok;
 }
 
@@ -4307,6 +4471,8 @@ bool BoomBapGeneratorAudioProcessor::selectPreviousLaneSample(TrackType track)
     {
         state->selectedSampleIndex = laneSampleBank.getSelectedIndex(track);
         state->selectedSampleName = laneSampleBank.getSelectedName(track);
+        if (track == TrackType::Sub808)
+            state->sub808Sound.custom = false; // the < > keys browse the lane's samples again
     }
 
     return ok;
@@ -4412,6 +4578,78 @@ void BoomBapGeneratorAudioProcessor::setSub808LaneSettings(const RuntimeLaneId& 
     std::scoped_lock lock(projectMutex);
     ProjectStateController::setSub808LaneSettings(project, laneId, settings);
     rebuildMidiCache();
+}
+
+Sub808SoundState BoomBapGeneratorAudioProcessor::getSub808Sound() const
+{
+    std::scoped_lock lock(projectMutex);
+    const auto* track = findTrackState(TrackType::Sub808);
+    return track != nullptr ? track->sub808Sound : Sub808SoundState {};
+}
+
+void BoomBapGeneratorAudioProcessor::setSub808Sound(const Sub808SoundState& sound)
+{
+    {
+        std::scoped_lock lock(projectMutex);
+        if (auto* track = findTrackState(TrackType::Sub808); track != nullptr)
+            track->sub808Sound = sound;
+    }
+    refreshSub808Sound(); // at once, not a block later: the editor's PLAY note hears it
+}
+
+std::shared_ptr<const BassSample> BoomBapGeneratorAudioProcessor::getSub808BankSample() const
+{
+    std::scoped_lock lock(projectMutex);
+    const auto sound = buildSub808SoundLocked(Sub808SoundState {});
+    return sound != nullptr ? sound->sample : nullptr;
+}
+
+std::shared_ptr<const Sub808Sound> BoomBapGeneratorAudioProcessor::buildSub808SoundLocked(const Sub808SoundState& state) const
+{
+    return buildSub808Sound(state,
+                            laneSampleBank.getSelectedBufferShared(TrackType::Sub808),
+                            laneSampleBank.getSelectedSampleRate(TrackType::Sub808),
+                            sub808BankRootHz(laneSampleBank.getSelectedRootPitchClass(TrackType::Sub808),
+                                             laneSampleBank.getSelectedRootCents(TrackType::Sub808),
+                                             laneSampleBank.getSelectedRootMidi(TrackType::Sub808)),
+                            laneSampleBank.getSelectedName(TrackType::Sub808));
+}
+
+void BoomBapGeneratorAudioProcessor::refreshSub808Sound()
+{
+    // read under the lock, build (copies the sample) outside it, swap under it
+    Sub808SoundState state;
+    std::shared_ptr<const juce::AudioBuffer<float>> bank;
+    double bankRate = 0.0, rootHz = 0.0;
+    juce::String bankName;
+    {
+        std::scoped_lock lock(projectMutex);
+        if (const auto* track = findTrackState(TrackType::Sub808); track != nullptr)
+            state = track->sub808Sound;
+        bank = laneSampleBank.getSelectedBufferShared(TrackType::Sub808);
+        bankRate = laneSampleBank.getSelectedSampleRate(TrackType::Sub808);
+        rootHz = sub808BankRootHz(laneSampleBank.getSelectedRootPitchClass(TrackType::Sub808),
+                                  laneSampleBank.getSelectedRootCents(TrackType::Sub808),
+                                  laneSampleBank.getSelectedRootMidi(TrackType::Sub808));
+        bankName = laneSampleBank.getSelectedName(TrackType::Sub808);
+    }
+    const void* bankId = bank.get();
+    auto sound = buildSub808Sound(state, bank, bankRate, rootHz, bankName);
+    std::shared_ptr<const Sub808Sound> previous;
+    {
+        std::scoped_lock lock(projectMutex);
+        previous = std::move(sub808Sound);
+        sub808Sound = std::move(sound);
+        sub808SoundBuiltFrom = state;
+        sub808SoundBuiltBank = bankId;
+        sub808SoundBuilt = true;
+    }
+    // the preview engine keeps its own reference until its next block: hold the old sound until then
+    retiredSub808Sounds.erase(std::remove_if(retiredSub808Sounds.begin(), retiredSub808Sounds.end(),
+                                             [](const auto& s) { return s.use_count() == 1; }),
+                              retiredSub808Sounds.end());
+    if (previous != nullptr)
+        retiredSub808Sounds.push_back(std::move(previous));
 }
 
 void BoomBapGeneratorAudioProcessor::setTrackSolo(TrackType track, bool value)
@@ -4890,6 +5128,7 @@ PreviewEngine::TriggerOptions BoomBapGeneratorAudioProcessor::triggerOptionsFor(
     PreviewEngine::TriggerOptions options;
     if (event.track == TrackType::Sub808)
     {
+        options.midiNote = event.pitch;
         options.playbackRate = playbackRateForTrackPitch(event.track, event.pitch, laneSampleBank.getSelectedRootPitchClass(event.track), laneSampleBank.getSelectedRootCents(event.track), laneSampleBank.getSelectedRootMidi(event.track));
         options.legato = event.legato;
         options.glide = event.glide;
@@ -4925,6 +5164,13 @@ bool BoomBapGeneratorAudioProcessor::renderPatternAudio(const PatternProject& so
 
     PreviewEngine engine;
     engine.prepare(sampleRate);
+    {
+        const auto* subLane = ProjectLaneAccess::findTrackState(snapshot, TrackType::Sub808);
+        engine.setSub808Sound(buildSub808SoundLocked(subLane != nullptr ? subLane->sub808Sound : Sub808SoundState {}),
+                              snapshot.params.bpm > 0.0f ? static_cast<double>(snapshot.params.bpm) : 120.0);
+    }
+    // the bass engine's latency: its notes go out that much earlier (wrapped; the render loops twice)
+    const int sub808Lead = engine.sub808LeadSamples(laneSampleBank);
 
     std::array<SoundFxRuntimeState, kTrackTypeCount> laneFx;
     for (auto& fx : laneFx)
@@ -4952,8 +5198,13 @@ bool BoomBapGeneratorAudioProcessor::renderPatternAudio(const PatternProject& so
         {
             const int count = juce::jmin(kBlock, length - position);
             for (const auto& event : events)
-                if (event.sample >= position && event.sample < position + count)
-                    engine.noteOnAtSample(event.track, event.gain, event.sample - position, laneSampleBank, triggerOptionsFor(event));
+            {
+                const int at = event.track == TrackType::Sub808 && sub808Lead > 0
+                    ? ((event.sample - sub808Lead) % length + length) % length
+                    : event.sample;
+                if (at >= position && at < position + count)
+                    engine.noteOnAtSample(event.track, event.gain, at - position, laneSampleBank, triggerOptionsFor(event));
+            }
 
             for (auto& laneBuffer : laneBuffers)
             {
@@ -5775,6 +6026,12 @@ GeneratorParams BoomBapGeneratorAudioProcessor::buildParamsFromState(const Trans
     p.seed = seedValue != nullptr ? static_cast<int>(seedValue->load()) : 1;
     p.seedLock = seedLockValue != nullptr && seedLockValue->load() > 0.5f;
 
+    p.tempoSourceBpm = p.bpm;
+    p.tempoDouble = apvts.getRawParameterValue(ParamIds::tempoDouble)->load() > 0.5f;
+    p.trapRollMode = static_cast<int>(apvts.getRawParameterValue(ParamIds::trapRollMode)->load());
+    p.bpm = resolveMusicalBpm(p.tempoSourceBpm, p.genre, p.tempoInterpretationMode, p.tempoDouble);
+    p.tempoClockResolved = true;
+
     return p;
 }
 
@@ -5829,6 +6086,9 @@ void BoomBapGeneratorAudioProcessor::syncLivePerformanceStateLocked(const Genera
     const bool playbackTimingChanged = PatternPerformanceTransformEngine::hasPlaybackTimingParamChange(previousParams, liveParams);
 
     project.params = liveParams;
+
+    if (playbackTimingChanged && previousParams.bpm > 0.0f && liveParams.bpm > 0.0f)
+        previewSamplePosition = static_cast<int>(std::lround(previewSamplePosition * previousParams.bpm / liveParams.bpm));
 
     if (performanceChanged)
         PatternPerformanceTransformEngine::applyPerformanceFromBase(project, liveParams);

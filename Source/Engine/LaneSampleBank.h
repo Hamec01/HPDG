@@ -79,6 +79,7 @@ public:
     const juce::AudioBuffer<float>* getSelectedBuffer(TrackType track) const;
     std::shared_ptr<const juce::AudioBuffer<float>> getSelectedBufferShared(TrackType track) const;
     bool hasSamples(TrackType track) const;
+    juce::StringArray getSampleNames(TrackType track) const; // in selectIndex order
     bool hasSamplesMatchingAnyTag(TrackType track, const std::vector<juce::String>& preferredTags) const;
 
 private:

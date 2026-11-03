@@ -309,7 +309,7 @@ void BoomBapEngine::generateWithAlgebra(PatternProject& project, const BoomBapSt
         }
     }
 
-    // Bass is opt-in in Boom Bap: only an enabled (and unlocked) bass lane gets a line, written
+    // Boom Bap bass (on by default): only an enabled (and unlocked) bass lane gets a line, written
     // after the kick so it can lock with it. Seed + settings decide it (RULE 13); a new seed gives a new line.
     juce::String bassReport;
     if (auto* bass = findTrack(project, TrackType::Sub808); bass != nullptr && !bass->locked && bass->enabled)

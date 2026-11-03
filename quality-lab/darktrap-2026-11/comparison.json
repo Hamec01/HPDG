@@ -1,0 +1,152 @@
+[
+  {
+    "density": 0.2,
+    "hard_failure_rate_before": 0.0,
+    "hard_failure_rate_after": 0.0,
+    "determinism_failures": 0,
+    "near_duplicates_before": 0.005,
+    "near_duplicates_after": 0.002,
+    "metrics": {
+      "kicksPerBar": {
+        "before": 1.8667,
+        "after": 1.8822
+      },
+      "bassNotesPerBar": {
+        "before": 2.3552,
+        "after": 1.9243
+      },
+      "bassMeanLength": {
+        "before": 1.536675,
+        "after": 2.8553
+      },
+      "bassGapFill": {
+        "before": 0.9021,
+        "after": 0.9095
+      },
+      "bassShortRate": {
+        "before": 0.1129,
+        "after": 0.2704
+      },
+      "hatsPerBar": {
+        "before": 7.9082,
+        "after": 7.9058
+      },
+      "hatEighthCoverage": {
+        "before": 0.9393,
+        "after": 0.9384
+      },
+      "patternsWithRoll": {
+        "before": 0.04,
+        "after": 0.082
+      },
+      "trueRollNotesPerBar": {
+        "before": 0.0568,
+        "after": 0.0745
+      },
+      "extraSnaresPerBar": {
+        "before": 0.3008,
+        "after": 0.2945
+      }
+    }
+  },
+  {
+    "density": 0.4,
+    "hard_failure_rate_before": 0.0,
+    "hard_failure_rate_after": 0.0,
+    "determinism_failures": 0,
+    "near_duplicates_before": 0.002,
+    "near_duplicates_after": 0.001,
+    "metrics": {
+      "kicksPerBar": {
+        "before": 1.9053,
+        "after": 1.9212
+      },
+      "bassNotesPerBar": {
+        "before": 2.4215,
+        "after": 2.3992
+      },
+      "bassMeanLength": {
+        "before": 1.4913,
+        "after": 1.66445
+      },
+      "bassGapFill": {
+        "before": 0.9007,
+        "after": 0.8925
+      },
+      "bassShortRate": {
+        "before": 0.1109,
+        "after": 0.3437
+      },
+      "hatsPerBar": {
+        "before": 8.041,
+        "after": 8.0275
+      },
+      "hatEighthCoverage": {
+        "before": 0.9486,
+        "after": 0.9463
+      },
+      "patternsWithRoll": {
+        "before": 0.041,
+        "after": 0.102
+      },
+      "trueRollNotesPerBar": {
+        "before": 0.067,
+        "after": 0.0922
+      },
+      "extraSnaresPerBar": {
+        "before": 0.3065,
+        "after": 0.2995
+      }
+    }
+  },
+  {
+    "density": 0.8,
+    "hard_failure_rate_before": 0.0,
+    "hard_failure_rate_after": 0.0,
+    "determinism_failures": 0,
+    "near_duplicates_before": 0.008,
+    "near_duplicates_after": 0.008,
+    "metrics": {
+      "kicksPerBar": {
+        "before": 1.9645,
+        "after": 1.9625
+      },
+      "bassNotesPerBar": {
+        "before": 2.5545,
+        "after": 2.5213
+      },
+      "bassMeanLength": {
+        "before": 1.39805,
+        "after": 1.5642
+      },
+      "bassGapFill": {
+        "before": 0.9019,
+        "after": 0.8905
+      },
+      "bassShortRate": {
+        "before": 0.1137,
+        "after": 0.3584
+      },
+      "hatsPerBar": {
+        "before": 8.218,
+        "after": 8.1988
+      },
+      "hatEighthCoverage": {
+        "before": 0.9649,
+        "after": 0.9624
+      },
+      "patternsWithRoll": {
+        "before": 0.027,
+        "after": 0.07
+      },
+      "trueRollNotesPerBar": {
+        "before": 0.0495,
+        "after": 0.065
+      },
+      "extraSnaresPerBar": {
+        "before": 0.296,
+        "after": 0.2995
+      }
+    }
+  }
+]

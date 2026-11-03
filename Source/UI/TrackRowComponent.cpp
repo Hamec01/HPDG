@@ -65,6 +65,56 @@ void configureRackKnob(RotaryKnobSlider& knob,
     knob.valueFromTextFunction = parser;
 }
 
+class LaneStrengthLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
+                          float position, float startAngle, float endAngle,
+                          juce::Slider& slider) override
+    {
+        auto ring = juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y),
+                                            static_cast<float>(width), static_cast<float>(height)).reduced(3.0f);
+        const float diameter = juce::jmin(ring.getWidth(), ring.getHeight());
+        ring = ring.withSizeKeepingCentre(diameter, diameter);
+        const auto centre = ring.getCentre();
+        const float radius = diameter * 0.5f;
+        const float neutralAngle = (startAngle + endAngle) * 0.5f;
+        const float angle = startAngle + position * (endAngle - startAngle);
+        const auto accent = position < 0.5f ? sketch::Theme::blue() : sketch::Theme::ochre();
+        const float alpha = slider.isEnabled() ? 1.0f : 0.35f;
+
+        const auto drawArc = [&](float from, float to, juce::Colour colour, float thickness)
+        {
+            juce::Path path;
+            path.addCentredArc(centre.x, centre.y, radius, radius, 0.0f, from, to, true);
+            g.setColour(colour.withMultipliedAlpha(alpha));
+            g.strokePath(path, juce::PathStrokeType(thickness, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+        };
+        drawArc(startAngle, endAngle, sketch::Theme::graphiteSoft().withAlpha(0.25f), 2.0f);
+        if (std::abs(position - 0.5f) > 0.001f)
+            drawArc(juce::jmin(neutralAngle, angle), juce::jmax(neutralAngle, angle), accent, 2.4f);
+
+        g.setColour(sketch::Theme::graphiteSoft().withAlpha(alpha * 0.7f));
+        g.drawLine(centre.x, centre.y - radius - 3.0f, centre.x, centre.y - radius, 1.0f);
+        auto face = ring.reduced(3.0f);
+        g.setColour(sketch::Theme::paperLight());
+        g.fillEllipse(face);
+        g.setColour(sketch::Theme::graphiteSoft().withAlpha(alpha * 0.35f));
+        g.drawEllipse(face, 0.8f);
+        const auto direction = juce::Point<float>(std::sin(angle), -std::cos(angle));
+        g.setColour((std::abs(position - 0.5f) < 0.001f ? sketch::Theme::graphite() : accent)
+                        .withMultipliedAlpha(alpha));
+        g.drawLine({ centre + direction * (radius * 0.16f), centre + direction * (radius * 0.56f) }, 2.0f);
+    }
+};
+
+LaneStrengthLookAndFeel& laneStrengthLookAndFeel()
+{
+    static LaneStrengthLookAndFeel lookAndFeel;
+    return lookAndFeel;
+}
+
 bool isGhostHelperLane(const RuntimeLaneRowState& state)
 {
     if (state.runtimeTrackType.has_value())
@@ -241,8 +291,8 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     addAndMakeVisible(lockButton);
     addAndMakeVisible(enableButton);
     addAndMakeVisible(volumeLabel);
-    addAndMakeVisible(volumeValueLabel);
-    addAndMakeVisible(volumeSlider);
+    addChildComponent(volumeValueLabel);
+    addChildComponent(volumeSlider);
     addAndMakeVisible(strengthLabel);
     addAndMakeVisible(strengthValueLabel);
     addAndMakeVisible(strengthSlider);
@@ -293,7 +343,12 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     sampleNameLabel.onMouseDownEvent = [this](const juce::MouseEvent& event)
     {
         if (!event.mods.isRightButtonDown())
+        {
+            // left click: every sample of the lane (and, on the bass lane, the HPDG 808 presets)
+            if (onSampleListRequested)
+                onSampleListRequested(laneId);
             return;
+        }
 
         if (onSampleMenuRequested)
             onSampleMenuRequested(laneId);
@@ -345,12 +400,18 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     volumeSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(248, 196, 126));
     volumeSlider.setTooltip("Lane volume");
 
-    strengthLabel.setText("Strength", juce::dontSendNotification);
+    strengthLabel.setText("NOTES", juce::dontSendNotification);
     strengthLabel.setJustificationType(juce::Justification::centredLeft);
     strengthLabel.setColour(juce::Label::textColourId, sketch::Theme::graphiteSoft());
+    strengthLabel.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+    strengthLabel.setBorderSize(juce::BorderSize<int>(0));
     strengthValueLabel.setJustificationType(juce::Justification::centred);
     strengthValueLabel.setColour(juce::Label::textColourId, sketch::Theme::graphite());
-    strengthValueLabel.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+    strengthValueLabel.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
+    strengthValueLabel.setBorderSize(juce::BorderSize<int>(0));
+    strengthLabel.setInterceptsMouseClicks(false, false);
+    strengthValueLabel.setInterceptsMouseClicks(false, false);
+    strengthSlider.setLookAndFeel(&laneStrengthLookAndFeel());
     configureRackKnob(strengthSlider,
                       "Strength",
                       -100.0,
@@ -363,7 +424,7 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     strengthSlider.setColour(juce::Slider::trackColourId, juce::Colour::fromRGB(110, 168, 236));
     strengthSlider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(118, 176, 244));
     strengthSlider.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(190, 224, 255));
-    strengthSlider.setTooltip("Strength: left = fewer hits, right = more hits, 0 = as generated (double-click resets)");
+    strengthSlider.setTooltip("Strength / note amount: left = fewer notes, right = more notes, 0 = original. Double-click to enter a value.");
 
     widthLabel.setText("Width", juce::dontSendNotification);
     widthLabel.setJustificationType(juce::Justification::centredLeft);
@@ -466,6 +527,7 @@ TrackRowComponent::TrackRowComponent(const RuntimeLaneRowState& initialState)
     strengthSlider.onValueChange = [this]
     {
         updateParameterValueLabels();
+        repaint(strengthControlBounds);
         if (onLaneStrengthChanged)
             onLaneStrengthChanged(laneId, static_cast<float>(strengthSlider.getValue() / 100.0));
     };
@@ -532,6 +594,17 @@ void TrackRowComponent::paint(juce::Graphics& g)
     g.setColour(rowBackground);
     g.fillRoundedRectangle(rowBounds, 2.0f);
 
+    if (!strengthControlBounds.isEmpty())
+    {
+        const auto panel = strengthControlBounds.toFloat();
+        const auto colour = strengthSlider.getValue() < 0.0 ? sketch::Theme::blue() : sketch::Theme::ochre();
+        const bool adjusted = std::abs(strengthSlider.getValue()) >= 0.5;
+        g.setColour(adjusted ? colour.withAlpha(0.08f) : sketch::Theme::paperShadow().withAlpha(0.55f));
+        g.fillRoundedRectangle(panel, 5.0f);
+        g.setColour(adjusted ? colour.withAlpha(0.4f) : sketch::Theme::gridLine());
+        g.drawRoundedRectangle(panel.reduced(0.5f), 5.0f, 0.8f);
+    }
+
     const auto accent = helperLaneUi
         ? sketch::Theme::blue()
         : (isGhostTrack ? sketch::Theme::blue() : sketch::Theme::ochre());
@@ -566,7 +639,26 @@ void TrackRowComponent::paint(juce::Graphics& g)
 
 void TrackRowComponent::resized()
 {
+    applyDisplayModeVisibility();
     auto area = getLocalBounds().reduced(6, 4);
+    // Reserve the note-amount control first so it survives every rack width.
+    strengthControlBounds = area.removeFromRight(displayMode == LaneRackDisplayMode::Minimal ? 48 : 64);
+    strengthControlBounds = strengthControlBounds.withSizeKeepingCentre(strengthControlBounds.getWidth(),
+                                                                         juce::jmin(36, strengthControlBounds.getHeight()));
+    area.removeFromRight(4);
+    auto strengthArea = strengthControlBounds.reduced(2, 1);
+    const int knobSize = juce::jmin(displayMode == LaneRackDisplayMode::Minimal ? 20 : 30, strengthArea.getHeight());
+    strengthSlider.setBounds(strengthArea.removeFromLeft(knobSize).withSizeKeepingCentre(knobSize, knobSize));
+    if (strengthArea.getHeight() >= 26)
+    {
+        strengthLabel.setBounds(strengthArea.removeFromTop(11));
+        strengthValueLabel.setBounds(strengthArea);
+    }
+    else
+    {
+        strengthLabel.setBounds({});
+        strengthValueLabel.setBounds(strengthArea);
+    }
     bassAmountSelector.setVisible(isSub808Lane());
     transposeDownButton.setVisible(isSub808Lane());
     transposeUpButton.setVisible(isSub808Lane());
@@ -575,6 +667,14 @@ void TrackRowComponent::resized()
     {
         if (!isSub808Lane())
             return;
+        if (nameArea.getWidth() < 110)
+        {
+            bassAmountSelector.setVisible(false);
+            transposeDownButton.setVisible(false);
+            transposeUpButton.setVisible(false);
+            transposeLabel.setVisible(false);
+            return;
+        }
         const int rowHeight = juce::jmin(20, getHeight() - 4);
         auto transposeArea = nameArea.removeFromRight(juce::jmin(58, nameArea.getWidth() / 3));
         transposeDownButton.setBounds(transposeArea.removeFromLeft(16).withSizeKeepingCentre(16, rowHeight));
@@ -583,37 +683,23 @@ void TrackRowComponent::resized()
         auto knobArea = nameArea.removeFromRight(juce::jmin(60, nameArea.getWidth() / 2));
         bassAmountSelector.setBounds(knobArea.withSizeKeepingCentre(knobArea.getWidth(), juce::jmin(24, getHeight() - 2)));
     };
-    auto layoutKnobColumn = [](juce::Rectangle<int> columnArea,
-                               juce::Label& valueLabel,
-                               juce::Component& knob)
-    {
-        valueLabel.setBounds(columnArea.removeFromBottom(11));
-        auto knobArea = columnArea.reduced(0, 1);
-        const int diameter = juce::jmin(28, juce::jmin(knobArea.getWidth(), knobArea.getHeight()));
-        knob.setBounds(knobArea.withSizeKeepingCentre(diameter, diameter));
-    };
-
     if (displayMode == LaneRackDisplayMode::Minimal)
     {
-        auto actions = area.removeFromRight(98);
-        dragButton.setBounds(actions.removeFromLeft(46).reduced(1));
+        auto actions = area.removeFromRight(52);
+        dragButton.setBounds(actions.removeFromLeft(25).reduced(1));
         actions.removeFromLeft(2);
-        wavDragButton.setBounds(actions.removeFromLeft(46).reduced(1));
+        wavDragButton.setBounds(actions.removeFromLeft(25).reduced(1));
         overflowMenuButton.setBounds({});
 
-        auto sampleArea = area.removeFromRight(154);
-        prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
-        sampleArea.removeFromLeft(2);
-        nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
-        sampleArea.removeFromRight(2);
+        auto sampleArea = area.removeFromRight(juce::jlimit(46, 76, area.getWidth() / 3));
+        prevSampleButton.setBounds(sampleArea.removeFromLeft(12));
+        nextSampleButton.setBounds(sampleArea.removeFromRight(12));
         sampleNameLabel.setBounds(sampleArea.reduced(1));
 
-        muteButton.setBounds(area.removeFromRight(28).reduced(1));
+        muteButton.setBounds(area.removeFromRight(16));
+        soloButton.setBounds(area.removeFromRight(16));
+        rgButton.setBounds(area.removeFromRight(26).reduced(1));
         area.removeFromRight(2);
-        soloButton.setBounds(area.removeFromRight(28).reduced(1));
-        area.removeFromRight(2);
-        rgButton.setBounds(area.removeFromRight(36).reduced(1));
-        area.removeFromRight(6);
 
         auto nameBounds = area.removeFromTop(20);
         if (helperLaneUi)
@@ -624,29 +710,27 @@ void TrackRowComponent::resized()
         return;
     }
 
-    if (displayMode == LaneRackDisplayMode::Compact)
+    if (displayMode == LaneRackDisplayMode::Compact || getWidth() < 638)
     {
-        auto actions = area.removeFromRight(98);
-        dragButton.setBounds(actions.removeFromLeft(46).reduced(1));
+        auto actions = area.removeFromRight(64);
+        dragButton.setBounds(actions.removeFromLeft(31).reduced(1));
         actions.removeFromLeft(2);
-        wavDragButton.setBounds(actions.removeFromLeft(46).reduced(1));
+        wavDragButton.setBounds(actions.removeFromLeft(31).reduced(1));
         overflowMenuButton.setBounds({});
 
         area.removeFromRight(4);
-        auto sampleArea = area.removeFromRight(154);
-        prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
-        sampleArea.removeFromLeft(2);
-        nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
-        sampleArea.removeFromRight(2);
+        auto sampleArea = area.removeFromRight(juce::jlimit(52, 118, area.getWidth() / 3));
+        prevSampleButton.setBounds(sampleArea.removeFromLeft(16));
+        nextSampleButton.setBounds(sampleArea.removeFromRight(16));
         sampleNameLabel.setBounds(sampleArea.reduced(1));
         area.removeFromRight(8);
 
-        const int rgWidth = 34;
+        const int rgWidth = 28;
         rgButton.setBounds(area.removeFromLeft(rgWidth).reduced(1));
         area.removeFromLeft(2);
-        soloButton.setBounds(area.removeFromLeft(28).reduced(1));
+        soloButton.setBounds(area.removeFromLeft(18));
         area.removeFromLeft(2);
-        muteButton.setBounds(area.removeFromLeft(28).reduced(1));
+        muteButton.setBounds(area.removeFromLeft(18));
         clearButton.setBounds({});
         lockButton.setBounds({});
         enableButton.setBounds({});
@@ -684,23 +768,17 @@ void TrackRowComponent::resized()
     enableButton.setBounds(area.removeFromLeft(buttonWidth).reduced(1));
 
     area.removeFromLeft(6);
-    auto sampleArea = area.removeFromLeft(188);
+    auto sampleArea = area.removeFromLeft(130);
     prevSampleButton.setBounds(sampleArea.removeFromLeft(24).reduced(1));
     sampleArea.removeFromLeft(2);
     nextSampleButton.setBounds(sampleArea.removeFromRight(24).reduced(1));
     sampleArea.removeFromRight(2);
     sampleNameLabel.setBounds(sampleArea.reduced(1));
 
-    area.removeFromLeft(6);
-    auto volumeArea = area.removeFromLeft(58);
-    layoutKnobColumn(volumeArea, volumeValueLabel, volumeSlider);
-
-    area.removeFromLeft(4);
-    auto strengthArea = area.removeFromLeft(58);
-    layoutKnobColumn(strengthArea, strengthValueLabel, strengthSlider);
+    volumeValueLabel.setBounds({});
+    volumeSlider.setBounds({});
 
     volumeLabel.setBounds({});
-    strengthLabel.setBounds({});
     widthLabel.setBounds({});
     widthValueLabel.setBounds({});
     widthSlider.setBounds({});
@@ -760,7 +838,7 @@ void TrackRowComponent::setDisplayMode(LaneRackDisplayMode mode)
 
 void TrackRowComponent::applyDisplayModeVisibility()
 {
-    const bool full = displayMode == LaneRackDisplayMode::Full;
+    const bool full = displayMode == LaneRackDisplayMode::Full && getWidth() >= 638;
     const bool compact = displayMode == LaneRackDisplayMode::Compact;
     const bool minimal = displayMode == LaneRackDisplayMode::Minimal;
 
@@ -772,11 +850,11 @@ void TrackRowComponent::applyDisplayModeVisibility()
     enableButton.setVisible(full || compact);
 
     volumeLabel.setVisible(false);
-    volumeValueLabel.setVisible(full);
-    volumeSlider.setVisible(full);
-    strengthLabel.setVisible(false);
-    strengthValueLabel.setVisible(full);
-    strengthSlider.setVisible(full);
+    volumeValueLabel.setVisible(false);
+    volumeSlider.setVisible(false);
+    strengthLabel.setVisible(true);
+    strengthValueLabel.setVisible(true);
+    strengthSlider.setVisible(true);
     widthLabel.setVisible(false);
     widthValueLabel.setVisible(false);
     widthSlider.setVisible(false);

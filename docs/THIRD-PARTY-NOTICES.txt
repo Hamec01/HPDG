@@ -22,3 +22,10 @@ Audio filenames were shortened for HPDG's interface. Renaming does not
 change authorship, ownership or the terms of the original assets.
 HamloProd's copyright notice applies to HPDG's original work and does
 not replace third-party notices or claim ownership of these sounds.
+
+Basic Pitch: HPDG's audio-to-notes transcriber (Source/Analysis/BasicPitch)
+is a C++ port of Spotify's Basic Pitch, Copyright 2022 Spotify AB,
+licensed under the Apache License 2.0. Its trained model weights and the
+CQT kernels of its layer derived from nnAudio (Kin Wai Cheuk, MIT
+license) are included in BasicPitchWeights.cpp. The license and Basic Pitch's NOTICE are
+distributed under docs/third-party/basic-pitch.

@@ -213,6 +213,7 @@ int runAnalyze(const juce::StringArray& args)
             const auto harmony = SampleHarmonyAnalyzer().analyze(mono, sampleRate, beat, analysis.originSeconds, tuningCents,
                                                                  labels.keyRoot, labels.keyMode);
             std::cout << "    " << harmony.describe() << " | tuning " << juce::String(tuningCents, 1) << " cents\n";
+            std::cout << "    note key | notes " << static_cast<int>(harmony.notes.size()) << " | key from notes " << (harmony.keyFromNotes ? "yes" : "no") << "\n";
             // The key decision's inputs (offline key-profile experiments, tools/tempo_bench.py).
             std::array<float, 12> bassShare {};
             int openingPc = -1;

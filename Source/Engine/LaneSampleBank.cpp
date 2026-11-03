@@ -240,6 +240,14 @@ bool LaneSampleBank::hasSamples(TrackType track) const
     return !state.infos.empty();
 }
 
+juce::StringArray LaneSampleBank::getSampleNames(TrackType track) const
+{
+    juce::StringArray names;
+    for (const auto& info : states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))].infos)
+        names.add(info.name);
+    return names;
+}
+
 bool LaneSampleBank::hasSamplesMatchingAnyTag(TrackType track, const std::vector<juce::String>& preferredTags) const
 {
     const auto& state = states[static_cast<size_t>(SampleLibraryManager::trackIndex(track))];

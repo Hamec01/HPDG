@@ -13,6 +13,29 @@ enum class TempoBand
     Fast
 };
 
+// One clock for generation, playback and export. Sync chooses the source, not the mode.
+inline float resolveMusicalBpm(float source, GenreType genre, int mode, bool doubleSpeed)
+{
+    source = std::clamp(source, 20.0f, 400.0f);
+    float musical = source;
+    if (mode == 2)
+        musical *= 0.5f;
+    else if (mode == 0)
+    {
+        if ((genre == GenreType::Trap || genre == GenreType::Drill) && source <= 100.0f)
+            musical *= 2.0f;
+        else if (genre == GenreType::DnB && source <= 100.0f)
+            musical *= 2.0f;
+        else if (genre == GenreType::BoomBap && source >= 120.0f)
+            musical *= 0.5f;
+        else if (genre == GenreType::Techno && source <= 80.0f)
+            musical *= 2.0f;
+        else if (genre == GenreType::Atmospheric && source <= 70.0f)
+            musical *= 2.0f;
+    }
+    return musical * (doubleSpeed ? 2.0f : 1.0f);
+}
+
 // The tempo a genre generates at over a loaded sample of `sampleBpm`. Drum & Bass runs at
 // double time over a half-time loop (77 -> 154): one sample bar = two DnB bars, still in sync.
 // A sample's tempo is only known up to an octave (a 160 reading of an 80 BPM loop is the same

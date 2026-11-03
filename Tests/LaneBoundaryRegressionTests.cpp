@@ -17,8 +17,12 @@
 #include "../Source/Engine/PreviewEngine.h"
 #include "../Source/Engine/LaneSampleBank.h"
 #include "../Source/Engine/TrapEngine.h"
+#include "../Source/Engine/Trap/TrapAlgebraEngine.h"
+#include "../Source/Engine/SampleBassFollower.h"
 #include "../Source/Plugin/PluginProcessor.h"
 #include "../Source/UI/ComboBoxIdParameterAttachment.h"
+#include "../Source/UI/GenreRhythmGrid.h"
+#include "../Source/UI/Vst3GridLiteComponent.h"
 
 namespace bbg
 {
@@ -33,6 +37,319 @@ void expect(bool condition, const juce::String& message)
 {
     if (!condition)
         fail(message);
+}
+
+void testTrapPhraseRollControl()
+{
+    BoomBapGeneratorAudioProcessor p;
+    auto set = [&](const char* id, float v) { auto* a = p.getApvts().getParameter(id); a->setValueNotifyingHost(a->convertTo0to1(v)); };
+    set(ParamIds::genre, 2);
+    set(ParamIds::trapSubstyle, 1); // DarkTrap deliberately has rare rolls in Style mode
+    p.applySelectedStylePreset(false);
+    set(ParamIds::seedLock, 1);
+    set(ParamIds::bars, 2);
+    p.syncBarsFromState();
+    int fills = 0;
+    for (int mode : { 0, 2 })
+    {
+        set(ParamIds::trapRollMode, static_cast<float>(mode));
+        for (int seed = 1; seed <= 64; ++seed)
+        {
+            set(ParamIds::seed, static_cast<float>(seed));
+            p.generatePattern();
+            const auto project = p.getProjectSnapshot();
+            std::vector<int> ticks;
+            for (const auto& track : project.tracks)
+                if (track.type == TrackType::HiHat || track.type == TrackType::HatFX)
+                    for (const auto& n : track.notes)
+                        if (n.semanticRole.contains("roll")) ticks.push_back(n.startTick());
+            std::sort(ticks.begin(), ticks.end());
+            if (mode == 0) expect(ticks.empty(), "Rolls Off must remove actual roll events, not regular hats.");
+            else
+            {
+                expect(ticks.size() >= 3, "Fills must retain an audible roll after the complete product pipeline.");
+                bool fineInterval = false;
+                for (size_t i = 1; i < ticks.size(); ++i)
+                    fineInterval = fineInterval || (ticks[i] > ticks[i-1] && ticks[i] - ticks[i-1] < 240);
+                expect(fineInterval, "Rolls must contain sub-1/16 intervals, not merely a fast carrier.");
+                ++fills;
+            }
+        }
+    }
+    std::cout << "    DarkTrap Fills: " << fills << "/64; Off: 64 checked\n";
+}
+
+void testDarkTrapArticulationSurvivesProductPipeline()
+{
+    TrapEngine engine;
+    int longNotes = 0, shortPickups = 0, completeRolls = 0;
+    for (int seed = 1; seed <= 64; ++seed)
+    {
+        auto project = createDefaultProject();
+        project.params.genre = GenreType::Trap;
+        project.params.trapSubstyle = 1;
+        project.params.seed = seed;
+        project.params.bars = 8;
+        project.params.bpm = 150;
+        project.params.tempoClockResolved = true;
+        project.params.densityAmount = seed <= 32 ? 0.2f : 0.4f;
+        project.params.trapRollMode = 2;
+        for (auto& track : project.tracks)
+            track.enabled = true;
+        engine.generate(project);
+        const auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+        expect(bass != nullptr && !bass->notes.empty(), "DarkTrap must have a playable bass line.");
+        for (size_t i = 0; i < bass->notes.size(); ++i)
+        {
+            const auto& n = bass->notes[i];
+            const int next = i + 1 < bass->notes.size() ? bass->notes[i + 1].gridTick : 8 * 3840;
+            expect(n.lengthTicks > 0 && n.gridTick + n.lengthTicks <= next,
+                   "Dark 808 Note Off must not extend into the next mono attack or past the loop.");
+            longNotes += n.lengthTicks > 3840 ? 1 : 0;
+            if (n.semanticRole.contains("bass_pickup") && i + 1 < bass->notes.size()
+                && next - n.gridTick <= 240)
+            {
+                expect(n.lengthTicks < 240, "A quick 808 pickup must retain its sub-1/16 gate.");
+                expect(n.pitch == bass->notes[i + 1].pitch, "A quick pickup must rearticulate the following bass tone.");
+                ++shortPickups;
+            }
+        }
+        const auto* hat = ProjectLaneAccess::findTrackState(project, TrackType::HiHat);
+        std::vector<const NoteEvent*> rolls;
+        for (const auto& n : hat->notes)
+            if (n.semanticRole.contains("roll"))
+            {
+                expect(n.lengthTicks <= 120, "Dark roll gates must not be stretched to overlapping 16ths.");
+                rolls.push_back(&n);
+            }
+        expect(rolls.size() >= 3, "Dark Fills must retain an audible multi-note roll.");
+        for (size_t i = 1; i < rolls.size(); ++i)
+            if (rolls[i]->gridTick - rolls[i - 1]->gridTick < 240)
+                expect(rolls[i - 1]->lengthTicks <= rolls[i]->gridTick - rolls[i - 1]->gridTick,
+                       "A roll's Note Off must precede the following attack of the same hat.");
+        ++completeRolls;
+    }
+    expect(longNotes > 0 && shortPickups > 0, "DarkTrap must retain both sustained and short articulated bass notes.");
+    // Full processor path: the old bar-wise pitch-change cap split this pickup from
+    // its following root at the bar boundary (observed in the 1000-seed audit).
+    BoomBapGeneratorAudioProcessor processor;
+    auto set = [&](const char* id, float v) { auto* p = processor.getApvts().getParameter(id); p->setValueNotifyingHost(p->convertTo0to1(v)); };
+    set(ParamIds::genre, 2);
+    set(ParamIds::trapSubstyle, 1);
+    processor.applySelectedStylePreset(false);
+    set(ParamIds::bars, 2);
+    processor.syncBarsFromState();
+    set(ParamIds::bpmLock, 1);
+    set(ParamIds::bpm, 150);
+    set(ParamIds::seedLock, 1);
+    set(ParamIds::seed, 365);
+    set(ParamIds::densityAmount, .2f);
+    processor.generatePattern();
+    const auto checked = processor.getProjectSnapshot();
+    const auto* bass = ProjectLaneAccess::findTrackState(checked, TrackType::Sub808);
+    for (size_t i = 0; i + 1 < bass->notes.size(); ++i)
+        if (bass->notes[i].semanticRole.contains("bass_pickup") && bass->notes[i + 1].gridTick - bass->notes[i].gridTick <= 240)
+            expect(bass->notes[i].pitch == bass->notes[i + 1].pitch, "Pitch limiting must preserve the pickup's next-note relationship.");
+    std::cout << "    DarkTrap: " << longNotes << " notes over a bar, " << shortPickups
+              << " quick pickups, " << completeRolls << "/64 intact rolls\n";
+}
+
+void testDarkTrapHeldBassSupportsKick()
+{
+    TrapAlgebraParams params;
+    params.bars = 2;
+    params.substyle = TrapAlgebraSubstyle::DarkTrap;
+    params.tempoContext = resolveTrapTempo(150, 2);
+    TrapPatternMatrix matrix(2);
+    for (int tick : { 0, 24, 64, 88 })
+        matrix.setNote(TrapAlgebraLanes::Kick, tick, 110, 2, 0, TrapAlgebraRole::Anchor);
+    for (int tick : { 32, 96 })
+        matrix.setNote(TrapAlgebraLanes::Snare, tick, 110, 2, 0, TrapAlgebraRole::Anchor);
+    matrix.setNote(TrapAlgebraLanes::Sub808, 0, 110, 128, 0, TrapAlgebraRole::BassAnchor);
+    expect(matrix.active808Ticks(true) == 128, "The second bar of a held 808 must count as sounding bass too.");
+    TrapQualityScorer scorer;
+    const auto held = scorer.score(matrix, params, TrapAlgebraEngine::weightsForSubstyle(params.substyle));
+    expect(held.kick808CouplingRatio < 0.3f, "Onset metric must still describe coincident attacks, not sustain.");
+    expect(held.kick808SustainSupportRatio > 0.99f && held.kick808CouplingScore >= 0.6f,
+           "Kicks under a held Dark sub must receive low-end support credit without extra bass attacks.");
+    matrix.setNote(TrapAlgebraLanes::Sub808, 0, 110, 8, 0, TrapAlgebraRole::BassAnchor);
+    const auto shortBass = scorer.score(matrix, params, TrapAlgebraEngine::weightsForSubstyle(params.substyle));
+    expect(held.kick808CouplingScore > shortBass.kick808CouplingScore,
+           "Bass that has stopped must not receive the held-bass support credit.");
+}
+
+void testDarkTrapTonalGuidancePreservesGrammar()
+{
+    // Analyzer-output contract: this fixture has harmony and no transcribed drums.
+    // A change of chord at a bar boundary must not split a short 808 pickup/target pair.
+    SampleHarmony harmony;
+    harmony.valid = true;
+    harmony.keyRoot = 9;
+    harmony.keyConfidence = .95f;
+    const std::array<int, 4> roots { 9, 5, 0, 7 };
+    for (int bar = 0; bar < 4; ++bar)
+        harmony.bass.push_back({ bar * 1.6, (bar + 1) * 1.6, 36 + roots[static_cast<size_t>(bar)], .95f, 1 });
+    TrapEngine engine;
+    int pairs = 0, mismatches = 0, weakChanges = 0;
+    for (int seed = 1; seed <= 1000; ++seed)
+    {
+        auto generated = createDefaultProject();
+        generated.params.genre = GenreType::Trap;
+        generated.params.trapSubstyle = 1;
+        generated.params.keyRoot = 9;
+        generated.params.seed = seed;
+        generated.params.bars = 4;
+        generated.params.bpm = 150;
+        generated.params.tempoClockResolved = true;
+        generated.params.densityAmount = .4f;
+        generated.params.trapRollMode = 2;
+        for (auto& track : generated.tracks) track.enabled = true;
+        engine.generate(generated);
+        auto guided = generated;
+        const auto report = SampleBassFollower::apply(guided, harmony, 150, 0);
+        expect(report.notesFollowed > 0, "Confident tonal analysis must guide the Dark 808.");
+        for (const auto& before : generated.tracks)
+        {
+            const auto* after = ProjectLaneAccess::findTrackState(guided, before.type);
+            expect(after != nullptr && after->notes.size() == before.notes.size(), "Tonal guidance must not copy or replace the drum/bass rhythm.");
+            for (size_t i = 0; i < before.notes.size(); ++i)
+            {
+                const auto& a = before.notes[i];
+                const auto& b = after->notes[i];
+                expect(a.gridTick == b.gridTick && a.timingOffsetTicks == b.timingOffsetTicks
+                       && a.lengthTicks == b.lengthTicks && a.velocity == b.velocity,
+                       "Tonal guidance must preserve Dark timing, gates and velocity, including rolls.");
+                if (before.type != TrackType::Sub808)
+                    expect(a.pitch == b.pitch && a.semanticRole == b.semanticRole, "Harmony must leave generated drums intact.");
+            }
+        }
+        const auto* bass = ProjectLaneAccess::findTrackState(guided, TrackType::Sub808);
+        for (size_t i = 0; i + 1 < bass->notes.size(); ++i)
+            if (bass->notes[i].semanticRole.contains("bass_pickup") && bass->notes[i + 1].gridTick - bass->notes[i].gridTick <= 240)
+            {
+                ++pairs;
+                mismatches += bass->notes[i].pitch != bass->notes[i + 1].pitch ? 1 : 0;
+            }
+        auto weak = generated;
+        auto uncertain = harmony;
+        for (auto& segment : uncertain.bass) segment.confidence = .1f;
+        const auto weakReport = SampleBassFollower::apply(weak, uncertain, 150, 0);
+        weakChanges += weakReport.notesFollowed;
+    }
+    std::cout << "    Dark tonal guidance: 1000 seeds; quick pairs " << pairs << ", mismatches " << mismatches
+              << "; weak-confidence changes " << weakChanges << std::endl;
+    expect(weakChanges == 0, "Uncertain sample pitch must preserve the genre engine's pitches.");
+    expect(pairs > 0 && mismatches == 0, "Sample harmony must preserve the Dark pickup's relationship to its following tone.");
+
+    // A tag from an older pass is not evidence that the next tone is still certain.
+    auto stale = createDefaultProject();
+    stale.params.genre = GenreType::Trap;
+    stale.params.trapSubstyle = 1;
+    auto* staleBass = ProjectLaneAccess::findTrackState(stale, TrackType::Sub808);
+    NoteEvent a, b;
+    a.gridTick = 3600; a.pitch = 33; a.lengthTicks = 120; a.semanticRole = "trap_algebra_bass_pickup|sample_bass";
+    b.gridTick = 3840; b.pitch = 31; b.lengthTicks = 240; b.semanticRole = "trap_algebra_bass_anchor|sample_bass";
+    staleBass->notes = { a, b };
+    auto mixedConfidence = harmony;
+    mixedConfidence.bass[1].confidence = .1f;
+    SampleBassFollower::apply(stale, mixedConfidence, 150, 0);
+    expect(staleBass->notes[0].pitch == 33 && staleBass->notes[1].pitch == 31,
+           "Stale guidance tags must not override current weak-confidence evidence.");
+    staleBass->locked = true;
+    const auto lockedReport = SampleBassFollower::apply(stale, harmony, 150, 0);
+    expect(lockedReport.notesFollowed == 0 && staleBass->notes[0].pitch == 33 && staleBass->notes[1].pitch == 31,
+           "Sample harmony must preserve a locked bass lane.");
+    staleBass->locked = false;
+    NoteEvent first = a, second = a, target = b;
+    first.gridTick = 3360;
+    second.gridTick = 3600;
+    target.gridTick = 3840;
+    first.pitch = second.pitch = target.pitch = 33;
+    staleBass->notes = { first, second, target };
+    SampleBassFollower::apply(stale, harmony, 150, 0);
+    expect(staleBass->notes[0].pitch == staleBass->notes[2].pitch && staleBass->notes[1].pitch == staleBass->notes[2].pitch,
+           "A short chain of pickups must anticipate the same supported chord tone.");
+}
+
+void testMusicalTempoModesWithHostSync()
+{
+    struct PlayHead final : juce::AudioPlayHead
+    {
+        double bpm = 90.0;
+        juce::Optional<PositionInfo> getPosition() const override
+        {
+            PositionInfo p;
+            p.setBpm(bpm);
+            p.setPpqPosition(8.0);
+            p.setIsPlaying(true);
+            return p;
+        }
+    } host;
+    BoomBapGeneratorAudioProcessor processor;
+    processor.setPlayHead(&host);
+    processor.prepareToPlay(48000.0, 256);
+    auto set = [&](const char* id, float value)
+    {
+        auto* p = processor.getApvts().getParameter(id);
+        p->setValueNotifyingHost(p->convertTo0to1(value));
+    };
+    set(ParamIds::genre, 2);
+    set(ParamIds::bpmLock, 1);
+    set(ParamIds::seedLock, 1);
+    juce::AudioBuffer<float> audio(2, 256);
+    juce::MidiBuffer midi;
+    int cases = 0;
+    for (bool sync : { false, true })
+        for (float source : { 70.0f, 90.0f, 140.0f, 180.0f })
+            for (int mode : { 0, 1, 2 })
+                for (bool twice : { false, true })
+                {
+                    host.bpm = source;
+                    set(ParamIds::bpm, source);
+                    set(ParamIds::syncDawTempo, sync ? 1.0f : 0.0f);
+                    set(ParamIds::tempoInterpretation, static_cast<float>(mode));
+                    set(ParamIds::tempoDouble, twice ? 1.0f : 0.0f);
+                    processor.processBlock(audio, midi);
+                    const auto project = processor.getProjectSnapshot();
+                    const float expected = (mode == 2 ? source / 2.0f
+                        : mode == 0 && source <= 100.0f ? source * 2.0f : source) * (twice ? 2.0f : 1.0f);
+                    expect(std::abs(project.params.bpm - expected) < 0.01f, "Tempo mode must control the actual clock, including Sync.");
+                    auto exported = project;
+                    exported.exportHostBpm = source;
+                    expect(MidiExportEngine::fileTicksPerQuarter(exported, 960) == static_cast<int>(std::lround(960 * expected / source)),
+                           "MIDI export must retain the musical/host clock ratio.");
+                    processor.generatePattern();
+                    expect(std::abs(processor.getProjectSnapshot().params.bpm - expected) < 0.01f,
+                           "Generate must preserve the resolved musical clock.");
+                    ++cases;
+                }
+    set(ParamIds::tempoDouble, 0);
+    set(ParamIds::tempoInterpretation, 0);
+    host.bpm = 70;
+    processor.processBlock(audio, midi);
+    processor.generatePattern();
+    const auto slow = MidiExportEngine::patternToSequence(processor.getProjectSnapshot(), std::nullopt);
+    host.bpm = 140;
+    processor.processBlock(audio, midi);
+    processor.generatePattern();
+    const auto fast = MidiExportEngine::patternToSequence(processor.getProjectSnapshot(), std::nullopt);
+    expect(slow.getNumEvents() == fast.getNumEvents(), "Trap Auto 70 and 140 must generate the same rhythm.");
+    for (int i = 0; i < slow.getNumEvents(); ++i)
+    {
+        const auto& a = slow.getEventPointer(i)->message;
+        const auto& b = fast.getEventPointer(i)->message;
+        expect(a.getTimeStamp() == b.getTimeStamp() && a.getNoteNumber() == b.getNoteNumber() && a.getVelocity() == b.getVelocity(),
+               "Trap Auto 70 and 140 must have identical note timing, pitch and velocity.");
+    }
+    juce::MemoryBlock saved;
+    set(ParamIds::tempoDouble, 1);
+    processor.getStateInformation(saved);
+    set(ParamIds::tempoDouble, 0);
+    processor.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
+    expect(processor.getApvts().getRawParameterValue(ParamIds::tempoDouble)->load() > 0.5f, "x2 must survive project reload.");
+    processor.releaseResources();
+    processor.setPlayHead(nullptr);
+    std::cout << "    Tempo mode cases: " << cases << "; Trap Auto 70/140 note events: " << slow.getNumEvents() << "\n";
 }
 
 float maxAbsSample(const juce::AudioBuffer<float>& buffer)
@@ -532,8 +849,14 @@ void testDrumBreakExactCopyPath()
     for (int slot = 0; slot < 32; slot += 2)
         hatSlots.push_back(slot);
     expectSlots(TrackType::HiHat, hatSlots);
-    expect(gridTicks(TrackType::GhostKick).empty() && gridTicks(TrackType::Sub808).empty(),
-           "copy must only fill Kick / Snare / HiHat");
+    // The break has no bass: nothing of it lands on the bass lane (Boom Bap's bass lane is on by default and
+    // keeps its generated line under the copy - PatternBlendEngine).
+    int copiedBass = 0;
+    if (const auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808))
+        for (const auto& note : bass->notes)
+            copiedBass += note.semanticRole == "sample_copy" ? 1 : 0;
+    expect(gridTicks(TrackType::GhostKick).empty() && copiedBass == 0,
+           "copy must only fill Kick / Snare / HiHat (bass notes copied from the break: " + juce::String(copiedBass) + ")");
 
     checkBassAmountKeepsOtherLanes(processor, "copy break");
 
@@ -1092,14 +1415,17 @@ void testBreakTempoRenderedAtWholeBpm()
 void testBoomBapSampleLineBass() { runSampleLineBass(GenreType::BoomBap); }
 void testTrapSampleLineBass() { runSampleLineBass(GenreType::Trap); }
 
-void runGuideBassFollowsSample(GenreType genre)
+void runGuideBassFollowsSample(GenreType genre, int trapSubstyle = 0)
 {
     constexpr double rate = 44100.0;
     BoomBapGeneratorAudioProcessor processor;
     processor.getApvts().getParameter(ParamIds::genre)->setValueNotifyingHost(
         processor.getApvts().getParameter(ParamIds::genre)->convertTo0to1(genre == GenreType::Trap ? 2.0f : 0.0f));
+    if (genre == GenreType::Trap)
+        processor.getApvts().getParameter(ParamIds::trapSubstyle)->setValueNotifyingHost(
+            processor.getApvts().getParameter(ParamIds::trapSubstyle)->convertTo0to1(static_cast<float>(trapSubstyle)));
     if (genre == GenreType::BoomBap)
-        processor.setTrackEnabled(TrackType::Sub808, true); // Boom Bap bass is opt-in
+        processor.setTrackEnabled(TrackType::Sub808, true); // the bass lane on (also its default now)
     const double bpm = static_cast<double>(processor.getProjectSnapshot().params.bpm);
     const double beat = 60.0 / bpm;
     const std::array<int, 4> barRoots { 9, 5, 0, 7 };                 // A F C G
@@ -1155,8 +1481,11 @@ void runGuideBassFollowsSample(GenreType genre)
     int checked = 0;
     for (const auto& note : sub->notes)
     {
-        const int bar = (note.gridTick / ticksPerBar) % 4;
-        const int stepInBar = (note.gridTick % ticksPerBar) / TimingGrid::Sixteenth;
+        // Compare at the note's real playback time. Auto may put two Trap musical
+        // bars inside one sample bar; the chord does not change twice as fast.
+        const double sampleTicks = note.gridTick * bpm / project.params.bpm;
+        const int bar = (static_cast<int>(sampleTicks) / ticksPerBar) % 4;
+        const int stepInBar = (static_cast<int>(sampleTicks) % ticksPerBar) / TimingGrid::Sixteenth;
         const int pitchClass = note.pitch % 12;
         const bool matchesBar = pitchClass == barRoots[static_cast<size_t>(bar)];
         const bool atBarEdge = stepInBar == 0 || stepInBar == 15; // segment boundary: a neighbour bar is fine
@@ -1537,6 +1866,32 @@ void testVst3VolumeControls()
     BoomBapGeneratorAudioProcessor processor;
     juce::AudioProcessor::setTypeOfNextNewPlugin(juce::AudioProcessor::wrapperType_Undefined);
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
+    std::function<juce::ComboBox*(juce::Component&, bool)> findCombo;
+    findCombo = [&](juce::Component& c, bool snap) -> juce::ComboBox*
+    {
+        if (auto* combo = dynamic_cast<juce::ComboBox*>(&c))
+            if (combo->getItemText(0) == (snap ? "Adaptive" : "Boom Bap"))
+                return combo;
+        for (auto* child : c.getChildren())
+            if (auto* result = findCombo(*child, snap)) return result;
+        return nullptr;
+    };
+    auto* snap = findCombo(*editor, true);
+    expect(snap != nullptr, "VST3 exposes the Snap selector.");
+    std::function<Vst3GridLiteComponent*(juce::Component&)> findGrid;
+    findGrid = [&](juce::Component& c) -> Vst3GridLiteComponent*
+    {
+        if (auto* grid = dynamic_cast<Vst3GridLiteComponent*>(&c)) return grid;
+        for (auto* child : c.getChildren()) if (auto* result = findGrid(*child)) return result;
+        return nullptr;
+    };
+    auto* grid = findGrid(*editor);
+    expect(grid != nullptr, "VST3 grid exists.");
+    snap->setSelectedId(17, juce::sendNotificationSync);
+    expect(grid->getSnapResolution() == 17 && ticksForSnapId(17) == 80,
+           "VST3 Snap actually changes the grid to 1/32 triplets.");
+    expect(defaultSnapForGenre(GenreType::Trap) == 16 && defaultSnapForGenre(GenreType::BoomBap) == 14,
+           "Genre grid defaults use 1/32 for Trap and 1/16 for Boom Bap.");
     std::function<juce::Slider*(juce::Component&, const juce::String&)> findSlider;
     findSlider = [&findSlider](juce::Component& component, const juce::String& name) -> juce::Slider*
     {
@@ -1707,6 +2062,7 @@ void testDrumChokeAndBassNoteLength()
 }
 
 void testTrapGuide808FollowsSampleBassAndKey() { runGuideBassFollowsSample(GenreType::Trap); }
+void testDarkTrapGuide808FollowsSampleBassAndKey() { runGuideBassFollowsSample(GenreType::Trap, 1); }
 void testBoomBapGuideBassFollowsSampleBassAndKey() { runGuideBassFollowsSample(GenreType::BoomBap); }
 
 int runTest(const char* name, const std::function<void()>& test)
@@ -1927,6 +2283,11 @@ int main()
     using namespace bbg;
 
     int failures = 0;
+    failures += runTest("Musical tempo modes with host sync", testMusicalTempoModesWithHostSync);
+    failures += runTest("Trap phrase roll control", testTrapPhraseRollControl);
+    failures += runTest("DarkTrap articulation survives product pipeline", testDarkTrapArticulationSurvivesProductPipeline);
+    failures += runTest("DarkTrap held bass supports kicks", testDarkTrapHeldBassSupportsKick);
+    failures += runTest("DarkTrap tonal guidance preserves grammar", testDarkTrapTonalGuidancePreservesGrammar);
     failures += runTest("Independent sample and rack volume", testIndependentSampleAndRackVolume);
     failures += runTest("VST3 volume controls", testVst3VolumeControls);
     failures += runTest("Lane-aware export path", testLaneAwareExportTrackPath);
@@ -1942,6 +2303,7 @@ int main()
     failures += runTest("Genre combo selects Trap, not Drill", testGenreComboSelectsTrapNotDrill);
     failures += runTest("DnB genre from the processor", testDnBGenreFromProcessor);
     failures += runTest("Trap guide 808 follows sample bass and key", testTrapGuide808FollowsSampleBassAndKey);
+    failures += runTest("DarkTrap musical sample guides 808 and key", testDarkTrapGuide808FollowsSampleBassAndKey);
     failures += runTest("BoomBap guide bass follows sample bass and key", testBoomBapGuideBassFollowsSampleBassAndKey);
     failures += runTest("Sample root note from name", testSampleRootNoteFromName);
     failures += runTest("Sample root from name and sound", testSampleRootFromNameAndSound);

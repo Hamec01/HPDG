@@ -27,6 +27,7 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
 
     void setBpmLocked(bool locked);
+    void setEffectiveTempo(float source, float musical);
     void setPreviewPlaying(bool isPlaying);
     void setStandaloneWindowMaximized(bool isMaximized);
     void setStandaloneWindowButtonVisible(bool visible);
@@ -66,12 +67,14 @@ public:
     juce::Slider bpmSlider;
     juce::ToggleButton bpmLockToggle { "Lock" };
     juce::ToggleButton syncTempoToggle { "Sync" };
+    juce::TextButton tempoDoubleButton { "x2" };
     RotaryKnobSlider swingSlider;
     RotaryKnobSlider velocitySlider;
     RotaryKnobSlider timingSlider;
     RotaryKnobSlider humanizeSlider;
     RotaryKnobSlider densitySlider;
     juce::ComboBox tempoInterpretationCombo;
+    juce::ComboBox trapRollCombo;
     juce::ComboBox barsCombo;
     juce::ComboBox genreCombo;
     juce::ComboBox substyleCombo;
@@ -117,6 +120,7 @@ private:
     UpdateButtonComponent updateButton;
 
     juce::Label bpmLabel;
+    juce::Label trapRollLabel;
     juce::Label swingLabel;
     juce::Label swingValueLabel;
     juce::Label velocityLabel;

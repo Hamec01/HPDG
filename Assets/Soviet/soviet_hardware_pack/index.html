@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soviet Hardware Pack — Knobs, Pointers, Switches & Buttons</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #121312;
+    --panel: #1b1c1a;
+    --panel-border: #2c2e2a;
+    --accent: #e5d8a8;
+    --accent-gold: #c9ab57;
+    --dim: #8a887d;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(circle at 50% 20%, #20221f 0%, var(--bg) 70%);
+    color: var(--accent);
+    font-family: 'Oswald', sans-serif;
+    min-height: 100vh;
+    padding: 30px 40px 80px;
+  }
+  header {
+    text-align: center;
+    margin-bottom: 35px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  h1 {
+    font-size: 38px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 0 2px 10px #000;
+  }
+  .sub {
+    color: var(--dim);
+    font-size: 14px;
+    letter-spacing: .14em;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  /* Playground Section */
+  .playground {
+    max-width: 1200px;
+    margin: 0 auto 50px;
+    background: linear-gradient(145deg, #242622, #141513);
+    border: 2px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 30px 40px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .playground h2 {
+    font-size: 24px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--accent-gold);
+    margin-bottom: 25px;
+    text-align: center;
+    border-bottom: 1px dashed #333;
+    padding-bottom: 12px;
+  }
+  .demo-row {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 40px;
+  }
+  .demo-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+  }
+  .demo-title {
+    font-size: 16px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+
+  /* Knob Assembly Container (512x512 rendered at e.g. 170x170) */
+  .knob-assembly {
+    position: relative;
+    width: 170px;
+    height: 170px;
+    cursor: ns-resize;
+    user-select: none;
+    outline: none;
+  }
+  .knob-scale {
+    position: absolute;
+    inset: -25px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    pointer-events: none;
+    opacity: 0.85;
+    transition: opacity .2s;
+  }
+  .knob-body {
+    position: absolute;
+    inset: 0;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    filter: drop-shadow(0 10px 18px rgba(0,0,0,0.9));
+  }
+  .knob-pointer {
+    position: absolute;
+    inset: 0;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    pointer-events: none;
+    transform-origin: 50% 50%;
+    transform: rotate(0deg);
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.8));
+    transition: transform 0.04s ease-out;
+  }
+  .val-readout {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 16px;
+    color: #ffb347;
+    background: #0d0e0c;
+    border: 1px solid #2a2c28;
+    padding: 4px 12px;
+    border-radius: 4px;
+    letter-spacing: .06em;
+    min-width: 90px;
+    text-align: center;
+    box-shadow: inset 0 2px 5px #000;
+  }
+  .selectors {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 320px;
+  }
+  .chip {
+    background: #20221e;
+    color: var(--accent);
+    border: 1px solid #383a34;
+    padding: 5px 10px;
+    font-family: 'Oswald', sans-serif;
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: .15s;
+  }
+  .chip:hover {
+    background: #33362f;
+    color: #fff;
+  }
+  .chip.active {
+    background: var(--accent-gold);
+    color: #1a1508;
+    border-color: #f0d588;
+    font-weight: 700;
+    box-shadow: 0 0 10px rgba(201, 171, 87, 0.4);
+  }
+
+  /* Interactive Toggle Switch */
+  .switch-box {
+    position: relative;
+    width: 110px;
+    height: 150px;
+    cursor: pointer;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    filter: drop-shadow(0 10px 18px rgba(0,0,0,0.9));
+    transition: transform 0.08s;
+  }
+  .switch-box:active {
+    transform: scale(0.97);
+  }
+
+  /* Interactive Red Button */
+  .button-box {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    cursor: pointer;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    filter: drop-shadow(0 10px 18px rgba(0,0,0,0.9));
+    transition: transform 0.1s;
+  }
+  .button-box:active {
+    transform: scale(0.92);
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.9)) brightness(0.9);
+  }
+
+  /* Interactive Red Lamp */
+  .lamp-box {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    cursor: pointer;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    filter: drop-shadow(0 10px 18px rgba(0,0,0,0.9));
+    transition: filter 0.2s;
+  }
+  .lamp-box.on {
+    filter: drop-shadow(0 0 25px rgba(255, 60, 40, 0.8)) drop-shadow(0 10px 18px rgba(0,0,0,0.9));
+  }
+
+  /* Asset Catalog Grid */
+  .catalog {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .catalog h2 {
+    font-size: 26px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: #fff;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--panel-border);
+    padding-bottom: 10px;
+  }
+  .cat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 40px;
+  }
+  .cat-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.6);
+  }
+  .cat-thumb {
+    width: 140px;
+    height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 50%, #292a27 0%, #151614 100%);
+    border-radius: 6px;
+    box-shadow: inset 0 0 10px #000;
+  }
+  .cat-thumb img {
+    max-width: 85%;
+    max-height: 85%;
+    object-fit: contain;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.8));
+  }
+  .cat-name {
+    margin-top: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    text-align: center;
+    word-break: break-all;
+  }
+  .cat-badge {
+    margin-top: 4px;
+    font-size: 11px;
+    letter-spacing: .08em;
+    color: var(--dim);
+    text-transform: uppercase;
+  }
+
+  /* Usage guide code box */
+  .code-box {
+    background: #0d0e0c;
+    border: 1px solid #2e302c;
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: #a8df80;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin-top: 15px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Soviet Hardware UI Pack</h1>
+  <p class="sub">Rotatable Knob Bodies &middot; Independent Pointers &middot; TP1-2 Toggle Switches &middot; Red Industrial ВКЛ/ВЫКЛ Buttons &middot; Lamps</p>
+</header>
+
+<main class="playground">
+  <h2>Live Interactive Playground</h2>
+  
+  <div class="demo-row">
+    <!-- 1. The Assembled Rotatable Knob -->
+    <div class="demo-col">
+      <span class="demo-title">Rotatable Knob Assembly</span>
+      <div class="knob-assembly" id="knob" tabindex="0" title="Drag up/down or use mouse wheel to rotate">
+        <div class="knob-scale" id="k-scale" style="background-image:url('scales/scale_arc_ticks.png')"></div>
+        <div class="knob-body" id="k-body" style="background-image:url('knobs/knob_lathe_steel_rust.png')"></div>
+        <div class="knob-pointer" id="k-pointer" style="background-image:url('pointers/pointer_white_enamel.png')"></div>
+      </div>
+      <div class="val-readout" id="k-val">-32.0 dB</div>
+      <div style="font-size:11px; color:#777; text-transform:uppercase;">Drag vertical / Wheel</div>
+
+      <!-- Knob Body Selector -->
+      <div class="selectors" id="knob-selectors">
+        <button class="chip active" data-knob="knob_lathe_steel_rust">Milled Steel Notches</button>
+        <button class="chip" data-knob="knob_chipped_iron_dark">Diamond Knurled Iron</button>
+        <button class="chip" data-knob="knob_bakelite_ribbed">Fluted Bakelite</button>
+        <button class="chip" data-knob="knob_aluminum_brass_insert">Duralumin Notched</button>
+      </div>
+
+      <!-- Pointer Selector -->
+      <div class="selectors" id="pointer-selectors">
+        <button class="chip active" data-ptr="pointer_white_enamel">White Needle</button>
+        <button class="chip" data-ptr="pointer_red_tip_brass_collar">Red Tip Brass</button>
+        <button class="chip" data-ptr="pointer_brass_wedge">Brass Wedge</button>
+        <button class="chip" data-ptr="pointer_black_instrument">Black Needle</button>
+      </div>
+    </div>
+
+    <!-- 2. The Toggle Switch (UP / DOWN) -->
+    <div class="demo-col">
+      <span class="demo-title">TP1-2 Toggle Switch</span>
+      <div class="switch-box" id="toggle-sw" style="background-image:url('switches/toggle_switch_up.png?v=3')" title="Click to flip switch"></div>
+      <div class="val-readout" id="sw-val">ON (UP)</div>
+      <div style="font-size:11px; color:#777; text-transform:uppercase;">Click to toggle</div>
+    </div>
+
+    <!-- 3. Red Push-Button ВКЛ/ВЫКЛ -->
+    <div class="demo-col">
+      <span class="demo-title">Soviet Red Push-Button</span>
+      <div class="button-box" id="push-btn" style="background-image:url('buttons_and_lamps/button_soviet_on_off_red.png')" title="Click to press"></div>
+      <div class="val-readout" id="btn-val">NORMAL</div>
+      <div style="font-size:11px; color:#777; text-transform:uppercase;">Click / Press down</div>
+    </div>
+
+    <!-- 4. Soviet Pilot Lamp ON/OFF -->
+    <div class="demo-col">
+      <span class="demo-title">Ruby Panel Lamp (ASL)</span>
+      <div class="lamp-box on" id="lamp" style="background-image:url('buttons_and_lamps/lamp_panel_red_on.png')" title="Click to toggle lamp"></div>
+      <div class="val-readout" id="lamp-val">ON (GLOWING)</div>
+      <div style="font-size:11px; color:#777; text-transform:uppercase;">Click to switch</div>
+    </div>
+  </div>
+</main>
+
+<section class="catalog">
+  <h2>1. Knob Bodies (Separate from pointers)</h2>
+  <div class="cat-grid" id="grid-knobs"></div>
+
+  <h2>2. Separate Pointers & Needles (Exact 50% 50% Center Pivot)</h2>
+  <div class="cat-grid" id="grid-pointers"></div>
+
+  <h2>3. Toggle Switches & Hardware</h2>
+  <div class="cat-grid" id="grid-switches"></div>
+
+  <h2>4. Red Buttons & Lamps</h2>
+  <div class="cat-grid" id="grid-buttons"></div>
+
+  <h2>Handoff Code Guide for other Agents</h2>
+  <div class="code-box">
+/* How to compose the knob in any plugin UI (HTML/CSS): */
+&lt;div class="knob" style="position:relative; width:150px; height:150px;"&gt;
+  &lt;!-- Optional Scale Ring --&gt;
+  &lt;div style="position:absolute; inset:-20px; background:url('scales/scale_arc_ticks.png') center/contain no-repeat;"&gt;&lt;/div&gt;
+
+  &lt;!-- 1. Knob Body (Static or rotating) --&gt;
+  &lt;div style="position:absolute; inset:0; background:url('knobs/knob_lathe_steel_rust.png') center/contain no-repeat;"&gt;&lt;/div&gt;
+
+  &lt;!-- 2. Pointer (Rotates with CSS transform: rotate(Xdeg)) --&gt;
+  &lt;div class="pointer" style="position:absolute; inset:0; transform-origin:50% 50%; transform:rotate(45deg);
+                             background:url('pointers/pointer_red_tip_brass_collar.png') center/contain no-repeat;"&gt;&lt;/div&gt;
+&lt;/div&gt;
+  </div>
+</section>
+
+<script>
+  // 1. Knob interaction
+  let knobNorm = 0.45;
+  const knobEl = document.getElementById('knob');
+  const ptrEl = document.getElementById('k-pointer');
+  const valEl = document.getElementById('k-val');
+
+  function updateKnob(n) {
+    knobNorm = Math.min(1, Math.max(0, n));
+    const deg = -135 + knobNorm * 270;
+    ptrEl.style.transform = `rotate(${deg}deg)`;
+    const db = (-60 + knobNorm * 60).toFixed(1);
+    valEl.textContent = db + ' dB';
+  }
+  updateKnob(knobNorm);
+
+  let startY = 0, startN = 0, dragging = false;
+  knobEl.addEventListener('pointerdown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startN = knobNorm;
+    knobEl.setPointerCapture(e.pointerId);
+  });
+  window.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dy = startY - e.clientY;
+    updateKnob(startN + dy / 200);
+  });
+  window.addEventListener('pointerup', () => dragging = false);
+  knobEl.addEventListener('wheel', e => {
+    e.preventDefault();
+    updateKnob(knobNorm - Math.sign(e.deltaY) * 0.03);
+  }, { passive: false });
+
+  // Selector buttons
+  document.querySelectorAll('#knob-selectors .chip').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#knob-selectors .chip').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      document.getElementById('k-body').style.backgroundImage = `url('knobs/${b.dataset.knob}.png')`;
+    });
+  });
+  document.querySelectorAll('#pointer-selectors .chip').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#pointer-selectors .chip').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      ptrEl.style.backgroundImage = `url('pointers/${b.dataset.ptr}.png')`;
+    });
+  });
+
+  // 2. Toggle switch interaction
+  let swUp = true;
+  const togEl = document.getElementById('toggle-sw');
+  const swVal = document.getElementById('sw-val');
+  togEl.addEventListener('click', () => {
+    swUp = !swUp;
+    togEl.style.backgroundImage = swUp ? `url('switches/toggle_switch_up.png?v=3')` : `url('switches/toggle_switch_down.png?v=3')`;
+    swVal.textContent = swUp ? 'ON (UP)' : 'OFF (DOWN)';
+  });
+
+  // 3. Push button interaction
+  const pBtn = document.getElementById('push-btn');
+  const btnVal = document.getElementById('btn-val');
+  pBtn.addEventListener('mousedown', () => btnVal.textContent = 'PRESSED (ВКЛ)');
+  window.addEventListener('mouseup', () => btnVal.textContent = 'NORMAL');
+
+  // 4. Lamp interaction
+  let lampOn = true;
+  const lampEl = document.getElementById('lamp');
+  const lampVal = document.getElementById('lamp-val');
+  lampEl.addEventListener('click', () => {
+    lampOn = !lampOn;
+    lampEl.classList.toggle('on', lampOn);
+    lampEl.style.backgroundImage = lampOn ? `url('buttons_and_lamps/lamp_panel_red_on.png')` : `url('buttons_and_lamps/lamp_panel_red_off.png')`;
+    lampVal.textContent = lampOn ? 'ON (GLOWING)' : 'OFF (DARK)';
+  });
+
+  // Catalog grids
+  const catKnobs = [
+    { file: 'knobs/knob_lathe_steel_rust.png', name: 'knob_lathe_steel_rust.png', badge: 'Milled Steel Notches + Rust' },
+    { file: 'knobs/knob_chipped_iron_dark.png', name: 'knob_chipped_iron_dark.png', badge: 'Diamond Knurled Cast Iron' },
+    { file: 'knobs/knob_bakelite_ribbed.png', name: 'knob_bakelite_ribbed.png', badge: 'Fluted Grip Bakelite' },
+    { file: 'knobs/knob_aluminum_brass_insert.png', name: 'knob_aluminum_brass_insert.png', badge: 'Perimeter Teeth + Brass' }
+  ];
+  const catPtrs = [
+    { file: 'pointers/pointer_white_enamel.png', name: 'pointer_white_enamel.png', badge: 'White Enamel Needle' },
+    { file: 'pointers/pointer_red_tip_brass_collar.png', name: 'pointer_red_tip_brass_collar.png', badge: 'Red Tip Steel' },
+    { file: 'pointers/pointer_brass_wedge.png', name: 'pointer_brass_wedge.png', badge: 'Brass Wedge Indicator' },
+    { file: 'pointers/pointer_black_instrument.png', name: 'pointer_black_instrument.png', badge: 'Black Steel Needle' },
+    { file: 'scales/scale_arc_ticks.png', name: 'scale_arc_ticks.png', badge: 'Calibration Dial Ring' }
+  ];
+  const catSw = [
+    { file: 'switches/toggle_switch_up.png', name: 'toggle_switch_up.png', badge: 'TP1-2 UP (DOWN Stamped Plate)' },
+    { file: 'switches/toggle_switch_down.png', name: 'toggle_switch_down.png', badge: 'TP1-2 DOWN (UP Stamped Plate)' },
+    { file: 'switches/toggle_switch_neutral.png', name: 'toggle_switch_neutral.png', badge: 'TP1-2 Lever NEUTRAL' }
+  ];
+  const catBtns = [
+    { file: 'buttons_and_lamps/button_soviet_on_off_red.png', name: 'button_soviet_on_off_red.png', badge: 'ВКЛ/ВЫКЛ Push Button' },
+    { file: 'buttons_and_lamps/lamp_panel_red_off.png', name: 'lamp_panel_red_off.png', badge: 'Ruby Lamp OFF' },
+    { file: 'buttons_and_lamps/lamp_panel_red_on.png', name: 'lamp_panel_red_on.png', badge: 'Ruby Lamp Glowing ON' }
+  ];
+
+  function populateGrid(id, items) {
+    const el = document.getElementById(id);
+    items.forEach(it => {
+      const card = document.createElement('div');
+      card.className = 'cat-card';
+      card.innerHTML = `
+        <div class="cat-thumb"><img src="${it.file}" alt="${it.name}"></div>
+        <div class="cat-name">${it.name}</div>
+        <div class="cat-badge">${it.badge}</div>
+      `;
+      el.appendChild(card);
+    });
+  }
+  populateGrid('grid-knobs', catKnobs);
+  populateGrid('grid-pointers', catPtrs);
+  populateGrid('grid-switches', catSw);
+  populateGrid('grid-buttons', catBtns);
+</script>
+</body>
+</html>

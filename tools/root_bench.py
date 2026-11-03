@@ -32,7 +32,7 @@ def load(path):
         if line.startswith('#') or not line.strip():
             continue
         cid, folder, include = line.rstrip('\n').split('\t')
-        rows.append(dict(id=cid, folder=folder, include=re.compile(include, re.I)))
+        rows.append(dict(id=cid, folder=tb.local_path(folder), include=re.compile(include, re.I)))
     return rows
 
 

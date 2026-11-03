@@ -1,0 +1,32 @@
+{
+  "date": "2026-11-01",
+  "scope": "DarkTrap generation under tonal sample analysis; drum transcription copying excluded",
+  "fixture": {
+    "seeds": 1000,
+    "bpm": 150,
+    "bars": 4,
+    "density": 0.4,
+    "roll_mode": "Fills",
+    "tonal_roots": ["A", "F", "C", "G"],
+    "confident_segment_confidence": 0.95,
+    "weak_segment_confidence": 0.1
+  },
+  "before": {
+    "quick_pickup_pairs": 838,
+    "pitch_pair_mismatches": 4,
+    "weak_confidence_notes_changed": 0
+  },
+  "after": {
+    "quick_pickup_pairs": 838,
+    "pitch_pair_mismatches": 0,
+    "weak_confidence_notes_changed": 0,
+    "rhythm_gate_velocity_contract_passed": true,
+    "stale_confidence_tag_guard_passed": true,
+    "locked_bass_guard_passed": true,
+    "pickup_chain_test_passed": true,
+    "real_wav_darktrap_analysis_test_passed": true,
+    "integration_tests_passed": 40,
+    "integration_tests_failed": 0
+  },
+  "vst_built_or_installed": false
+}

@@ -83,6 +83,7 @@ public:
     std::function<void(const RuntimeLaneId&)> onPrevSampleTrack;
     std::function<void(const RuntimeLaneId&)> onNextSampleTrack;
     std::function<void(const RuntimeLaneId&)> onSampleMenuTrack;
+    std::function<void(const RuntimeLaneId&)> onSampleListTrack;
     std::function<void(const RuntimeLaneId&)> onTrackNameClicked;
     std::function<void(const RuntimeLaneId&)> onRenameLaneRequested;
     std::function<void(const RuntimeLaneId&)> onDeleteLaneRequested;

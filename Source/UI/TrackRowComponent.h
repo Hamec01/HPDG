@@ -89,6 +89,7 @@ public:
     std::function<void(const RuntimeLaneId&)> onPrevSample;
     std::function<void(const RuntimeLaneId&)> onNextSample;
     std::function<void(const RuntimeLaneId&)> onSampleMenuRequested;
+    std::function<void(const RuntimeLaneId&)> onSampleListRequested;
     std::function<void(const RuntimeLaneId&)> onTrackNameClicked;
     std::function<void(const RuntimeLaneId&)> onRenameLaneRequested;
     std::function<void(const RuntimeLaneId&)> onDeleteLaneRequested;
@@ -155,6 +156,7 @@ private:
     juce::Label strengthLabel;
     juce::Label strengthValueLabel;
     RotaryKnobSlider strengthSlider;
+    juce::Rectangle<int> strengthControlBounds;
     juce::Label widthLabel;
     juce::Label widthValueLabel;
     juce::Slider widthSlider;

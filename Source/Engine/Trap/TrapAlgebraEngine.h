@@ -113,6 +113,8 @@ struct TrapAlgebraParams
     int seed = 1;
     int bars = 4;
     float bpm = 140.0f;
+    bool tempoClockResolved = false;
+    int rollMode = 1; // 0 Off, 1 original Style, 2 phrase Fills
     float density = 0.55f;
     float swing = 0.54f;
     float humanize = 0.35f;
@@ -163,12 +165,12 @@ public:
                  TrapAlgebraRole role);
     void clearNote(int lane, int tick64);
     bool hasNote(int lane, int tick64) const;
-    bool isLaneActiveAt(int lane, int tick64) const;
+    bool isLaneActiveAt(int lane, int tick64, bool includeLongBass = false) const;
     const TrapPatternCell* cellAt(int lane, int tick64) const;
     TrapPatternCell* cellAt(int lane, int tick64);
 
-    int activeLaneCountAt(int tick64) const;
-    int active808Ticks() const;
+    int activeLaneCountAt(int tick64, bool includeLongBass = false) const;
+    int active808Ticks(bool includeLongBass = false) const;
     int countLane(int lane) const;
     int countLaneInBar(int lane, int bar) const;
     std::vector<TrapAlgebraNote> notesForLane(int lane) const;
@@ -230,6 +232,7 @@ struct TrapQualityBreakdown
 
     int snareMissingCount = 0;
     float kick808CouplingRatio = 0.0f;
+    float kick808SustainSupportRatio = 0.0f; // sounding bass under kick; onset ratio above stays unchanged
     float sub808Density = 0.0f;
     float hatVelocityVariance = 0.0f;
     int rollCount = 0;

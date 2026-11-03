@@ -9,6 +9,12 @@
   #define NOMINMAX
  #endif
  #include <windows.h>
+ #include <shlobj.h>
+ #include <shobjidl.h>
+ #include <shlguid.h>
+ #pragma comment(lib, "shell32.lib")
+ #pragma comment(lib, "ole32.lib")
+ #pragma comment(lib, "uuid.lib")
 #endif
 
 namespace bbg::ExternalDragWindowFade
@@ -20,9 +26,10 @@ std::atomic<int> dragsInProgress { 0 };
 
 #if JUCE_WINDOWS
 constexpr int kMaxFrameChromePx = 160;     // a frame wider / taller than the editor by more is the DAW's area, not the plugin window
-constexpr int kLeaveMarginPx = 8;          // the cursor must be this far outside the frame before it hides
+constexpr int kLeaveMarginPx = 8;          // the cursor must be this far outside the frame before it moves away
 constexpr int kPollMs = 30;
-constexpr int kReleaseGraceMs = 1500;      // button up this long with the drag not ended: show the window anyway
+constexpr int kReleaseGraceMs = 1500;      // button up this long with the drag not ended: restore the window anyway
+constexpr int kOffscreenMarginPx = 64;
 
 bool sizeOf(HWND window, int& width, int& height)
 {
@@ -81,18 +88,58 @@ juce::String describe(HWND window)
            + (isChildWindow(window) ? " child" : " top-level");
 }
 
-bool hideFrame(HWND frame)
+struct WindowPlacement
 {
-    return SetWindowPos(frame, nullptr, 0, 0, 0, 0,
-                        SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
+    HWND window = nullptr;
+    HWND parent = nullptr;
+    POINT position {};
+    int width = 0;
+    int height = 0;
+    bool child = false;
+    bool moved = false;
+};
+
+WindowPlacement moveFrameAway(HWND frame, bool asynchronous)
+{
+    WindowPlacement state;
+    RECT rect {};
+    if (frame == nullptr || !IsWindow(frame) || !GetWindowRect(frame, &rect))
+        return state;
+
+    state.window = frame;
+    state.child = isChildWindow(frame);
+    state.parent = state.child ? GetParent(frame) : nullptr;
+    state.position = { rect.left, rect.top };
+    if (state.child && (state.parent == nullptr || !ScreenToClient(state.parent, &state.position)))
+        return {};
+
+    state.width = rect.right - rect.left;
+    state.height = rect.bottom - rect.top;
+    const int x = state.child
+        ? -state.width - kOffscreenMarginPx
+        : GetSystemMetrics(SM_XVIRTUALSCREEN) - state.width - kOffscreenMarginPx;
+    const int y = state.child ? -state.height - kOffscreenMarginPx : rect.top;
+    UINT flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
+    if (asynchronous)
+        flags |= SWP_ASYNCWINDOWPOS;
+    state.moved = SetWindowPos(frame, nullptr, x, y, 0, 0, flags) != FALSE;
+    return state;
 }
 
-void showFrame(HWND frame)
+void restoreFrame(const WindowPlacement& state, bool asynchronous)
 {
-    if (frame == nullptr || !IsWindow(frame))
+    if (!state.moved || state.window == nullptr || !IsWindow(state.window))
         return;
-    SetWindowPos(frame, nullptr, 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-    RedrawWindow(frame, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
+
+    // Do not apply stale coordinates if the host has intentionally reparented or recreated the frame.
+    if (isChildWindow(state.window) != state.child || (state.child && GetParent(state.window) != state.parent))
+        return;
+
+    UINT flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
+    if (asynchronous)
+        flags |= SWP_ASYNCWINDOWPOS;
+    SetWindowPos(state.window, nullptr, state.position.x, state.position.y, 0, 0, flags);
+    RedrawWindow(state.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 HWND editorWindow(juce::Component* source)
@@ -114,8 +161,8 @@ bool buttonDown()
 class DragWatcher final
 {
 public:
-    DragWatcher(juce::Component* source, HWND frameToHide)
-        : editor(source != nullptr ? source->getTopLevelComponent() : nullptr), frame(frameToHide)
+    DragWatcher(juce::Component* source, HWND frameToMove)
+        : editor(source != nullptr ? source->getTopLevelComponent() : nullptr), frame(frameToMove)
     {
         if (frame != nullptr)
             poller = std::thread([this] { run(); });
@@ -127,12 +174,18 @@ public:
         stopRequested = true;
         if (poller.joinable())
             poller.join();
-        if (hidden.load())
+        if (movedAway.load())
         {
-            showFrame(frame);
-            log("drag: window shown again");
+            restoreFrame(placement, false);
+            log("drag: window position restored");
         }
         repaintEditor(editor);
+    }
+
+    bool belongsTo(juce::Component* component) const
+    {
+        auto* top = component != nullptr ? component->getTopLevelComponent() : nullptr;
+        return top != nullptr && editor.getComponent() == top;
     }
 
 private:
@@ -155,18 +208,16 @@ private:
                     + juce::String(cursor.y) + " frame " + juce::String(r.left) + "," + juce::String(r.top) + " - "
                     + juce::String(r.right) + "," + juce::String(r.bottom));
             }
-            if (!hidden.load())
+            if (!movedAway.load())
             {
                 const bool outside = haveGeometry
                     && (cursor.x < r.left - kLeaveMarginPx || cursor.x > r.right + kLeaveMarginPx
                         || cursor.y < r.top - kLeaveMarginPx || cursor.y > r.bottom + kLeaveMarginPx);
                 if (outside && down)
                 {
-                    const bool ok = SetWindowPos(frame, nullptr, 0, 0, 0, 0,
-                                                 SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE
-                                                     | SWP_ASYNCWINDOWPOS) != 0;
-                    hidden = ok;
-                    log("drag: cursor left the window, hidden " + juce::String(ok ? 1 : 0));
+                    placement = moveFrameAway(frame, true);
+                    movedAway = placement.moved;
+                    log("drag: cursor left the window, moved away " + juce::String(placement.moved ? 1 : 0));
                 }
                 else if (!down && (releasedForMs += kPollMs) >= kReleaseGraceMs)
                 {
@@ -179,11 +230,9 @@ private:
             }
             else if ((releasedForMs += kPollMs) >= kReleaseGraceMs)
             {
-                // The drag end did not come: show the window from here and let the editor repaint.
-                SetWindowPos(frame, nullptr, 0, 0, 0, 0,
-                             SWP_SHOWWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
-                hidden = false;
-                log("drag: no end callback, window shown");
+                // The drag end did not come: restore the window from here and let the editor repaint.
+                restoreFrame(placement, true);
+                log("drag: no end callback, window position restored");
                 juce::MessageManager::callAsync([safeEditor = editor] { repaintEditor(safeEditor); });
                 return;
             }
@@ -209,8 +258,9 @@ private:
 
     juce::Component::SafePointer<juce::Component> editor;
     HWND frame = nullptr;
+    WindowPlacement placement;
     std::atomic<bool> stopRequested { false };
-    std::atomic<bool> hidden { false };
+    std::atomic<bool> movedAway { false };
     std::thread poller;
 };
 
@@ -225,52 +275,122 @@ void* findPluginFrame(void* editorWindowHandle)
     return pluginFrame(static_cast<HWND>(editorWindowHandle));
 }
 
-bool hideAndShowForTest(void* frameHandle, bool& wasHidden)
+bool moveAwayAndRestoreForTest(void* frameHandle, bool& wasMoved)
 {
     const auto frame = static_cast<HWND>(frameHandle);
-    const auto before = GetWindowLongPtr(frame, GWL_EXSTYLE);
-    wasHidden = hideFrame(frame) && !IsWindowVisible(frame);
-    showFrame(frame);
-    return GetWindowLongPtr(frame, GWL_EXSTYLE) == before && IsWindowVisible(frame);
+    RECT rectBefore {};
+    GetWindowRect(frame, &rectBefore);
+    const auto parentBefore = GetParent(frame);
+    const auto styleBefore = GetWindowLongPtr(frame, GWL_STYLE);
+    const auto exStyleBefore = GetWindowLongPtr(frame, GWL_EXSTYLE);
+    const bool visibleBefore = IsWindowVisible(frame) != FALSE;
+    const auto placement = moveFrameAway(frame, false);
+    RECT movedRect {};
+    GetWindowRect(frame, &movedRect);
+    wasMoved = placement.moved
+        && IsWindowVisible(frame) != FALSE
+        && EqualRect(&rectBefore, &movedRect) == FALSE;
+    restoreFrame(placement, false);
+    RECT after {};
+    GetWindowRect(frame, &after);
+    return GetParent(frame) == parentBefore
+        && GetWindowLongPtr(frame, GWL_STYLE) == styleBefore
+        && GetWindowLongPtr(frame, GWL_EXSTYLE) == exStyleBefore
+        && (IsWindowVisible(frame) != FALSE) == visibleBefore
+        && EqualRect(&rectBefore, &after) != FALSE;
 }
 #endif
 
 bool performFileDrag(const juce::String& path, juce::Component* source, std::function<void()> onEnd)
 {
-    ++dragsInProgress;
 #if JUCE_WINDOWS
+    // Run OLE on the window's thread. JUCE's worker-based implementation can leave
+    // an in-process host waiting on a cross-apartment transfer during shutdown.
+    if (!juce::MessageManager::getInstance()->isThisTheMessageThread()
+        || !juce::File(path).existsAsFile())
+        return false;
+    int expected = 0;
+    if (!dragsInProgress.compare_exchange_strong(expected, 1))
+        return false;
+
+    struct DragScope
+    {
+        ~DragScope()
+        {
+            activeWatcher.reset();
+            dragsInProgress = 0;
+        }
+    } scope;
+
+    const HRESULT oleResult = OleInitialize(nullptr);
+    if (FAILED(oleResult))
+    {
+        log("drag: OleInitialize failed hr=" + juce::String::toHexString(static_cast<int>(oleResult)));
+        return false;
+    }
+    struct OleScope { ~OleScope() { OleUninitialize(); } } oleScope;
+
+    IShellItem* item = nullptr;
+    IDataObject* data = nullptr;
+    HRESULT result = SHCreateItemFromParsingName(path.toWideCharPointer(), nullptr, IID_PPV_ARGS(&item));
+    if (SUCCEEDED(result))
+    {
+        result = item->BindToHandler(nullptr, BHID_DataObject, IID_PPV_ARGS(&data));
+        item->Release();
+    }
+    if (FAILED(result))
+    {
+        log("drag: shell file data failed hr=" + juce::String::toHexString(static_cast<int>(result)));
+        return false;
+    }
+
     const auto editor = editorWindow(source);
     const auto frame = pluginFrame(editor);
-    juce::String chain;
-    for (HWND w = editor; w != nullptr && w != GetDesktopWindow(); w = isChildWindow(w) ? GetAncestor(w, GA_PARENT) : nullptr)
-        chain << (chain.isEmpty() ? "" : " < ") << describe(w);
-    log("drag: frame " + describe(frame) + " | chain " + chain);
-    activeWatcher.reset(); // a previous drag's window comes back first
+    log("drag: shell UI-thread begin | frame " + describe(frame) + " | " + path);
     activeWatcher = std::make_unique<DragWatcher>(source, frame);
-#endif
-    // On Windows the drag runs on a worker thread; JUCE posts the end callback to the message thread.
+    DWORD effect = DROPEFFECT_NONE;
+    // The Shell supplies a standard IDropSource and a real file IDataObject.
+    result = SHDoDragDrop(editor, data, nullptr, DROPEFFECT_COPY, &effect);
+    data->Release();
+    activeWatcher.reset();
+    dragsInProgress = 0;
+    log("drag: shell end hr=" + juce::String::toHexString(static_cast<int>(result))
+        + " effect=" + juce::String(static_cast<int>(effect)));
+    if (onEnd)
+        onEnd();
+    return result == DRAGDROP_S_DROP || result == DRAGDROP_S_CANCEL;
+#else
+    ++dragsInProgress;
     const bool started = juce::DragAndDropContainer::performExternalDragDropOfFiles({ path }, false, source,
                                                                                      [onEnd]
                                                                                      {
-#if JUCE_WINDOWS
-                                                                                         activeWatcher.reset();
-#endif
                                                                                          --dragsInProgress;
                                                                                          if (onEnd)
                                                                                              onEnd();
                                                                                      });
     if (!started)
     {
-#if JUCE_WINDOWS
-        activeWatcher.reset();
-#endif
         --dragsInProgress;
     }
     return started;
+#endif
 }
 
 bool isDragOutInProgress()
 {
     return dragsInProgress.load() > 0;
+}
+
+void editorClosing(juce::Component* editor)
+{
+#if JUCE_WINDOWS
+    if (activeWatcher != nullptr && activeWatcher->belongsTo(editor))
+    {
+        log("drag: editor closing, restore native frame");
+        activeWatcher.reset();
+    }
+#else
+    juce::ignoreUnused(editor);
+#endif
 }
 } // namespace bbg::ExternalDragWindowFade

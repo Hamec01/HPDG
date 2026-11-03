@@ -380,10 +380,24 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
     }
     out.kick808CouplingRatio = kicks.empty() ? 0.0f : static_cast<float>(coupledKicks) / static_cast<float>(kicks.size());
     const auto [couplingLow, couplingHigh] = targetCouplingBand(params.substyle);
-    const float couplingBandScore = rangeScore(out.kick808CouplingRatio, couplingLow, couplingHigh, 0.22f);
+    float couplingBandScore = rangeScore(out.kick808CouplingRatio, couplingLow, couplingHigh, 0.22f);
+    // A Dark pedal line is coordinated with kicks while it is sounding; it need not
+    // retrigger on every kick. Keep the actual onset ratio intact for research/debugging.
+    const auto bassNotes = matrix.notesForLane(TrapAlgebraLanes::Sub808);
+    const bool sustainedDark = params.substyle == TrapAlgebraSubstyle::DarkTrap
+        && std::any_of(bassNotes.begin(), bassNotes.end(), [](const auto& n) { return n.durationTicks >= kTicksPerBar; });
+    if (sustainedDark)
+    {
+        int supported = 0;
+        for (const auto& kick : kicks)
+            supported += matrix.isLaneActiveAt(TrapAlgebraLanes::Sub808, kick.tick64, true) ? 1 : 0;
+        out.kick808SustainSupportRatio = kicks.empty() ? 0.0f : static_cast<float>(supported) / static_cast<float>(kicks.size());
+        couplingBandScore = std::max(couplingBandScore,
+            rangeScore(out.kick808SustainSupportRatio, couplingLow, 1.0f, 0.22f));
+    }
     out.kick808CouplingScore = 0.64f * couplingBandScore + 0.36f * lowEndPocketScore(matrix);
 
-    out.sub808Density = totalTicks > 0 ? static_cast<float>(matrix.active808Ticks()) / static_cast<float>(totalTicks) : 0.0f;
+    out.sub808Density = totalTicks > 0 ? static_cast<float>(matrix.active808Ticks(sustainedDark)) / static_cast<float>(totalTicks) : 0.0f;
     const auto [occupancyLow, occupancyHigh] = targetOccupancyBand(params.substyle);
     const float mud = std::max(0.0f, out.sub808Density - occupancyHigh);
     const float empty = std::max(0.0f, occupancyLow - out.sub808Density);
@@ -426,7 +440,7 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
     int airyTicks = 0;
     for (int tick = 0; tick < totalTicks; ++tick)
     {
-        const int active = matrix.activeLaneCountAt(tick);
+        const int active = matrix.activeLaneCountAt(tick, sustainedDark);
         overload += static_cast<float>(std::max(0, active - weights.activeLaneMax) * std::max(0, active - weights.activeLaneMax));
         if (active <= 2)
             ++airyTicks;
@@ -520,7 +534,7 @@ juce::StringArray TrapConstraintValidator::validate(const TrapPatternMatrix& mat
         issues.add("constant_808_wall");
     if (score.sub808Density < occupancyLow)
         issues.add("empty_808");
-    if (score.kick808CouplingRatio < couplingLow - 0.08f)
+    if (std::max(score.kick808CouplingRatio, score.kick808SustainSupportRatio) < couplingLow - 0.08f)
         issues.add("low_kick_808_coupling");
     if (score.kick808CouplingScore < 0.60f)
         issues.add("low_trap_core_low_end");

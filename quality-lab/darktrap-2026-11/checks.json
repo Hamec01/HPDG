@@ -1,0 +1,24 @@
+{
+  "non_dark_controls": 5000,
+  "changed_control_hashes": 0,
+  "quick_pickup_pairs": 2350,
+  "quick_pickup_pitch_mismatches": 0,
+  "overlapping_bass_gates": 0,
+  "product_roll_gate_ticks": {
+    "60": 927
+  },
+  "tests": {
+    "core": {
+      "passed": 90,
+      "failed": 0
+    },
+    "lane": {
+      "passed": 38,
+      "failed": 0
+    }
+  },
+  "executable_sha256": {
+    "HPDG_GenerationQualityLab_before_fixed.exe": "dfe55fa436d720a0d264138c86cc725150672593aa03f46146a689639d67619a",
+    "HPDG_GenerationQualityLab_verified.exe": "edb25bde8eae01731558d933c2f2b7b9a3ca3314529d1e8c8fdf2e69db163f5d"
+  }
+}

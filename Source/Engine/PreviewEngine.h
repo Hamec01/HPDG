@@ -2,6 +2,8 @@
 
 #include <array>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
@@ -9,9 +11,18 @@
 
 namespace bbg
 {
+class BassEngine;
+struct BassSample;
+struct Sub808Sound;
+
+// Plays the lanes' samples. The Sub808 lane is played by the HPDG 808 engine (Source/Bass808) once a
+// sound is set: its bank sample as a plain sample, or an HPDG 808 sound.
 class PreviewEngine
 {
 public:
+    PreviewEngine();
+    ~PreviewEngine();
+
     struct TriggerOptions
     {
         float playbackRate = 1.0f;
@@ -21,6 +32,7 @@ public:
         bool legato = false;
         bool glide = false;
         int glideDurationSamples = 0;
+        int midiNote = -1; // the Sub808 note (the bass engine plays notes, not playback rates)
     };
 
     void prepare(double sampleRate);
@@ -33,6 +45,16 @@ public:
     void render(juce::AudioBuffer<float>& buffer, int startSample, int numSamples);
     void renderSeparated(std::array<juce::AudioBuffer<float>, kTrackTypeCount>& buffers, int startSample, int numSamples);
     bool hasActiveVoices() const;
+
+    // The Sub808 lane's sound (under the project lock, before the block's notes). nullptr: the plain
+    // sample player, as before.
+    void setSub808Sound(std::shared_ptr<const Sub808Sound> sound, double bpm);
+    // How much earlier Sub808 notes must be sent so the bass engine's output lands on time (its
+    // saturator's latency); 0 while the plain sample player plays the lane.
+    int sub808LeadSamples(const LaneSampleBank& sampleBank) const;
+    // True once after each reset(): the first block of playback, whose early Sub808 window has
+    // already passed the notes right at its start.
+    bool takeSub808CatchUp() noexcept { return !std::exchange(bassPrimed, true); }
 
 private:
     struct Voice
@@ -76,7 +98,34 @@ private:
     // silent this sample (not started yet, or just ended); gain is the envelope multiplier.
     bool stepVoice(Voice& voice, float& gain);
 
+    struct BassEvent
+    {
+        int at = 0;          // samples from the start of the next render
+        int note = 36;
+        float velocity = 1.0f;
+        int mode = 0;        // BassSettings::PlayMode
+        float glideMs = 0.0f;
+        bool on = true;
+    };
+
+    bool bassPlaysLane(const LaneSampleBank& sampleBank) const;
+    void queueBassNote(float gain, int sampleOffset, const TriggerOptions& options);
+    // Renders the bass engine for the next numSamples into bassBuffer, applying the queued notes on time.
+    void renderBass(int numSamples);
+    // The kick's sidechain on bassBuffer: each kick hit pulls the bass down (2 ms in), it comes back
+    // exponentially. Runs while the bass is silent too, so a hit still ducks the note that follows.
+    void duckBass(int numSamples);
+
     std::array<Voice, kMaxVoices> voices {};
+    std::unique_ptr<BassEngine> bass;
+    std::shared_ptr<const Sub808Sound> bassSound;
+    std::vector<BassEvent> bassEvents;
+    std::vector<float> bassBuffer;
+    bool bassPrimed = false;
+    int bassTail = 0; // samples the engine still renders after its last voice ended (its output delay)
+    std::vector<int> kickHits; // kick starts, samples from the start of the next render
+    double duck = 0.0;         // 0 .. 1 how far down the bass is now
+    int duckAttack = 0;
     double currentSampleRate = 44100.0;
 };
 } // namespace bbg

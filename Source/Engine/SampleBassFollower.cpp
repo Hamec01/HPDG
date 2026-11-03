@@ -1,6 +1,7 @@
 #include "SampleBassFollower.h"
 
 #include <cmath>
+#include <vector>
 
 #include "../Core/ProjectLaneAccess.h"
 #include "../Core/ProjectStateController.h"
@@ -27,8 +28,12 @@ SampleBassFollowReport SampleBassFollower::apply(PatternProject& project,
     const double loopLength = sampleEnd - originSeconds;
 
     auto notes = sub->notes;
-    for (auto& note : notes)
+    const bool dark = project.params.genre == GenreType::Trap && project.params.trapSubstyle == 1;
+    // Current-pass evidence, rather than a role tag left by an earlier guidance pass.
+    std::vector<bool> supportedPitch(dark ? notes.size() : 0, false);
+    for (size_t index = 0; index < notes.size(); ++index)
     {
+        auto& note = notes[index];
         // Composed from the sample already (bass mode [2]): its pitch is the sample's.
         if (note.semanticRole.contains("sample_line"))
         {
@@ -52,9 +57,38 @@ SampleBassFollowReport SampleBassFollower::apply(PatternProject& project,
         const int pitchClass = segment->midiNote % 12;
         const int shift = ((pitchClass - note.pitch % 12) % 12 + 12 + 6) % 12 - 6; // -6..+5 semitones
         note.pitch = juce::jlimit(24, 60, note.pitch + shift);
-        note.semanticRole = note.semanticRole.isEmpty() ? juce::String("sample_bass") : note.semanticRole + "|sample_bass";
+        if (!dark || !note.semanticRole.contains("sample_bass"))
+            note.semanticRole = note.semanticRole.isEmpty() ? juce::String("sample_bass") : note.semanticRole + "|sample_bass";
+        if (dark)
+            supportedPitch[index] = true;
         ++report.notesFollowed;
     }
+
+    if (dark)
+        // Work backwards so a short chain of pickups reaches the same supported target.
+        for (size_t next = notes.size(); next > 1; --next)
+        {
+            const size_t index = next - 2;
+            auto& pickup = notes[index];
+            auto& target = notes[index + 1];
+            const int distance = target.gridTick - pickup.gridTick;
+            if (!pickup.semanticRole.contains("bass_pickup") || pickup.semanticRole.contains("sample_line")
+                || distance <= 0 || distance > TimingGrid::Sixteenth || !supportedPitch[index + 1])
+                continue;
+            // Anticipate the following chord on a short rearticulation. Keep the genre's
+            // timing/gates/velocity; the analyzer contributes pitch, not a copied rhythm.
+            pickup.pitch = target.pitch;
+            pickup.glideToNext = false;
+            target.isSlide = false;
+            if (!pickup.semanticRole.contains("sample_bass"))
+                pickup.semanticRole += "|sample_bass";
+            if (!supportedPitch[index])
+            {
+                ++report.notesFollowed;
+                --report.notesKept;
+            }
+            supportedPitch[index] = true;
+        }
 
     if (report.notesFollowed > 0)
         ProjectStateController::setTrackNotes(project, TrackType::Sub808, notes);
