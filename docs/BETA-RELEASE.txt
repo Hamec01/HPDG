@@ -1,7 +1,7 @@
-﻿HPDG 0.1.0 Beta 6 — HamloProd
+HPDG 0.1.0 Beta 7 — HamloProd
 Windows 10/11, x64, VST3 only.
 
-Includes the VST3 plugin, the full library of 913 audio samples, the guide
+Includes the VST3 plugin, the full library of 998 audio samples, the guide
 and the rights notices. No activation and no internet connection are needed
 to use the plugin; your license key (sent by email after the purchase) is only for
 in-plugin updates. The Microsoft Visual C++ Runtime is included and installed
@@ -15,6 +15,21 @@ After installing, rescan VST3 plugins in your DAW.
 This is a beta: keep backups of your projects and report bugs with your DAW,
 Windows version, genre and the steps that led to the problem.
 Standalone is not part of this release.
+
+What's new in Beta 7 (since Beta 6):
+- Rebuilt LuxuryTrap kick/808 phrases and hat rolls; 79 Luxury kit assets.
+- HPDG 808 Play/Stop audition with repeating notes.
+- Six new factory 808 voices: ATL 1-3 and Dark 1-3 (998 audio samples total).
+- Distinct ATLClassic and DarkTrap kick, hat and 808 rules; compact bass
+  register and improved sample-guided bass/kick behaviour.
+- Trap kicks avoid the snare and its immediate aftermath.
+- Trap Rolls: Off / Style / Fills; finer grid and triplet editing.
+- Sub808 uses the HPDG 808 synth engine, with bass strip, sound editor,
+  sample layer, filters, drive and presets. Drive level compensation and
+  inline preset saving; Boom Bap bass enabled by default.
+- Sample Analysis infers the key from Basic Pitch notes, with chroma
+  fallback. Manual key selection retains priority.
+- Reduced Sub808 note-end crackle and UI-related audio interruptions.
 
 What's new in Beta 6:
 - The installer, the guide (FAQ) and the release notes are in English.

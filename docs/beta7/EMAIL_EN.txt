@@ -1,0 +1,33 @@
+Subject: HPDG Beta 7 - a new 808 engine, ATL Classic and Dark Trap
+
+Hi!
+
+Thank you for supporting HPDG! Beta 7 is ready, and I would love to hear your feedback.
+
+Since Beta 6:
+- More distinct ATLClassic and DarkTrap kick, hi-hat and 808 behaviour, a compact bass register and improved sample guidance.
+- The HPDG 808 engine in Sub808, with a sound strip/editor, sample layer, filters, drive and presets. Six new ATL/Dark voices bring the library to 919 audio samples.
+- Trap Rolls: Off / Style / Fills, with finer grid and triplet editing.
+- Sample key estimation from Basic Pitch notes, with a chroma fallback. Your manual key selection still takes priority.
+- Fixes for 808 note-end crackle and fewer UI-related audio interruptions.
+
+How to update:
+1. Save your project and a backup.
+2. Open HPDG and press Update next to the version.
+3. Enter the key from your purchase email if prompted; wait for the download and installer verification.
+4. Confirm the installer launch and close your DAW before files are replaced. Follow any installer request to close applications.
+5. Finish installing, restart your DAW and rescan VST3 if needed. Check that HPDG shows 0.1.0 Beta 7.
+
+Alternatively, obtain the installer at https://hamloprod.org/en/vst with your key and install with the DAW closed. The key is for updates only; making music needs no activation or constant internet connection.
+
+The PDF guide explains the new features, both Trap styles, simple formulas and practical workflows.
+
+I am grateful for your support and look forward to your feedback. You can always write to me about what you would like to improve - the sound, generation, sample workflow, interface or how HPDG fits into your DAW. Your ideas help shape the plugin.
+
+Contact: hello@hamloprod.org
+For bugs, please include your DAW, Windows version, HPDG version and steps to reproduce. Never share your license key publicly.
+
+Thank you!
+HamloProd
+
+Agent note: send only after the verified Beta 7 release is published. Attach/link the PDF. Add any key reminder individually on the server, never in the shared template.

@@ -1,0 +1,425 @@
+[
+  {
+    "kicker": "A new chapter",
+    "title": "BETA 7",
+    "subtitle": "Your guide to the update, new features and two distinct Trap characters. 6 November 2026",
+    "elements": [
+      {
+        "type": "hero",
+        "text": "MORE CHARACTER.<br/>MORE CONTROL."
+      },
+      {
+        "type": "intro",
+        "text": "From spacious ATL grooves to dark bass phrases: Beta 7 develops the musical rules behind generation, adds hands-on 808 control and improves the sample workflow."
+      },
+      {
+        "type": "block",
+        "title": "Inside this release",
+        "text": "ATLClassic and DarkTrap • HPDG 808 inside Sub808 • Trap Rolls • Basic Pitch • audio fixes"
+      },
+      {
+        "type": "grid",
+        "rows": [
+          [
+            "HI-HAT",
+            [
+              0,
+              2,
+              4,
+              6,
+              8,
+              10,
+              12,
+              14
+            ]
+          ],
+          [
+            "SNARE",
+            [
+              8
+            ]
+          ],
+          [
+            "KICK",
+            [
+              0,
+              6,
+              12
+            ]
+          ],
+          [
+            "808",
+            [
+              0,
+              5,
+              12,
+              14
+            ]
+          ]
+        ]
+      },
+      {
+        "type": "note",
+        "text": "An illustration of the musical idea, not a fixed generator preset."
+      },
+      {
+        "type": "block",
+        "title": "Thank you for your support!",
+        "text": "I am grateful for your support of HPDG and look forward to your feedback. You can always write to me about what you would like to improve: the sound, generation, interface or workflow. Your ideas help shape the plugin.<br/><br/><b>HamloProd · hello@hamloprod.org</b>"
+      }
+    ]
+  },
+  {
+    "kicker": "01 / What's new",
+    "title": "Everything since Beta 6",
+    "subtitle": "The additions and fixes since the published Beta 6 release of 20 October.",
+    "elements": [
+      {
+        "type": "block",
+        "title": "01  Two distinct Trap characters",
+        "text": "ATLClassic favours sparse kicks, a straight hi-hat foundation and independent 808 answers. DarkTrap brings darker bass, sustained anchors, short pickups and phrase endings. These are two substyles within Trap; the other substyles remain available."
+      },
+      {
+        "type": "block",
+        "title": "02  Rhythm and sample guidance",
+        "text": "Sample-guided kick timing has been refined. Trap kicks avoid the snare and its immediate aftermath. ATL/Dark bass stays in a compact register. In DarkTrap, a short pickup follows the pitch of the next confidently detected bass anchor."
+      },
+      {
+        "type": "block",
+        "title": "03  Rolls and a more precise grid",
+        "text": "Trap Rolls offers Off, Style and Fills. Fills adds short bursts at phrase endings. The grid displays the selected subdivision and triplets more accurately, with distinct roll notes. Selecting Trap sets 1/32; the other main genres use 1/16. You can override the grid selection."
+      },
+      {
+        "type": "block",
+        "title": "04  A new Sub808",
+        "text": "Sub808 now uses the HPDG 808 engine. There are six new factory voices, ATL 1-3 and Dark 1-3, plus a sound strip/editor with a sample layer, filters, drive, envelopes and presets. Drive level compensation helps compare sounds, and presets can be saved from the editor. Boom Bap bass is enabled by default."
+      }
+    ]
+  },
+  {
+    "kicker": "02 / More changes",
+    "title": "Analysis and smoother audio",
+    "subtitle": "The rest of the Beta 7 feature update.",
+    "elements": [
+      {
+        "type": "block",
+        "title": "05  Key estimation from notes",
+        "text": "Sample Analysis uses Basic Pitch notes to estimate the musical key. If no notes are found, it falls back to the previous chroma analysis. A manual key selection still takes priority. Treat the estimate as a guide, rather than a guarantee for every audio file."
+      },
+      {
+        "type": "block",
+        "title": "06  Smoother audio behaviour",
+        "text": "Fixes address Sub808 note-end crackle and crackle while turning controls. UI state reads interfere less with the audio thread, and state saving avoids a long audio-lock hold. Heavy load and some editing operations may still cause interruptions."
+      },
+      {
+        "type": "block",
+        "title": "What the installer includes",
+        "text": "HPDG VST3 for Windows 10/11 x64 and 919 factory audio samples. HPDG needs no activation or constant internet connection to make music; your license key is used for updates."
+      }
+    ]
+  },
+  {
+    "kicker": "03 / Two Trap characters",
+    "title": "ATL Classic and Dark Trap",
+    "subtitle": "Both use a half-time foundation. Their musical behaviour differs, not just the 808 tone.",
+    "elements": [
+      {
+        "type": "block",
+        "title": "ATLClassic / a conversation with the bass",
+        "text": "Sparse kicks leave room for the 808. Straight eighth-note hats provide the foundation, with restrained rolls in Style mode. The bass answers between kicks and tends to repeat its anchor rather than jump through octaves."
+      },
+      {
+        "type": "grid",
+        "rows": [
+          [
+            "HI-HAT",
+            [
+              0,
+              2,
+              4,
+              6,
+              8,
+              10,
+              12,
+              14
+            ]
+          ],
+          [
+            "SNARE",
+            [
+              8
+            ]
+          ],
+          [
+            "KICK",
+            [
+              0,
+              6,
+              12
+            ]
+          ],
+          [
+            "808",
+            [
+              0,
+              4,
+              6,
+              12,
+              14
+            ]
+          ]
+        ]
+      },
+      {
+        "type": "block",
+        "title": "DarkTrap / weight, space and a pickup",
+        "text": "Darker low end and sustained notes. The kick and 808 can move independently. A short bass pickup leads into a longer anchor, with variation unfolding toward the phrase ending. Hats can be even or use alternating two-step accents."
+      },
+      {
+        "type": "grid",
+        "rows": [
+          [
+            "HI-HAT",
+            [
+              0,
+              2,
+              4,
+              6,
+              8,
+              10,
+              12,
+              14
+            ]
+          ],
+          [
+            "SNARE",
+            [
+              8
+            ]
+          ],
+          [
+            "KICK",
+            [
+              0,
+              6,
+              14
+            ]
+          ],
+          [
+            "808",
+            [
+              0,
+              11,
+              12
+            ]
+          ]
+        ]
+      },
+      {
+        "type": "note",
+        "text": "These are teaching diagrams: 16 cells = one 4/4 bar, with the snare on beat 3 (cell 9). They illustrate the idea, not a promised Generate result. Rolls and note lengths are simplified."
+      }
+    ]
+  },
+  {
+    "kicker": "04 / How it works",
+    "title": "A little musical maths",
+    "subtitle": "Probability, musical constraints and candidate scoring - without copying a finished beat.",
+    "elements": [
+      {
+        "type": "block",
+        "title": "1. Start with several possibilities",
+        "text": "The generator creates multiple patterns, repairs violations and assesses musical quality and style fit. Seed controls repeatability; Density and Variation influence the events it chooses."
+      },
+      {
+        "type": "formula",
+        "text": "P(extra kick) = (0.30 + 0.45D + 0.20I) × S",
+        "caption": "The first extra-kick formula: D = internal density; I = kick irregularity."
+      },
+      {
+        "type": "text",
+        "text": "<b>S = 0.45 for ATLClassic; S = 0.35 for DarkTrap.</b> With D = 0.5 and I = 0.5, this is about 28% versus 22%. It is the chance of an attempt to add a kick, not a proportion of all hits. An occupied or forbidden position is still rejected. These two styles allow at most one such addition per bar."
+      },
+      {
+        "type": "formula",
+        "text": "Qselect = Q + 0.06 × (Fit - 0.5)",
+        "caption": "The implemented selection score: Q = pattern quality; Fit = match to the target style."
+      },
+      {
+        "type": "text",
+        "text": "The style adjustment is small: Fit from 0 to 1 changes the score by -0.03 to +0.03. The selection mechanism also considers thresholds and variety. A high style fit does not mean every result will be the same."
+      },
+      {
+        "type": "block",
+        "title": "2. Musical rules constrain chance",
+        "text": "The snare establishes the half-time anchor. Checks prevent unwanted kick/snare collisions and contain the 808 register. Pauses, repeats and phrase endings follow the substyle rules."
+      },
+      {
+        "type": "note",
+        "text": "These formulas explain the generator, not controls with these exact names. The numerical example is illustrative."
+      }
+    ]
+  },
+  {
+    "kicker": "05 / From grid to music",
+    "title": "Time, rolls and pitch",
+    "subtitle": "Three simple relationships explain the timing and movement you hear.",
+    "elements": [
+      {
+        "type": "formula",
+        "text": "Quarter note = 60 / BPM seconds",
+        "caption": "At 150 BPM: one quarter note = 0.4 s; one 4/4 bar = 1.6 s."
+      },
+      {
+        "type": "text",
+        "text": "At 150 BPM, a snare on beat 3 lands 0.8 seconds into the bar. Both 75 and 150 BPM can describe the same half-time groove using different grids. Check the sample BPM and selection length; avoid doubling the tempo again without a reason."
+      },
+      {
+        "type": "formula",
+        "text": "1/32 step = quarter note / 8",
+        "caption": "At 150 BPM: 1/16 = 100 ms; 1/32 = 50 ms; 1/32T = 33.3 ms."
+      },
+      {
+        "type": "text",
+        "text": "<b>Trap Rolls:</b> Off disables generated rolls. Style keeps the substyle character. Fills adds a short burst at the ending. Snap controls editing and display; it does not automatically straighten generated swing or triplets. Low Intensity or reduced hat Strength can remove some roll notes."
+      },
+      {
+        "type": "formula",
+        "text": "f = 440 × 2^((MIDI - 69) / 12)",
+        "caption": "One octave up = frequency × 2. Gate duration = beats × 60 / BPM."
+      },
+      {
+        "type": "text",
+        "text": "A one-quarter gate at 150 BPM lasts 0.4 seconds. The sound can continue fading after Note Off: that is Release. Glide changes the transition between note pitches. Pitch Attack is a short pitch drop at the start of a sound. They serve different musical purposes."
+      },
+      {
+        "type": "note",
+        "text": "Octave labels vary between DAWs. When the bass register feels wrong, use your ears and MIDI note numbers as well as labels such as C1/C2."
+      }
+    ]
+  },
+  {
+    "kicker": "06 / Hands on",
+    "title": "Shape your Trap sound",
+    "subtitle": "Begin with a simple pattern, then change one thing at a time.",
+    "elements": [
+      {
+        "type": "block",
+        "title": "1 / Choose the character",
+        "text": "Select Genre: Trap, then ATLClassic or DarkTrap. Start with four bars, Intensity 3 and neutral hi-hat Strength. Set the project tempo; 140-150 BPM is a useful starting point for comparing these patterns."
+      },
+      {
+        "type": "block",
+        "title": "2 / Listen to Style first",
+        "text": "Set Trap Rolls to Style, then Generate. Compare a few seeds. For a more pronounced ending, choose Fills and regenerate the pattern or hats. Choose Off when you want a clean foundation without generated rolls."
+      },
+      {
+        "type": "block",
+        "title": "3 / Balance the 808",
+        "text": "Open the Sub808 strip/editor. Choose a preset, then balance its level against the kick. Add Drive gradually and soften the top with a filter. Compare tones at similar loudness; Drive compensation does not replace checking the balance by ear."
+      },
+      {
+        "type": "block",
+        "title": "4 / Separate envelope jobs",
+        "text": "Attack softens the start, Sustain holds the body and Release controls the fade after the note ends. A long Release may fill gaps. Glide creates a pitch transition between notes; check the bass without it first, then add it to taste."
+      },
+      {
+        "type": "block",
+        "title": "5 / Save it and take it into your DAW",
+        "text": "Save your 808 preset. Drag MIDI or WAV into the DAW and listen in the arrangement. MIDI carries notes and durations; the receiving instrument defines the final tone, so it may sound different from HPDG."
+      }
+    ]
+  },
+  {
+    "kicker": "07 / Sample Analysis",
+    "title": "Build around your sample",
+    "subtitle": "Guide creates a new pattern informed by analysis; Copy Break has a different purpose.",
+    "elements": [
+      {
+        "type": "block",
+        "title": "1 / Check the source loop",
+        "text": "Load your musical sample. In Trim, select the section you need and set Selection = N bars if you know its length. Listen to the loop boundaries and check that the detected tempo matches the material."
+      },
+      {
+        "type": "block",
+        "title": "2 / Check the key",
+        "text": "Basic Pitch extracts notes used to estimate the key. With no notes, analysis falls back to chroma. If the estimate is wrong, select the key manually: your choice takes priority. Noise and complex mixed audio may not produce a reliable result."
+      },
+      {
+        "type": "block",
+        "title": "3 / Choose Guide",
+        "text": "Use Guide and your Trap substyle to create a new beat around a musical loop. In DarkTrap, confidently detected bass anchors help align the pitches of short pickups. Weak analysis should not force pitch changes."
+      },
+      {
+        "type": "block",
+        "title": "4 / Know Guide versus Copy Break",
+        "text": "Guide keeps the generator's musical logic and can preserve a hat ending in Fills mode. Copy Break transfers an estimated drum rhythm; it is not a command to compose a new beat in a chosen style."
+      },
+      {
+        "type": "block",
+        "title": "5 / Listen in context",
+        "text": "Compare the result with the source: does the tempo fit, does the bass agree with the harmony, is there enough space, and are the rolls too busy? Lock a successful lane before generating again. Adjust key, octave or note lengths when needed."
+      }
+    ]
+  },
+  {
+    "kicker": "08 / Installation",
+    "title": "How to update correctly",
+    "subtitle": "Save your project and a backup first. Beta 7 installs over HPDG.",
+    "elements": [
+      {
+        "type": "block",
+        "title": "From HPDG / the recommended sequence",
+        "text": "1. Open HPDG in your DAW and press <b>Update</b> next to the version.<br/>2. When Beta 7 is available, enter the license key from your purchase email if prompted. It grants update access; it does not activate the audio engine.<br/>3. Wait for the download. HPDG verifies the installer's SHA-256.<br/>4. Confirm the installer launch. Close the DAW before files are replaced, and follow any installer request to close applications.<br/>5. Finish installing, restart the DAW and rescan VST3 if needed. Check that the HPDG header shows <b>0.1.0 Beta 7</b>."
+      },
+      {
+        "type": "block",
+        "title": "Manually / if Update is unavailable",
+        "text": "Visit <b>https://hamloprod.org/en/vst</b> and obtain the installer with your key, following the site's instructions. Close the DAW and run <b>HPDG_VST3_Setup_0.1.0-beta.7.exe</b>. Finish installation, reopen the DAW and check the version. If the site still shows Beta 6, Beta 7 has not yet been published."
+      },
+      {
+        "type": "block",
+        "title": "If something goes wrong",
+        "text": "<b>Latest while running Beta 6:</b> check whether Beta 7 is published.<br/><b>Offline:</b> check your connection and retry later; HPDG itself works offline.<br/><b>Key rejected:</b> compare it with your purchase email. Never share it publicly.<br/><b>Old version still showing:</b> restart the DAW, rescan VST3 and check for another HPDG copy in a custom VST3 folder."
+      },
+      {
+        "type": "note",
+        "text": "Default folder: C:\\Program Files\\Common Files\\VST3\\HPDG.vst3. Keep the library inside the bundle. Need help? hello@hamloprod.org"
+      }
+    ]
+  },
+  {
+    "kicker": "09 / Stay in touch",
+    "title": "Thank you for supporting HPDG",
+    "subtitle": "The beta grows through people using it in real projects.",
+    "elements": [
+      {
+        "type": "intro",
+        "text": "I am grateful for your support and look forward to your feedback."
+      },
+      {
+        "type": "text",
+        "text": "You can always write to me about what you would like to improve: the character of generation, 808 sound, sample workflow, interface or the way HPDG fits into your DAW. Tell me what worked, what got in the way and what you would like to see next."
+      },
+      {
+        "type": "block",
+        "title": "Help me reproduce the problem",
+        "text": "Include your HPDG version, Windows and DAW version, genre/substyle, BPM, seed and the steps to reproduce. A short audio example helps with a sound issue; a screenshot helps with the interface. Never post your license key. Only share projects or third-party material you have permission to share."
+      },
+      {
+        "type": "block",
+        "title": "Contact HamloProd",
+        "text": "<b>hello@hamloprod.org</b><br/>Plugin page: https://hamloprod.org/en/vst"
+      },
+      {
+        "type": "block",
+        "title": "About the examples",
+        "text": "The rhythm diagrams are teaching examples, not fixed presets or promised Generate results. The formulas explain how timing, pitch and musical choices work. Results vary with the seed, settings, source sample and musical context. Always listen to the generated pattern in your arrangement."
+      },
+      {
+        "type": "note",
+        "text": "Prepared for 0.1.0-beta.7. Installer publication and buyer notifications are separate steps after the release package is checked."
+      }
+    ]
+  }
+]

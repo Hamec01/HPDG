@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Win32-MSBuild"
+	tests="1"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname="LAPTOP-8KRF89BK"
+	time="384"
+	timestamp="2026-11-06T12:20:52"
+	>
+	<testcase name="HPDG_LaneBoundaryTests" classname="HPDG_LaneBoundaryTests" time="384.748" status="run">
+		<properties/>
+		<system-out>    Tempo mode cases: 48; Trap Auto 70/140 note events: 54
+[PASS] Musical tempo modes with host sync
+    DarkTrap Fills: 64/64; Off: 64 checked
+[PASS] Trap phrase roll control
+    DarkTrap: 104 notes over a bar, 104 quick pickups, 64/64 intact rolls
+[PASS] DarkTrap articulation survives product pipeline
+[PASS] DarkTrap held bass supports kicks
+    Dark tonal guidance: 1000 seeds; quick pairs 865, mismatches 0; weak-confidence changes 0
+[PASS] DarkTrap tonal guidance preserves grammar
+[PASS] Independent sample and rack volume
+[PASS] VST3 volume controls
+[PASS] Lane-aware export path
+[PASS] Lane-aware temporary MIDI path
+[PASS] MIDI export keeps negative first Kick
+[PASS] Lane-aware sample command path
+[PASS] Generate Pattern rotates lane samples
+[PASS] Preview processBlock audio smoke
+[PASS] Preview processBlock neutral EQ smoke
+[PASS] Preview keeps negative first Kick
+[PASS] Drum break exact copy path
+    Sample guide accents: 0 kick(s) from 0 peak(s) | grid 92.00 bpm (sample tempo)
+[PASS] Guide mode accent k...
+[This part of the test output was removed since it exceeds the threshold of 1024 bytes.]
+</system-out>
+	</testcase>
+</testsuite>

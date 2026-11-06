@@ -1,10 +1,10 @@
 # HPDG — FAQ and getting started
 
-**Version: 0.1.0 Beta 6. Developer: HamloProd. Windows x64, VST3.**
+**Version: 0.1.0 Beta 7. Developer: HamloProd. Windows x64, VST3.**
 
 ## How do I install it?
 
-Close your DAW. Run HPDG_VST3_Setup_0.1.0-beta.6.exe and allow it to install as administrator. The installer contains the plugin, the whole factory library and the Visual C++ Runtime; there is nothing else to download.
+Close your DAW. Run HPDG_VST3_Setup_0.1.0-beta.7.exe and allow it to install as administrator. The installer contains the plugin, the whole factory library and the Visual C++ Runtime; there is nothing else to download.
 
 Default folder: C:\Program Files\Common Files\VST3\HPDG.vst3.
 Samples: Contents\x86_64-win\Samples inside that bundle.

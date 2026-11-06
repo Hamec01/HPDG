@@ -1,0 +1,9 @@
+{
+  "version": "0.1.0-beta.7",
+  "title": "HPDG 0.1.0 Beta 7",
+  "notes": "Distinct ATLClassic and DarkTrap rules; HPDG 808 engine in Sub808; six new ATL/Dark voices (919 samples); Trap Rolls and triplet grid; Basic Pitch key analysis; fixes for 808 crackle and UI-related audio dropouts.",
+  "page": "https://hamloprod.org/en/vst",
+  "objectKey": "hpdg/HPDG_VST3_Setup_0.1.0-beta.7.exe",
+  "sha256": "40aac7abeb7b3d4f397b24ce0eda80f94e220c0cac95bc62b463edfeb1c35b87",
+  "size": 122160358
+}

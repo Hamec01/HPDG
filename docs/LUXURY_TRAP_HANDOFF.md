@@ -35,8 +35,11 @@ are excluded from Git. Prior `listening/` audio is obsolete.
 
 User now authorized a commit and GitHub push; target repository is origin/main
 https://github.com/Hamec01/HPDG. Commit only Luxury source/assets/tools/evidence and the
-owned CMake hunks; leave the Beta7 version bump, FAQ, installer, release/output work and
-Beta7 `docs/NEXT_STAGE.md` uncommitted. Git log and origin/main record delivery status.
+owned CMake hunks. The owner subsequently explicitly requested inclusion of Beta7 as well;
+a second commit includes the version bump, FAQ, installer sources, guide and handoff. The
+installer audio expectation is now 998 to include the Luxury kit. Existing release binaries
+predate this integration and need repackaging before publication. Git log and origin/main
+record delivery status.
 
 FL Studio was observed loading the installed HPDG from Common Files/VST3 (16:53 file),
 not the later project artifact. Installed DLL was not replaced while FL was open.
