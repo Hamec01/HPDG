@@ -54,3 +54,5 @@ __pycache__/
 # Listening renders (local only)
 TempAudio/
 quality-lab/**/listening/
+quality-lab/**/review/
+quality-lab/**/*.wav

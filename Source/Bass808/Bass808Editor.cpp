@@ -21,26 +21,44 @@ bool isAudioFile(const juce::String& path)
 } // namespace
 
 // Holds a note while pressed: hear the sound without a MIDI keyboard (the last played note, C2 at first).
-class Bass808Editor::PlayButton final : public juce::TextButton
+class Bass808Editor::PlayButton final : public juce::TextButton, private juce::Timer
 {
 public:
-    explicit PlayButton(Bass808Processor& processor) : juce::TextButton("PLAY"), bass(processor) {}
-    void mouseDown(const juce::MouseEvent& event) override
+    explicit PlayButton(Bass808Processor& processor) : juce::TextButton("PLAY"), bass(processor)
     {
-        juce::TextButton::mouseDown(event);
-        note = bass.lastNote();
-        bass.keyboardState.noteOn(1, note, 0.9f);
+        setClickingTogglesState(true);
+        setTooltip("Play/stop a repeating preview of the current sound");
+        onClick = [this]
+        {
+            if (!getToggleState()) { stop(); return; }
+            setButtonText("STOP");
+            trigger();
+            startTimer(650);
+        };
     }
-    void mouseUp(const juce::MouseEvent& event) override
+    ~PlayButton() override { stop(); }
+    void stop()
     {
-        juce::TextButton::mouseUp(event);
-        bass.keyboardState.noteOff(1, note, 0.0f);
+        stopTimer();
+        if (held) bass.keyboardState.noteOff(1, note, 0.0f);
+        held = false;
+        setToggleState(false, juce::dontSendNotification);
+        setButtonText("PLAY");
     }
 
 private:
+    void trigger() { note = bass.lastNote(); held = true; bass.keyboardState.noteOn(1, note, 0.9f); }
+    void timerCallback() override
+    {
+        if (held) { bass.keyboardState.noteOff(1, note, 0.0f); held = false; startTimer(350); }
+        else { trigger(); startTimer(650); }
+    }
     Bass808Processor& bass;
     int note = 36;
+    bool held = false;
 };
+
+void Bass808Editor::stopAudition() { if (play != nullptr) play->stop(); }
 
 Bass808Editor::Bass808Editor(Bass808Processor& processor)
     : juce::AudioProcessorEditor(processor), bass(processor), screen(processor)

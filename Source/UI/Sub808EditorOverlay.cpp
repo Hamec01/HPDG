@@ -40,7 +40,7 @@ Sub808EditorOverlay::Sub808EditorOverlay(Host hostCallbacks) : host(std::move(ho
         loadFromLane();
         editor->showTab(1);
     };
-    closeButton.onClick = [this] { if (host.close) host.close(); };
+    closeButton.onClick = [this] { timerCallback(); editor->stopAudition(); if (host.close) host.close(); };
     for (auto* button : { &laneSampleButton, &closeButton })
     {
         button->setColour(juce::TextButton::buttonColourId, kFrame.brighter(0.15f));
@@ -55,6 +55,7 @@ Sub808EditorOverlay::Sub808EditorOverlay(Host hostCallbacks) : host(std::move(ho
 Sub808EditorOverlay::~Sub808EditorOverlay()
 {
     stopTimer();
+    if (editor != nullptr) editor->stopAudition();
     bass->keyboardState.removeListener(this);
     editor = nullptr; // before the processor it edits
     bass = nullptr;
@@ -113,6 +114,11 @@ void Sub808EditorOverlay::handleNoteOn(juce::MidiKeyboardState*, int, int note, 
         host.audition(note, juce::jlimit(1, 127, juce::roundToInt(velocity * 127.0f)));
 }
 
+void Sub808EditorOverlay::handleNoteOff(juce::MidiKeyboardState*, int, int note, float)
+{
+    if (host.releaseAudition) host.releaseAudition(note);
+}
+
 juce::Rectangle<int> Sub808EditorOverlay::frameBounds() const
 {
     const int width = juce::roundToInt(kEditorWidth * editorScale);
@@ -152,6 +158,7 @@ bool Sub808EditorOverlay::keyPressed(const juce::KeyPress& key)
 {
     if (key == juce::KeyPress::escapeKey)
     {
+        timerCallback(); editor->stopAudition();
         if (host.close)
             host.close();
         return true;

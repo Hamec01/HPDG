@@ -136,6 +136,8 @@ struct TrapAlgebraNote
     int microTimingTicks = 0; // PPQ subtick offset, not 1/64-grid ticks.
     TrapAlgebraRole role = TrapAlgebraRole::Support;
     juce::String roleString = "support";
+    int pitchOffset = 0, pitchMinOffset = 0;
+    bool hasStylePitch = false;
 };
 
 struct TrapPatternCell
@@ -146,6 +148,8 @@ struct TrapPatternCell
     int microTimingTicks = 0; // PPQ subtick offset, not 1/64-grid ticks.
     TrapAlgebraRole role = TrapAlgebraRole::Support;
     juce::String roleString;
+    int pitchOffset = 0, pitchMinOffset = 0;
+    bool hasStylePitch = false;
 };
 
 class TrapPatternMatrix
@@ -295,16 +299,17 @@ public:
     static int ticksForBars(int bars);
     // A main kick may sit on `localTick64` (0-63 in a style bar): the positions the engine writes
     // and keeps in repair. Sample Guide uses it for the kicks it adds after the engine.
-    static bool isMainKickTickAllowed(int localTick64, bool doubleTime);
+    static bool isMainKickTickAllowed(int localTick64, bool doubleTime, int trapSubstyle = 0);
     // ATLClassic / DarkTrap 808 register: a fourth under to a fifth over the root (C1-B1 + key), so the
     // line never jumps an octave and never climbs high (ATL / dark trap passports; maintainer
     // 2026-10-28: "it plays the root, then goes right up high - too many jumps"). Used by the line
     // composer and after the sample-led 808 (bass composer / follower / drum-loop blend).
     static int styleWindow808Pitch(int pitch, int keyRoot);
-    static bool usesStyleWindow808(int trapSubstyle) { return trapSubstyle == 0 || trapSubstyle == 1; }
+    static bool usesStyleWindow808(int trapSubstyle) { return trapSubstyle == 0 || trapSubstyle == 1 || trapSubstyle == 5; }
 
 private:
     TrapAlgebraPattern generateCandidate(const TrapAlgebraParams& params, int candidateIndex) const;
+    void generateLuxuryBar(TrapPatternMatrix&, const TrapAlgebraParams&, int bar, int candidateIndex, std::mt19937&) const;
     void generateSkeleton(TrapPatternMatrix& matrix, const TrapAlgebraParams& params, std::mt19937& rng) const;
     void generateBarAdditions(TrapPatternMatrix& matrix,
                               const TrapAlgebraParams& params,

@@ -1,0 +1,1071 @@
+[
+  {
+    "track_id": 10,
+    "identity": "663156a98cecba117ba0a494a9d01626830af5b96f61f82fb2ac79e926ae2475",
+    "bass_sha256": "d5de4b7ae3802dcb28a5fbb8bb2006a77e4f36e08ffea2def1b975edd59f79d2",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 105,
+        "correlation": 0.3307052020290646
+      },
+      {
+        "window": 2,
+        "delay_ms": 105,
+        "correlation": 0.3221734002942646
+      },
+      {
+        "window": 3,
+        "delay_ms": 105,
+        "correlation": 0.2999525353258177
+      },
+      {
+        "window": 4,
+        "delay_ms": 105,
+        "correlation": 0.32727679296950973
+      },
+      {
+        "window": 5,
+        "delay_ms": 105,
+        "correlation": 0.31005848910084893
+      }
+    ],
+    "delay_ms": 105.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9372765246194688
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.945428694161351
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9137559141408503
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9541282139233375
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.9218021286374447
+      }
+    ],
+    "relative_bass_delay_ms": 105.0
+  },
+  {
+    "track_id": 11,
+    "identity": "64e8e6cb68c600241a0aab1698237e6b0c0ee95bb89de1457614f8eb05a4fef1",
+    "bass_sha256": "68e4ebcbe046c420f337bea8ce5dfff754892ea6087293eeffc25f89823ec73a",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 50,
+        "correlation": 0.6213522512530918
+      },
+      {
+        "window": 2,
+        "delay_ms": 50,
+        "correlation": 0.5949036756039845
+      },
+      {
+        "window": 3,
+        "delay_ms": 50,
+        "correlation": 0.6123837379203377
+      },
+      {
+        "window": 4,
+        "delay_ms": 50,
+        "correlation": 0.5988475468895313
+      }
+    ],
+    "delay_ms": 50.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9684530576797751
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9796380900715392
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9640114210903332
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9817083427760136
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.961782157409932
+      }
+    ],
+    "relative_bass_delay_ms": 50.0
+  },
+  {
+    "track_id": 12,
+    "identity": "35f2ba8fd4e6c0f59ad7c259f1c6be60400067cb0ce570ec1e2546bac91ceb8d",
+    "bass_sha256": "872a6a1a3d6343973a721555392ecbc6d446c8089f6db65588692712ffd262fe",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": -80,
+        "correlation": 0.21143039650666126
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.18539719010002156
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.2466410089121312
+      },
+      {
+        "window": 4,
+        "delay_ms": -80,
+        "correlation": 0.14315614982580244
+      },
+      {
+        "window": 5,
+        "delay_ms": 0,
+        "correlation": 0.4395965428749463
+      },
+      {
+        "window": 6,
+        "delay_ms": 0,
+        "correlation": 0.29326784963111413
+      },
+      {
+        "window": 7,
+        "delay_ms": 0,
+        "correlation": 0.5305040304070783
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9578858232847266
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9769933100284952
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9353034180778348
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9760375720542056
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.9370512343938371
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 13,
+    "identity": "f1fde8bff8dea1996bcc24229d8356531d02998b05513c6d0108b1ee3db278e8",
+    "bass_sha256": "b261bffbccfd90ef0f08c993e79aacc21214d8874179dc8bbe7c2942f12f0a96",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.9992229895713344
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.9989336903015541
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.9987500963542357
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.9776527254516659
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9653550597317815
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9860719280916881
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9704564751765421
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.958906504022427
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.9890795841394303
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 14,
+    "identity": "1a6b3c0ca9dc97080ea33a29dd9c16e774675b05d6b80af5a964aad4569e5a98",
+    "bass_sha256": "a0553522f9993e41cbc7148140a0a066b2ad182d06aa6487edcfb8a02004db3d",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.9967244016908853
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.999211184845655
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.997958720138598
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.9976994306499795
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9368692003023031
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.7696502374603443
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.8817604700518957
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.8700477936859318
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 15,
+    "identity": "1788b0251a8c0bd6677bd4e7488f0f8814366f58be10e2f015d9a498a2f5a0fb",
+    "bass_sha256": "294d54dcee7efd5cf12d5c2d0cd9e6d0399fc8476548c0817d81bc0d6637b874",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.9985657721931293
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.991477401191929
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.9980257559155253
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9603169461946334
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.8877512867864411
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9186474246129707
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 16,
+    "identity": "97c800cdfc6d0329bb4544b7375ca1eb56eff59c1008cb28580ad21ee4f66056",
+    "bass_sha256": "a8229bc707ba90a2ad8228e1a7a5182b888477249f69bd765001d463007c7062",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.9998832855666452
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.9996872211885209
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.9998943896541715
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.9999408164820035
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9632634853108439
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9575689028884139
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9509854334630806
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9547904043119704
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 1,
+    "identity": "7157e2cecb7e35666e7eebb5c9b2f909e2f75cb4808264541c54a28b23bd79c8",
+    "bass_sha256": "e0e31ebf14042dcf7233e727d72093cb210d3e77dec4d440f4d3ce9a33a1e067",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.8031559750582267
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.6863280551028121
+      },
+      {
+        "window": 3,
+        "delay_ms": 75,
+        "correlation": 0.47714958905091004
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.6155645169922801
+      },
+      {
+        "window": 5,
+        "delay_ms": 75,
+        "correlation": 0.5548775459213385
+      },
+      {
+        "window": 6,
+        "delay_ms": 0,
+        "correlation": 0.5746872868167755
+      },
+      {
+        "window": 7,
+        "delay_ms": 0,
+        "correlation": 0.4946279079404216
+      },
+      {
+        "window": 8,
+        "delay_ms": 0,
+        "correlation": 0.9969307656529764
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": -29.9,
+        "correlation": 0.03701136486405082
+      },
+      {
+        "window": 2,
+        "delay_ms": -234.5,
+        "correlation": 0.05392614353206574
+      },
+      {
+        "window": 3,
+        "delay_ms": -15.0,
+        "correlation": 0.08815305242919373
+      },
+      {
+        "window": 4,
+        "delay_ms": 239.5,
+        "correlation": 0.08108751358014923
+      },
+      {
+        "window": 5,
+        "delay_ms": -94.8,
+        "correlation": 0.049492861344751705
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 2,
+    "identity": "1c0aec67a35ee9723d15b5156f1dcbfd8e066c92f7aec48e898523948da518ef",
+    "bass_sha256": "9f9cb9db3bf40f004c6c9d88462a9ca605d8b384ea6266b8e6326f897a2c7ea1",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.9999181175548905
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.4370989078417863
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.5491626848015716
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.6296138087657258
+      },
+      {
+        "window": 5,
+        "delay_ms": 0,
+        "correlation": 0.9993952936921209
+      },
+      {
+        "window": 6,
+        "delay_ms": 0,
+        "correlation": 0.4890499816675228
+      },
+      {
+        "window": 7,
+        "delay_ms": 0,
+        "correlation": 0.5539953031113096
+      },
+      {
+        "window": 8,
+        "delay_ms": 0,
+        "correlation": 0.7151074143856551
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.13770528214377062
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9795975254205852
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9871557490438224
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9857929729219258
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.8552597508373416
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 3,
+    "identity": "82ec067296f9a2a68734b0a470f46011bfc5a01288b38eb1dd197f2be28aeea2",
+    "bass_sha256": "e19477daeea203df0dfc87c13f95a8ba5da12c838316d7bba171849f40aecb2a",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.9998986280057229
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.9972305999389226
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.6777373996631355
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.57481505747311
+      },
+      {
+        "window": 5,
+        "delay_ms": 0,
+        "correlation": 0.7946584309927346
+      },
+      {
+        "window": 6,
+        "delay_ms": 0,
+        "correlation": 0.4184231913574474
+      },
+      {
+        "window": 7,
+        "delay_ms": 0,
+        "correlation": 0.4672000655998238
+      },
+      {
+        "window": 8,
+        "delay_ms": 0,
+        "correlation": 0.5175793634819033
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.3371914333371268
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.15846922668067906
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.6425840099004908
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.6243099830417053
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.5329918707420311
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 4,
+    "identity": "a7d4818197b3562e7d9c4d9cdd6e23a065846ee36755f2d49128e63c68ae64f2",
+    "bass_sha256": "8e3356244a49b2b3878e8561c5ce64e27f96d83fb3a74066b1412eddb3e17d64",
+    "windows": [
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.38407744469434313
+      },
+      {
+        "window": 3,
+        "delay_ms": 10,
+        "correlation": 0.3074965588069291
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.4105124185843621
+      },
+      {
+        "window": 5,
+        "delay_ms": 0,
+        "correlation": 0.7428623746166576
+      },
+      {
+        "window": 7,
+        "delay_ms": 0,
+        "correlation": 0.621606346436042
+      },
+      {
+        "window": 8,
+        "delay_ms": 0,
+        "correlation": 0.35445794747534476
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.8743715526140068
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9407256641574661
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9195744414810522
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.15421479264688454
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 5,
+    "identity": "01a6d35a0fcc1da297c90fb384913c42bdde0de9fe1ad3d559b309eef81079a3",
+    "bass_sha256": "a98d059eece74434dc15fdada11dab290490051234f9c737ce6afe50fd39821c",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.6662362612025149
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.5701728269191066
+      },
+      {
+        "window": 3,
+        "delay_ms": 115,
+        "correlation": 0.33909353048835184
+      },
+      {
+        "window": 4,
+        "delay_ms": 115,
+        "correlation": 0.3258676696702313
+      },
+      {
+        "window": 5,
+        "delay_ms": 95,
+        "correlation": 0.28529095631431434
+      },
+      {
+        "window": 6,
+        "delay_ms": 115,
+        "correlation": 0.35634742172117645
+      },
+      {
+        "window": 7,
+        "delay_ms": 95,
+        "correlation": 0.2697867289099615
+      },
+      {
+        "window": 8,
+        "delay_ms": 115,
+        "correlation": 0.3165299414557548
+      }
+    ],
+    "delay_ms": 115.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": -219.5,
+        "correlation": 0.055132452952417255
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.5242514848871539
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9227890843111821
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9329946289663023
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.8758679845450033
+      }
+    ],
+    "relative_bass_delay_ms": 115.0
+  },
+  {
+    "track_id": 6,
+    "identity": "7e6cf3c8f1959016924295ebfe3c6bca04e42d3a691f53c5b97e24a402fd50bb",
+    "bass_sha256": "f6dc6353bc590a25f81598ffd637cc2167d30385c3e83daa851bc32282a3b2df",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 0,
+        "correlation": 0.9999168459917496
+      },
+      {
+        "window": 2,
+        "delay_ms": 0,
+        "correlation": 0.44979204808151174
+      },
+      {
+        "window": 3,
+        "delay_ms": 0,
+        "correlation": 0.5531736943680726
+      },
+      {
+        "window": 4,
+        "delay_ms": 0,
+        "correlation": 0.6362227023665776
+      },
+      {
+        "window": 5,
+        "delay_ms": 0,
+        "correlation": 0.9994180617453462
+      },
+      {
+        "window": 6,
+        "delay_ms": 0,
+        "correlation": 0.4862518558409459
+      },
+      {
+        "window": 7,
+        "delay_ms": 0,
+        "correlation": 0.5259208859601155
+      },
+      {
+        "window": 8,
+        "delay_ms": 0,
+        "correlation": 0.7042305274093437
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.13911234333966252
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9797701168423147
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9872310012239567
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9861846156816896
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.8556970568426617
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  },
+  {
+    "track_id": 7,
+    "identity": "488abf8aacd4c9476884c52e7260d1c107388257b03800822e921a5db4ccb26b",
+    "bass_sha256": "4d7639573f608f15963b720d19bdcc80ea3fa2fca0fea7ff8b95191ec62831e1",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 50,
+        "correlation": 0.3913753290176472
+      },
+      {
+        "window": 2,
+        "delay_ms": -40,
+        "correlation": 0.26539212872056733
+      },
+      {
+        "window": 3,
+        "delay_ms": 60,
+        "correlation": 0.31985363016699275
+      },
+      {
+        "window": 4,
+        "delay_ms": 50,
+        "correlation": 0.3935226436983215
+      },
+      {
+        "window": 5,
+        "delay_ms": 50,
+        "correlation": 0.3590859362025209
+      }
+    ],
+    "delay_ms": 50.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9928765542419833
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9859491889644661
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9914213135675716
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9930494266617307
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.9909781703385415
+      }
+    ],
+    "relative_bass_delay_ms": 50.0
+  },
+  {
+    "track_id": 8,
+    "identity": "a0be68ef579c1a611fb24f99a676888a16a203e1a8fcbf18eb3b102702e00f9d",
+    "bass_sha256": "19d8dde4c0b48c963a665281418fc92c2ea4b980ea85dd00cf7c33c8dbf4438b",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": 90,
+        "correlation": 0.5223884109282811
+      },
+      {
+        "window": 2,
+        "delay_ms": 65,
+        "correlation": 0.48982037445513393
+      },
+      {
+        "window": 3,
+        "delay_ms": 90,
+        "correlation": 0.48441678940512045
+      },
+      {
+        "window": 4,
+        "delay_ms": 90,
+        "correlation": 0.5121790623372977
+      },
+      {
+        "window": 5,
+        "delay_ms": 90,
+        "correlation": 0.4748056100433658
+      },
+      {
+        "window": 6,
+        "delay_ms": 0,
+        "correlation": 0.104160643440663
+      }
+    ],
+    "delay_ms": 90.0,
+    "delay_mad_ms": 0.0,
+    "reliable": true,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9800035309462243
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9741399655722608
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9836940481042521
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9606472177661904
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.9832795748421257
+      }
+    ],
+    "relative_bass_delay_ms": 90.0
+  },
+  {
+    "track_id": 9,
+    "identity": "d45c289e6244b47f43fd09ce81a340e5609f188dfcccf0568a3c058678e7fc34",
+    "bass_sha256": "da49b114024404e3564d1c6aa1ed01eba547c08917eac1b547ea97a7cf3b9cd2",
+    "windows": [
+      {
+        "window": 1,
+        "delay_ms": -75,
+        "correlation": 0.11979573853358624
+      },
+      {
+        "window": 2,
+        "delay_ms": -70,
+        "correlation": 0.1762729455003976
+      },
+      {
+        "window": 3,
+        "delay_ms": -70,
+        "correlation": 0.13009985771631954
+      },
+      {
+        "window": 4,
+        "delay_ms": -70,
+        "correlation": 0.12096349374642387
+      },
+      {
+        "window": 5,
+        "delay_ms": -70,
+        "correlation": 0.19688598983800923
+      },
+      {
+        "window": 6,
+        "delay_ms": 0,
+        "correlation": 0.29132923922846143
+      }
+    ],
+    "delay_ms": 0.0,
+    "delay_mad_ms": 0.0,
+    "reliable": false,
+    "drums_delay_ms": 0.0,
+    "drums_alignment_windows": [
+      {
+        "window": 1,
+        "delay_ms": 0.0,
+        "correlation": 0.9649123847511482
+      },
+      {
+        "window": 2,
+        "delay_ms": 0.0,
+        "correlation": 0.9473267382481076
+      },
+      {
+        "window": 3,
+        "delay_ms": 0.0,
+        "correlation": 0.9296919796624696
+      },
+      {
+        "window": 4,
+        "delay_ms": 0.0,
+        "correlation": 0.9704085670545014
+      },
+      {
+        "window": 5,
+        "delay_ms": 0.0,
+        "correlation": 0.9240000391929152
+      }
+    ],
+    "relative_bass_delay_ms": 0.0
+  }
+]

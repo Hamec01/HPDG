@@ -639,7 +639,7 @@ const std::array<GenreStyleDefaults, 6>& trapStyles()
         { auto lanes = makeBaseTrapLanes(); lanes[0].volumeDefault = 0.78f; lanes[2].noteProbability = 0.58f; lanes[7].sub808Activity = 0.74f; styles[2] = { GenreType::Trap, "CloudTrap", 134.0f, 130, 138, 53.0f, 0.48f, 0.36f, 0.34f, 0.48f, lanes }; }
         { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.98f; lanes[1].hatFxIntensity = 1.0f; lanes[0].densityBias = 1.2f; lanes[7].sub808Activity = 0.92f; styles[3] = { GenreType::Trap, "RageTrap", 150.0f, 146, 154, 52.5f, 0.64f, 0.32f, 0.30f, 0.74f, lanes }; }
         { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.38f; lanes[1].hatFxIntensity = 0.36f; lanes[5].densityBias = 0.88f; lanes[7].sub808Activity = 0.82f; lanes[10].noteProbability = 0.22f; styles[4] = { GenreType::Trap, "MemphisTrap", 141.0f, 138, 144, 51.5f, 0.56f, 0.30f, 0.28f, 0.44f, lanes }; }
-        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.74f; lanes[1].hatFxIntensity = 0.7f; lanes[2].noteProbability = 0.52f; lanes[10].noteProbability = 0.22f; styles[5] = { GenreType::Trap, "LuxuryTrap", 145.0f, 142, 148, 52.0f, 0.54f, 0.30f, 0.30f, 0.52f, lanes }; }
+        { auto lanes = makeBaseTrapLanes(); lanes[1].noteProbability = 0.90f; lanes[1].hatFxIntensity = 0.88f; lanes[2].noteProbability = 0.38f; lanes[7].sub808Activity = 0.92f; lanes[10].noteProbability = 0.24f; styles[5] = { GenreType::Trap, "LuxuryTrap", 138.0f, 130, 168, 51.0f, 0.58f, 0.22f, 0.18f, 0.56f, lanes }; }
         return styles;
     }();
     return table;

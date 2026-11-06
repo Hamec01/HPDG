@@ -31,6 +31,7 @@ public:
         std::function<std::shared_ptr<const BassSample>()> getBankSample;
         std::function<juce::String()> getBankSampleName;
         std::function<void(int note, int velocity)> audition;
+        std::function<void(int note)> releaseAudition;
         std::function<void()> close; // the host deletes the overlay (asynchronously)
     };
 
@@ -45,7 +46,7 @@ private:
     void loadFromLane();
     void timerCallback() override;
     void handleNoteOn(juce::MidiKeyboardState*, int, int note, float velocity) override;
-    void handleNoteOff(juce::MidiKeyboardState*, int, int, float) override {}
+    void handleNoteOff(juce::MidiKeyboardState*, int, int note, float) override;
     juce::Rectangle<int> frameBounds() const;
 
     Host host;

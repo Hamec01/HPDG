@@ -27,6 +27,7 @@ public:
 
     // 0 SYNTH, 1 SAMPLE, 2 MIX, 3 FILTER / FX
     void showTab(int index);
+    void stopAudition();
 
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void fileDragEnter(const juce::StringArray&, int, int) override;

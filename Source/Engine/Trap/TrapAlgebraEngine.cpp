@@ -1,4 +1,5 @@
 #include "TrapAlgebraEngine.h"
+#include "LuxuryReferencePhrases.h"
 #include "../GenerationModel/CandidateSelectionEngine.h"
 
 #include <algorithm>
@@ -72,7 +73,7 @@ StyleTargetProfile trapStyleTarget(TrapAlgebraSubstyle substyle)
             target = { 0.62f, 0.68f, 0.64f, 0.20f, 0.38f, 0.52f, 0.72f, 0.90f };
             break;
         case TrapAlgebraSubstyle::LuxuryTrap:
-            target = { 0.48f, 0.50f, 0.58f, 0.14f, 0.56f, 0.66f, 0.66f, 0.96f };
+            target = { 0.56f, 0.58f, 0.66f, 0.20f, 0.48f, 0.66f, 0.72f, 0.96f };
             break;
         case TrapAlgebraSubstyle::ATLClassic:
         default:
@@ -159,8 +160,14 @@ float barVariationAmount(int bar)
     }
 }
 
-bool isLegalMainKickLocalTick(int tick, bool /*bar4*/, bool doubleTime)
+bool isLegalMainKickLocalTick(int tick, bool /*bar4*/, bool doubleTime, bool luxury = false)
 {
+    if (luxury)
+    {
+        if (tick < 0 || tick >= 64 || tick % (doubleTime ? 2 : 4) != 0) return false;
+        if (doubleTime) return !((tick >= 14 && tick <= 22) || (tick >= 46 && tick <= 54));
+        return tick != 32 && tick != 36;
+    }
     // Double-time places the snare backbone on 16 and 48, so a main kick there would
     // land on top of the snare.
     if (doubleTime && (tick == 16 || tick == 48))
@@ -406,6 +413,7 @@ bool TrapPatternMatrix::setNote(int lane,
     cell.microTimingTicks = std::clamp(microTimingTicks, -30, 30);
     cell.role = role;
     cell.roleString = TrapAlgebraEngine::roleToString(role);
+    cell.hasStylePitch = false;
     return true;
 }
 
@@ -520,7 +528,7 @@ std::vector<TrapAlgebraNote> TrapPatternMatrix::notesForLane(int lane) const
                         cell.velocity,
                         cell.microTimingTicks,
                         cell.role,
-                        cell.roleString });
+                        cell.roleString, cell.pitchOffset, cell.pitchMinOffset, cell.hasStylePitch });
     }
     return out;
 }
@@ -702,12 +710,109 @@ void TrapAlgebraEngine::generateSkeleton(TrapPatternMatrix& matrix,
     }
 }
 
+void TrapAlgebraEngine::generateLuxuryBar(TrapPatternMatrix& matrix,
+                                         const TrapAlgebraParams& params, int bar,
+                                         int candidateIndex, std::mt19937& rng) const
+{
+    // Luxury-only grammar. Bass timing is aligned to original mixes before quantisation.
+    // Family is fixed per seed, not selected by the scorer: pedal / melodic / rattling / driving.
+    // Density changes articulation inside that family instead of changing its identity.
+    const auto phraseSeed = static_cast<uint32_t>(params.seed);
+    const int family = static_cast<int>(phraseSeed % 4);
+    const int start = barStart(bar);
+    const bool ending = bar % 4 == 3 || bar == params.bars - 1;
+    for (int tick = 0; tick < 64; ++tick)
+        for (const int lane : { TrapAlgebraLanes::HiHat, TrapAlgebraLanes::HatAccent,
+                              TrapAlgebraLanes::Kick, TrapAlgebraLanes::Sub808 })
+            matrix.clearNote(lane, start + tick);
+
+    // Joint four-bar cells learned from full paired stems, with an independent onset/pitch
+    // check. The source identity is fixed per seed; candidates vary phrases within it.
+    const int clock = params.tempoContext.doubleTime ? 2 : 1;
+    const int referenceStart = (bar * clock % 4) * 64;
+    const int referenceEnd = referenceStart + clock * 64;
+    const auto& phrase = kLuxuryReferencePhrases[static_cast<size_t>(luxuryReferencePhraseIndex(
+        params.seed, candidateIndex + (bar * clock / 4) * 7))];
+    const auto addKick = [&](int referenceTick, bool optional)
+    {
+        if (referenceTick < referenceStart || referenceTick >= referenceEnd) return;
+        const int tick = (referenceTick - referenceStart) / clock;
+        if (!isLegalMainKickLocalTick(tick, ending, params.tempoContext.doubleTime, true)) return;
+        if (optional && !chance(rng, .20f + params.density * .35f)) return;
+        matrix.setNote(TrapAlgebraLanes::Kick, start + tick, randomInt(rng, optional ? 86 : 98, optional ? 104 : 120),
+            2, 0, optional ? TrapAlgebraRole::Accent : TrapAlgebraRole::Anchor);
+    };
+    for (int i = 0; i < phrase.kickCount; ++i) addKick(phrase.kicks[static_cast<size_t>(i)], false);
+    // A mix-supported bass-stem transient may be a kick OR an 808 attack. It is an
+    // optional reinforcement, never a falsely "confirmed" kick or an assumed pause.
+    for (int i = 0; i < phrase.optionalKickCount; ++i) addKick(phrase.optionalKicks[static_cast<size_t>(i)], true);
+    int minDegree = 0;
+    for (int i = 0; i < phrase.bassCount; ++i) minDegree = std::min(minDegree, phrase.bass[static_cast<size_t>(i)].degree);
+    for (int i = 0; i < phrase.bassCount; ++i)
+    {
+        const auto& note = phrase.bass[static_cast<size_t>(i)];
+        if (note.tick < referenceStart || note.tick >= referenceEnd) continue;
+        if (params.density < .35f && note.gate < 4 && chance(rng, .30f)) continue;
+        const int tick = (note.tick - referenceStart) / clock;
+        const auto role = note.gate < 4 ? TrapAlgebraRole::BassPickup
+            : (i == 0 || note.tick % 64 < 8 ? TrapAlgebraRole::BassAnchor : TrapAlgebraRole::BassAnswer);
+        matrix.setNote(TrapAlgebraLanes::Sub808, start + tick, std::clamp(note.velocity + randomInt(rng,-4,4),78,120),
+            std::max(1,note.gate / clock),0,role);
+        auto* cell = matrix.cellAt(TrapAlgebraLanes::Sub808,start+tick);
+        cell->pitchOffset = note.degree; cell->pitchMinOffset = minDegree; cell->hasStylePitch = true;
+    }
+
+    // The generator starts a new phrase, rather than entering halfway through a recording.
+    // Give its first beat a joint kick/808 anchor; retain the source's later counter notes.
+    if (referenceStart == 0)
+    {
+        matrix.setNote(TrapAlgebraLanes::Kick,start,110,2,0,TrapAlgebraRole::Anchor);
+        if (!matrix.hasNote(TrapAlgebraLanes::Sub808,start))
+        {
+            const int next = phrase.bassCount > 0 ? phrase.bass[0].tick / clock : 16;
+            matrix.setNote(TrapAlgebraLanes::Sub808,start,106,std::max(1,next),0,TrapAlgebraRole::BassAnchor);
+            auto* anchor = matrix.cellAt(TrapAlgebraLanes::Sub808,start);
+            anchor->pitchOffset=0; anchor->pitchMinOffset=minDegree; anchor->hasStylePitch=true;
+        }
+    }
+
+    // A regular pulse is audible beneath the ornaments. 16ths belong to the denser families;
+    // the smooth family keeps air. One lane per hit avoids accidental doubled closed hats.
+    const int pulse = params.tempoContext.doubleTime ? 4 : 8;
+    for (int tick = 0; tick < 64; tick += pulse)
+        if (tick == 0 || chance(rng, family == 0 ? .76f : .95f))
+            matrix.setNote(TrapAlgebraLanes::HiHat, start + tick,
+                tick % 16 == 0 ? randomInt(rng, 82, 98) : randomInt(rng, 60, 78), 1,
+                tick % 16 == 8 ? swingOffsetTicks(params.swing) : 0, TrapAlgebraRole::Support);
+    if (!params.tempoContext.doubleTime)
+        for (int tick = 4; tick < 64; tick += 8)
+            if (chance(rng, (family >= 2 ? .45f : .12f) + params.density * .30f))
+                matrix.setNote(TrapAlgebraLanes::HiHat, start + tick, randomInt(rng, 48, 76), 1, 0, TrapAlgebraRole::Support);
+
+    const float rollChance = (family == 0 ? .28f : family == 1 ? .42f : .72f)
+        + (ending ? .16f : 0.0f) + (params.density - .5f) * .30f;
+    if (params.rollMode != 0 && ((params.rollMode == 2 && ending) || chance(rng, rollChance)))
+        addRoll(matrix, params, bar, ending, rng);
+    if (params.rollMode == 2 && ending && family >= 2 && params.density > .65f)
+        addRoll(matrix, params, bar, ending, rng);
+    const int openTick = params.tempoContext.doubleTime ? 40 : (bar % 2 == 0 ? 24 : 56);
+    if (chance(rng, .35f))
+        matrix.setNote(TrapAlgebraLanes::OpenHat, start + openTick, randomInt(rng, 68, 94), 3, 0, TrapAlgebraRole::Accent);
+    if ((bar % 2 == 1) && chance(rng, .22f + params.variation * .18f))
+        matrix.setNote(TrapAlgebraLanes::Perc, start + 52, randomInt(rng, 54, 78), 1, 0, TrapAlgebraRole::Support);
+}
+
 void TrapAlgebraEngine::generateBarAdditions(TrapPatternMatrix& matrix,
                                              const TrapAlgebraParams& params,
                                              int bar,
                                              int candidateIndex,
                                              std::mt19937& rng) const
 {
+    if (params.substyle == TrapAlgebraSubstyle::LuxuryTrap)
+    {
+        generateLuxuryBar(matrix, params, bar, candidateIndex, rng);
+        return;
+    }
     const int start = barStart(bar);
     const auto style = weightsForSubstyle(params.substyle);
     const float density = std::clamp(params.density * (0.72f + style.hatRate * 0.56f), 0.0f, 1.0f);
@@ -1119,6 +1224,11 @@ void TrapAlgebraEngine::shape808Durations(TrapPatternMatrix& matrix,
 
         const int nextTick = index + 1 < bassNotes.size() ? bassNotes[index + 1].tick64 : matrix.getTotalTicks();
         const int available = std::max(1, nextTick - note.tick64);
+        if (params.substyle == TrapAlgebraSubstyle::LuxuryTrap && cell->hasStylePitch)
+        {
+            cell->durationTicks = std::clamp(cell->durationTicks, 1, available);
+            continue;
+        }
         if (params.substyle == TrapAlgebraSubstyle::DarkTrap)
         {
             // Reference envelopes hold between attacks. Preserve a short pickup explicitly,
@@ -1138,7 +1248,7 @@ void TrapAlgebraEngine::shape808Durations(TrapPatternMatrix& matrix,
         {
             case TrapAlgebraSubstyle::CloudTrap: articulation = 0.80f; break;
             case TrapAlgebraSubstyle::DarkTrap: articulation = 0.85f; break;
-            case TrapAlgebraSubstyle::LuxuryTrap: articulation = 0.85f; break;
+            case TrapAlgebraSubstyle::LuxuryTrap: articulation = 0.94f; break;
             case TrapAlgebraSubstyle::MemphisTrap: articulation = 0.88f; break;
             case TrapAlgebraSubstyle::RageTrap: articulation = 0.97f; break;
             case TrapAlgebraSubstyle::ATLClassic:
@@ -1207,8 +1317,9 @@ void TrapAlgebraEngine::addRoll(TrapPatternMatrix& matrix,
         burst.rate = chance(rng, 0.72f) ? HatRate::SixteenthTriplet : HatRate::ThirtySecondTriplet;
     else
     {
-        const float extremeProbability = std::pow(params.density, 2.5f)
-            * (params.substyle == TrapAlgebraSubstyle::RageTrap ? 0.34f : 0.12f);
+        const float extremeProbability = params.substyle == TrapAlgebraSubstyle::LuxuryTrap
+            ? 0.12f + params.density * 0.28f
+            : std::pow(params.density, 2.5f) * (params.substyle == TrapAlgebraSubstyle::RageTrap ? 0.34f : 0.12f);
         burst.rate = chance(rng, extremeProbability) ? HatRate::SixtyFourth : HatRate::ThirtySecond;
     }
 
@@ -1217,7 +1328,7 @@ void TrapAlgebraEngine::addRoll(TrapPatternMatrix& matrix,
     const int hardMax = barFill ? 7 : (burst.rate == HatRate::SixtyFourth ? 5 : 6);
     while (burst.noteCount < hardMax && chance(rng, 0.43f))
         ++burst.noteCount;
-    if (params.rollMode == 2 || dark)
+    if (params.rollMode == 2 || dark || params.substyle == TrapAlgebraSubstyle::LuxuryTrap)
         burst.noteCount = std::max(4, burst.noteCount);
     burst.contour = static_cast<HatVelocityContour>(randomInt(rng, 0, 4));
 
@@ -1244,7 +1355,7 @@ void TrapAlgebraEngine::addRoll(TrapPatternMatrix& matrix,
     const int startQuantum = std::max(1, ppqPerTick64);
     const int startChoices = std::max(0, (latestStartPpq - zoneStartPpq) / startQuantum);
     burst.startPpq = zoneStartPpq + randomInt(rng, 0, startChoices) * startQuantum;
-    if (dark)
+    if (dark || params.substyle == TrapAlgebraSubstyle::LuxuryTrap)
     {
         for (int tick = zoneStart; tick <= zoneEnd; ++tick)
             if (matrix.hasNote(TrapAlgebraLanes::Kick, start + tick)
@@ -1254,9 +1365,10 @@ void TrapAlgebraEngine::addRoll(TrapPatternMatrix& matrix,
                 break;
             }
         const int lastPpq = std::min(zoneEndPpq, burst.startPpq + burstSpanPpq);
+        const int clearance = params.substyle == TrapAlgebraSubstyle::LuxuryTrap ? intervalPpq / 2 : 0;
         // A roll replaces its slice of the carrier: no simultaneous 8ths + triplets flams.
         for (int tick = zoneStart; tick <= zoneEnd; ++tick)
-            if ((start + tick) * ppqPerTick64 >= burst.startPpq && (start + tick) * ppqPerTick64 <= lastPpq)
+            if ((start + tick) * ppqPerTick64 >= burst.startPpq - clearance && (start + tick) * ppqPerTick64 <= lastPpq + clearance)
             {
                 matrix.clearNote(TrapAlgebraLanes::HiHat, start + tick);
                 matrix.clearNote(TrapAlgebraLanes::HatAccent, start + tick);
@@ -1305,7 +1417,7 @@ std::pair<float, float> couplingBand(TrapAlgebraSubstyle substyle)
         case TrapAlgebraSubstyle::CloudTrap: return { 0.50f, 0.72f };
         case TrapAlgebraSubstyle::DarkTrap: return { 0.58f, 0.78f };
         case TrapAlgebraSubstyle::MemphisTrap: return { 0.60f, 0.80f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.56f, 0.76f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.25f, 0.65f };
         case TrapAlgebraSubstyle::ATLClassic:
         default: return { 0.62f, 0.82f };
     }
@@ -1324,7 +1436,7 @@ std::pair<float, float> occupancyBand(TrapAlgebraSubstyle substyle)
         case TrapAlgebraSubstyle::CloudTrap: return { 0.55f, 0.92f };
         case TrapAlgebraSubstyle::DarkTrap: return { 0.58f, 0.95f };
         case TrapAlgebraSubstyle::MemphisTrap: return { 0.62f, 0.97f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.58f, 0.95f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.40f, 0.98f }; // full-stem phrase occupancy p10=.411, p90=.944
         case TrapAlgebraSubstyle::ATLClassic:
         default: return { 0.65f, 0.98f };
     }
@@ -1372,17 +1484,19 @@ void TrapAlgebraEngine::repair(TrapAlgebraPattern& pattern,
 
             const int local = tickInBar(kick.tick64);
             const bool bar4 = (bar % 4) == 3;
-            if (!isLegalMainKickLocalTick(local, bar4, params.tempoContext.doubleTime) || isStumblingMainKickLocalTick(local))
+            const bool luxury = params.substyle == TrapAlgebraSubstyle::LuxuryTrap;
+            if (!isLegalMainKickLocalTick(local, bar4, params.tempoContext.doubleTime, luxury) || (!luxury && isStumblingMainKickLocalTick(local)))
             {
                 matrix.clearNote(TrapAlgebraLanes::Kick, kick.tick64);
-                matrix.clearNote(TrapAlgebraLanes::Sub808, kick.tick64);
+                if (!luxury) matrix.clearNote(TrapAlgebraLanes::Sub808, kick.tick64);
                 pattern.repairsApplied.add("remove_illegal_main_kick_position");
             }
         }
 
         const int kickCount = matrix.countLaneInBar(TrapAlgebraLanes::Kick, bar);
-        const int minKicks = 1;
-        const int maxKicks = (bar % 4) == 3 ? 4 : 3;
+        const bool luxury = params.substyle == TrapAlgebraSubstyle::LuxuryTrap;
+        const int minKicks = luxury ? 0 : 1;
+        const int maxKicks = luxury ? (params.tempoContext.doubleTime ? 8 : 6) : (bar % 4) == 3 ? 4 : 3;
         if (kickCount < minKicks)
         {
             const int tick = barStart(bar) + fallbackKickLocalTickForBar(bar);
@@ -1414,16 +1528,16 @@ void TrapAlgebraEngine::repair(TrapAlgebraPattern& pattern,
             for (size_t index = static_cast<size_t>(maxKicks); index < barKicks.size(); ++index)
             {
                 matrix.clearNote(TrapAlgebraLanes::Kick, barKicks[index].tick64);
-                matrix.clearNote(TrapAlgebraLanes::Sub808, barKicks[index].tick64);
+                if (!luxury) matrix.clearNote(TrapAlgebraLanes::Sub808, barKicks[index].tick64);
             }
             pattern.repairsApplied.add("reduce_excess_kicks");
         }
     }
 
     const int totalTicks = matrix.getTotalTicks();
-    const bool longBass = params.substyle == TrapAlgebraSubstyle::DarkTrap;
+    const bool longBass = params.substyle == TrapAlgebraSubstyle::DarkTrap || params.substyle == TrapAlgebraSubstyle::LuxuryTrap;
     const auto [occupancyLow, occupancyHigh] = occupancyBand(params.substyle);
-    if (matrix.active808Ticks(longBass) < static_cast<int>(occupancyLow * static_cast<float>(totalTicks)))
+    if (params.substyle != TrapAlgebraSubstyle::LuxuryTrap && matrix.active808Ticks(longBass) < static_cast<int>(occupancyLow * static_cast<float>(totalTicks)))
     {
         auto subs = matrix.notesForLane(TrapAlgebraLanes::Sub808);
         std::stable_sort(subs.begin(), subs.end(), [](const auto& a, const auto& b)
@@ -1444,7 +1558,7 @@ void TrapAlgebraEngine::repair(TrapAlgebraPattern& pattern,
         pattern.repairsApplied.add("restore_808_bass_weight");
     }
 
-    if (matrix.active808Ticks(longBass) > static_cast<int>(occupancyHigh * static_cast<float>(totalTicks)))
+    if (params.substyle != TrapAlgebraSubstyle::LuxuryTrap && matrix.active808Ticks(longBass) > static_cast<int>(occupancyHigh * static_cast<float>(totalTicks)))
     {
         auto subs = matrix.notesForLane(TrapAlgebraLanes::Sub808);
         std::stable_sort(subs.begin(), subs.end(), [](const auto& a, const auto& b)
@@ -1531,6 +1645,16 @@ void TrapAlgebraEngine::repair(TrapAlgebraPattern& pattern,
             pattern.repairsApplied.add("add_bar_4_ending_variation");
         }
     }
+    if (params.substyle == TrapAlgebraSubstyle::LuxuryTrap)
+        for (const auto& accent : matrix.notesForLane(TrapAlgebraLanes::HatAccent))
+            for (const auto& hat : matrix.notesForLane(TrapAlgebraLanes::HiHat))
+                if (std::abs((accent.tick64 - hat.tick64) * 60 + accent.microTimingTicks - hat.microTimingTicks) < 30)
+                {
+                    // Generic answer/ending repair must not layer a second closed hat on a roll.
+                    const int remove = accent.role == TrapAlgebraRole::Roll && hat.role != TrapAlgebraRole::Roll
+                        ? TrapAlgebraLanes::HiHat : TrapAlgebraLanes::HatAccent;
+                    matrix.clearNote(remove, remove == TrapAlgebraLanes::HiHat ? hat.tick64 : accent.tick64);
+                }
 }
 
 TrapSubstyleWeights TrapAlgebraEngine::weightsForSubstyle(TrapAlgebraSubstyle substyle)
@@ -1555,8 +1679,8 @@ TrapSubstyleWeights TrapAlgebraEngine::weightsForSubstyle(TrapAlgebraSubstyle su
                         0.52f, 0.40f, 0.95f, 0.44f, 0.50f, 0.55f, 0.80f, 0.15f, 0.20f, 0.10f, 0.05f, 0.90f, 0.70f, 0.08f };
             break;
         case TrapAlgebraSubstyle::LuxuryTrap:
-            weights = { "LuxuryTrap", 1.45f, 1.45f, 1.05f, 0.70f, 1.40f, 0.85f, 0.80f, 1.65f, 1.20f, 0.22f, 55.0f, 4,
-                        0.42f, 0.20f, 0.08f, 0.36f, 0.48f, 0.25f, 0.70f, 0.70f, 0.65f, 0.25f, 0.08f, 0.05f, 0.05f, 0.95f };
+            weights = { "LuxuryTrap", 1.50f, 1.10f, 1.45f, 1.25f, 1.15f, 0.95f, 0.85f, 1.65f, 1.30f, 0.26f, 70.0f, 4,
+                        0.62f, 0.58f, 0.38f, 0.42f, 0.70f, 0.40f, 0.86f, 0.50f, 0.65f, 0.25f, 0.08f, 0.05f, 0.05f, 0.95f };
             break;
         case TrapAlgebraSubstyle::ATLClassic:
         default:
@@ -1623,9 +1747,10 @@ int TrapAlgebraEngine::styleWindow808Pitch(int pitch, int keyRoot)
     return folded;
 }
 
-bool TrapAlgebraEngine::isMainKickTickAllowed(int localTick64, bool doubleTime)
+bool TrapAlgebraEngine::isMainKickTickAllowed(int localTick64, bool doubleTime, int trapSubstyle)
 {
-    return isLegalMainKickLocalTick(localTick64, false, doubleTime) && !isStumblingMainKickLocalTick(localTick64);
+    return isLegalMainKickLocalTick(localTick64, false, doubleTime, trapSubstyle == 5)
+        && (trapSubstyle == 5 || !isStumblingMainKickLocalTick(localTick64));
 }
 
 juce::String TrapAlgebraEngine::buildDebugSummary(const TrapAlgebraPattern& pattern,

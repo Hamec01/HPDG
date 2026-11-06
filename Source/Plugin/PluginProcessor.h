@@ -121,6 +121,7 @@ public:
     bool isPreviewPlaying() const;
     // How many audio blocks came out silent because the project lock was busy (Tests/Sub808CrackleLab.cpp).
     int getBlocksSkippedWhileProjectBusy() const noexcept { return blocksSkippedWhileProjectBusy.load(std::memory_order_relaxed); }
+    std::uint64_t getSub808SoundComparisonCount() const noexcept { return sub808SoundComparisons.load(std::memory_order_relaxed); }
     float getPreviewPlayheadStep() const;
     void syncBarsFromState();
     void setPreviewStartStep(int step);
@@ -155,6 +156,7 @@ public:
     void setBassKeyRootChoice(int choice);
     void setBassScaleModeChoice(int choice);
     void auditionSub808Note(int pitch, int velocity, int lengthTicks);
+    void releaseSub808AuditionNote(int pitch);
     void setSub808TrackNotes(TrackType track, const std::vector<Sub808NoteEvent>& notes);
     void setSub808TrackNotes(const RuntimeLaneId& laneId, const std::vector<Sub808NoteEvent>& notes);
     void setSub808LaneSettings(TrackType track, const Sub808LaneSettings& settings);
@@ -546,12 +548,15 @@ private:
     Sub808SoundState sub808SoundBuiltFrom;           // under projectMutex
     const void* sub808SoundBuiltBank = nullptr;      // the bank buffer it was built from
     bool sub808SoundBuilt = false;
+    std::uint64_t lastSub808RevisionChecked = 0; // audio thread, under projectMutex
+    std::atomic<std::uint64_t> sub808SoundComparisons { 0 };
     struct Sub808SoundRebuilder final : juce::AsyncUpdater
     {
         std::function<void()> rebuild;
         void handleAsyncUpdate() override { if (rebuild) rebuild(); }
     } sub808SoundRebuilder;
     std::vector<PendingPreviewNote> pendingPreviewNotes;
+    std::vector<int> pendingSub808AuditionOffs;
     bool previewPlaying = false;
     int previewSamplePosition = 0;
     bool startPlayWithDawEnabled = false;

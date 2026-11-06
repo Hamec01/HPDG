@@ -1,0 +1,122 @@
+[
+  {
+    "source": "808 Spinz.wav",
+    "source_sha256": "21850bbab8c80d5aa488d95cd0f74b92adefe8c0d97af641e97a7c6f807d9ba6",
+    "settings": {
+      "name": "Luxury Spinz",
+      "midi": 24,
+      "seconds": 2,
+      "punchSemitones": 1.5,
+      "punchMs": 12,
+      "drive": 4.003794653031466,
+      "bias": 0.04953228124180561,
+      "saturation": 0.4613392844275957,
+      "toneHz": 2675.2406970739,
+      "attackMs": 1,
+      "holdSeconds": 0.033223396158003564,
+      "decaySeconds": 0.5036374422361783
+    },
+    "reference_harmonics_db": [
+      -26.883081335895092,
+      -18.45298618699851,
+      -34.54456785401731,
+      -27.267665887616843,
+      -41.218683384062054,
+      -44.371207534580634,
+      -47.47709752888512
+    ],
+    "synth_harmonics_db": [
+      -28.18688734744933,
+      -17.902437509685594,
+      -33.855519253943044,
+      -28.60508452480147,
+      -40.84738870976522,
+      -38.99983679834089,
+      -48.56297225814061
+    ],
+    "harmonic_rmse_db": 2.2179494324758195,
+    "envelope_rmse_db": 0.2961915135383606,
+    "normalized_gain_difference_db": 3.2101449966430664,
+    "render": "C:\\DRUMENGINE\\build\\luxury-reference\\fit\\Luxury_Spinz.wav"
+  },
+  {
+    "source": "bass - seam.wav",
+    "source_sha256": "1179721d90bfb0cfc22139024f7fbf59e28158e07c1f6d29e29fcd4918ae5dcc",
+    "settings": {
+      "name": "Luxury Silk",
+      "midi": 24,
+      "seconds": 2,
+      "punchSemitones": 1.5,
+      "punchMs": 12,
+      "drive": 11.98388039730125,
+      "bias": 0.16637154312780444,
+      "saturation": 0.5360048295112959,
+      "toneHz": 781.171367142158,
+      "attackMs": 1,
+      "holdSeconds": 0.12152693143010661,
+      "decaySeconds": 0.1899119633603835
+    },
+    "reference_harmonics_db": [
+      -18.4533962267324,
+      -13.264528238894876,
+      -13.149366896391808,
+      -26.25436420549382,
+      -21.758020789006988,
+      -37.67065217440131,
+      -34.53730650854853
+    ],
+    "synth_harmonics_db": [
+      -11.346648881966043,
+      -21.476188792691865,
+      -16.896377318582633,
+      -31.028495696684622,
+      -25.305685593279065,
+      -28.74290887413641,
+      -38.72741540160652
+    ],
+    "harmonic_rmse_db": 6.14837009768669,
+    "envelope_rmse_db": 2.1308698654174805,
+    "normalized_gain_difference_db": -3.6870741844177246,
+    "render": "C:\\DRUMENGINE\\build\\luxury-reference\\fit\\Luxury_Silk.wav"
+  },
+  {
+    "source": "Lex 808.wav",
+    "source_sha256": "14d5bd8912e9939a57aac051879dfc7f10255b8f9d0b0e5cfbf8716cad2e24ba",
+    "settings": {
+      "name": "Luxury Lex",
+      "midi": 36,
+      "seconds": 2,
+      "punchSemitones": 1.5,
+      "punchMs": 12,
+      "drive": 4.459581442494335,
+      "bias": 0.067571016282184,
+      "saturation": 0.9999999999890211,
+      "toneHz": 355.44922363481476,
+      "attackMs": 1,
+      "holdSeconds": 0.14448553821528012,
+      "decaySeconds": 0.2527157316737802
+    },
+    "reference_harmonics_db": [
+      -18.26508509531231,
+      -6.889064796904494,
+      -28.17395124928243,
+      -27.900998622586265,
+      -46.90954159100922,
+      -41.940685416450606,
+      -53.38612682297112
+    ],
+    "synth_harmonics_db": [
+      -20.330014547993088,
+      -14.085912835618368,
+      -27.057309104698458,
+      -28.606756418915342,
+      -43.57890014957394,
+      -54.41630861230021,
+      -68.42765247119375
+    ],
+    "harmonic_rmse_db": 6.190790441351199,
+    "envelope_rmse_db": 0.6419187784194946,
+    "normalized_gain_difference_db": -2.03061580657959,
+    "render": "C:\\DRUMENGINE\\build\\luxury-reference\\fit\\Luxury_Lex.wav"
+  }
+]

@@ -1,6 +1,8 @@
 #include "SampleBassFollower.h"
 
 #include <cmath>
+#include <array>
+#include <algorithm>
 #include <vector>
 
 #include "../Core/ProjectLaneAccess.h"
@@ -28,6 +30,55 @@ SampleBassFollowReport SampleBassFollower::apply(PatternProject& project,
     const double loopLength = sampleEnd - originSeconds;
 
     auto notes = sub->notes;
+    if (project.params.genre == GenreType::Trap && project.params.trapSubstyle == 5)
+    {
+        // Luxury carries a melodic phrase. Replacing every pitch class with a detected
+        // sample note flattened its contour and produced arbitrary octave changes.
+        // Move the whole contour with a stable, duration-weighted harmonic root per bar.
+        constexpr auto marker = "|luxury_base_pitch=";
+        const auto originalPitch = [marker](const NoteEvent& n)
+        {
+            const int at=n.semanticRole.indexOf(marker);
+            return at>=0 ? n.semanticRole.substring(at+juce::String(marker).length()).getIntValue() : n.pitch;
+        };
+        const int barTicks = 4 * TimingGrid::PPQ;
+        for (auto& note : notes)
+        {
+            const int tag = note.semanticRole.indexOf(marker);
+            const int basePitch = originalPitch(note);
+            // Store the unadapted pitch so applying Guide repeatedly cannot accumulate transposition.
+            if (tag < 0) note.semanticRole += juce::String(marker)+juce::String(basePitch);
+            const double barStart = originSeconds + (note.gridTick/barTicks)*barTicks*secondsPerTick;
+            const double barDuration = barTicks*secondsPerTick;
+            double start = barStart;
+            if (start >= sampleEnd && loopLength > .1)
+                start = originSeconds + std::fmod(start-originSeconds,loopLength);
+            std::array<double,12> weights {};
+            for (const auto& segment : harmony.bass)
+            {
+                if (segment.midiNote < 0 || segment.confidence < .6f) continue;
+                const double overlap = std::max(0.0,std::min(start+barDuration,segment.endSeconds)-std::max(start,segment.startSeconds));
+                weights[static_cast<size_t>(segment.midiNote%12)] += overlap*segment.confidence;
+            }
+            const auto best = std::max_element(weights.begin(),weights.end());
+            if (*best < barDuration*.15)
+            {
+                note.pitch=basePitch; ++report.notesKept; continue;
+            }
+            const int root = static_cast<int>(std::distance(weights.begin(),best));
+            int shift = root-project.params.keyRoot;
+            int low=127,high=0;
+            for (const auto& other:notes)
+                if (other.gridTick/barTicks==note.gridTick/barTicks)
+                { low=std::min(low,originalPitch(other)); high=std::max(high,originalPitch(other)); }
+            while (low+shift<24) shift+=12;
+            while (high+shift>59) shift-=12;
+            note.pitch=basePitch+shift; ++report.notesFollowed;
+        }
+        if (report.notesFollowed > 0)
+            ProjectStateController::setTrackNotes(project,TrackType::Sub808,notes);
+        return report;
+    }
     const bool dark = project.params.genre == GenreType::Trap && project.params.trapSubstyle == 1;
     // Current-pass evidence, rather than a role tag left by an earlier guidance pass.
     std::vector<bool> supportedPitch(dark ? notes.size() : 0, false);

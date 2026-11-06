@@ -313,6 +313,9 @@ PatternBlendReport PatternBlendEngine::apply(PatternProject& project,
 
     for (const auto lane : kSampleApplyLanes)
     {
+        if (!weights.exactCopy && project.params.genre == GenreType::Trap && project.params.trapSubstyle == 5
+            && (lane == TrackType::Kick || lane == TrackType::HiHat || lane == TrackType::HatFX || lane == TrackType::Sub808))
+            continue; // Luxury keeps rhythm; harmony follows through SampleBassFollower.
         auto* state = ProjectLaneAccess::findTrackState(project, lane);
         if (state == nullptr || state->locked)
             continue;

@@ -226,9 +226,9 @@ TrapStyleSpec getTrapStyleSpec(TrapSubstyle substyle)
             spec.burstWindowPrimaryBias = 1.0f;
             spec.burstWindowSecondaryBias = 0.56f;
             spec.preferTriplets = true;
-            spec.preferFastBursts = false;
+            spec.preferFastBursts = true;
             spec.preferPhraseEdgeBursts = true;
-            spec.preferKickReactionBursts = false;
+            spec.preferKickReactionBursts = true;
             spec.allowOpenHatFrequently = true;
             spec.allowCymbalTransitions = true;
             spec.preferSparseSpace = false;
@@ -236,8 +236,8 @@ TrapStyleSpec getTrapStyleSpec(TrapSubstyle substyle)
             spec.pitchMotion = TrapPitchMotion::ControlledMovement;
             spec.slideMode = TrapSlideMode::Moderate;
             spec.hatDensityMode = TrapHatDensityMode::Medium;
-            spec.hatFxMode = TrapHatFxMode::Low;
-            spec.rollPreference = TrapRollPreference::Mostly32;
+            spec.hatFxMode = TrapHatFxMode::High;
+            spec.rollPreference = TrapRollPreference::Balanced32and64;
             spec.velocityContourPreference = TrapVelocityContourPreference::CleanCurated;
             break;
     }

@@ -41,7 +41,7 @@ std::pair<float, float> targetCouplingBand(TrapAlgebraSubstyle substyle)
         case TrapAlgebraSubstyle::CloudTrap: return { 0.50f, 0.72f };
         case TrapAlgebraSubstyle::DarkTrap: return { 0.58f, 0.78f };
         case TrapAlgebraSubstyle::MemphisTrap: return { 0.60f, 0.80f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.56f, 0.76f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.25f, 0.65f };
         case TrapAlgebraSubstyle::ATLClassic:
         default: return { 0.62f, 0.82f };
     }
@@ -60,7 +60,7 @@ std::pair<float, float> targetOccupancyBand(TrapAlgebraSubstyle substyle)
         case TrapAlgebraSubstyle::CloudTrap: return { 0.55f, 0.92f };
         case TrapAlgebraSubstyle::DarkTrap: return { 0.58f, 0.95f };
         case TrapAlgebraSubstyle::MemphisTrap: return { 0.62f, 0.97f };
-        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.58f, 0.95f };
+        case TrapAlgebraSubstyle::LuxuryTrap: return { 0.40f, 0.98f }; // independently measured phrase occupancy
         case TrapAlgebraSubstyle::ATLClassic:
         default: return { 0.65f, 0.98f };
     }
@@ -247,7 +247,7 @@ float closenessScore(float value, float target, float tolerance)
     return clamp01(1.0f - std::abs(value - target) / std::max(0.0001f, tolerance));
 }
 
-float lowEndPocketScore(const TrapPatternMatrix& matrix)
+float lowEndPocketScore(const TrapPatternMatrix& matrix, const TrapAlgebraParams& params)
 {
     const int bars = std::max(1, matrix.getBars());
     float total = 0.0f;
@@ -265,8 +265,9 @@ float lowEndPocketScore(const TrapPatternMatrix& matrix)
 
         const int count = static_cast<int>(ticks.size());
         const bool bar4 = (bar % 4) == 3;
-        float countScore = rangeScore(static_cast<float>(count), 1.0f, bar4 ? 4.0f : 3.0f, 1.0f);
-        float anchorScore = matrix.hasNote(TrapAlgebraLanes::Kick, barStart) ? 1.0f : 0.25f;
+        const bool luxury = params.substyle == TrapAlgebraSubstyle::LuxuryTrap;
+        float countScore = rangeScore(static_cast<float>(count), luxury ? 0.0f : 1.0f, luxury ? 6.0f : bar4 ? 4.0f : 3.0f, 1.0f);
+        float anchorScore = luxury || matrix.hasNote(TrapAlgebraLanes::Kick, barStart) ? 1.0f : 0.25f;
 
         float positionScore = 0.0f;
         int closePairs = 0;
@@ -278,14 +279,15 @@ float lowEndPocketScore(const TrapPatternMatrix& matrix)
             const bool preSnare = tick == 16 || tick == 24;
             const bool postSnare = tick == 36 || tick == 40;
             const bool ending = tick == 56;
-            const bool legal = downbeat || preSnare || postSnare || ending;
+            const bool legal = luxury ? TrapAlgebraEngine::isMainKickTickAllowed(tick,params.tempoContext.doubleTime,5)
+                                      : downbeat || preSnare || postSnare || ending;
             positionScore += legal ? 1.0f : 0.0f;
 
-            if (tick == 12 || tick == 28 || tick == 44 || tick == 52 || tick == 60)
+            if (!luxury && (tick == 12 || tick == 28 || tick == 44 || tick == 52 || tick == 60))
                 ++stumbleHits;
-            if (tick == 32)
+            if (!luxury && tick == 32)
                 ++stumbleHits;
-            if (i > 0 && tick - ticks[i - 1] < 7)
+            if (i > 0 && tick - ticks[i - 1] < (luxury ? 4 : 7))
                 ++closePairs;
         }
         positionScore = ticks.empty() ? 0.0f : positionScore / static_cast<float>(ticks.size());
@@ -384,8 +386,10 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
     // A Dark pedal line is coordinated with kicks while it is sounding; it need not
     // retrigger on every kick. Keep the actual onset ratio intact for research/debugging.
     const auto bassNotes = matrix.notesForLane(TrapAlgebraLanes::Sub808);
-    const bool sustainedDark = params.substyle == TrapAlgebraSubstyle::DarkTrap
-        && std::any_of(bassNotes.begin(), bassNotes.end(), [](const auto& n) { return n.durationTicks >= kTicksPerBar; });
+    const bool sustainedDark = (params.substyle == TrapAlgebraSubstyle::DarkTrap
+        && std::any_of(bassNotes.begin(), bassNotes.end(), [](const auto& n) { return n.durationTicks >= kTicksPerBar; }))
+        || (params.substyle == TrapAlgebraSubstyle::LuxuryTrap
+        && std::any_of(bassNotes.begin(), bassNotes.end(), [](const auto& n) { return n.durationTicks >= 16; }));
     if (sustainedDark)
     {
         int supported = 0;
@@ -395,7 +399,7 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
         couplingBandScore = std::max(couplingBandScore,
             rangeScore(out.kick808SustainSupportRatio, couplingLow, 1.0f, 0.22f));
     }
-    out.kick808CouplingScore = 0.64f * couplingBandScore + 0.36f * lowEndPocketScore(matrix);
+    out.kick808CouplingScore = 0.64f * couplingBandScore + 0.36f * lowEndPocketScore(matrix,params);
 
     out.sub808Density = totalTicks > 0 ? static_cast<float>(matrix.active808Ticks(sustainedDark)) / static_cast<float>(totalTicks) : 0.0f;
     const auto [occupancyLow, occupancyHigh] = targetOccupancyBand(params.substyle);
@@ -485,7 +489,7 @@ TrapQualityBreakdown TrapQualityScorer::score(const TrapPatternMatrix& matrix,
                             + std::max(0, cymbals - 2) * 0.18f
                             + std::max(0, perc - bars * 2) * 0.08f);
 
-    const float syncopationScore = lowEndPocketScore(matrix);
+    const float syncopationScore = lowEndPocketScore(matrix,params);
     const float bassWeightScore = rangeScore(out.sub808Density, occupancyLow, occupancyHigh, 0.16f);
     const float coreScore = clamp01((1.22f * out.snareBackboneScore
                                   + 1.24f * out.kick808CouplingScore

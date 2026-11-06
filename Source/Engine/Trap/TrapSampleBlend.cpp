@@ -100,7 +100,7 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
     std::vector<int> engineKickTicks;
     std::vector<int> finalKickTicks;
     auto* kick = ProjectLaneAccess::findTrackState(project, TrackType::Kick);
-    if (kick != nullptr && !kick->locked && kick->enabled && !kick->notes.empty())
+    if (kick != nullptr && !kick->locked && kick->enabled && !kick->notes.empty() && project.params.trapSubstyle != 5)
     {
         for (const auto& n : kick->notes)
             if (!n.isGhost)
@@ -123,7 +123,7 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
             const int slot = static_cast<int>(std::lround(n.gridTick / static_cast<double>(TimingGrid::Sixteenth))) * TimingGrid::Sixteenth;
             const auto [bar, local] = grid.barAndLocal(slot);
             if (std::abs(n.gridTick - slot) > kMaxKickSnapTicks || slot >= loopTicks
-                || !TrapAlgebraEngine::isMainKickTickAllowed(local, grid.tempo.doubleTime)
+                || !TrapAlgebraEngine::isMainKickTickAllowed(local, grid.tempo.doubleTime, project.params.trapSubstyle)
                 || snareSteps.count(slot / TimingGrid::Sixteenth) > 0
                 || (intensity == 1 && slot % TimingGrid::TicksPerBeat != 0))
             {
@@ -191,7 +191,7 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
     // Hats: per bar, the loop's hats on the 1/32 / triplet grid, or the engine's. Intensity 1-2
     // keep the engine's simplified pulse.
     auto* hat = ProjectLaneAccess::findTrackState(project, TrackType::HiHat);
-    if (hat != nullptr && !hat->locked && hat->enabled && intensity >= 3)
+    if (hat != nullptr && !hat->locked && hat->enabled && intensity >= 3 && project.params.trapSubstyle != 5)
     {
         std::map<int, std::vector<NoteEvent>> sampleByBar;
         for (auto n : mapLoop(laneOf(TrackType::HiHat), ratio, sampleTicks, loopTicks))
@@ -255,7 +255,8 @@ TrapSampleBlendReport TrapSampleBlend::apply(PatternProject& project,
 
     // 808: Trap's 808 sits on the kicks. Kicks the loop moved take their 808 with them.
     auto* sub = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
-    if (report.changedTracks.count(TrackType::Kick) > 0 && sub != nullptr && !sub->locked && !sub->notes.empty())
+    if (report.changedTracks.count(TrackType::Kick) > 0 && sub != nullptr && !sub->locked && !sub->notes.empty()
+        && project.params.trapSubstyle != 5) // Luxury's independent bass phrase survives sample kicks.
     {
         const auto near = [](const std::vector<int>& ticks, int tick)
         {
@@ -325,7 +326,13 @@ bool applyTrapStyle808Window(PatternProject& project)
     bool moved = false;
     for (auto& n : notes)
     {
-        const int pitch = TrapAlgebraEngine::styleWindow808Pitch(n.pitch, project.params.keyRoot);
+        int pitch = n.pitch;
+        if (project.params.trapSubstyle == 5)
+        {
+            while (pitch < 24) pitch += 12;
+            while (pitch > 59) pitch -= 12;
+        }
+        else pitch = TrapAlgebraEngine::styleWindow808Pitch(n.pitch, project.params.keyRoot);
         moved = moved || pitch != n.pitch;
         n.pitch = pitch;
     }

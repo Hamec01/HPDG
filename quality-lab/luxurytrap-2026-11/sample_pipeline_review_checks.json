@@ -1,0 +1,44 @@
+{
+  "rhythm_review_sample_bass": {
+    "patterns": 4,
+    "effective_bpm": [
+      "131"
+    ],
+    "errors": [],
+    "same_entire_drum_and_bass_onsets": 3,
+    "contour_bars_kept": 14,
+    "same_core_lane_onsets": 4,
+    "contour_bars_compared": 14,
+    "contour_violations": 0
+  },
+  "rhythm_review_sample_mix": {
+    "patterns": 4,
+    "effective_bpm": [
+      "131"
+    ],
+    "errors": [],
+    "same_entire_drum_and_bass_onsets": 3,
+    "contour_bars_kept": 14,
+    "same_core_lane_onsets": 4,
+    "contour_bars_compared": 14,
+    "contour_violations": 0
+  },
+  "rhythm_fix_70": {
+    "patterns": 8,
+    "effective_bpm": [
+      "140"
+    ],
+    "errors": [],
+    "same_entire_drum_and_bass_onsets": 0,
+    "contour_bars_kept": 0
+  },
+  "rhythm_fix_166": {
+    "patterns": 8,
+    "effective_bpm": [
+      "166"
+    ],
+    "errors": [],
+    "same_entire_drum_and_bass_onsets": 0,
+    "contour_bars_kept": 0
+  }
+}

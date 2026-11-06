@@ -38,6 +38,8 @@ struct BassPreset
 
 // 808 (the ten fitted to 672 one-shots), Boom Bap, Techno, DnB, Kick -> 808.
 const std::vector<BassPreset>& bassPresets();
+// Pure synth fits to the owner's LuxuryTrap one-shots; 0 Spinz, 1 Lex.
+BassSettings luxuryBassSettings(int variant = 0);
 
 class BassVoice
 {

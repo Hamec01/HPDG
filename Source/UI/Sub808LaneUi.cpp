@@ -148,7 +148,8 @@ Sub808EditorOverlay::Host makeSub808EditorHost(BoomBapGeneratorAudioProcessor& p
     };
     host.getBankSample = [&processor] { return processor.getSub808BankSample(); };
     host.getBankSampleName = [&processor] { return processor.getSelectedLaneSampleName(TrackType::Sub808); };
-    host.audition = [&processor](int note, int velocity) { processor.auditionSub808Note(note, velocity, TimingGrid::Sixteenth * 4); };
+    host.audition = [&processor](int note, int velocity) { processor.auditionSub808Note(note, velocity, TimingGrid::Sixteenth * 32); };
+    host.releaseAudition = [&processor](int note) { processor.releaseSub808AuditionNote(note); };
     host.close = std::move(close);
     return host;
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <memory>
 
 #include <juce_core/juce_core.h>
 #include <juce_data_structures/juce_data_structures.h>
@@ -50,6 +51,37 @@ struct Sub808LaneSettings
     int transposeSemitones = 0; // the lane's quick +/- (octave or semitone): playback and MIDI export
 };
 
+// Immutable sample bytes: editor/project snapshots share the file rather than copying
+// megabytes while holding the mutex that the audio callback must try-lock.
+class Sub808SampleWav
+{
+public:
+    Sub808SampleWav() = default;
+    Sub808SampleWav(juce::MemoryBlock bytes)
+    {
+        if (bytes.getSize() > 0) data = std::make_shared<const juce::MemoryBlock>(std::move(bytes));
+    }
+    size_t getSize() const noexcept { return data != nullptr ? data->getSize() : 0; }
+    const void* getData() const noexcept { return data != nullptr ? data->getData() : nullptr; }
+    void reset() noexcept { data.reset(); }
+    juce::String toBase64Encoding() const { return block().toBase64Encoding(); }
+    bool fromBase64Encoding(const juce::String& text)
+    {
+        juce::MemoryBlock bytes;
+        if (!bytes.fromBase64Encoding(text)) return false;
+        *this = Sub808SampleWav(std::move(bytes));
+        return true;
+    }
+    operator const juce::MemoryBlock&() const noexcept { return block(); }
+private:
+    const juce::MemoryBlock& block() const noexcept
+    {
+        static const juce::MemoryBlock empty;
+        return data != nullptr ? *data : empty;
+    }
+    std::shared_ptr<const juce::MemoryBlock> data;
+};
+
 // The Sub808 lane's sound: always played by the HPDG 808 engine (Source/Bass808).
 struct Sub808SoundState
 {
@@ -58,7 +90,7 @@ struct Sub808SoundState
     bool custom = false;
     juce::String name;              // the preset it came from, shown on the lane
     juce::ValueTree settings;       // "BassSettings" (Bass808/BassSettingsIO.h)
-    juce::MemoryBlock sampleWav;    // the sample layer's file (24-bit WAV), empty: none
+    Sub808SampleWav sampleWav;     // immutable shared WAV bytes, empty: none; serialized format unchanged
 
     // the strip under the rack, on top of either
     float filter = 0.0f;            // -1 .. 1: left closes the highs, right cuts the lows, 0 off

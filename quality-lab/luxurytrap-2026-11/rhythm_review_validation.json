@@ -1,0 +1,195 @@
+{
+  "original_files_unchanged": 101,
+  "kit_assets_verified": 79,
+  "unchanged_non_luxury_note_rows": 3808,
+  "matrix_patterns": 180,
+  "matrix_configurations": 9,
+  "matrix_hard_failures": 0,
+  "current_core_tests_passed": 93,
+  "bass_rotation_lock_audibility_and_session_restore_check": true,
+  "closed_hat_duplicate_events": 0,
+  "audio": [
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed1_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.6068850755691528,
+      "sha256": "da4844c729a3793e1d227878a26e3f60f6e7aa41caa864318f03f610913a51ff"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed1_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5662782192230225,
+      "sha256": "3981bd40b9e4315de0ed31c893c55e414b89ab734706aa943888daf4457b0201"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed1_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.8972684144973755,
+      "sha256": "d91a28d715a4e7b291b37ca197152d1ffc33e2f29d32ad1c678fde8a326cee88"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed2_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.604369044303894,
+      "sha256": "c013c0ed8ebe442dc3b7a6bf710902edbd068b55235e70c308df7dd4276263a6"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed2_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5601191520690918,
+      "sha256": "06a9a65d06f81b573d88b40d660b5c65f01435b46f38c469f2cd1af8e9d65e63"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed2_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.8412487506866455,
+      "sha256": "85b26e4d981c713a0c38bfdb39ea35f1a17b73b2aec0ccbda34fe7da2df03492"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed3_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5892066955566406,
+      "sha256": "74c3f9d481f4eee15837d1f9619e1c934dce8b60b3b05c5bc91b1f1979bcd6ce"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed3_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.571379542350769,
+      "sha256": "073f0bcb5fe52bfbc55eba64c7c129b06c700e9ea97223dbd1bc64cf8b4b808b"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed3_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.8744901418685913,
+      "sha256": "c9dfe0843c7f31f050e9f181023a9062b45119268c459a20495ce9cc3cdcaa7c"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed4_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.6039117574691772,
+      "sha256": "2970ce0b4a98361d8a422bbf83c2a259db18424e4d508f5b63e8249fea73b1f9"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed4_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5641019344329834,
+      "sha256": "85ae0f6aa63d0e14d4bef93755a08808c532d70b3d05f1dc25ca822b8c9a208f"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed4_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.7875083684921265,
+      "sha256": "6e7fd5a9af31a6786d325844bce8da836cf061b26c5aa4a7526b6b7a6fc3d28a"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed5_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.3269197940826416,
+      "sha256": "ee35db0bb54891407d0a3489a63cc62802ad60d13423414d6e2cce71c7880c60"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed5_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.24565839767456055,
+      "sha256": "fbdf7417854b30cdc2cf41dc7bb183e397bc62b2769242819129ef640a39f4de"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed5_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5978872776031494,
+      "sha256": "01b5ece9525c13fca85f3b8575347e8dcfb94a9dd9e787eeba8f2356aa1edcd7"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed6_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5972838401794434,
+      "sha256": "6f58305b0cff08da3915d5849cba0566ab2c99e5f458bc749140c7df1178a804"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed6_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5679506063461304,
+      "sha256": "0b37c2b80468aafa464f9e2566bddffdfaaedb90e929b9bacab3bca56252b5a7"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed6_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.9002732038497925,
+      "sha256": "8b9d2c385872172ba2eb3c1ed4af56ef89a23074e2ebc70b3f6e87b4c490032f"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed7_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.6068850755691528,
+      "sha256": "f66c595f5a34c9757b19d2bc979034ba3bb54162f0d5698890059ac883c2be06"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed7_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5598212480545044,
+      "sha256": "c35fd6845f5bc9387151b5ed56dd2e2474e45a3d7f39141576f9ae88575e35e2"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed7_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.869963526725769,
+      "sha256": "81df5ae5eacd0c56e0d20d283e5f87e8173ce41b8bc8dac7ebc8e199a77a9d5a"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed8_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5864672660827637,
+      "sha256": "3524ab5d9a8ca6f0ebb60aea8a2a94b6e7dcce049b2f0af33a98b9038f57de31"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed8_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5522171258926392,
+      "sha256": "fcb7bc05e2d2896df3eeb75b68e195cb341501d2f8b067905599d33eeebdba74"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\review\\Luxury_seed8_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.8612344264984131,
+      "sha256": "66851f35d406d8fc633bda86227f85149be914d866017596248eaf7eb1703898"
+    }
+  ],
+  "modules": [
+    {
+      "path": "C:\\DRUMENGINE\\build\\HPDG_artefacts\\Release\\VST3\\HPDG.vst3\\Contents\\x86_64-win\\HPDG.vst3",
+      "sha256": "b4d2b4460f6f237c4b7ba9753dd9ee19829b861f38bc6d236d563d727cdbf0b8",
+      "factory_load": true
+    },
+    {
+      "path": "C:\\DRUMENGINE\\build\\HPDG808_artefacts\\Release\\VST3\\HPDG 808.vst3\\Contents\\x86_64-win\\HPDG 808.vst3",
+      "sha256": "ef402218f178898eeb06a139fbcf77d8702345dea76496e99a1e5f3ad29cef4d",
+      "factory_load": true
+    }
+  ],
+  "live_daw_audition": false,
+  "initial_failures": "Initial hat duplication assertion failed; fixed repair collision. Core link needed follower/composer sources; corrected CMake. Logs retained."
+}

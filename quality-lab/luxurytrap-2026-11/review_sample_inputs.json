@@ -1,0 +1,12 @@
+{
+  "track": 12,
+  "bass_source_sha256": "872a6a1a3d6343973a721555392ecbc6d446c8089f6db65588692712ffd262fe",
+  "seconds": [
+    24,
+    48
+  ],
+  "inputs": {
+    "bass": "C:\\DRUMENGINE\\build\\luxury-full-phrases\\872a6a1a3d6343973a721555392ecbc6d446c8089f6db65588692712ffd262fe-1.wav",
+    "mix": "C:\\DRUMENGINE\\build\\luxury-cross-stem\\35f2ba8fd4e6c0f59ad7c259f1c6be60400067cb0ce570ec1e2546bac91ceb8d-1-mix.wav"
+  }
+}

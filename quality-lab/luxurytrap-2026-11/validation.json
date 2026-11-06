@@ -1,0 +1,112 @@
+{
+  "original_files_unchanged": 101,
+  "kit_assets_verified": 79,
+  "unchanged_non_luxury_note_rows": 12474,
+  "matrix_patterns": 900,
+  "matrix_configurations": 9,
+  "matrix_hard_failures": 0,
+  "prior_stage_test_suites_passed": 10,
+  "current_pcm_bank_recheck_passed": true,
+  "bass_rotation_lock_audibility_and_session_restore_check": true,
+  "closed_hat_duplicate_events": 0,
+  "audio": [
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed1_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5997934341430664,
+      "sha256": "af33c973af1718f0d1944e9d1db6008cd9bf4b2436851798ba1e87708b31d6d7"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed1_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5643060207366943,
+      "sha256": "d9d89b327257fb81d4ba740fbf12568c29424ba6c960f04917b5f5f7326acb44"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed1_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.8779807090759277,
+      "sha256": "f1251bdfe8235af26f3a4de48160230f950ee3558e81a512cec778460fffa1b5"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed2_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.6008388996124268,
+      "sha256": "7ad3955773161ea6fcf687f770443a44df3044d1ce0e83d1d55b03727946d29e"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed2_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5830020904541016,
+      "sha256": "cc5c2694ba42d3a2602309948d9e4f65cbdf23881a52519a0f498729297bb2f4"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed2_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.840686559677124,
+      "sha256": "02309f68f62c22acc49f58368c358e541c002d42e8dc22f89d8e970e083e97b6"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed3_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.6000359058380127,
+      "sha256": "9bcc27a717169c795f8c099a03f265126d54a047b153a69101f0f86bf4fa3b28"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed3_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5901156663894653,
+      "sha256": "b0a0073070518b4c5b70eae8327b20b7933068433ce93bcae73cd37b95168e22"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed3_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.8700603246688843,
+      "sha256": "2c337936977c4a397be037ae5b8eb8bb0f09f36f365676d2f22d5b5a201409e2"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed4_kick_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.6074457168579102,
+      "sha256": "f9bb0872daab81f8c830b77665449f9c3862a5b149771085092c062b9ff7a963"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed4_bass_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.5941683053970337,
+      "sha256": "60293dea6f18672f0a9eb392da1a28ae2dd1679c3f4f6cab3099e9ecc1f5f52c"
+    },
+    {
+      "file": "C:\\DRUMENGINE\\quality-lab\\luxurytrap-2026-11\\listening\\Luxury_seed4_mix_138bpm.wav",
+      "sr": 44100,
+      "seconds": 6.956507936507936,
+      "peak": 0.8435825109481812,
+      "sha256": "6482ca85b7851b69e7d202eabc9d0e3cf4a2141ac7512f975ebaa8e48be58fbb"
+    }
+  ],
+  "modules": [
+    {
+      "path": "C:\\DRUMENGINE\\build\\HPDG_artefacts\\Release\\VST3\\HPDG.vst3\\Contents\\x86_64-win\\HPDG.vst3",
+      "sha256": "15643a2f27b00d51020e423f430ba6e43156207fb5c629a3d4e6307d8b7c8fce",
+      "factory_load": true
+    },
+    {
+      "path": "C:\\DRUMENGINE\\build\\HPDG808_artefacts\\Release\\VST3\\HPDG 808.vst3\\Contents\\x86_64-win\\HPDG 808.vst3",
+      "sha256": "9241d104619eb6999abbc740ebd691694e78dae9b4897817c01a49bad7f3b490",
+      "factory_load": true
+    }
+  ],
+  "live_daw_audition": false,
+  "initial_failures": "Initial hat duplication assertion failed; fixed repair collision. Core link needed follower/composer sources; corrected CMake. Logs retained."
+}

@@ -164,6 +164,10 @@ struct Placed
 
 bool SampleBassLineComposer::wants(const PatternProject& project, const SampleHarmony& harmony)
 {
+    // Luxury reads the sample's pitches through SampleBassFollower while retaining its
+    // own phrase grammar. Rebuilding its onsets here erased the substyle after analysis.
+    if (project.params.genre == GenreType::Trap && project.params.trapSubstyle == 5)
+        return false;
     if (project.params.genre != GenreType::BoomBap && project.params.genre != GenreType::Trap)
         return false;
     const auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);

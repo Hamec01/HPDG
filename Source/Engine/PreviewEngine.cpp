@@ -99,6 +99,13 @@ void PreviewEngine::queueBassNote(float gain, int sampleOffset, const TriggerOpt
     }
 }
 
+void PreviewEngine::noteOffSub808(int pitch)
+{
+    BassEvent off;
+    off.on = false; off.note = juce::jlimit(0, 127, pitch); off.at = 0;
+    if (bassEvents.size() < bassEvents.capacity()) bassEvents.push_back(off);
+}
+
 void PreviewEngine::duckBass(int numSamples)
 {
     const float depth = bassSound != nullptr ? juce::jlimit(0.0f, 1.0f, bassSound->sidechain) : 0.0f;

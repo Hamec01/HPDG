@@ -1,0 +1,555 @@
+[
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\[Hat] - Hit 1 (EQ).wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 01.wav",
+    "source_sha256": "2a699a8dfc2b408e317ae0a746c1c811b7e5250d4c1d31303caf140f5c13b55b",
+    "sha256": "7c074ef650cc84a4e770ed6289795fab3f697300b3e91ec430dea617b64af81d",
+    "gain": 0.9864380762861479
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\[Hat] - Hit 1 (EQ).wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 01.wav",
+    "source_sha256": "2a699a8dfc2b408e317ae0a746c1c811b7e5250d4c1d31303caf140f5c13b55b",
+    "sha256": "7c074ef650cc84a4e770ed6289795fab3f697300b3e91ec430dea617b64af81d",
+    "gain": 0.9864380762861479
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Bad Guy Hit.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 02.wav",
+    "source_sha256": "0dd0869103d92935dfa9062ee19c6e0a51861afc877232104d0459a443e365aa",
+    "sha256": "a932a2f23380c1c02a934c05247e2b40187217f803b777628b7865635144bd02",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Bad Guy Hit.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 02.wav",
+    "source_sha256": "0dd0869103d92935dfa9062ee19c6e0a51861afc877232104d0459a443e365aa",
+    "sha256": "a932a2f23380c1c02a934c05247e2b40187217f803b777628b7865635144bd02",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\best hh.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 03.wav",
+    "source_sha256": "60c6628edac1c5cb9e33d903f060322ce677ae09e42dca8c9e57a0b96ca5994b",
+    "sha256": "150bcb47c644c03cc59d8f26093f37a3f591a3a58627738bef11c3eb1a200182",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\best hh.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 03.wav",
+    "source_sha256": "60c6628edac1c5cb9e33d903f060322ce677ae09e42dca8c9e57a0b96ca5994b",
+    "sha256": "150bcb47c644c03cc59d8f26093f37a3f591a3a58627738bef11c3eb1a200182",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\DY Hi Hat.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 04.wav",
+    "source_sha256": "d6d094d2ae86ec32d2f6c3e4cbe433d4bf47dc74d5d4f8a6acabd33f4756f89f",
+    "sha256": "f3ba208ee0bc11d0e37bbf5721e1d083573171cdc31f8ed2bf9cb5d197b1df31",
+    "gain": 0.9431804021991538
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\DY Hi Hat.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 04.wav",
+    "source_sha256": "d6d094d2ae86ec32d2f6c3e4cbe433d4bf47dc74d5d4f8a6acabd33f4756f89f",
+    "sha256": "f3ba208ee0bc11d0e37bbf5721e1d083573171cdc31f8ed2bf9cb5d197b1df31",
+    "gain": 0.9431804021991538
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\feign hh.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 05.wav",
+    "source_sha256": "2dd3659f72c3164923ed3bf68ea1c9d96f6a9dd0a37bbd0a596e4d6b78b98d19",
+    "sha256": "d3b19824d37706ae8c1ad1aa527948d6837a1ddeb2e184ba207f15b795cf37c0",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\feign hh.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 05.wav",
+    "source_sha256": "2dd3659f72c3164923ed3bf68ea1c9d96f6a9dd0a37bbd0a596e4d6b78b98d19",
+    "sha256": "d3b19824d37706ae8c1ad1aa527948d6837a1ddeb2e184ba207f15b795cf37c0",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hard Right There Hi-hat.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 06.wav",
+    "source_sha256": "d8c30f23ecbb2119c7606151e1141f1e8c15477428b513c924258468b7026aec",
+    "sha256": "51ec49792b29fca3aab7e96f1da76129ee91a32b023a96d9fe658109ab52c392",
+    "gain": 0.9962139647605146
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hard Right There Hi-hat.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 06.wav",
+    "source_sha256": "d8c30f23ecbb2119c7606151e1141f1e8c15477428b513c924258468b7026aec",
+    "sha256": "51ec49792b29fca3aab7e96f1da76129ee91a32b023a96d9fe658109ab52c392",
+    "gain": 0.9962139647605146
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\hh.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 07.wav",
+    "source_sha256": "0c0add8445ec135c99dae212eeb6fe218d108f7f2ed01707b823f056c7499ce6",
+    "sha256": "9b0a2538ce52894c2ac035b51b27e84a2022975d871dab3667b495fc1425011c",
+    "gain": 0.5756978148676842
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\hh.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 07.wav",
+    "source_sha256": "0c0add8445ec135c99dae212eeb6fe218d108f7f2ed01707b823f056c7499ce6",
+    "sha256": "9b0a2538ce52894c2ac035b51b27e84a2022975d871dab3667b495fc1425011c",
+    "gain": 0.5756978148676842
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat 1 [ WHzYOutOFHERE™ ].wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 08.wav",
+    "source_sha256": "d5bed84462b200ac03e54458b5e7d13ebd1f80a335c6935dc3e610877c0d8dba",
+    "sha256": "2c5c0dbb6a4580fa63bfc0217d9e32e5279db222f16cfb7a2900b8b3dbd76f44",
+    "gain": 0.9887721234061805
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat 1 [ WHzYOutOFHERE™ ].wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 08.wav",
+    "source_sha256": "d5bed84462b200ac03e54458b5e7d13ebd1f80a335c6935dc3e610877c0d8dba",
+    "sha256": "2c5c0dbb6a4580fa63bfc0217d9e32e5279db222f16cfb7a2900b8b3dbd76f44",
+    "gain": 0.9887721234061805
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat™ [ WHzYOutOFHERE™ ].wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 09.wav",
+    "source_sha256": "767da1307dbce8b620c5e2d8f0bdf91907e300778cecf549c48e8e160cbfbf71",
+    "sha256": "3a7703b9afc132a6de771fc075635409a37976e9432a622e8ac0f06d267950cc",
+    "gain": 0.9987367434822044
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat™ [ WHzYOutOFHERE™ ].wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 09.wav",
+    "source_sha256": "767da1307dbce8b620c5e2d8f0bdf91907e300778cecf549c48e8e160cbfbf71",
+    "sha256": "3a7703b9afc132a6de771fc075635409a37976e9432a622e8ac0f06d267950cc",
+    "gain": 0.9987367434822044
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hihat (Classic hit).wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 10.wav",
+    "source_sha256": "87aa9a7ee064d69889c68f0839e9a1a1306b4d7e060c6be8ff5d1cbb7919c85c",
+    "sha256": "3f5776146da84f50a8543f1d1b07dd6fdd6c89f9f33d75c2dcab9ec792d73b9e",
+    "gain": 0.947058132858516
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hihat (Classic hit).wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 10.wav",
+    "source_sha256": "87aa9a7ee064d69889c68f0839e9a1a1306b4d7e060c6be8ff5d1cbb7919c85c",
+    "sha256": "3f5776146da84f50a8543f1d1b07dd6fdd6c89f9f33d75c2dcab9ec792d73b9e",
+    "gain": 0.947058132858516
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\HiHat (Slime Shit) (2).wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 11.wav",
+    "source_sha256": "34ad7c29a77ef2dc31e41ff278574ab2c774b462557665b79b755ba03b1e783a",
+    "sha256": "8aaab16f32c3457a95bb5377c5c4b6b6dd93946e6d0c8f21b50202d9a45db696",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\HiHat (Slime Shit) (2).wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 11.wav",
+    "source_sha256": "34ad7c29a77ef2dc31e41ff278574ab2c774b462557665b79b755ba03b1e783a",
+    "sha256": "8aaab16f32c3457a95bb5377c5c4b6b6dd93946e6d0c8f21b50202d9a45db696",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hihat 6.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 12.wav",
+    "source_sha256": "bd00b13a8105ca50b9dbc4cb1d8f24580fe217983fa12ecadd06609731a5a73c",
+    "sha256": "a994065b3a08b26387dda17fbce3a36279def88555fd7659d9de7f40d720135d",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hihat 6.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 12.wav",
+    "source_sha256": "bd00b13a8105ca50b9dbc4cb1d8f24580fe217983fa12ecadd06609731a5a73c",
+    "sha256": "a994065b3a08b26387dda17fbce3a36279def88555fd7659d9de7f40d720135d",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Sizzle Hat 1.wav",
+    "output": "Samples\\Trap\\HiHat\\Luxury HiHat 13.wav",
+    "source_sha256": "458a473372d5f9f5e28930806790d21751ec5ce0d171bc20a8ed3b216910a83d",
+    "sha256": "5e17cd8426ae11feb2ba5691dac529cc925a4f5564167d282edcdd4c670f5d21",
+    "gain": 0.9485578356064868
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Sizzle Hat 1.wav",
+    "output": "Samples\\Trap\\HatFX\\Luxury HatFX 13.wav",
+    "source_sha256": "458a473372d5f9f5e28930806790d21751ec5ce0d171bc20a8ed3b216910a83d",
+    "sha256": "5e17cd8426ae11feb2ba5691dac529cc925a4f5564167d282edcdd4c670f5d21",
+    "gain": 0.9485578356064868
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\808_Thump Kick.wav",
+    "output": "Samples\\Trap\\Kick\\Luxury Kick 01.wav",
+    "source_sha256": "4345c57618252646082e8a2eb0a52fd05b4e4570ddc263a75ac11bc68fc9d608",
+    "sha256": "9e46e18be9956b320503cdf3884dfd24230682b45ed12d19b54d54430c9ba906",
+    "gain": 0.9779898332708769
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\[Kick] - Rack.wav",
+    "output": "Samples\\Trap\\Kick\\Luxury Kick 02.wav",
+    "source_sha256": "31ecf7af4bf5222a7f7bc13a837c63a2eeb4fd1677f2f49a7ff31df835eaa5e4",
+    "sha256": "eb03fd811adbd651202edd40befaa144672b33446b07a8f9c385c054dc0135dd",
+    "gain": 0.9713974790662676
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\BWB WAV 7 KICK (6).wav",
+    "output": "Samples\\Trap\\Kick\\Luxury Kick 03.wav",
+    "source_sha256": "b3c2e025c381cab55955d5b5ca279ccf6e47bbd0bdf2ba84d836342a55353262",
+    "sha256": "18e72e9b0116c7a7464d3f6c2359117f188a2b3bb136190e4e70c1a353983541",
+    "gain": 0.7050679661011716
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\KCK BrZY [ WHzYOutOFHERE™ ].wav",
+    "output": "Samples\\Trap\\Kick\\Luxury Kick 04.wav",
+    "source_sha256": "9484e1f4e732f151ac7c04d457bb387e3f983ae5cad078e9b40deb6211692808",
+    "sha256": "147d9808bbc8166dbdcacff0c15e4056f2cfcba91da4c687e7cbbb14b89c2e22",
+    "gain": 0.6198717026197171
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\Kick 1.wav",
+    "output": "Samples\\Trap\\Kick\\Luxury Kick 05.wav",
+    "source_sha256": "beb2170c8ecc6254e5bd58cc491deb2bd88194b2b4a70bfc3cbe483b00c164ed",
+    "sha256": "9884a31d0cef645b61ab59fad5dff1e250eb7cf31d50ab13def70fa3457824ac",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\Kick [ Rack ].wav",
+    "output": "Samples\\Trap\\Kick\\Luxury Kick 06.wav",
+    "source_sha256": "3b13e687487b11bf4ae5b62e0b4e39e88ea8edd49f0decba5ec0a146068265a9",
+    "sha256": "eb03fd811adbd651202edd40befaa144672b33446b07a8f9c385c054dc0135dd",
+    "gain": 0.9713974790662676
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\@based1 - tired (clap).wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 01.wav",
+    "source_sha256": "ad46565d4cfa9c4f3c3cff7c0e8e61ef3eff4c49c33141414ea58639a1d8899f",
+    "sha256": "cef0f8f1e7ca813bbf07c495df144fa69378030064e7c985b8eab27d27b70951",
+    "gain": 0.968751951300535
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\[Clap] - Basic.wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 02.wav",
+    "source_sha256": "4f7219276375dc14379ab20badcbd00a36a309933152053ad6c90edc064a4a9b",
+    "sha256": "ad8b454c3a486250a779ec406e967a30dec235ba946b18c0c9e054e510330912",
+    "gain": 0.9850386807047966
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\clap (wheezy).wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 03.wav",
+    "source_sha256": "7a415b938489d03f5e91c9508eb5646fab07802073334991b93570c75ffddd06",
+    "sha256": "99df050417b9b62c3c6418b6e3190f4bb4358e7afdadcc3f61b5721682ae6584",
+    "gain": 0.9800299081392865
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\Clap [ZayClean].wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 04.wav",
+    "source_sha256": "207511301821f1258386616e92d58e91ae288bb1bd10f8e1c9b290aad9401034",
+    "sha256": "0b029d3c15660504e677d3ad591f717122f8e5746825737ad20c753940cb1a88",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\clap for da carter 6 (1).wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 05.wav",
+    "source_sha256": "73feb9de09dabec200988a95d8e11fed9a14df1813eb1aebcfb72c6e86ac24c0",
+    "sha256": "52920a47f3c4bd0328d7606a1d7dfafa5c099f72d047ad08d8205dc3604cbc94",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\clap.wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 06.wav",
+    "source_sha256": "1a4573bb293fd0cdc5b83db7cbb8595bf6d64776ebbbda2b09a47ae68ce49b4c",
+    "sha256": "ee21629b5c9afa9cacf15ac5a867a2682adf6b77fd81ebe343f1a0b3fe576841",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\Hood Dreams Clp.wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 07.wav",
+    "source_sha256": "64316b4d5b23fe9adf618c57cdc907c4c6d52d85b1989307759c8163c9242786",
+    "sha256": "04d7523d1ec9b6fe26c238687bf710602de32ffb56be01b5c8c91ba1d6dd7cfd",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\RAZ Clap 1 [ Luger V1 ].wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 08.wav",
+    "source_sha256": "3699d1995ae2eddcbec48d035b2825ade053ee8979ab0a3bdaf4915909fdf4e0",
+    "sha256": "ad8b454c3a486250a779ec406e967a30dec235ba946b18c0c9e054e510330912",
+    "gain": 0.9850386807047966
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\clap\\Rim - ronny perc 1.wav",
+    "output": "Samples\\Trap\\ClapGhost\\Luxury ClapGhost 09.wav",
+    "source_sha256": "d99b1d66c437464b140398c0309ce79a186dd685c58235f0141c88bafa3893a1",
+    "sha256": "5b09e21c1bb0429533aeca02a9dc82c4c501fbc14a0c3be01b0008baace01976",
+    "gain": 0.982887990856006
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\[ WHEEZY ].wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 01.wav",
+    "source_sha256": "c8ddcc1e0745d37945225ad7e99748dad79e5cb9306a6f0db12ec6cd32e348db",
+    "sha256": "211c52004b0f2a90c21a335d51ecfe97df5df24b9fd550b73c11e7e966129d5c",
+    "gain": 0.9755570481458469
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\[Snare] - Bump.wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 02.wav",
+    "source_sha256": "e317e2ed48d72922bd755b788791602d3f90252bf6ceb4cd36dadf1c953501cf",
+    "sha256": "033309f874ea75481d3c6887a7a42a2d777276c11942a419dc6a2b5a66aaaf98",
+    "gain": 0.5243552164531295
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\[Snare] - Glizzy.wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 03.wav",
+    "source_sha256": "18ddbba0b1546bf60ffd8191089b789e46873ae02c56464f8c47e2f7167feb6f",
+    "sha256": "b5684d1c0edb20c38355063172757cffbc1db9639df8bd36c13c6470ee7563c3",
+    "gain": 0.9445954399982627
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\CHOPSNARE.wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 04.wav",
+    "source_sha256": "9490cf4a3dd681087a2af3545d10c183f9b75d5b8719ec34f541125412a6cca0",
+    "sha256": "a7a40489b18eb110897365d04c8d2c6e4a9684c4fe65aa1c74d46300e9e04a93",
+    "gain": 0.7034947675408683
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\gimmik snare.wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 05.wav",
+    "source_sha256": "0cba4492fef5b240a415c72fc252b54b1aa81faf2677b55b1256a308cad9282c",
+    "sha256": "83377a503e48a117081c8f1044319e56637fad6321b66737ef05ed8a983e6776",
+    "gain": 0.9837247607365722
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\Hard Snare.wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 06.wav",
+    "source_sha256": "67ded0cf719061abc3e6fafe5021a4b011663f2dc6c366272cf320bef7c44309",
+    "sha256": "cfcdf28db49a8852ad72667cdd028ddc06476e08613a97ac239f7559066efe55",
+    "gain": 0.9522794162448838
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\Pyrex Snare.wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 07.wav",
+    "source_sha256": "4792797723823ef2b8fc9899322bb9d1a63b16a76da37c1762c312d855b02726",
+    "sha256": "f399e5505ce482532ad7382aaf9d0d01d9b9781d73c5125a3a79665979a73214",
+    "gain": 0.9206760165884023
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\snare 1 (layer).wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 08.wav",
+    "source_sha256": "e3b4b20a0a56a53e435aeda6bfa68f0795bd5d922c57986e3f466169402eaae0",
+    "sha256": "314c894b0e759091bc0a96dfde39553676e47d67b4ac0a5c5c6b51851780a72e",
+    "gain": 0.9896293107547444
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\snare 2 (layer).wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 09.wav",
+    "source_sha256": "2fac4c777a37688c1955d1a204f4f65abe2e69896c9cbfbdd740dc83b4cef396",
+    "sha256": "9a00ccefc1d4b25d54845a0b11953e9239d3c3d350511af9bd44c24c79d584fa",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\Snare 3.wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 10.wav",
+    "source_sha256": "3aa3da848f0d48acc4d922d9e7ea64d161fa9c4d4d83e67c7f1d957c555f2a47",
+    "sha256": "819551af69f031c12d7d04b9f446aebb5d6a95361440a296bee8dbf13328e0d7",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\Snare [ EVOL ].wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 11.wav",
+    "source_sha256": "e0d4013790d3544e08422ec254a3e445632c2b9180f661be6214cb63821f8fad",
+    "sha256": "fb78e5b138192739f1537f4af959b6d9b7fc699be94e66566bf0c454222fb136",
+    "gain": 0.8170165291876312
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\Snare [ Metro ].wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 12.wav",
+    "source_sha256": "d48cacf35a19e40a4d49bb4b1e0ee71e5e6978ef92a42f56bacc84d3d05fad4f",
+    "sha256": "7d1ce1feefdfd5b8fd624701e5c1e691ed173172dfce81be5ecc9aba61a7cd4c",
+    "gain": 0.7386287305269373
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\snare\\SNARE [CANT STOP].wav",
+    "output": "Samples\\Trap\\Snare\\Luxury Snare 13.wav",
+    "source_sha256": "0bd105eba206122fd8ddd0638481c05b5fa09a254d1f62da471bd97d314359c1",
+    "sha256": "a687f7862c122f03fadefe7af45c3aae378c95a9b31c7cc458b50fb03cd466c3",
+    "gain": 0.5378950993970952
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\open hat\\[Open Hat] - Gift.wav",
+    "output": "Samples\\Trap\\OpenHat\\Luxury OpenHat 01.wav",
+    "source_sha256": "8588aef1852487b8d0344e955dac0273494cc4f9b634bc3446621a612ac62741",
+    "sha256": "4eb7913fbbaa05e056dac11e1074e3b310dcb68ee547c6c0e843c5bfb196c195",
+    "gain": 0.9641633736563632
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\open hat\\Open Hat [ Zay ].wav",
+    "output": "Samples\\Trap\\OpenHat\\Luxury OpenHat 02.wav",
+    "source_sha256": "bcc34ea24c3ec78341cbda974000fe75a25421c4b3fa27b4081e47651d27b2e6",
+    "sha256": "0f710340c9d34b807a26d9fe546085544d84db3473bfbb55d41c0f98396506cd",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\open hat\\OPNHT [ WHzYOutOFHERE™ ].wav",
+    "output": "Samples\\Trap\\OpenHat\\Luxury OpenHat 03.wav",
+    "source_sha256": "2002ac9d51c911f3060e1af229f6a187a3892e7416d007d10da52c3acf3442c7",
+    "sha256": "b7f28d587d936f1cfd68bbb817a315f628f5043465e9088272037b70de32c348",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\open hat\\Ounce Open Hat.wav",
+    "output": "Samples\\Trap\\OpenHat\\Luxury OpenHat 04.wav",
+    "source_sha256": "6a17620dbedc63a0120e1b9c9842309280a8595afa1d6338a3be13c2ecd97eb1",
+    "sha256": "9b2095110a811953c9ddd7b5298ee3853da7ed6edf8731fc61a1beace518583a",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\perc\\ADDYS BONGO.wav",
+    "output": "Samples\\Trap\\Perc\\Luxury Perc 01.wav",
+    "source_sha256": "ee3ede72d4f43a430be2823299851bf1756613827b709f9ce7305ca0d44e49d1",
+    "sha256": "4133040738f456575225017ef491c9133606ff84925049eb78da3a11109733fc",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\perc\\Boomin - Perc 4.wav",
+    "output": "Samples\\Trap\\Perc\\Luxury Perc 02.wav",
+    "source_sha256": "65a333857e5c5b49893947f6ee103a05a50666216eb0a4acfae85f2aacd91c73",
+    "sha256": "94c480921dd78f33ed4e01a0f16f56f1ce5c5024b36a32c70f4e3d9332472e4d",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\perc\\BWB WAV 7 PERC (5).wav",
+    "output": "Samples\\Trap\\Perc\\Luxury Perc 03.wav",
+    "source_sha256": "449861df4f9a83550c492bb7cbc13f487a742bfeeb540239fd56ab393bd70957",
+    "sha256": "38c321ece5120cf1f1b6c8944cedd226a5a62e0d57425ef1c170ddcefb0fe5cf",
+    "gain": 0.9792531226302875
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\perc\\metro bongo.wav",
+    "output": "Samples\\Trap\\Perc\\Luxury Perc 04.wav",
+    "source_sha256": "ae5e8bbb872802ec94ba5262728a9d3681c91029501a2015abde0c50d1c56d76",
+    "sha256": "7adc2e70725f236dd15736d3d73247b4ae24087ac3c9f70b1c5de2f11bdc316a",
+    "gain": 1.0
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\perc\\metro perc.wav",
+    "output": "Samples\\Trap\\Perc\\Luxury Perc 05.wav",
+    "source_sha256": "4803a5abaaf4a1575d9f0440560d419c3a9483b4d119da5400ca26c229cabf38",
+    "sha256": "84e96fc3fb3ad0abc76841664ac0ac2182f49e2ec0f8d60da2de1254dc5acbd3",
+    "gain": 0.9735226212048617
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\808 (southside) - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 01 - C1.wav",
+    "sha256": "e3850be34ac0d032a6234e2451265478336d5b8e2997af16c42444c135a4671a",
+    "original_source_sha256": "319f6edb8a5eb3ec09dd00f9796becb47d9f33de8fd61031c8784d4c40e7466f",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\808 [ Spinz ] - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 02 - C1.wav",
+    "sha256": "523f07e71c192fcde0c3bb4d4bf06fbeacb32ecee009bbcc8b2bad197f4ccfb2",
+    "original_source_sha256": "37fce5c0eaf1663c70ceede95da3cd12362cb988cddce65b4b5993a7982fd249",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\808 [CANT STOP] - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 03 - C1.wav",
+    "sha256": "21767ecd301e9d532559bcb19303073da30d73f891dec87b036e2320dcf53fd6",
+    "original_source_sha256": "d1d9846d1a6bd400e2021276fe557b5cec28efcc8d990be178aa5af4560e6047",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\808 luger - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 04 - C1.wav",
+    "sha256": "23d8d5400194c4fce78891db3cea7759bbd70755f9e4a4cd3d174fbb44b91318",
+    "original_source_sha256": "3715fc605493f4ba5aea81d0ffb76c70d6b5b951948406c562f246508625aab4",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\808 PAC (turn loop points on) - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 05 - C1.wav",
+    "sha256": "36261cd9cd0df641bcb1b7bdf56fb8c6e2e69b34eb5a6d3472fd1a59e608f34f",
+    "original_source_sha256": "79b0dd2cdde2439058b9fea3fe64b93c3e5b7a9a78cb1ce03706a370a3cba43e",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\808 Spinz - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 06 - C1.wav",
+    "sha256": "56b49df8be0a0bc82efce2808602b98949962f65fef5f3604a0b99cf74d83e11",
+    "original_source_sha256": "21850bbab8c80d5aa488d95cd0f74b92adefe8c0d97af641e97a7c6f807d9ba6",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\808Zay Spinz - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 07 - C1.wav",
+    "sha256": "52a801fd1959b5bb6620f157ea62c2dac66f0eae7543b5d7fa5b8ce8d5de40bf",
+    "original_source_sha256": "5f56840784b0b58ae6138d1f5ab3ed3020c99a984dd74d47fa13ee5d616e1260",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\[ACD] - Lex 808 (2) - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 08 - C1.wav",
+    "sha256": "c3b40cd2be770b34105f1a8b16e45d553df0a1025f7861315d7d3d729ab4a38b",
+    "original_source_sha256": "b692d44b560794e3b7d9b61c7b3844406c333f6af14de99ed1818a56844a4ecf",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\bass - seam - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 09 - C1.wav",
+    "sha256": "fe89017b9a3f77d485f62d8c5c33f9c19d2bccdee488ffac0ef5e7a69431b252",
+    "original_source_sha256": "1179721d90bfb0cfc22139024f7fbf59e28158e07c1f6d29e29fcd4918ae5dcc",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\BWB WAVE 7 808 SHORT (24) - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 10 - C1.wav",
+    "sha256": "ba81e512fbf073b20fa1c3d75ad5abcc9e259e8bbe9d5d243fd22273a6c8de21",
+    "original_source_sha256": "63d35491005d348f88c87f5a443a785cc953f1dcdc3a2d501375dc799d5faae8",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\BWB WAVE 7 BASS (2) - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 11 - C1.wav",
+    "sha256": "88c6774fc46cfbdd396ccc9a6ed5249a557a8ffecb50261a76cf98fe82b22b33",
+    "original_source_sha256": "fa0e80d46debe9711d80232c6a98d1e5f643d71b4792aac5f66c74d0f4ac3f66",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\Lex 808 - C2.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 12 - C2.wav",
+    "sha256": "6d0b20a5ab465a5adb0a9148a1ee57ea44aae583f242e33b62f6328b713e47df",
+    "original_source_sha256": "14d5bd8912e9939a57aac051879dfc7f10255b8f9d0b0e5cfbf8716cad2e24ba",
+    "physical_root_midi": 36
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\Pony 808 - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 13 - C1.wav",
+    "sha256": "52a801fd1959b5bb6620f157ea62c2dac66f0eae7543b5d7fa5b8ce8d5de40bf",
+    "original_source_sha256": "5f56840784b0b58ae6138d1f5ab3ed3020c99a984dd74d47fa13ee5d616e1260",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\REX 808 1 - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 14 - C1.wav",
+    "sha256": "0ca1e1518d4b23bc8c56f751cae9ee94d273a2cf16c3ff2b6b2b5df968f51e07",
+    "original_source_sha256": "983975f07f655c8ab29ced86f3b744cd138c28b3bb8a9d485898f09f0229d842",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\Trvpyyy 808 3 - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 15 - C1.wav",
+    "sha256": "5501d919fee6f2e839eaeada1dc5428050cbb2eabf81209749185bb8b3d89f17",
+    "original_source_sha256": "ad9a96da9bb20d9eea4179a5d3000b548b40d73bf076c3ac76c4d3d1ed02b7df",
+    "physical_root_midi": 24
+  },
+  {
+    "source": "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots_C_tuned\\808\\WUNNA 808 - C1.wav",
+    "output": "Samples\\Trap\\Sub808\\Luxury 808 16 - C1.wav",
+    "sha256": "dbf1ea95f1b8f785b31dac5c7a8a8dbde0c2596681d2a00aa9dc234a28d776e5",
+    "original_source_sha256": "80800057fa9625c663c7fbf6d27f1322aa3425848c4e161cbd1aade328410923",
+    "physical_root_midi": 24
+  }
+]

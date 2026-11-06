@@ -1,0 +1,24 @@
+{
+  "total": 101,
+  "missing": [
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat 1 [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav",
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat\u00e2\u201e\u00a2 [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav",
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\KCK BrZY [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav",
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\open hat\\OPNHT [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav"
+  ],
+  "changed": [],
+  "content_matches_for_missing_paths": {
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat 1 [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav": [
+      "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat 1 [ WHzYOutOFHERE\u2122 ].wav"
+    ],
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat\u00e2\u201e\u00a2 [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav": [
+      "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\hihat\\Hi Hat\u2122 [ WHzYOutOFHERE\u2122 ].wav"
+    ],
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\KCK BrZY [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav": [
+      "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\kick\\KCK BrZY [ WHzYOutOFHERE\u2122 ].wav"
+    ],
+    "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\open hat\\OPNHT [ WHzYOutOFHERE\u00e2\u201e\u00a2 ].wav": [
+      "C:\\Users\\Ham_h\\Downloads\\luxury trap\\oneshots\\open hat\\OPNHT [ WHzYOutOFHERE\u2122 ].wav"
+    ]
+  }
+}

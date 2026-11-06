@@ -31,6 +31,9 @@
 #include "../Source/Engine/PatternPerformanceTransformEngine.h"
 #include "../Source/Engine/StyleDefaults.h"
 #include "../Source/Plugin/PluginProcessor.h"
+#include "../Source/Bass808/BassSample.h"
+#include "../Source/Bass808/BassEngine.h"
+#include "../Source/Bass808/BassSettingsIO.h"
 #include "QualityMetrics.h"
 
 using namespace bbg;
@@ -87,6 +90,119 @@ juce::String jsonNumber(double v)
 int main(int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI juce;
+    if (argc > 1 && juce::String(argv[1]) == "--luxury-sound-check")
+    {
+        BoomBapGeneratorAudioProcessor p;
+        p.prepareToPlay(44100.0, 512);
+        setChoice(p.getApvts(), ParamIds::genre, 2.0f);
+        setChoice(p.getApvts(), ParamIds::trapSubstyle, 5.0f);
+        p.applySelectedStylePreset(false);
+        if (!p.getSub808Sound().custom || p.getSub808Sound().name != "Luxury Spinz")
+            return 1;
+        const auto bassName = [&p] { const auto s = p.getSub808Sound();
+            return s.custom ? s.name : p.getSelectedLaneSampleName(TrackType::Sub808); };
+        std::set<juce::String> cycle;
+        auto last = bassName();
+        for (int n = 0; n < 18; ++n)
+        {
+            p.generatePattern();
+            const auto name = bassName();
+            if (name == last || !cycle.insert(name).second)
+                return 2;
+            last = name;
+        }
+        p.setTrackLocked(TrackType::Sub808, true);
+        p.generatePattern();
+        if (bassName() != last)
+            return 8;
+        p.setTrackLocked(TrackType::Sub808, false);
+        juce::AudioFormatManager audioFormats;
+        audioFormats.registerBasicFormats();
+        int audibleDrums = 0;
+        for (const auto lane : { TrackType::Snare, TrackType::Kick })
+        {
+            const auto drumNames = p.getLaneSampleNames(lane);
+            for (int i = 0; i < drumNames.size(); ++i)
+                if (drumNames[i].startsWith("Luxury "))
+                {
+                    p.selectLaneSampleIndex(lane, i);
+                    const auto wav = p.createTemporaryWavFile(lane);
+                    std::unique_ptr<juce::AudioFormatReader> reader(audioFormats.createReaderFor(wav));
+                    if (reader == nullptr || reader->lengthInSamples <= 0)
+                        return 9;
+                    juce::AudioBuffer<float> audio(2, static_cast<int>(reader->lengthInSamples));
+                    reader->read(&audio, 0, audio.getNumSamples(), 0, true, true);
+                    const float peak = audio.getMagnitude(0, audio.getNumSamples());
+                    std::cout << drumNames[i] << " rendered peak " << peak << '\n';
+                    if (!std::isfinite(peak) || peak < .001f)
+                        return 10;
+                    ++audibleDrums;
+                }
+        }
+        if (audibleDrums != 19)
+            return 11;
+        const auto names = p.getLaneSampleNames(TrackType::Sub808);
+        int luxurySamples = 0;
+        for (int i = 0; i < names.size(); ++i)
+            if (names[i].startsWith("Luxury 808"))
+            {
+                ++luxurySamples;
+                p.selectLaneSampleIndex(TrackType::Sub808, i);
+                const auto sample = p.getSub808BankSample();
+                const double hz = names[i].endsWith("C2") ? 65.406391325 : 32.703195663;
+                if (sample == nullptr || std::abs(1200.0 * std::log2(sample->rootHz / hz)) > 15.0)
+                    return 3;
+            }
+        if (luxurySamples != 16)
+            return 4;
+        // Simulate a session whose bank index predates a library expansion.
+        p.selectLaneSampleIndex(TrackType::Sub808, names.size() - 1);
+        const auto wanted = p.getSelectedLaneSampleName(TrackType::Sub808);
+        juce::MemoryBlock state;
+        p.getStateInformation(state);
+        auto xml = juce::AudioProcessor::getXmlFromBinary(state.getData(), static_cast<int>(state.getSize()));
+        if (xml == nullptr)
+            return 5;
+        auto tree = juce::ValueTree::fromXml(*xml);
+        bool edited = false;
+        const auto edit = [&](auto&& self, juce::ValueTree node) -> void
+        {
+            if (node["selected_sample_name"].toString() == wanted)
+            {
+                node.setProperty("selected_sample_index", 0, nullptr);
+                edited = true;
+            }
+            for (auto child : node) self(self, child);
+        };
+        edit(edit, tree);
+        if (!edited)
+            return 6;
+        juce::AudioProcessor::copyXmlToBinary(*tree.createXml(), state);
+        p.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+        if (p.getSelectedLaneSampleName(TrackType::Sub808) != wanted)
+            return 7;
+        // The audition used by the embedded Play/Stop button must release its voice,
+        // and an unchanged edited sound must not be deep-compared on every callback.
+        p.stopPreview();
+        auto sound = p.getSub808Sound();
+        sound.custom = true; sound.name = "Luxury Spinz"; sound.sampleWav.reset();
+        for (const auto& preset : bassPresets())
+            if (juce::String(preset.name)=="Luxury Spinz") sound.settings=bassSettingsToTree(preset.settings);
+        p.setSub808Sound(sound);
+        p.auditionSub808Note(36,110,8*TimingGrid::TicksPerBeat);
+        juce::AudioBuffer<float> preview(2,512); juce::MidiBuffer midi;
+        float previewPeak = 0.0f;
+        for (int i=0;i<8;++i) { preview.clear(); midi.clear(); p.processBlock(preview,midi); previewPeak=std::max(previewPeak,preview.getMagnitude(0,512)); }
+        const auto comparisons = p.getSub808SoundComparisonCount();
+        for (int i=0;i<64;++i) { preview.clear(); midi.clear(); p.processBlock(preview,midi); }
+        if (p.getSub808SoundComparisonCount()!=comparisons || previewPeak<.001f) return 12;
+        p.releaseSub808AuditionNote(36);
+        for (int i=0;i<32;++i) { preview.clear(); midi.clear(); p.processBlock(preview,midi); }
+        if (preview.getMagnitude(0,512)>.001f) return 13;
+        std::cout << "PASS: embedded audition starts/stops; stable sound deep comparisons across 64 callbacks = 0\n";
+        std::cout << "PASS: Luxury 18-sound rotation/lock; 19 audible snare/kicks; 16 physical C roots; old bank index restored by name\n";
+        return 0;
+    }
     int seeds = 1000;
     juce::String genreFilter = "all";
     juce::String substyleFilter;
@@ -100,6 +216,7 @@ int main(int argc, char** argv)
     int keyRoot = -1;
     int rollMode = 1;
     float fixedBpm = 0.0f;
+    juce::File sampleFile;
     for (int i = 1; i < argc; ++i)
     {
         const juce::String a(argv[i]);
@@ -116,6 +233,7 @@ int main(int argc, char** argv)
         else if (a == "--key") keyRoot = next().getIntValue(); // 0 = C ... 11 = B (after the style preset)
         else if (a == "--rolls") rollMode = std::clamp(next().getIntValue(), 0, 2);
         else if (a == "--bpm") fixedBpm = std::clamp(next().getFloatValue(), 20.0f, 400.0f);
+        else if (a == "--sample") sampleFile=juce::File(next());
         else if (a == "--perf")
         {
             perfSwingDelta = next().getFloatValue();
@@ -123,6 +241,18 @@ int main(int argc, char** argv)
         }
     }
     out.createDirectory();
+    const auto prepareSample=[&](BoomBapGeneratorAudioProcessor& p)
+    {
+        if (sampleFile==juce::File()) return true;
+        p.setAnalysisMode(AnalysisMode::GenerateFromSample);
+        juce::String error;
+        if (!p.analyzeAudioFile(sampleFile,&error,false))
+        { std::cerr<<"Sample analysis failed: "<<error<<std::endl; return false; }
+        const auto h=p.getSampleHarmony();
+        std::cout<<"Analyzed "<<sampleFile.getFileName()<<": key "<<h.keyName()<<" segments "<<h.bass.size()
+            <<" drum-loop confidence "<<p.getDrumBreakAnalysis().drumLoopConfidence<<std::endl;
+        return true;
+    };
 
     std::vector<float> densities = densityMode == "matrix" ? std::vector<float> { 0.2f, -1.0f, 0.8f } : std::vector<float> { -1.0f };
     std::vector<int> barCounts = barsMode == "matrix" ? std::vector<int> { 2, 4, 8 } : std::vector<int> { barsMode.getIntValue() > 0 ? barsMode.getIntValue() : 4 };
@@ -182,6 +312,7 @@ int main(int argc, char** argv)
                     setChoice(apvts, ParamIds::seedLock, 1.0f);
                     if (keyRoot >= 0)
                         setChoice(apvts, ParamIds::keyRoot, static_cast<float>(keyRoot % 12));
+                    if (!prepareSample(processor)) return 20;
                     const float effectiveDensity = apvts.getRawParameterValue(ParamIds::densityAmount)->load();
 
                     std::map<juce::String, Stat> stats;
@@ -207,7 +338,10 @@ int main(int argc, char** argv)
                         if (seed <= renderSeeds)
                             for (const auto lane : { std::optional<TrackType>(TrackType::Kick), std::optional<TrackType>(TrackType::Sub808), std::optional<TrackType>() })
                             {
-                                const auto file = processor.createTemporaryWavFile(lane);
+                                const auto temporary = processor.createTemporaryWavFile(lane);
+                                const auto file = out.getChildFile(tag+"_"+g.key+"_"+juce::String(sub)+"_seed"+juce::String(seed)
+                                    +"_"+(lane.has_value() ? (*lane==TrackType::Kick ? "kick" : "bass") : "mix")+".wav");
+                                if (!temporary.copyFileTo(file)) return 21;
                                 rendersCsv << g.key << "," << sub << "," << seed << "," << project.params.bpm << "," << project.params.keyRoot
                                            << (project.params.scaleMode == 1 ? "M" : "m") << ","
                                            << (lane.has_value() ? (*lane == TrackType::Kick ? "kick" : "bass") : "mix") << ","
@@ -328,6 +462,7 @@ int main(int argc, char** argv)
                             p->syncBarsFromState();
                             if (density >= 0.0f)
                                 setChoice(s, ParamIds::densityAmount, density);
+                            if (!prepareSample(*p)) return 20;
                             setChoice(s, ParamIds::seedLock, 1.0f);
                         }
                         // b has generated before (another seed, three times): its session history differs,

@@ -1,0 +1,36 @@
+{
+  "other_style_rows_unchanged": 3808,
+  "before": {
+    "patterns": 12,
+    "bass_notes": 78,
+    "joint_kick_attack_share": 0.02564102564102564,
+    "late_within_sixteenth_share": 0.6282051282051282,
+    "missing_first_kick": 9,
+    "missing_first_bass": 11,
+    "offgrid_bass": 0,
+    "overlapping_gates": 0,
+    "overlap_examples": []
+  },
+  "after": {
+    "patterns": 12,
+    "bass_notes": 94,
+    "joint_kick_attack_share": 0.6063829787234043,
+    "late_within_sixteenth_share": 0.2127659574468085,
+    "missing_first_kick": 0,
+    "missing_first_bass": 0,
+    "offgrid_bass": 0,
+    "overlapping_gates": 0,
+    "overlap_examples": []
+  },
+  "matrix": {
+    "patterns": 180,
+    "bass_notes": 1672,
+    "joint_kick_attack_share": 0.5107655502392344,
+    "late_within_sixteenth_share": 0.18839712918660287,
+    "missing_first_kick": 0,
+    "missing_first_bass": 0,
+    "offgrid_bass": 0,
+    "overlapping_gates": 0,
+    "overlap_examples": []
+  }
+}

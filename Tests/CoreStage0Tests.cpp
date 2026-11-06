@@ -39,6 +39,8 @@
 #include "../Source/Engine/PatternBlendEngine.h"
 #include "../Source/Engine/RapEngine.h"
 #include "../Source/Engine/SampleGuideAccents.h"
+#include "../Source/Engine/SampleBassFollower.h"
+#include "../Source/Engine/SampleBassLineComposer.h"
 #include "../Source/Engine/Trap/TrapSampleBlend.h"
 #include "../Source/Engine/SampleLibraryManager.h"
 #include "../Source/Engine/StyleDefaults.h"
@@ -7864,6 +7866,127 @@ void testTrapAtlClassicFollowsAtlPassport()
     expect(windowOk, "ATL / Dark 808 window: one place per pitch class, low register.");
 }
 
+void testLuxuryTrapPhraseAndSampleIdentity()
+{
+    using namespace bbg;
+    Sub808SoundState sharedSound;
+    sharedSound.custom = true; sharedSound.name = "Shared editor sample";
+    sharedSound.settings = juce::ValueTree("BassSettings");
+    sharedSound.sampleWav = juce::MemoryBlock(16384,true);
+    auto copiedSound = sharedSound;
+    expect(copiedSound.sampleWav.getData()==sharedSound.sampleWav.getData(), "808 snapshots share immutable sample bytes.");
+    copiedSound.sampleWav.reset();
+    expect(sharedSound.sampleWav.getSize()==16384, "Resetting a snapshot cannot clear another sound's sample.");
+    auto saved = createDefaultProject();
+    findTrackByType(saved,TrackType::Sub808)->sub808Sound=sharedSound;
+    PatternProject restored;
+    expect(PatternProjectSerialization::deserialize(wrapSerializedProject(saved),restored), "808 sample state round-trip.");
+    expect(findTrackByType(restored,TrackType::Sub808)->sub808Sound.sampleWav.toBase64Encoding()==sharedSound.sampleWav.toBase64Encoding(),
+           "Immutable storage preserves the existing serialized WAV bytes.");
+    int rolls = 0, fastGaps = 0;
+    for (int seed = 1; seed <= 24; ++seed)
+        for (const float bpm : { 70.0f, 138.0f, 166.0f })
+        {
+            auto p = createDefaultProject();
+            p.params.genre = GenreType::Trap; p.params.trapSubstyle = 5;
+            p.params.bars = 4; p.params.seed = seed; p.params.bpm = bpm;
+            p.params.densityAmount = .56f; p.params.trapRollMode = 1;
+            for (auto& t : p.tracks) t.enabled = true;
+            TrapEngine().generate(p);
+            const auto* hats = findTrackByType(p, TrackType::HiHat);
+            const auto* fx = findTrackByType(p, TrackType::HatFX);
+            const auto* bass = findTrackByType(p, TrackType::Sub808);
+            const auto* kick = findTrackByType(p, TrackType::Kick);
+            expect(!kick->notes.empty() && kick->notes.front().startTick()==0,
+                   "Luxury: a generated phrase starts with a kick on its first beat.");
+            expect(!bass->notes.empty() && bass->notes.front().startTick()==0,
+                   "Luxury: the first 808 attack supports the first kick.");
+            std::vector<int> times;
+            for (const auto* lane : { hats, fx })
+                for (const auto& n : lane->notes)
+                {
+                    times.push_back(n.startTick());
+                    rolls += n.semanticRole.contains("roll") ? 1 : 0;
+                }
+            std::sort(times.begin(), times.end());
+            expect(std::adjacent_find(times.begin(), times.end()) == times.end(), "Luxury: closed hats never double across lanes.");
+            for (size_t i = 1; i < times.size(); ++i)
+                fastGaps += times[i] - times[i-1] <= 60 ? 1 : 0;
+            for (size_t i = 0; i < bass->notes.size(); ++i)
+            {
+                const auto& n = bass->notes[i];
+                expect(n.gridTick % (bpm<100 ? 120 : 240)==0,
+                       "Luxury: bass attacks use the reconstructed carrier, not neural timing offsets.");
+                // Reference contours include octave moves and descending fifths. Place the
+                // whole phrase above C1, retaining intervals up to C3 in the C-key test.
+                expect(n.pitch >= 24 && n.pitch <= 48, "Luxury: reference contour fits C1-C3 without octave folding.");
+                if (i+1 < bass->notes.size())
+                    expect(n.endTick() <= bass->notes[i+1].startTick(), "Luxury: gates remain monophonic.");
+            }
+            const auto oldHats = hats->notes;
+            const auto oldBass = bass->notes;
+            const auto oldKicks = findTrackByType(p, TrackType::Kick)->notes;
+            ExtractedPatternData loop;
+            loop.bars = 4;
+            // Deliberately foreign 16th carrier: Sample Apply must not replace Luxury's rolls.
+            for (int step = 0; step < 64; ++step)
+            {
+                NoteEvent n;
+                n.gridTick = step * TimingGrid::Sixteenth; n.pitch = 42;
+                n.velocity = 100; n.lengthTicks = 30;
+                loop.laneNotes[static_cast<size_t>(trackTypeIndex(TrackType::HiHat))].push_back(n);
+            }
+            p.intensity = 5;
+            SampleApplyWeights weights;
+            weights.exactCopy = false;
+            PatternBlendEngine::apply(p, loop, weights);
+            TrapSampleBlend::apply(p, loop, bpm, bpm);
+            expect(findTrackByType(p, TrackType::HiHat)->notes.size() == oldHats.size(), "Luxury: sample blend preserves hat count.");
+            const auto& after = findTrackByType(p, TrackType::HiHat)->notes;
+            for (size_t i = 0; i < after.size(); ++i)
+                expect(after[i].startTick() == oldHats[i].startTick() && after[i].semanticRole == oldHats[i].semanticRole,
+                       "Luxury: sample blend preserves exact hat rhythm and roll roles.");
+            expect(findTrackByType(p, TrackType::Sub808)->notes.size() == oldBass.size(), "Luxury: sample blend preserves the bass phrase.");
+            const auto& keptKicks = findTrackByType(p, TrackType::Kick)->notes;
+            expect(keptKicks.size() == oldKicks.size(), "Luxury: sample blend preserves the kick phrase.");
+            for (size_t i=0;i<keptKicks.size();++i)
+                expect(keptKicks[i].startTick()==oldKicks[i].startTick(), "Luxury: sample blend keeps kick onsets.");
+            SampleHarmony harmony;
+            harmony.valid = true;
+            harmony.bass.push_back({ 0.0, 100.0, 38, .99f });
+            SampleBassFollower::apply(p, harmony, bpm, 0.0);
+            applyTrapStyle808Window(p);
+            const auto followed = findTrackByType(p, TrackType::Sub808)->notes;
+            for (size_t i = 0; i < followed.size(); ++i)
+                expect(followed[i].pitch == oldBass[i].pitch+2 && followed[i].startTick() == oldBass[i].startTick(),
+                       "Luxury: a stable D root transposes the contour without flattening it.");
+            SampleBassFollower::apply(p,harmony,bpm,0.0);
+            for (size_t i=0;i<followed.size();++i)
+                expect(findTrackByType(p,TrackType::Sub808)->notes[i].pitch==followed[i].pitch,
+                       "Luxury: repeated sample guidance cannot accumulate pitch shifts.");
+            expect(!SampleBassLineComposer::wants(p, harmony), "Luxury: sample composer cannot replace the style phrase.");
+            if (seed<=4)
+            {
+                ++p.generationCounter;
+                TrapEngine().generateTrackNew(p,TrackType::Sub808);
+                const auto& unchangedKick=findTrackByType(p,TrackType::Kick)->notes;
+                expect(unchangedKick.size()==oldKicks.size(),"Luxury: bass RG preserves the written kick count.");
+                for (size_t i=0;i<unchangedKick.size();++i)
+                    expect(unchangedKick[i].startTick()==oldKicks[i].startTick(),"Luxury: bass RG cannot move the written kick.");
+                const auto& regenerated=findTrackByType(p,TrackType::Sub808)->notes;
+                expect(!regenerated.empty() && regenerated.front().startTick()==0,"Luxury: bass RG retains the downbeat anchor.");
+                for (size_t i=0;i+1<regenerated.size();++i)
+                    expect(regenerated[i].endTick()<=regenerated[i+1].startTick(),"Luxury: regenerated gates cannot overlap.");
+            }
+            p.params.trapRollMode = 0;
+            TrapEngine().generate(p);
+            for (const auto lane : { TrackType::HiHat, TrackType::HatFX })
+                for (const auto& n : findTrackByType(p, lane)->notes)
+                    expect(!n.semanticRole.contains("roll"), "Luxury: Rolls Off removes ornaments.");
+        }
+    expect(rolls > 100 && fastGaps > 10, "Luxury: population includes deliberate rolls and 1/64 ratchets.");
+}
+
 void testTrapHatStrengthRemovesWholeRolls()
 {
     using namespace bbg;
@@ -8203,6 +8326,7 @@ int main()
     failures += runTest("Update download ticket and URL allow-list", testUpdateDownloadTicketAndAllowList);
     failures += runTest("Update license key and SHA-256", testUpdateLicenseKeyAndChecksum);
     failures += runTest("Trap hat strength removes whole rolls", testTrapHatStrengthRemovesWholeRolls);
+    failures += runTest("LuxuryTrap phrase and sample identity", testLuxuryTrapPhraseAndSampleIdentity);
     failures += runTest("Trap Guide kicks follow Trap grammar", testTrapSampleGuideKicksFollowTrapGrammar);
     failures += runTest("Trap sample blend: one source per bar", testTrapSampleBlendOneSourcePerBar);
     failures += runTest("Trap ATLClassic follows the ATL passport", testTrapAtlClassicFollowsAtlPassport);

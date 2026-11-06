@@ -49,6 +49,7 @@ public:
     // The Sub808 lane's sound (under the project lock, before the block's notes). nullptr: the plain
     // sample player, as before.
     void setSub808Sound(std::shared_ptr<const Sub808Sound> sound, double bpm);
+    void noteOffSub808(int pitch);
     // How much earlier Sub808 notes must be sent so the bass engine's output lands on time (its
     // saturator's latency); 0 while the plain sample player plays the lane.
     int sub808LeadSamples(const LaneSampleBank& sampleBank) const;

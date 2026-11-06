@@ -46,6 +46,7 @@ constexpr int kTrapAccentVelocityBelowKicks = 8;
 
 struct TrapKickGrid
 {
+    int substyle = 0;
     TrapTempoContext tempo;
     int styleTicksPerHostBar = 64;
 
@@ -57,7 +58,7 @@ struct TrapKickGrid
     }
     bool allowed(int hostTick) const
     {
-        return TrapAlgebraEngine::isMainKickTickAllowed(styleBarAndLocal(hostTick).second, tempo.doubleTime);
+        return TrapAlgebraEngine::isMainKickTickAllowed(styleBarAndLocal(hostTick).second, tempo.doubleTime, substyle);
     }
     // The engine's cap per style bar (TrapAlgebraEngine::repair).
     static int maxKicks(int styleBar) { return styleBar % 4 == 3 ? 4 : 3; }
@@ -117,6 +118,7 @@ SampleGuideAccentReport SampleGuideAccents::apply(PatternProject& project,
     const bool trap = project.params.genre == GenreType::Trap;
     const int intensity = std::clamp(project.intensity, 1, 5);
     TrapKickGrid trapGrid;
+    trapGrid.substyle = project.params.trapSubstyle;
     if (trap)
     {
         trapGrid.tempo = resolveTrapTempo(project.params.bpm, project.params.bars);

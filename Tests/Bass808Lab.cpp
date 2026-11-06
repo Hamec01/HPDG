@@ -17,6 +17,7 @@
 
 #include "Audio/Synth808Voice.h"
 #include "Bass808/BassEngine.h"
+#include "Bass808/Sub808Sound.h"
 
 using namespace bbg;
 
@@ -187,6 +188,61 @@ std::vector<float> phrase(const BassSettings& s)
 int main(int argc, char** argv)
 {
     const auto& presets = bassPresets();
+
+    if (argc >= 2 && juce::String(argv[1]) == "--retirement-check")
+    {
+        const auto exercise = [](bool corrected)
+        {
+            bool inAudio = false, destroyedOnAudio = false;
+            auto sample = std::shared_ptr<BassSample>(new BassSample, [&](BassSample* p)
+            { destroyedOnAudio = inAudio; delete p; });
+            sample->data.assign(48000, .1f); sample->sampleRate = kRate; sample->rootHz = 32.703195663;
+            auto mutableSound = std::make_shared<Sub808Sound>();
+            mutableSound->sample = sample;
+            std::vector<std::shared_ptr<const Sub808Sound>> retired { mutableSound };
+            BassEngine engine;
+            engine.prepare(kRate, 512);
+            BassSettings settings;
+            settings.synthLevelDb = -60.0f; settings.sampleLevelDb = 0.0f; settings.mode = BassSettings::Retrigger;
+            engine.setSettings(settings); engine.setSample(sample); engine.noteOn(24, 1.0f);
+            mutableSound.reset(); sample.reset();
+            engine.setSample(nullptr); // the editor has replaced the sample-backed sound
+            if (corrected ? canRetireSub808Sound(retired.front()) : retired.front().use_count() == 1)
+                retired.clear();
+            inAudio = true;
+            engine.noteOn(26, 1.0f);
+            engine.noteOn(28, 1.0f); // reuse the old voice after editing has finished
+            inAudio = false;
+            retired.clear();
+            return destroyedOnAudio;
+        };
+        const bool reproduced = exercise(false), fixed = !exercise(true);
+        std::printf("sample retirement: old policy frees on audio thread %d; corrected policy defers it %d\n", reproduced, fixed);
+        return reproduced && fixed ? 0 : 1;
+    }
+
+    // Offline parameter fitting against local one-shots, using the production engine.
+    if (argc >= 4 && juce::String(argv[1]) == "--render-json")
+    {
+        const auto data = juce::JSON::parse(juce::File(juce::String(argv[2])));
+        const auto* object = data.getDynamicObject();
+        if (object == nullptr)
+            return 2;
+        BassSettings s;
+        const auto number = [object](const char* key, float fallback)
+        { return object->hasProperty(key) ? static_cast<float>(object->getProperty(key)) : fallback; };
+        s.punchSemitones = number("punchSemitones", 0.0f);
+        s.punchMs = number("punchMs", 12.0f);
+        s.drive = number("drive", 2.0f); s.bias = number("bias", 0.0f);
+        s.saturation = number("saturation", 0.7f); s.toneHz = number("toneHz", 1000.0f);
+        s.attackMs = number("attackMs", 1.0f); s.clickDb = -60.0f;
+        s.holdSeconds = number("holdSeconds", 0.05f);
+        s.decaySeconds = number("decaySeconds", 0.4f);
+        s.sustain = 0.0f; s.releaseMs = 20.0f;
+        writeWav(juce::File(juce::String(argv[3])), BassEngine::renderNote(s, nullptr,
+            static_cast<int>(number("midi", 24.0f)), number("seconds", 2.0f), kRate));
+        return 0;
+    }
 
     if (argc >= 3 && juce::String(argv[1]) == "--fit")
     {

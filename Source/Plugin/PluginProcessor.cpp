@@ -137,6 +137,8 @@ GenreType genreFromChoice(int choice)
 
 std::vector<juce::String> preferredSampleTagsForProject(const PatternProject& project)
 {
+    if (project.params.genre == GenreType::Trap && project.params.trapSubstyle == 5)
+        return { "Luxury" };
     if (project.params.genre == GenreType::Rap
         && getRapProfile(project.params.rapSubstyle).substyle == RapSubstyle::DirtySouthClassic)
     {
@@ -188,7 +190,7 @@ bool sameSub808Sound(const Sub808SoundState& a, const Sub808SoundState& b)
 {
     return a.custom == b.custom && a.name == b.name && a.filter == b.filter && a.drive == b.drive
         && a.driveModel == b.driveModel && a.length == b.length && a.gainDb == b.gainDb && a.sidechain == b.sidechain
-        && a.sampleWav.getSize() == b.sampleWav.getSize()
+        && a.sampleWav.getData() == b.sampleWav.getData()
         && (a.settings == b.settings || a.settings.isEquivalentTo(b.settings));
 }
 
@@ -3084,6 +3086,7 @@ void BoomBapGeneratorAudioProcessor::releaseResources()
     previewSamplePosition = 0;
     publishPlaybackStateLocked();
     pendingPreviewNotes.clear();
+    pendingSub808AuditionOffs.clear();
     previewEngine.reset();
     for (auto& runtime : laneFxRuntimeStates)
         resetSoundFxRuntimeState(runtime);
@@ -3311,13 +3314,20 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
     // The Sub808 lane plays through the HPDG 808 engine: hand it the current sound, and ask the message
     // thread for a new one when the lane's sound or its bank sample changed under it.
     {
-        const auto* subLane = findTrackState(TrackType::Sub808);
-        const bool stale = !sub808SoundBuilt
-            || (subLane != nullptr && !sameSub808Sound(subLane->sub808Sound, sub808SoundBuiltFrom))
-            || ((subLane == nullptr || !subLane->sub808Sound.custom)
-                && laneSampleBank.getSelectedBufferShared(TrackType::Sub808).get() != sub808SoundBuiltBank);
-        if (stale)
-            sub808SoundRebuilder.triggerAsyncUpdate();
+        const auto revision = projectRevision.load(std::memory_order_acquire);
+        if (!sub808SoundBuilt || revision != lastSub808RevisionChecked)
+        {
+            // Only revisit the parameter tree when the project changed. Immutable WAV
+            // bytes are compared by identity, including replacements with the same file size.
+            sub808SoundComparisons.fetch_add(1,std::memory_order_relaxed);
+            const auto* subLane = findTrackState(TrackType::Sub808);
+            const bool stale = !sub808SoundBuilt
+                || (subLane != nullptr && !sameSub808Sound(subLane->sub808Sound, sub808SoundBuiltFrom))
+                || ((subLane == nullptr || !subLane->sub808Sound.custom)
+                    && laneSampleBank.getSelectedBufferShared(TrackType::Sub808).get() != sub808SoundBuiltBank);
+            if (stale) sub808SoundRebuilder.triggerAsyncUpdate();
+            lastSub808RevisionChecked = revision;
+        }
         previewEngine.setSub808Sound(sub808Sound, safeBpm);
     }
     const int sub808Lead = previewEngine.sub808LeadSamples(laneSampleBank);
@@ -3353,6 +3363,8 @@ void BoomBapGeneratorAudioProcessor::processBlock(juce::AudioBuffer<float>& buff
                              options);
     }
     pendingPreviewNotes.clear();
+    for (int pitch : pendingSub808AuditionOffs) previewEngine.noteOffSub808(pitch);
+    pendingSub808AuditionOffs.clear();
 
     bool shouldRenderPreviewVoices = false;
 
@@ -4299,7 +4311,17 @@ void BoomBapGeneratorAudioProcessor::syncTrackSampleSelectionsLocked()
 {
     for (auto& track : project.tracks)
     {
-        const auto desired = track.selectedSampleIndex;
+        auto desired = track.selectedSampleIndex;
+        // New one-shots can move the synthesized tail of the 808 bank. A saved name
+        // identifies the sound more reliably than its previous numeric position.
+        const auto& samples = sampleLibraryManager.getSamples(track.type);
+        if (track.selectedSampleName.isNotEmpty())
+            for (size_t i = 0; i < samples.size(); ++i)
+                if (samples[i].name == track.selectedSampleName || samples[i].sourceName == track.selectedSampleName)
+                {
+                    desired = static_cast<int>(i);
+                    break;
+                }
         laneSampleBank.selectIndex(track.type, desired);
         track.selectedSampleIndex = laneSampleBank.getSelectedIndex(track.type);
         track.selectedSampleName = laneSampleBank.getSelectedName(track.type);
@@ -4340,6 +4362,19 @@ void BoomBapGeneratorAudioProcessor::selectDefaultSynthSubLocked()
         && genreFromChoice(static_cast<int>(genreValue->load())) == GenreType::Trap)
     {
         const int substyle = static_cast<int>(trapSubstyleValue->load());
+        if (auto* track = ProjectLaneAccess::findTrackState(project, TrackType::Sub808))
+        {
+            if (substyle == 5 && !track->locked)
+            {
+                track->sub808Sound = {};
+                track->sub808Sound.custom = true;
+                track->sub808Sound.name = "Luxury Spinz";
+                track->sub808Sound.settings = bassSettingsToTree(luxuryBassSettings());
+            }
+            else if (!track->locked && track->sub808Sound.custom
+                     && track->sub808Sound.name == "Luxury Spinz")
+                track->sub808Sound = {};
+        }
         const juce::String styleSub = substyle == 0 ? "HPDG Sub808 ATL 1 - C" : (substyle == 1 ? "HPDG Sub808 Dark 1 - C" : juce::String());
         const auto& subs = sampleLibraryManager.getSamples(TrackType::Sub808);
         for (size_t i = 0; styleSub.isNotEmpty() && i < subs.size(); ++i)
@@ -4416,9 +4451,42 @@ void BoomBapGeneratorAudioProcessor::rotateLaneSamplesForGenerationLocked(const 
             continue;
 
         const auto trackType = static_cast<TrackType>(typeIndex);
-        // The bass keeps the sound the user chose (the synthesized sub by default): only < > changes it.
         if (trackType == TrackType::Sub808)
+        {
+            if (project.params.genre != GenreType::Trap || project.params.trapSubstyle != 5)
+                continue;
+            auto* bass = ProjectLaneAccess::findTrackState(project, TrackType::Sub808);
+            const auto* oldBass = ProjectLaneAccess::findTrackState(previousProject, TrackType::Sub808);
+            if (bass == nullptr)
+                continue;
+            const auto& oldSound = oldBass != nullptr ? oldBass->sub808Sound : bass->sub808Sound;
+            const auto oldName = oldSound.custom ? oldSound.name
+                : (oldBass != nullptr ? oldBass->selectedSampleName : bass->selectedSampleName);
+            std::vector<int> choices;
+            const auto& samples = sampleLibraryManager.getSamples(TrackType::Sub808);
+            for (size_t i = 0; i < samples.size(); ++i)
+                if (samples[i].name.startsWith("Luxury 808"))
+                    choices.push_back(static_cast<int>(i));
+            int previous = oldName == "Luxury Spinz" ? 0 : oldName == "Luxury Lex" ? 1 : -1;
+            for (size_t i = 0; i < choices.size(); ++i)
+                if (samples[static_cast<size_t>(choices[i])].name == oldName)
+                    previous = static_cast<int>(i) + 2;
+            const int next = (previous + 1) % (static_cast<int>(choices.size()) + 2);
+            bass->sub808Sound.sampleWav.reset();
+            if (next < 2)
+            {
+                bass->sub808Sound.custom = true;
+                bass->sub808Sound.name = next == 0 ? "Luxury Spinz" : "Luxury Lex";
+                bass->sub808Sound.settings = bassSettingsToTree(luxuryBassSettings(next));
+            }
+            else
+            {
+                bass->sub808Sound.custom = false;
+                bass->sub808Sound.name = {};
+                rotatedType[typeIndex] = laneSampleBank.selectIndex(trackType, choices[static_cast<size_t>(next - 2)]);
+            }
             continue;
+        }
         laneSampleBank.selectIndex(trackType, desiredIndices[static_cast<size_t>(typeIndex)]);
         rotatedType[static_cast<size_t>(typeIndex)] = preferredTags.empty()
             ? laneSampleBank.selectNext(trackType)
@@ -4579,6 +4647,13 @@ void BoomBapGeneratorAudioProcessor::auditionSub808Note(int pitch, int velocity,
         pendingPreviewNotes.erase(pendingPreviewNotes.begin(), pendingPreviewNotes.end() - 32);
 }
 
+void BoomBapGeneratorAudioProcessor::releaseSub808AuditionNote(int pitch)
+{
+    const auto lock = lockProjectForRead();
+    if (pendingSub808AuditionOffs.size() < 32)
+        pendingSub808AuditionOffs.push_back(juce::jlimit(0, 127, pitch));
+}
+
 void BoomBapGeneratorAudioProcessor::setSub808TrackNotes(TrackType track, const std::vector<Sub808NoteEvent>& notes)
 {
     if (track != TrackType::Sub808)
@@ -4624,10 +4699,11 @@ Sub808SoundState BoomBapGeneratorAudioProcessor::getSub808Sound() const
 
 void BoomBapGeneratorAudioProcessor::setSub808Sound(const Sub808SoundState& sound)
 {
+    auto next = sound;
     {
         const auto lock = lockProject();
         if (auto* track = findTrackState(TrackType::Sub808); track != nullptr)
-            track->sub808Sound = sound;
+            std::swap(track->sub808Sound, next); // old state is destroyed outside the audio-shared mutex
     }
     refreshSub808Sound(); // at once, not a block later: the editor's PLAY note hears it
 }
@@ -4681,7 +4757,7 @@ void BoomBapGeneratorAudioProcessor::refreshSub808Sound()
     }
     // the preview engine keeps its own reference until its next block: hold the old sound until then
     retiredSub808Sounds.erase(std::remove_if(retiredSub808Sounds.begin(), retiredSub808Sounds.end(),
-                                             [](const auto& s) { return s.use_count() == 1; }),
+                                             [](const auto& s) { return canRetireSub808Sound(s); }),
                               retiredSub808Sounds.end());
     if (previous != nullptr)
         retiredSub808Sounds.push_back(std::move(previous));
@@ -5790,7 +5866,8 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
         // Sample kicks join a pass that writes the kick (Generate, Mutate, the kick's RG); on another
         // lane's RG they were added again on top of the last ones and piled up (maintainer, 2026-10-14).
         const bool kickPass = !focusTrack.has_value() || *focusTrack == TrackType::Kick || *focusTrack == TrackType::GhostKick;
-        const auto report = kickPass ? SampleGuideAccents::apply(project,
+        const bool luxuryPhrase = project.params.genre == GenreType::Trap && project.params.trapSubstyle == 5;
+        const auto report = kickPass && !luxuryPhrase ? SampleGuideAccents::apply(project,
                                                                  breakAnalysis,
                                                                  sampleGridBpm,
                                                                  currentAnalysisBundle.harmonyOriginSeconds,
@@ -5867,6 +5944,13 @@ bool BoomBapGeneratorAudioProcessor::applySampleAwarePostProcessLocked(std::opti
     {
         trapReport = TrapSampleBlend::apply(project, extracted, breakAnalysis.bpm, project.params.bpm);
         blendReport.changedTracks.insert(trapReport.changedTracks.begin(), trapReport.changedTracks.end());
+        if (project.params.trapSubstyle == 5)
+        {
+            const auto bassReport = SampleBassFollower::apply(project, currentAnalysisBundle.harmony,
+                sampleGridBpm, currentAnalysisBundle.harmonyOriginSeconds);
+            if (bassReport.notesFollowed > 0)
+                blendReport.changedTracks.insert(TrackType::Sub808);
+        }
         if (applyTrapStyle808Window(project))
             blendReport.changedTracks.insert(TrackType::Sub808);
     }

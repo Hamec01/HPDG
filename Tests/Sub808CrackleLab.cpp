@@ -21,6 +21,8 @@
 
 #include "Core/ProjectLaneAccess.h"
 #include "Plugin/PluginProcessor.h"
+#include "Bass808/BassSettingsIO.h"
+#include "Bass808/Sub808Sound.h"
 
 using namespace bbg;
 
@@ -176,6 +178,8 @@ void pumpMessages(int ms)
 struct HostResult
 {
     int blocks = 0, dropouts = 0;
+    int settledDropouts = 0;
+    std::uint64_t settledComparisons = 0;
     double snapshotMs = 0.0, blockMs = 0.0;
 };
 
@@ -196,6 +200,14 @@ HostResult hostRun(int genre, int seed, bool bassOn, bool knobs, double seconds)
         sub->enabled = bassOn;
     project.previewStartStep = 0;
     p.restoreEditorProjectSnapshot(project);
+    if (std::getenv("HPDG_CRACKLE_EDITOR") != nullptr)
+    {
+        auto sound = p.getSub808Sound();
+        if (const auto sample = p.getSub808BankSample()) sound.sampleWav = sample->toWavMemory();
+        sound.custom = true; sound.name = "Editor sample playback";
+        sound.settings = bassSettingsToTree(sub808SampleOnlySettings());
+        p.setSub808Sound(sound);
+    }
     p.startPreview();
 
     // HPDG_CRACKLE_PRECISE: the audio thread waits for its deadline by yielding, never sleeping, as a driver
@@ -243,6 +255,9 @@ HostResult hostRun(int genre, int seed, bool bassOn, bool knobs, double seconds)
     // reads the play state, the host transport and the playhead (HPDG_CRACKLE_NO_TIMER leaves them out);
     // with knobs, the 808 editor sends the new sound and the strip refreshes from a project snapshot.
     int tick = 0;
+    int dropsAtFreeze = 0;
+    std::uint64_t comparisonsAtFreeze = 0;
+    const bool settle = std::getenv("HPDG_CRACKLE_SETTLE") != nullptr;
     const bool editorTimer = std::getenv("HPDG_CRACKLE_NO_TIMER") == nullptr;
     while (!done)
     {
@@ -254,7 +269,12 @@ HostResult hostRun(int genre, int seed, bool bassOn, bool knobs, double seconds)
             const float step = p.getPreviewPlayheadStep();
             juce::ignoreUnused(playing, transport, step);
         }
-        if (knobs)
+        if (settle && tick == 45)
+        {
+            dropsAtFreeze = p.getBlocksSkippedWhileProjectBusy();
+            comparisonsAtFreeze = p.getSub808SoundComparisonCount();
+        }
+        if (knobs && (!settle || tick < 45))
         {
             auto sound = p.getSub808Sound();
             sound.drive = 0.5f + 0.5f * std::sin(0.3f * static_cast<float>(tick));
@@ -271,6 +291,8 @@ HostResult hostRun(int genre, int seed, bool bassOn, bool knobs, double seconds)
     }
     audio.join();
     result.dropouts = p.getBlocksSkippedWhileProjectBusy();
+    result.settledDropouts = result.dropouts - dropsAtFreeze;
+    result.settledComparisons = p.getSub808SoundComparisonCount() - comparisonsAtFreeze;
     p.stopPreview();
     return result;
 }
@@ -299,6 +321,16 @@ double peakOf(const std::vector<float>& x)
 int main(int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI gui;
+    if (argc > 1 && juce::String(argv[1]) == "--editor-settle")
+    {
+        _putenv_s("HPDG_CRACKLE_EDITOR","1");
+        _putenv_s("HPDG_CRACKLE_SETTLE","1");
+        _putenv_s("HPDG_CRACKLE_PRECISE","1");
+        const auto r = hostRun(2,1,true,true,8.0);
+        std::printf("editor settle: blocks %d total lock dropouts %d; after editing: dropouts %d comparisons %llu; longest block %.3f ms\n",
+            r.blocks,r.dropouts,r.settledDropouts,static_cast<unsigned long long>(r.settledComparisons),r.blockMs);
+        return r.settledDropouts == 0 && r.settledComparisons == 0 ? 0 : 1;
+    }
     const int genre = argc > 1 ? std::atoi(argv[1]) : 0;
     const int seeds = argc > 2 ? std::atoi(argv[2]) : 4;
     const juce::File out = argc > 3 && juce::String(argv[3]) != "-" ? juce::File(juce::String(argv[3])) : juce::File();

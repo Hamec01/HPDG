@@ -59,6 +59,27 @@ float synthGainFor(const BassSettings& s)
 } // namespace
 
 // ------------------------------------------------------------------------------------------ presets
+BassSettings luxuryBassSettings(int variant)
+{
+    // Production-engine fit, quality-lab/luxurytrap-2026-11/bass_fit.json.
+    // Physical note pitch comes from MIDI/Hz, independently of DAW octave labels.
+    BassSettings s;
+    s.punchSemitones = 1.5f; s.punchMs = 12.0f; s.attackMs = 1.0f;
+    s.clickDb = -60.0f; s.releaseMs = 20.0f; s.glideMs = 65.0f;
+    s.mode = BassSettings::Legato;
+    if (variant == 1)
+    {
+        s.drive = 4.45958f; s.bias = 0.067571f; s.saturation = 1.0f;
+        s.toneHz = 355.449f; s.holdSeconds = 0.144486f; s.decaySeconds = 0.252716f;
+    }
+    else
+    {
+        s.drive = 4.00379f; s.bias = 0.049532f; s.saturation = 0.461339f;
+        s.toneHz = 2675.24f; s.holdSeconds = 0.033223f; s.decaySeconds = 0.503637f;
+    }
+    return s;
+}
+
 const std::vector<BassPreset>& bassPresets()
 {
     static const std::vector<BassPreset> table = []
@@ -167,6 +188,9 @@ const std::vector<BassPreset>& bassPresets()
             s.sampleLoopStart = 0.3f; s.holdSeconds = 0.3f; s.decaySeconds = 0.5f; s.clickDb = -60.0f;
             s.satModel = 3; s.satDriveDb = 6.0f;
         });
+        // Append, so existing saved factory preset indices keep their meaning.
+        list.push_back({ "Luxury Trap", "Luxury Spinz", luxuryBassSettings(0) });
+        list.push_back({ "Luxury Trap", "Luxury Lex", luxuryBassSettings(1) });
         return list;
     }();
     return table;

@@ -5,6 +5,7 @@
 #include <array>
 #include <optional>
 #include <random>
+#include <set>
 
 #include "../Core/TrackRegistry.h"
 #include "../Core/Sub808Types.h"
@@ -104,10 +105,11 @@ std::unordered_set<int> kickSteps(PatternProject& project)
 // RG / mutate on the 808 keeps the kick (maintainer, 2026-10-14): of the engine's candidates the one
 // whose kick is closest to the written kick gives the 808 rhythm.
 const TrapAlgebraPattern& closestToKicks(const std::vector<TrapAlgebraPattern>& candidates, const TrapAlgebraPattern& selected,
-                                         const std::unordered_set<int>& kicks)
+                                         const std::unordered_set<int>& kicks, int luxuryVariation = 0)
 {
     const TrapAlgebraPattern* best = &selected;
     float bestScore = -1.0f;
+    std::vector<std::pair<const TrapAlgebraPattern*,float>> compatible;
     for (const auto& c : candidates)
     {
         if (!c.acceptedByThreshold)
@@ -120,11 +122,26 @@ const TrapAlgebraPattern& closestToKicks(const std::vector<TrapAlgebraPattern>& 
             shared += kicks.count(k) > 0 ? 1 : 0;
         const auto unionSize = ck.size() + kicks.size() - static_cast<size_t>(shared);
         const float score = (unionSize > 0 ? static_cast<float>(shared) / static_cast<float>(unionSize) : 1.0f) + 0.1f * c.selectionQuality;
+        if (luxuryVariation>0) compatible.emplace_back(&c,score);
         if (score > bestScore)
         {
             bestScore = score;
             best = &c;
         }
+    }
+    if (luxuryVariation>0)
+    {
+        std::set<juce::String> signatures;
+        std::vector<const TrapAlgebraPattern*> choices;
+        for (const auto& [candidate,score]:compatible)
+        {
+            if (score<bestScore-.04f) continue;
+            juce::String signature;
+            for (const auto& n:candidate->matrix.notesForLane(TrapAlgebraLanes::Sub808))
+                signature+=juce::String(n.tick64)+":"+juce::String(n.durationTicks)+":"+juce::String(n.pitchOffset)+";";
+            if (signatures.insert(signature).second) choices.push_back(candidate);
+        }
+        if (!choices.empty()) return *choices[static_cast<size_t>(luxuryVariation)%choices.size()];
     }
     return *best;
 }
@@ -229,6 +246,22 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
         return;
     std::sort(notes.begin(), notes.end(), [](const NoteEvent& a, const NoteEvent& b) { return a.gridTick < b.gridTick; });
 
+    if (params.trapSubstyle == 5)
+    {
+        // Pitch/contour comes from the corroborated reference phrase. Do not run the
+        // Dark/ATL root-repetition composer or fold away its descending/octave movements.
+        for (auto& n : notes) { n.isSlide = false; n.glideToNext = false; }
+        for (size_t i = 0; i + 1 < notes.size(); ++i)
+        {
+            auto& a = notes[i]; auto& b = notes[i+1];
+            const int distance = b.gridTick-a.gridTick;
+            if (a.pitch != b.pitch && std::abs(a.pitch-b.pitch)<=12 && distance>0
+                && a.lengthTicks>=distance-60 && (params.seed+static_cast<int>(i))%4==0)
+            { a.lengthTicks=distance; a.glideToNext=true; b.isSlide=true; }
+        }
+        return;
+    }
+
     std::uint32_t hash = static_cast<std::uint32_t>(params.seed) * 2654435761u + static_cast<std::uint32_t>(params.keyRoot) * 97u;
     for (const auto& n : notes)
         hash = (hash ^ static_cast<std::uint32_t>(n.gridTick + 7)) * 16777619u;
@@ -253,7 +286,9 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
     const int root = ((params.keyRoot % 12) + 12) % 12;
     const int base = 24 + root; // C1-B1
     // ATL (0) and Dark (1): no octave jumps inside the bar (ATL / dark trap passports: 0.00-0.07).
-    const bool atl = params.trapSubstyle == 0 || params.trapSubstyle == 1;
+    const bool luxury = params.trapSubstyle == 5;
+    const int luxuryFamily = static_cast<int>((static_cast<uint32_t>(params.seed) + 601u) % 4);
+    const bool atl = params.trapSubstyle == 0 || params.trapSubstyle == 1 || luxury;
     // Dark (21 Savage / Metro Boomin): the 808 stays on its root - "I don't even want to change the
     // note of the bass much" (dark trap tutorials, docs/audit/DARK_TRAP_PASSPORT.md); the first
     // version jumped from the root up high too often (maintainer, 2026-10-28).
@@ -279,7 +314,7 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
         const int inPhrase = bar % 4;
         if (inPhrase == 0)
             barDegree[static_cast<size_t>(bar)] = 0;
-        else if (dark && inPhrase != 3)
+        else if ((dark || (luxury && luxuryFamily != 1)) && inPhrase != 3)
             barDegree[static_cast<size_t>(bar)] = 0; // Dark: the degree moves only at the phrase's end
         else if (inPhrase == 2)
             barDegree[static_cast<size_t>(bar)] = unit() < 0.85f ? 0 : barDegreeMove();
@@ -312,7 +347,7 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
         else
         {
             const float r = unit();
-            if (r < (dark ? 0.75f : 0.50f))
+            if (r < (dark ? 0.75f : luxury ? (luxuryFamily == 1 ? 0.30f : 0.80f) : 0.50f))
                 pitch = previous;
             else if (r < 0.62f)
                 // ATL: no octave jumps inside the bar (ATL passport, docs/audit/ATL_PASSPORT.md: octave
@@ -357,7 +392,7 @@ void assignTrap808Line(TrackState& sub, const GeneratorParams& params, int bars)
         auto& a = notes[i];
         auto& b = notes[i + 1];
         const int gap = b.gridTick - (a.gridTick + a.lengthTicks);
-        if (a.pitch == b.pitch || gap > 4 * HiResTiming::kTicks1_16 || std::abs(a.pitch - b.pitch) > 12)
+        if (a.pitch == b.pitch || gap > (luxury ? HiResTiming::kTicks1_16 / 2 : 4 * HiResTiming::kTicks1_16) || std::abs(a.pitch - b.pitch) > 12)
             continue;
         if (unit() < (std::abs(a.pitch - b.pitch) == 12 ? 0.33f : 0.20f))
         {
@@ -499,6 +534,27 @@ int phrase808PitchForTrapAlgebraNote(const TrapAlgebraNote& note, const Generato
     if (note.laneIndex != TrapAlgebraLanes::Sub808)
         return pitchForTrapAlgebraLane(note.laneIndex);
 
+    if (params.trapSubstyle == 5 && note.hasStylePitch)
+    {
+        const int key = ((params.keyRoot % 12)+12)%12;
+        int base = 24 + key;
+        while (base + note.pitchMinOffset < 24) base += 12;
+        int degree = note.pitchOffset;
+        const std::array<int,7> scale = params.scaleMode == 1 ? std::array<int,7>{0,2,4,5,7,9,11}
+                                                           : std::array<int,7>{0,2,3,5,7,8,10};
+        const int pc = ((degree%12)+12)%12;
+        if (std::find(scale.begin(),scale.end(),pc)==scale.end())
+            for (const int delta : { -1, 1, -2, 2 })
+            {
+                const int target=((pc+delta)%12+12)%12;
+                if (std::find(scale.begin(),scale.end(),target)!=scale.end())
+                { degree+=delta; break; }
+            }
+        int pitch = base+degree;
+        while (pitch>59) pitch-=12;
+        return std::max(24,pitch);
+    }
+
     // The root in octave 1 (C1-B1, 33-62 Hz), answers up to A2: the same window as the sample-led
     // 808 (SampleBassLineComposer). Since the lane plays notes as written (2026-10-13) the old
     // window (root E1-E2, answers to C3) sounded a fifth above trap references: 1289 pack 808
@@ -631,6 +687,10 @@ void TrapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
 
     TrapAlgebraParams algebraParams;
     algebraParams.seed = project.params.seed + static_cast<int>(trackType) * 37 + project.generationCounter * 19 + 509;
+    // A bass-only Luxury pass must stay in the family of the written kick. Selecting
+    // a different recording family here made its counter-rhythm unrelated to that kick.
+    if (bassOnly && project.params.trapSubstyle == 5)
+        algebraParams.seed = project.params.seed + 601;
     algebraParams.bars = std::max(1, project.params.bars);
     algebraParams.bpm = project.params.bpm;
     algebraParams.tempoClockResolved = project.params.tempoClockResolved;
@@ -647,8 +707,9 @@ void TrapEngine::generateTrackNew(PatternProject& project, TrackType trackType)
     std::vector<TrapAlgebraPattern> candidates;
     const auto algebraPattern = TrapAlgebraEngine().generate(algebraParams, bassOnly ? &candidates : nullptr);
     const auto kicks = kickSteps(project);
-    applyTrapAlgebraPattern(project, bassOnly ? closestToKicks(candidates, algebraPattern, kicks) : algebraPattern, mutableTracks);
-    if (bassOnly)
+    applyTrapAlgebraPattern(project, bassOnly ? closestToKicks(candidates, algebraPattern, kicks,
+        project.params.trapSubstyle==5 ? 1+project.generationCounter : 0) : algebraPattern, mutableTracks);
+    if (bassOnly && project.params.trapSubstyle != 5)
         if (auto* sub = findTrack(project, TrackType::Sub808); sub != nullptr)
             snap808ToKicks(*sub, kicks);
 
@@ -708,7 +769,7 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
         for (auto& note : track.notes)
         {
             note.gridTick = std::clamp(note.gridTick, 0, bars * 16 * HiResTiming::kTicks1_16 - 1);
-            const bool darkFineGate = project.params.trapSubstyle == 1
+            const bool darkFineGate = (project.params.trapSubstyle == 1 || project.params.trapSubstyle == 5)
                 && (track.type == TrackType::Sub808 || note.semanticRole.contains("roll"));
             note.lengthTicks = std::max(darkFineGate ? HiResTiming::kTicks1_64 : HiResTiming::kTicks1_16, note.lengthTicks);
             note.velocity = std::clamp(note.velocity, 1, 127);
@@ -770,15 +831,16 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
     if (isEditable(sub))
     {
         dedupeAndSort(sub->notes);
-        moveSubOffBackbeat(*sub, snare, clap, bars);
+        if (project.params.trapSubstyle != 5)
+            moveSubOffBackbeat(*sub, snare, clap, bars);
         const bool algebraSub = std::any_of(sub->notes.begin(), sub->notes.end(), [](const NoteEvent& note)
         {
             return note.semanticRole.startsWith("trap_algebra_");
         });
-        clampLowEndStartsPerBar(*sub, bars, algebraSub ? 4 : 3);
+        clampLowEndStartsPerBar(*sub, bars, project.params.trapSubstyle == 5 ? 8 : algebraSub ? 4 : 3);
         if (algebraSub)
             assignTrap808Line(*sub, project.params, bars);
-        clampLowEndPitchChanges(*sub, bars, 3);
+        clampLowEndPitchChanges(*sub, bars, project.params.trapSubstyle == 5 ? 7 : 3);
         // The pitch-change cap can rewrite a pickup at a bar boundary. Restore its
         // relationship to the following tone after that cap as well (seed 365).
         if (project.params.trapSubstyle == 1)
@@ -794,12 +856,15 @@ void TrapEngine::validatePattern(PatternProject& project, const std::unordered_s
         if (!algebraSub)
             ensureLowEndPhraseEnding(*sub, bars);
         dedupeAndSort(sub->notes);
-        if (project.params.trapSubstyle == 1)
+        if (project.params.trapSubstyle == 1 || project.params.trapSubstyle == 5)
             for (size_t i = 0; i < sub->notes.size(); ++i)
             {
                 auto& n = sub->notes[i];
-                const int next = i + 1 < sub->notes.size() ? sub->notes[i + 1].gridTick : bars * 16 * HiResTiming::kTicks1_16;
-                n.lengthTicks = std::clamp(n.lengthTicks, 1, std::max(1, next - n.gridTick));
+                const bool luxury=project.params.trapSubstyle==5;
+                const int next = i + 1 < sub->notes.size()
+                    ? (luxury ? sub->notes[i+1].startTick() : sub->notes[i+1].gridTick)
+                    : bars * 16 * HiResTiming::kTicks1_16;
+                n.lengthTicks = std::clamp(n.lengthTicks, 1, std::max(1, next - (luxury ? n.startTick() : n.gridTick)));
             }
         sub->sub808Notes = toSub808NoteEvents(sub->notes);
     }
@@ -853,7 +918,7 @@ void TrapEngine::applyTrapAlgebraPattern(PatternProject& project,
         if (!track->notes.empty())
         {
             track->notes.back().semanticRole = semanticRoleForTrapAlgebraNote(note);
-            if (project.params.trapSubstyle == 1
+            if ((project.params.trapSubstyle == 1 || project.params.trapSubstyle == 5)
                 && (note.laneIndex == TrapAlgebraLanes::Sub808 || note.role == TrapAlgebraRole::Roll))
                 track->notes.back().lengthTicks = std::min(std::max(1, note.durationTicks * HiResTiming::kTicks1_64),
                     bars * 16 * HiResTiming::kTicks1_16 - track->notes.back().gridTick);
@@ -866,6 +931,24 @@ void TrapEngine::applyTrapAlgebraPattern(PatternProject& project,
             continue;
 
         dedupeAndSort(track.notes);
+        if (project.params.trapSubstyle == 5 && track.type == TrackType::HiHat)
+        {
+            // Optional descending ornaments, returning to the carrier's original pitch.
+            // A musical design control, not a recovered MIDI/pitch claim about separated hats.
+            int rollIndex = 0, lastRoll = -10000;
+            constexpr std::array<int, 4> contour { 0, -2, -5, 0 };
+            for (auto& n : track.notes)
+            {
+                if (!n.semanticRole.contains("roll"))
+                    continue;
+                if (n.gridTick - lastRoll > HiResTiming::kTicks1_16)
+                    rollIndex = 0;
+                if (project.params.seed % 2 == 0)
+                    n.pitch += contour[static_cast<size_t>(rollIndex % 4)];
+                lastRoll = n.gridTick;
+                ++rollIndex;
+            }
+        }
         if (track.type == TrackType::Sub808)
             track.sub808Notes = toSub808NoteEvents(track.notes);
     }

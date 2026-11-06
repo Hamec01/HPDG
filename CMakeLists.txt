@@ -211,6 +211,8 @@ target_link_libraries(HPDG
 
 add_executable(HPDG_CoreTests
     Tests/CoreStage0Tests.cpp
+    Source/Engine/SampleBassFollower.cpp
+    Source/Engine/SampleBassLineComposer.cpp
     Source/Core/TrackRegistry.cpp
     Source/Core/RuntimeLaneLifecycle.cpp
     Source/Core/PatternProjectSerialization.cpp
@@ -413,6 +415,8 @@ target_link_libraries(HPDG_LaneBoundaryTests
 )
 
 add_test(NAME HPDG_LaneBoundaryTests COMMAND HPDG_LaneBoundaryTests)
+# Processor integration tests resolve the development library as cwd/Samples.
+set_tests_properties(HPDG_LaneBoundaryTests PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # The C++ Basic Pitch port against the Python original (tools/basic_pitch_export.py, tools/transcription_key.py).
 add_executable(HPDG_BasicPitchLab
@@ -556,6 +560,7 @@ target_link_libraries(HPDG_LaneStrengthLab
 add_executable(HPDG_GenerationQualityLab
     Tests/GenerationQualityLab.cpp
 )
+target_include_directories(HPDG_GenerationQualityLab PRIVATE Source)
 
 target_link_libraries(HPDG_GenerationQualityLab
     PRIVATE

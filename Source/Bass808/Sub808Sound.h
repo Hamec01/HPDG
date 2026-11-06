@@ -22,6 +22,13 @@ struct Sub808Sound
     float sidechain = 0.0f; // the strip's SIDECHAIN: how deep a kick ducks the bass
 };
 
+// Voices retain the sample separately from its sound wrapper. Keep the wrapper alive
+// until both are unused, so a later note cannot free sample memory on the audio thread.
+inline bool canRetireSub808Sound(const std::shared_ptr<const Sub808Sound>& sound)
+{
+    return sound.use_count() == 1 && (sound->sample == nullptr || sound->sample.use_count() == 1);
+}
+
 // The bank sample as HPDG always played it: a raw sample (no envelope shaping, no filter, velocity
 // straight to level), released in 6 ms at the note end.
 BassSettings sub808SampleOnlySettings();
